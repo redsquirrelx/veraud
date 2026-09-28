@@ -1,0 +1,14 @@
+# Node projects
+node_modules/
+
+# Python project
+.venv/
+__pycache__/
+
+# Environment
+.env
+.env.*
+!.env.template
+
+# IDE
+.vscode
