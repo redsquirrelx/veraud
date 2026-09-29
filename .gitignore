@@ -1,5 +1,6 @@
 # Node projects
 node_modules/
+backend/src/generated/prisma
 
 # Python project
 .venv/
@@ -12,3 +13,7 @@ __pycache__/
 
 # IDE
 .vscode
+
+# Application local data
+appdata/
+~*.xlsx
