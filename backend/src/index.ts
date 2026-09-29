@@ -4,11 +4,12 @@ const app = Fastify({
   logger: true
 });
 
-app.get("/", async () => {
+app.get("/status", async () => {
   return {
-    message: "Backend funcionando"
-  };
-});
+    status: "ok",
+    service: "backend"
+  }
+})
 
 app.listen({
   port: Number(process.env.PORT_BACKEND ?? 3000)
