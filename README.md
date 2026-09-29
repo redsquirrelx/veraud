@@ -10,3 +10,22 @@
 
 ## Preparation
 **Windows only**: Run `scripts/setup_dev_env.ps1` from the project root to install the required Node.js and Python versions and download all dependencies.
+
+Once the setup is complete, you can start the services:
+#### Frontend
+```bash
+cd frontend
+pnpm run dev
+```
+
+#### Backend
+```bash
+cd backend
+pnpm run dev
+```
+
+#### Agent server
+```bash
+cd agent-server
+uv run dev
+```
