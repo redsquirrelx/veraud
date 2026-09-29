@@ -1,6 +1,15 @@
 import Fastify from "fastify";
 import { logger } from "./config/logger.js"
 
+import { PrismaClient } from "./generated/prisma/client.js"
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
+
+const adapter = new PrismaBetterSqlite3({
+  url: process.env.DATABASE_URL 
+})
+
+const dbClient = new PrismaClient({ adapter })
+
 const app = Fastify({
   logger: {
     transport: {
@@ -15,6 +24,19 @@ const app = Fastify({
 });
 
 logger.configure(app.log)
+
+const log = logger.withTag('bd-test')
+dbClient.project.create({
+  data: {
+    name: "example",
+    githubRepositoryId: 1251241412,
+    repositoryName: "examplename",
+    repositoryOwner: "ownerexample",
+    status: "syncing"
+  }
+}).then(_ => {
+  log.info("new project registered!")
+})
 
 app.addHook('onReady', async () => {
   const log = logger.withTag('agent-server')
