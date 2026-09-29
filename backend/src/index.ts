@@ -1,4 +1,4 @@
-import Fastify, { fastify } from "fastify";
+import Fastify from "fastify";
 import { logger } from "./config/logger.js"
 
 const app = Fastify({
@@ -29,7 +29,7 @@ app.addHook('onReady', async () => {
 
     log.info(`Agent server at ${port} is available`)
   } catch (error) {
-    log.error(`Agent server at ${port} is unavailable`)
+    log.error(`Agent server at ${port} is unavailable. Details: ${error}`)
   }
 })
 
