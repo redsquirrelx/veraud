@@ -1,0 +1,125 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Project {
+  id                 Int            @id @default(autoincrement())
+  name               String?
+  createdAt          DateTime       @default(now()) @map("created_at")
+  lastSyncedAt       DateTime?      @map("last_synced_at")
+  status             String
+  githubRepositoryId BigInt         @unique @map("github_repository_id")
+  repositoryOwner    String         @map("repository_owner")
+  repositoryName     String         @map("repository_name")
+  selectedVersionId  Int?           @unique @map("selected_version_id")
+
+  selectedVersion ProjectVersion?  @relation("ProjectSelectedVersion", fields: [selectedVersionId], references: [id])
+  versions        ProjectVersion[] @relation("ProjectVersions")
+
+  @@map("project")
+}
+
+model ProjectVersion {
+  id             Int       @id @default(autoincrement())
+  projectId      Int       @map("project_id")
+  branch         String?
+  commitHash     String?   @map("commit_hash")
+  analysisStatus String    @map("analysis_status")
+  analyzedAt     DateTime? @map("analyzed_at")
+
+  project     Project      @relation("ProjectVersions", fields: [projectId], references: [id])
+  selectedBy  Project?     @relation("ProjectSelectedVersion")
+  evaluations Evaluation[]
+
+  @@unique([projectId, commitHash])
+  @@map("project_version")
+}
+
+model Evaluation {
+  id               Int       @id @default(autoincrement())
+  projectVersionId Int       @map("project_version_id")
+  type             String
+  createdAt        DateTime  @default(now()) @map("created_at")
+  startedAt        DateTime? @map("started_at")
+  finishedAt       DateTime? @map("finished_at")
+
+  projectVersion  ProjectVersion   @relation(fields: [projectVersionId], references: [id])
+  agentExecutions AgentExecution[]
+
+  @@map("evaluation")
+}
+
+model AgentExecution {
+  id           Int       @id @default(autoincrement())
+  evaluationId Int       @map("evaluation_id")
+  agentType    String    @map("agent_type")
+  status       String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  startedAt    DateTime? @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  inputTokens  Int?      @map("input_tokens")
+  outputTokens Int?      @map("output_tokens")
+  error        String?
+
+  evaluation    Evaluation    @relation(fields: [evaluationId], references: [id])
+  agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
+
+  @@map("agent_execution")
+}
+
+model AiProvider {
+  id   Int    @id @default(autoincrement())
+  name String
+
+  models      AiModel[]
+  credentials AiCredential[]
+
+  @@map("ai_provider")
+}
+
+model AiCredential {
+  id           Int    @id @default(autoincrement())
+  aiProviderId Int    @map("ai_provider_id")
+  name         String
+  apiKey       String @map("api_key")
+
+  aiProvider     AiProvider     @relation(fields: [aiProviderId], references: [id])
+  agentSettings AgentSettings[]
+
+  @@map("ai_credential")
+}
+
+model AiModel {
+  id           Int    @id @default(autoincrement())
+  aiProviderId Int    @map("ai_provider_id")
+  name         String
+
+  aiProvider    AiProvider     @relation(fields: [aiProviderId], references: [id])
+  agentSettings AgentSettings[]
+
+  @@map("ai_model")
+}
+
+model AgentSettings {
+  agentType      String @id @map("agent_type")
+  aiModelId      Int    @map("ai_model_id")
+  aiCredentialId Int    @map("ai_credential_id")
+  temperature    Decimal?
+  maxTokens      Int?    @map("max_tokens")
+
+  aiModel         AiModel          @relation(fields: [aiModelId], references: [id])
+  aiCredential    AiCredential     @relation(fields: [aiCredentialId], references: [id])
+  agentExecutions AgentExecution[]
+
+  @@map("agent_settings")
+}
