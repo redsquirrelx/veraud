@@ -15,6 +15,8 @@ try {
     $currentPath = Join-Path $projectRootPath "\backend"
     Set-Location $currentPath
     pnpm install
+    pnpm prisma generate
+    pnpm prisma migrate dev
 
     $currentPath = Join-Path $projectRootPath "\frontend"
     Set-Location $currentPath
