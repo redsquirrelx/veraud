@@ -5,6 +5,11 @@ Write-Host "#### Setting up dev environment... ####"
 Write-Host ""
 Write-Host ""
 
+if (-not (Test-Path (Join-Path $projectRootPath ".env"))) {
+    Write-Host ".env file doesn't exist... Creating one from .env.template."
+    Copy-Item -Path (Join-Path $projectRootPath ".env.template") -Destination (Join-Path $projectRootPath ".env")
+}
+
 try {
     Write-Host "#### Installing runtimes... ####"
     uv python install
