@@ -4,12 +4,6 @@ import { logger } from "./config/logger.js"
 import { PrismaClient } from "./generated/prisma/client.js"
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL 
-})
-
-const dbClient = new PrismaClient({ adapter })
-
 const app = Fastify({
   logger: {
     transport: {
@@ -25,6 +19,14 @@ const app = Fastify({
 
 logger.configure(app.log)
 
+const { env } = await import("./config/env.js");
+
+const adapter = new PrismaBetterSqlite3({
+  url: env.DATABASE_URL
+})
+
+const dbClient = new PrismaClient({ adapter })
+
 const log = logger.withTag('bd-test')
 dbClient.project.create({
   data: {
@@ -34,13 +36,15 @@ dbClient.project.create({
     repositoryOwner: "ownerexample",
     status: "syncing"
   }
-}).then(_ => {
+}).then(() => {
   log.info("new project registered!")
+}).catch(() => {
+  log.error("couldn't add new project")
 })
 
 app.addHook('onReady', async () => {
   const log = logger.withTag('agent-server')
-  const port = process.env.PORT_AGENTSERVER ?? 3000
+  const port = env.PORT_AGENTSERVER
 
   try {
     const response = await fetch(`http://localhost:${port}/status`)
@@ -66,5 +70,5 @@ app.get("/status", async () => {
 })
 
 app.listen({
-  port: Number(process.env.PORT_BACKEND ?? 3000)
+  port: env.PORT_BACKEND
 });

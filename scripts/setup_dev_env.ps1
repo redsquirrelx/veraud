@@ -5,6 +5,11 @@ Write-Host "#### Setting up dev environment... ####"
 Write-Host ""
 Write-Host ""
 
+if (-not (Test-Path (Join-Path $projectRootPath ".env"))) {
+    Write-Host ".env file doesn't exist... Creating one from .env.template."
+    Copy-Item -Path (Join-Path $projectRootPath ".env.template") -Destination (Join-Path $projectRootPath ".env")
+}
+
 try {
     Write-Host "#### Installing runtimes... ####"
     uv python install
@@ -25,10 +30,6 @@ try {
     $currentPath = Join-Path $projectRootPath "\agent-server"
     Set-Location $currentPath
     uv sync
-
-    Write-Host ""
-    Write-Host "#### A .env file was created from the template. Update the values if needed. ####"
-    Copy-Item -Path (Join-Path $projectRootPath ".env.template") -Destination (Join-Path $projectRootPath ".env")
 
     Write-Host ""
     Write-Host "#### Development environment ready. ####"
