@@ -32,10 +32,6 @@ try {
     uv sync
 
     Write-Host ""
-    Write-Host "#### A .env file was created from the template. Update the values if needed. ####"
-    Copy-Item -Path (Join-Path $projectRootPath ".env.template") -Destination (Join-Path $projectRootPath ".env")
-
-    Write-Host ""
     Write-Host "#### Development environment ready. ####"
     Write-Host ""
 }
