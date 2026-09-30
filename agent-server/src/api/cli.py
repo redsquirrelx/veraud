@@ -2,15 +2,12 @@ import os
 from pathlib import Path
 
 import uvicorn
-from dotenv import load_dotenv
-
-ROOT_DIR = Path(__file__).resolve().parents[3]
-load_dotenv(ROOT_DIR / ".env")
+from config.settings import settings
 
 def dev():
     uvicorn.run(
-        "server.main:app",
+        "api.main:app",
         host = "localhost",
-        port = int(os.getenv("PORT_AGENTSERVER", "8000")),
+        port = settings.port_agentserver,
         reload = True,
     )
