@@ -5,6 +5,8 @@ backend/src/generated/prisma
 # Python project
 .venv/
 __pycache__/
+dev-agents.yaml
+.ruff_cache
 
 # Environment
 .env
