@@ -1,0 +1,9 @@
+models:
+
+  dummy:
+    model:
+      provider: openai
+      name: gpt-5
+      temperature: 0.2
+      max_tokens: 1000
+    timeout_secconds: 30
