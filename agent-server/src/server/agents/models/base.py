@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
-from ..config.schemas import ModelSettings, ModelCredentials
+from ...config.schemas import ModelCredentials, ModelSettings
+
 
 class Model(ABC):
     def __init__(self, settings: ModelSettings, credentials: ModelCredentials):

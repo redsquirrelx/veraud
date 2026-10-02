@@ -10,19 +10,21 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.141.1",
     "langchain>=1.4.3",
+    "langchain-google-genai>=4.4.0",
+    "langchain-openai>=1.6.6",
     "langgraph>=1.2.12",
     "pydantic>=2.13.5",
 ]
 
 [project.scripts]
-dev = "app.cli:dev"
+dev = "server.cli:dev"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "app"
+module-name = "server"
 module-root = "src"
 
 [dependency-groups]
