@@ -1,0 +1,53 @@
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.project-icon {
+  display: inline-flex;
+  color: #006194;
+  flex-shrink: 0;
+}
+
+.project-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.project-title {
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: font-weight 0.15s ease, color 0.15s ease;
+}
+
+.project-title:hover:not(:disabled) {
+  font-weight: 700;
+  color: #006194;
+}
+
+.project-title:disabled {
+  cursor: default;
+}
+
+.project-date {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.project-row .ui-button {
+  margin-left: auto;
+  flex-shrink: 0;
+}

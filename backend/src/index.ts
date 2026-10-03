@@ -10,6 +10,7 @@ const projectRoot = fileURLToPath(new URL("../../", import.meta.url))
 const { app } = await buildApp({
   databaseUrl: env.DATABASE_URL,
   workspaceDir: join(projectRoot, "appdata", "workspace"),
+  agentServerUrl: `http://localhost:${env.PORT_AGENTSERVER}`,
 })
 
 app.addHook('onReady', async () => {

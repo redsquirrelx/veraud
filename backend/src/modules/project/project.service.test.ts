@@ -43,6 +43,10 @@ function makeFakes(options: {
     async delete(id: number): Promise<void> {
       calls.deletedProjects.push(id)
     },
+    async setStatus(): Promise<void> {},
+    async list() {
+      return []
+    },
   }
 
   const tasks: TaskStore & { created: Array<NewTask> } = {
@@ -148,6 +152,8 @@ describe("ProjectService.registerProject", () => {
         create: async () => { throw new Error("must not persist") },
         findByGithubId: async () => null,
         delete: async () => { throw new Error("must not delete") },
+        setStatus: async () => { throw new Error("must not set status") },
+        list: async () => [],
       },
       {
         create: async () => { throw new Error("must not create tasks") },

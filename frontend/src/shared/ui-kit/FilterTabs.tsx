@@ -24,7 +24,7 @@ export function FilterTabs({ options, value, onChange }: FilterTabsProps) {
           className={option.id === value ? "ui-filter-tab ui-filter-tab-active" : "ui-filter-tab"}
           onClick={() => onChange(option.id)}
         >
-          {option.label} ({option.count})
+          {option.count > 0 ? `${option.label} (${option.count})` : option.label}
         </button>
       ))}
     </div>

@@ -11,6 +11,10 @@ export interface EventSink {
   broadcast(event: TaskEvent): void
 }
 
+export interface ProjectStatusWriter {
+  setStatus(id: number, status: string): Promise<void>
+}
+
 export interface CloneRunner {
   enqueueClone(taskId: number, projectId: number, cloneUrl: string, folder: string): Promise<CloneResult>
 }
@@ -36,6 +40,7 @@ export class TaskRunner implements CloneRunner {
 
   constructor(
     private tasks: TaskStore,
+    private projects: ProjectStatusWriter,
     private gateway: EventSink,
     private workspaceDir: string
   ) {}
@@ -108,6 +113,13 @@ export class TaskRunner implements CloneRunner {
     const task = await this.tasks.update(job.taskId, { status, exitCode, logTrail })
 
     this.log.info(`Task ${task.id} is now ${task.status}`)
+
+    if (status === "Running") {
+      await this.projects.setStatus(job.projectId, "SYNCING")
+    }
+    if (status === "Succeded") {
+      await this.projects.setStatus(job.projectId, "READY")
+    }
 
     this.gateway.broadcast({
       type: "task.updated",

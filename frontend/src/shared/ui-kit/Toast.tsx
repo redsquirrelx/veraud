@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { XIcon } from "./icons.tsx"
 import "./Toast.css"
 
 interface ToastProps {
@@ -85,7 +86,7 @@ export function Toast({ kind, message, durationMs = 5000, onClose }: ToastProps)
       )}
       {onClose && (
         <button type="button" className="ui-toast-close" aria-label="Close" onClick={() => close()}>
-          ├ù
+          <XIcon size={13} />
         </button>
       )}
     </div>

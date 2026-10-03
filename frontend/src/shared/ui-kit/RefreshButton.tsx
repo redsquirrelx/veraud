@@ -1,3 +1,4 @@
+import { RefreshIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import "./RefreshButton.css"
 
@@ -15,7 +16,7 @@ export function RefreshButton({ loading = false, onClick }: RefreshButtonProps) 
       disabled={loading}
       onClick={onClick}
     >
-      {loading ? <Spinner size={14} /> : <span aria-hidden="true">Γå╗</span>}
+      {loading ? <Spinner size={14} /> : <RefreshIcon />}
     </button>
   )
 }

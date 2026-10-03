@@ -27,7 +27,7 @@ describe("ProjectRegistrationForm", () => {
     const button = screen.getByRole("button", { name: "Register project" })
     expect(button.hasAttribute("disabled")).toBe(true)
 
-    await userEvent.type(screen.getByPlaceholderText("https://github.com/owner/repo"), "https://github.com/acme/Demo")
+    await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Demo")
     expect(button.hasAttribute("disabled")).toBe(false)
   })
 
@@ -35,7 +35,7 @@ describe("ProjectRegistrationForm", () => {
     globalThis.fetch = (() => new Promise<Response>(() => {})) as typeof fetch
     render(<FormHarness />)
 
-    await userEvent.type(screen.getByPlaceholderText("https://github.com/owner/repo"), "https://github.com/acme/Demo")
+    await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Register project" }))
 
     expect(screen.getByTestId("state").textContent).not.toBe("idle")

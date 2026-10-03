@@ -13,21 +13,30 @@ function stubFetch(handler: () => Response) {
 }
 
 describe("useBackendStatus", () => {
-  it("reports online when the backend answers", async () => {
-    stubFetch(() => new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+  it("reports both services online", async () => {
+    stubFetch(() => new Response(JSON.stringify({ status: "ok", agentServer: "online" }), { status: 200 }))
     const { result } = renderHook(() => useBackendStatus(20))
 
     await waitFor(() => {
-      expect(result.current).toBe("online")
+      expect(result.current).toEqual({ backend: "online", agent: "online" })
     })
   })
 
-  it("reports offline when the backend is down", async () => {
+  it("reports both offline when the backend is down", async () => {
     stubFetch(() => new Response("{}", { status: 500 }))
     const { result } = renderHook(() => useBackendStatus(20))
 
     await waitFor(() => {
-      expect(result.current).toBe("offline")
+      expect(result.current).toEqual({ backend: "offline", agent: "unknown" })
+    })
+  })
+
+  it("reports the agent offline while the backend is up", async () => {
+    stubFetch(() => new Response(JSON.stringify({ status: "ok", agentServer: "offline" }), { status: 200 }))
+    const { result } = renderHook(() => useBackendStatus(20))
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ backend: "online", agent: "offline" })
     })
   })
 
@@ -37,12 +46,12 @@ describe("useBackendStatus", () => {
     const { result } = renderHook(() => useBackendStatus(20))
 
     await waitFor(() => {
-      expect(result.current).toBe("offline")
+      expect(result.current.backend).toBe("offline")
     })
 
     up = true
     await waitFor(() => {
-      expect(result.current).toBe("online")
+      expect(result.current.backend).toBe("online")
     })
   })
 })

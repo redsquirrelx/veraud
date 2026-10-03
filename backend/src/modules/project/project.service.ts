@@ -64,4 +64,8 @@ export class ProjectService {
 
     return project
   }
+
+  listProjects() {
+    return this.projects.list()
+  }
 }

@@ -1,5 +1,6 @@
 # Node projects
 node_modules/
+dist/
 backend/src/generated/prisma
 
 # Python project
