@@ -36,6 +36,21 @@ describe("useRegisterProject", () => {
     expect(result.current.project?.id).toBe(1)
   })
 
+  it("notifies after registering", async () => {
+    stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
+    let notified = 0
+    const { result } = renderHook(() => useRegisterProject({ onRegistered: () => { notified += 1 } }))
+
+    act(() => {
+      result.current.changeUrl("https://github.com/acme/Demo")
+    })
+    await act(async () => {
+      await result.current.register()
+    })
+
+    expect(notified).toBe(1)
+  })
+
   it("clears the input on submit and cools down for 2s", async () => {
     stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
     const { result } = renderHook(() => useRegisterProject(), { wrapper: StrictModeWrapper })

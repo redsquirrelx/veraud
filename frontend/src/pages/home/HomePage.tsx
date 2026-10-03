@@ -1,12 +1,17 @@
 import { Panel, Toast } from "../../shared/ui-kit/index.ts"
+import { ProjectList } from "../../features/project-management/ProjectList.tsx"
 import { ProjectRegistrationForm } from "../../features/project-management/ProjectRegistrationForm.tsx"
 import { TaskMenu } from "../../features/project-management/TaskMenu.tsx"
+import { useProjects } from "../../features/project-management/useProjects.ts"
 import { useRegisterProject } from "../../features/project-management/useRegisterProject.ts"
 import { useTasks } from "../../features/project-management/useTasks.ts"
 import "./HomePage.css"
 
 export function HomePage() {
-  const registration = useRegisterProject()
+  const listing = useProjects()
+  const registration = useRegisterProject({
+    onRegistered: () => void listing.refresh(),
+  })
   const tasks = useTasks()
 
   return (
@@ -23,6 +28,7 @@ export function HomePage() {
       <Panel>
         <ProjectRegistrationForm registration={registration} />
       </Panel>
+      <ProjectList listing={listing} />
       <div className="dock">
         {registration.state === "success" && (
           <Toast kind="success" message={registration.message} onClose={() => registration.reset()} />

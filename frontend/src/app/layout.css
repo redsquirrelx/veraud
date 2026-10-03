@@ -21,6 +21,13 @@
   font-weight: 600;
   font-size: 15px;
   color: #0f172a;
+  text-decoration: none;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.app-brand:hover {
+  color: #006194;
+  opacity: 0.85;
 }
 
 .app-status {
@@ -51,6 +58,16 @@
 
 .app-status-dot-offline {
   background: #e11d48;
+}
+
+.app-status-unknown {
+  color: #3f4850;
+  background: #f2f3ff;
+  border-color: #bfc7d2;
+}
+
+.app-status-dot-unknown {
+  background: #707881;
 }
 
 .app-nav {

@@ -2,28 +2,45 @@ import { useEffect, useState } from "react"
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501"
 
-export type BackendStatus = "online" | "offline"
+export type ServiceStatus = "online" | "offline" | "unknown"
 
-async function checkStatus(signal: AbortSignal): Promise<boolean> {
+interface StatusResponse {
+  agentServer?: string
+}
+
+async function checkStatus(signal: AbortSignal): Promise<{ backend: boolean; agent: string }> {
   try {
     const response = await fetch(`${backendUrl}/status`, { signal })
-    return response.ok
+    if (!response.ok) {
+      return { backend: false, agent: "unknown" }
+    }
+    const body = (await response.json()) as StatusResponse
+    return { backend: true, agent: body.agentServer ?? "unknown" }
   } catch {
-    return false
+    return { backend: false, agent: "unknown" }
   }
 }
 
-export function useBackendStatus(intervalMs = 2000): BackendStatus {
-  const [status, setStatus] = useState<BackendStatus>("offline")
+function toAgentStatus(value: string): ServiceStatus {
+  if (value === "online" || value === "offline") {
+    return value
+  }
+  return "unknown"
+}
+
+export function useBackendStatus(intervalMs = 2000): { backend: ServiceStatus; agent: ServiceStatus } {
+  const [backend, setBackend] = useState<ServiceStatus>("offline")
+  const [agent, setAgent] = useState<ServiceStatus>("unknown")
 
   useEffect(() => {
     let alive = true
     const controller = new AbortController()
 
     async function poll() {
-      const ok = await checkStatus(controller.signal)
+      const result = await checkStatus(controller.signal)
       if (alive) {
-        setStatus(ok ? "online" : "offline")
+        setBackend(result.backend ? "online" : "offline")
+        setAgent(toAgentStatus(result.agent))
       }
     }
 
@@ -37,5 +54,5 @@ export function useBackendStatus(intervalMs = 2000): BackendStatus {
     }
   }, [intervalMs])
 
-  return status
+  return { backend, agent }
 }

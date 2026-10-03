@@ -10,7 +10,7 @@ function isTimeout(error: unknown): boolean {
 
 const SUBMIT_COOLDOWN_MS = 2000
 
-export function useRegisterProject() {
+export function useRegisterProject(options?: { onRegistered?: () => void }) {
   const [url, setUrl] = useState("")
   const [cooling, setCooling] = useState(false)
   const [state, setState] = useState<RegisterState>("idle")
@@ -61,6 +61,7 @@ export function useRegisterProject() {
       setProject(created)
       setMessage(`Project ${created.repositoryOwner}/${created.repositoryName} registered`)
       setState("success")
+      options?.onRegistered?.()
     } catch (error) {
       if (!mounted.current) {
         return
