@@ -3,6 +3,19 @@ import { RepoNotAccessibleError } from "../../infrastructure/github-client/githu
 import { DuplicateProjectError, InvalidUrlError, ProjectService } from "./project.service.js"
 
 export function registerProjectRoutes(app: FastifyInstance, service: ProjectService): void {
+  app.get("/api/projects", async () => {
+    const projects = await service.listProjects()
+    return projects.map((project) => ({
+      id: project.id,
+      repositoryOwner: project.repositoryOwner,
+      repositoryName: project.repositoryName,
+      status: project.status,
+      registeredAt: project.registeredAt,
+      branch: project.branch,
+      commitHash: project.commitHash,
+    }))
+  })
+
   app.post("/api/projects", {
     schema: {
       body: {
