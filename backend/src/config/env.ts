@@ -3,7 +3,15 @@ import { fileURLToPath } from "node:url"
 import dotenv from "dotenv"
 import { logger } from "./logger.js"
 
-const log = logger.withTag("env")
+const log = {
+  error(message: string, data?: object): void {
+    try {
+      logger.withTag("env").error(message, data)
+    } catch {
+      console.error(message, data ?? "")
+    }
+  }
+}
 
 const ENV_FILE = fileURLToPath(new URL("../../../.env", import.meta.url))
 

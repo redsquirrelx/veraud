@@ -1,0 +1,62 @@
+import { mkdirSync } from "node:fs"
+import Fastify from "fastify"
+import cors from "@fastify/cors"
+import websocket from "@fastify/websocket"
+import pretty from "pino-pretty"
+import { logger } from "./config/logger.js"
+
+import { PrismaClient } from "./generated/prisma/client.js"
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
+
+import { GithubClient } from "./infrastructure/github-client/github.client.js"
+import { RealtimeGateway } from "./infrastructure/realtime-gateway/realtime.gateway.js"
+import { TaskRunner, type CloneRunner } from "./infrastructure/task-runner/task.runner.js"
+import { ProjectRepository } from "./modules/project/project.repository.js"
+import { ProjectService } from "./modules/project/project.service.js"
+import { registerProjectRoutes } from "./modules/project/project.controller.js"
+import { TaskRepository } from "./modules/task/task.repository.js"
+import { TaskService } from "./modules/task/task.service.js"
+import { registerTaskRoutes } from "./modules/task/task.controller.js"
+
+export interface BuildAppOptions {
+  databaseUrl: string
+  workspaceDir: string
+  makeRunner?: (tasks: TaskRepository, gateway: RealtimeGateway) => CloneRunner
+}
+
+export async function buildApp(options: BuildAppOptions) {
+  const stream = pretty({ colorize: true, translateTime: "HH:MM:ss", ignore: "pid,hostname" })
+  const app = Fastify({ logger: { level: "info", stream } })
+  logger.configure(app.log)
+
+  const db = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: options.databaseUrl }),
+  })
+
+  mkdirSync(options.workspaceDir, { recursive: true })
+
+  const gateway = new RealtimeGateway()
+  const github = new GithubClient()
+  const projectRepository = new ProjectRepository(db)
+  const taskRepository = new TaskRepository(db)
+  const runner = options.makeRunner
+    ? options.makeRunner(taskRepository, gateway)
+    : new TaskRunner(taskRepository, gateway, options.workspaceDir)
+  const projectService = new ProjectService(projectRepository, taskRepository, github, runner)
+  const taskService = new TaskService(taskRepository)
+
+  await app.register(websocket)
+  await app.register(cors, {
+    origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
+  })
+  
+  gateway.register(app)
+  registerProjectRoutes(app, projectService)
+  registerTaskRoutes(app, taskService)
+
+  app.get("/status", { logLevel: "silent" }, async () => {
+    return { status: "ok", service: "backend" }
+  })
+
+  return { app, db }
+}
