@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Card, CheckIcon, CrossIcon, Spinner } from "../../shared/ui-kit/index.ts"
+import { Card, CheckIcon, ChevronDownIcon, ChevronUpIcon, CrossIcon, Spinner, XIcon } from "../../shared/ui-kit/index.ts"
 import type { ActiveTask } from "../../infrastructure/http-client/httpClient.ts"
 import "./TaskMenu.css"
 
@@ -46,7 +46,7 @@ export function TaskMenu({ tasks }: { tasks: ActiveTask[] }) {
           onClick={() => setExpanded(!expanded)}
         >
           <span className="label">Active tasks ({tasks.length})</span>
-          <span aria-hidden="true">{expanded ? "Γû╛" : "Γû┤"}</span>
+          {expanded ? <ChevronDownIcon /> : <ChevronUpIcon />}
         </button>
         <button
           type="button"
@@ -54,7 +54,7 @@ export function TaskMenu({ tasks }: { tasks: ActiveTask[] }) {
           aria-label="Close task menu"
           onClick={() => close()}
         >
-          ├ù
+          <XIcon size={13} />
         </button>
       </div>
       {expanded && tasks.length === 0 ? (

@@ -1,3 +1,4 @@
+import { ArrowDownIcon, ArrowUpIcon } from "./icons.tsx"
 import "./SortButton.css"
 
 interface SortButtonProps {
@@ -11,10 +12,10 @@ export function SortButton({ direction, onToggle }: SortButtonProps) {
       type="button"
       className="ui-sort-button"
       aria-label={direction === "asc" ? "Sort descending" : "Sort ascending"}
+      title={direction === "asc" ? "Sort descending" : "Sort ascending"}
       onClick={onToggle}
     >
-      <span aria-hidden="true">Γëí</span>
-      <span>ORDEN: {direction === "asc" ? "Γåæ" : "Γåô"}</span>
+      {direction === "asc" ? <ArrowUpIcon /> : <ArrowDownIcon />}
     </button>
   )
 }

@@ -71,3 +71,83 @@ export function CrossIcon({ size = 14 }: IconProps) {
     </svg>
   )
 }
+
+export function ChevronDownIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m4 6 4 4 4-4" />
+    </svg>
+  )
+}
+
+export function ChevronUpIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m4 10 4-4 4 4" />
+    </svg>
+  )
+}
+
+export function ChevronLeftIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m10 4-4 4 4 4" />
+    </svg>
+  )
+}
+
+export function ChevronRightIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m6 4 4 4-4 4" />
+    </svg>
+  )
+}
+
+export function XIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m4 4 8 8m0-4-8 8" />
+    </svg>
+  )
+}
+
+export function FolderIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M1.5 4.5a1 1 0 0 1 1-1h4l1.5 2h5.5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7Z" />
+    </svg>
+  )
+}
+
+export function RefreshIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3" />
+    </svg>
+  )
+}
+
+export function SortIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M2 4.5h12M2 8h8M2 11.5h5" />
+    </svg>
+  )
+}
+
+export function ArrowUpIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M8 13.5v-11m0 0-3.5 3.5M8 2.5l3.5 3.5" />
+    </svg>
+  )
+}
+
+export function ArrowDownIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M8 2.5v11m0 0 3.5-3.5M8 13.5 4.5 10" />
+    </svg>
+  )
+}
