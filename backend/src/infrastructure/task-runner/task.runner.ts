@@ -1,0 +1,123 @@
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+import { join } from "node:path"
+import type { TaskStore } from "../../modules/task/task.repository.js"
+import type { TaskEvent } from "../realtime-gateway/realtime.gateway.js"
+import { logger } from "../../config/logger.js"
+
+const runFile = promisify(execFile)
+
+export interface EventSink {
+  broadcast(event: TaskEvent): void
+}
+
+export interface CloneRunner {
+  enqueueClone(taskId: number, projectId: number, cloneUrl: string, folder: string): Promise<CloneResult>
+}
+
+export interface CloneResult {
+  status: string
+  exitCode: number | null
+  logTrail: string | null
+}
+
+interface CloneJob {
+  taskId: number
+  projectId: number
+  cloneUrl: string
+  targetDir: string
+  done: (result: CloneResult) => void
+}
+
+export class TaskRunner implements CloneRunner {
+  private log = logger.withTag("task-runner")
+  private queue: CloneJob[] = []
+  private running = false
+
+  constructor(
+    private tasks: TaskStore,
+    private gateway: EventSink,
+    private workspaceDir: string
+  ) {}
+
+  async enqueueClone(taskId: number, projectId: number, cloneUrl: string, folder: string): Promise<CloneResult> {
+    const joined = new Promise<CloneResult>((done) => {
+      this.queue.push({ taskId, projectId, cloneUrl, targetDir: join(this.workspaceDir, folder), done })
+    })
+    this.log.info(`Task ${taskId} queued`)
+    await this.announce(taskId)
+    void this.drain()
+    return joined
+  }
+
+  private async announce(taskId: number): Promise<void> {
+    const task = await this.tasks.findById(taskId)
+
+    if (task === null) {
+      return
+    }
+
+    this.gateway.broadcast({
+      type: "task.updated",
+      task: {
+        id: task.id,
+        projectId: task.projectId,
+        description: task.description,
+        status: task.status,
+        exitCode: task.exitCode,
+      },
+    })
+  }
+
+  private async drain(): Promise<void> {
+    if (this.running) {
+      return
+    }
+    this.running = true
+
+    while (this.queue.length > 0) {
+      const job = this.queue.shift() as CloneJob
+      await this.runClone(job)
+    }
+
+    this.running = false
+  }
+
+  private async runClone(job: CloneJob): Promise<void> {
+    await this.update(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", ["clone", job.cloneUrl, job.targetDir])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.update(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.update(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    }
+  }
+
+  private async update(
+    job: CloneJob,
+    status: string,
+    exitCode: number | null,
+    logTrail: string | null
+  ): Promise<void> {
+    const task = await this.tasks.update(job.taskId, { status, exitCode, logTrail })
+
+    this.log.info(`Task ${task.id} is now ${task.status}`)
+
+    this.gateway.broadcast({
+      type: "task.updated",
+      task: {
+        id: task.id,
+        projectId: task.projectId,
+        description: task.description,
+        status: task.status,
+        exitCode: task.exitCode,
+      },
+    })
+  }
+}

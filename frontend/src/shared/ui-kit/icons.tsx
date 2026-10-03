@@ -1,0 +1,73 @@
+interface IconProps {
+  size?: number
+}
+
+function baseProps(size: number) {
+  return {
+    width: size,
+    height: size,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  } as const
+}
+
+export function ShieldIcon({ size = 16 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M8 1.5 13 3.5v4c0 3.5-2.5 5.8-5 7-2.5-1.2-5-3.5-5-7v-4L8 1.5Z" />
+      <path d="m5.8 7.8 1.6 1.6 2.8-3" />
+    </svg>
+  )
+}
+
+export function GridIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <rect x="1.5" y="1.5" width="5" height="5" rx="1" />
+      <rect x="9.5" y="1.5" width="5" height="5" rx="1" />
+      <rect x="1.5" y="9.5" width="5" height="5" rx="1" />
+      <rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+    </svg>
+  )
+}
+
+export function SlidersIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M2 5h12M2 11h12" />
+      <circle cx="6" cy="5" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="11" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function CloneIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M8 2v8m0 0 3-3m-3 3L5 7" />
+      <path d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="m5.2 8.2 2 2 3.6-4" />
+    </svg>
+  )
+}
+
+export function CrossIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="m6 6 4 4m0-4-4 4" />
+    </svg>
+  )
+}

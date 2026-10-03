@@ -25,6 +25,7 @@ model Project {
 
   selectedVersion ProjectVersion?  @relation("ProjectSelectedVersion", fields: [selectedVersionId], references: [id])
   versions        ProjectVersion[] @relation("ProjectVersions")
+  tasks           Task[]
 
   @@map("project")
 }
@@ -122,4 +123,17 @@ model AgentSettings {
   agentExecutions AgentExecution[]
 
   @@map("agent_settings")
+}
+
+model Task {
+  id          Int    @id @default(autoincrement())
+  projectId   Int    @map("project_id")
+  description String?
+  status      String
+  exitCode    Int?   @map("exit_code")
+  logTrail    String? @map("log_trail")
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("task")
 }

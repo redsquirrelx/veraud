@@ -1,0 +1,32 @@
+.home-heading {
+  margin-bottom: 1rem;
+}
+
+.home-heading h1 {
+  margin: 0 0 0.25rem;
+}
+
+.home-heading p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  max-width: 640px;
+}
+
+.dock {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 360px;
+  max-width: calc(100vw - 3rem);
+}
+
+.dock .ui-toast,
+.dock .task-menu {
+  width: 320px;
+  max-width: 100%;
+}

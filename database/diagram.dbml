@@ -19,8 +19,8 @@ Table project_version {
   id int [pk, not null]
   project_id int [not null]
 
-  branch varchar
-  commit_hash varchar
+  branch varchar [not null]
+  commit_hash varchar [not null]
 
   analysis_status varchar [not null]
   analyzed_at datetime
@@ -39,6 +39,14 @@ Table evaluation {
   created_at datetime [not null]
   started_at datetime
   finished_at datetime
+}
+
+Table task {
+  id int [pk, not null]
+  project_id int [not null]
+  status varchar [not null]
+  exit_code int
+  log_trail varchar
 }
 
 Table agent_execution {
@@ -101,3 +109,5 @@ Ref: "evaluation"."id" <? "agent_execution"."evaluation_id"
 Ref: "agent_execution"."agent_type" ?> "agent_settings"."agent_type"
 
 Ref: "project"."selected_version_id" -? "project_version"."id"
+
+Ref: "project"."id" <? "task"."project_id"
