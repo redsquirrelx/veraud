@@ -1,0 +1,100 @@
+.task-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 320px;
+  animation: menu-in 0.25s ease-out;
+}
+
+.task-menu-closing {
+  animation: menu-out 0.2s ease-in forwards;
+}
+
+@keyframes menu-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+@keyframes menu-out {
+  to {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+.task-menu-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.task-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #334155;
+}
+
+.task-menu-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.task-menu-close:hover {
+  color: #0f172a;
+}
+
+.task-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  animation: menu-list-in 0.2s ease-out;
+}
+
+@keyframes menu-list-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.task-row .mono {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row .label {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.task-icon-done {
+  display: inline-flex;
+  color: #059669;
+}
+
+.task-icon-failed {
+  display: inline-flex;
+  color: #be123c;
+}
