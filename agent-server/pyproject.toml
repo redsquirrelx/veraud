@@ -14,6 +14,7 @@ dependencies = [
     "langchain-openai>=1.6.6",
     "langgraph>=1.2.12",
     "pydantic>=2.13.5",
+    "sentence-transformers>=6.1.0",
 ]
 
 [project.scripts]
