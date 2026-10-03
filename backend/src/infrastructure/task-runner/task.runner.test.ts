@@ -1,6 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync } from "node:fs"
+import { execSync } from "node:child_process"
+import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { FastifyBaseLogger } from "fastify"
@@ -25,6 +26,7 @@ const stored: StoredTask = {
 describe("TaskRunner.enqueueClone", () => {
   it("announces the queued task before running it", async () => {
     const events: TaskEvent[] = []
+    const projectStatuses: Array<{ id: number; status: string }> = []
     const store: TaskStore = {
       create: async () => stored,
       update: async (_id, data) => ({ ...stored, ...data }),
@@ -32,11 +34,51 @@ describe("TaskRunner.enqueueClone", () => {
       findById: async () => stored,
       findActive: async () => [],
     }
-    const runner = new TaskRunner(store, { broadcast: (event) => { events.push(event) } }, mkdtempSync(join(tmpdir(), "veraud-runner-")))
+    const projects = {
+      setStatus: async (id: number, status: string) => {
+        projectStatuses.push({ id, status })
+      },
+    }
+    const runner = new TaskRunner(
+      store,
+      projects,
+      { broadcast: (event) => { events.push(event) } },
+      mkdtempSync(join(tmpdir(), "veraud-runner-"))
+    )
 
     const result = await runner.enqueueClone(1, 2, "not-a-repo", "folder")
 
     assert.equal(result.status, "Failed")
     assert.deepEqual(events.map((event) => event.task.status), ["Queued", "Running", "Failed"])
+    assert.deepEqual(projectStatuses, [{ id: 2, status: "SYNCING" }])
+  })
+
+  it("marks the project READY on success", async () => {
+    const projectStatuses: Array<{ id: number; status: string }> = []
+    const store: TaskStore = {
+      create: async () => stored,
+      update: async (_id, data) => ({ ...stored, ...data }),
+      delete: async () => {},
+      findById: async () => stored,
+      findActive: async () => [],
+    }
+    const projects = {
+      setStatus: async (id: number, status: string) => {
+        projectStatuses.push({ id, status })
+      },
+    }
+    const workspace = mkdtempSync(join(tmpdir(), "veraud-runner-"))
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+
+    const source = join(mkdtempSync(join(tmpdir(), "veraud-src-")), "repo")
+    execSync(`git init -q "${source}"`)
+    writeFileSync(join(source, "file.txt"), "hello")
+    execSync(`git -C "${source}" add .`)
+    execSync(`git -C "${source}" -c user.email=t@t -c user.name=t commit -qm init`)
+
+    const result = await runner.enqueueClone(1, 2, source, "clone")
+
+    assert.equal(result.status, "Succeded")
+    assert.deepEqual(projectStatuses, [{ id: 2, status: "SYNCING" }, { id: 2, status: "READY" }])
   })
 })

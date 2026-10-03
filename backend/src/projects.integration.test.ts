@@ -47,6 +47,7 @@ describe("projects API with mocked github", () => {
     const { app, db } = await buildApp({
       databaseUrl: freshDatabase(),
       workspaceDir: mkdtempSync(join(tmpdir(), "veraud-ws-")),
+      silent: true,
       makeRunner: () => noopRunner,
     })
 
@@ -135,7 +136,7 @@ describe("projects API with the real github api", () => {
     restoreFetch()
 
     const workspaceDir = mkdtempSync(join(tmpdir(), "veraud-ws-"))
-    const { app, db } = await buildApp({ databaseUrl: freshDatabase(), workspaceDir })
+    const { app, db } = await buildApp({ databaseUrl: freshDatabase(), workspaceDir, silent: true })
 
     await app.listen({ port: 0, host: "127.0.0.1" })
 

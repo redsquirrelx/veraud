@@ -21,12 +21,14 @@ import { registerTaskRoutes } from "./modules/task/task.controller.js"
 export interface BuildAppOptions {
   databaseUrl: string
   workspaceDir: string
-  makeRunner?: (tasks: TaskRepository, gateway: RealtimeGateway) => CloneRunner
+  silent?: boolean
+  agentServerUrl?: string
+  makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => CloneRunner
 }
 
 export async function buildApp(options: BuildAppOptions) {
   const stream = pretty({ colorize: true, translateTime: "HH:MM:ss", ignore: "pid,hostname" })
-  const app = Fastify({ logger: { level: "info", stream } })
+  const app = Fastify({ logger: options.silent === true ? false : { level: "info", stream } })
   logger.configure(app.log)
 
   const db = new PrismaClient({
@@ -40,8 +42,8 @@ export async function buildApp(options: BuildAppOptions) {
   const projectRepository = new ProjectRepository(db)
   const taskRepository = new TaskRepository(db)
   const runner = options.makeRunner
-    ? options.makeRunner(taskRepository, gateway)
-    : new TaskRunner(taskRepository, gateway, options.workspaceDir)
+    ? options.makeRunner(taskRepository, projectRepository, gateway)
+    : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const projectService = new ProjectService(projectRepository, taskRepository, github, runner)
   const taskService = new TaskService(taskRepository)
 
@@ -55,8 +57,20 @@ export async function buildApp(options: BuildAppOptions) {
   registerTaskRoutes(app, taskService)
 
   app.get("/status", { logLevel: "silent" }, async () => {
-    return { status: "ok", service: "backend" }
+    return { status: "ok", service: "backend", agentServer: await checkAgentServer(options.agentServerUrl) }
   })
 
   return { app, db }
+}
+
+async function checkAgentServer(url: string | undefined): Promise<string> {
+  if (url === undefined) {
+    return "unknown"
+  }
+  try {
+    const response = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) })
+    return response.ok ? "online" : "offline"
+  } catch {
+    return "offline"
+  }
 }
