@@ -1,0 +1,22 @@
+.ui-spinner {
+  display: inline-block;
+  border: 2px solid;
+  border-radius: 9999px;
+  animation: ui-spin 0.7s linear infinite;
+}
+
+.ui-spinner-dark {
+  border-color: rgba(0, 97, 148, 0.25);
+  border-top-color: #006194;
+}
+
+.ui-spinner-light {
+  border-color: rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

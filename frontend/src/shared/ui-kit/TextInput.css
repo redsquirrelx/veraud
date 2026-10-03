@@ -1,0 +1,24 @@
+.ui-input {
+  height: 36px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.25rem;
+  outline: none;
+}
+
+.ui-input::placeholder {
+  color: #94a3b8;
+}
+
+.ui-input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7;
+}
+
+.ui-input:disabled {
+  background: #f1f5f9;
+  cursor: not-allowed;
+}

@@ -1,0 +1,27 @@
+.ui-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 15px;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.08s ease;
+}
+
+.ui-refresh-button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.ui-refresh-button:hover:not(:disabled) {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.ui-refresh-button:disabled {
+  cursor: not-allowed;
+}
