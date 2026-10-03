@@ -2,51 +2,101 @@
   {
     "requirement_id": "REQ-001",
     "requirement": "El sistema debe registrar un proyecto mediante una URL de repositorio de GitHub.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.service.ts",
+        "code": "async registerProject(repositoryUrl: string) {\n  const parsed = parseGithubUrl(repositoryUrl)\n\n  if (parsed === null) {\n    throw new InvalidUrlError(\"URL must look like https://github.com/{owner}/{repo}\")\n  }\n\n  let metadata\n  try {\n    metadata = await this.github.checkAccess(parsed.owner, parsed.repo)\n  } catch (error) {\n    if (error instanceof RepoNotAccessibleError) {\n      throw error\n    }\n    throw new RepoNotAccessibleError(`Could not reach repository ${parsed.owner}/${parsed.repo}`)\n  }\n\n  const existing = await this.projects.findByGithubId(BigInt(metadata.id))\n\n  if (existing !== null) {\n    throw new DuplicateProjectError(`Repository ${metadata.owner}/${metadata.name} is already registered`)\n  }\n\n  const project = await this.projects.create({\n    githubRepositoryId: BigInt(metadata.id),\n    repositoryOwner: metadata.owner,\n    repositoryName: metadata.name,\n    status: \"QUEUED\",\n  })\n\n  const task = await this.tasks.create({\n    projectId: project.id,\n    description: `cloning ${metadata.owner}/${metadata.name}`,\n    status: \"Queued\",\n  })\n\n  const result = await this.runner.enqueueClone(\n    task.id,\n    project.id,\n    metadata.cloneUrl,\n    `${metadata.id}-${metadata.owner}-${metadata.name}`\n  )\n\n  if (result.status !== \"Succeded\") {\n    await this.tasks.delete(task.id)\n    await this.projects.delete(project.id)\n    throw new RepoNotAccessibleError(`Repository ${metadata.owner}/${metadata.name} could not be cloned`)\n  }\n\n  return project\n}"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-002",
     "requirement": "El sistema debe validar que la URL del repositorio tenga el formato permitido de GitHub.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/infrastructure/github-client/github.client.ts",
+        "code": "export function parseGithubUrl(url: string): { owner: string; repo: string } | null {\n  const cleaned = url.trim().replace(/\\/+$/, \"\").replace(/\\.git$/, \"\")\n\n  let parsed: URL\n  \n  try {\n    parsed = new URL(cleaned)\n  } catch {\n    return null\n  }\n\n  if (parsed.hostname !== \"github.com\" && parsed.hostname !== \"www.github.com\") {\n    return null\n  }\n\n  const parts = parsed.pathname.split(\"/\").filter((part) => part.length > 0)\n\n  if (parts.length !== 2) {\n    return null\n  }\n\n  const owner = parts[0] ?? \"\"\n  const repo = parts[1] ?? \"\"\n\n  if (owner === \"\" || repo === \"\") {\n    return null\n  }\n\n  return { owner, repo }\n}"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-003",
     "requirement": "El sistema debe consultar los metadatos del repositorio de GitHub antes de registrarlo.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/infrastructure/github-client/github.client.ts",
+        "code": "async checkAccess(owner: string, repo: string): Promise<RepoMetadata> {\n  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {\n    headers: {\n      Accept: \"application/vnd.github+json\",\n      \"User-Agent\": \"veraud-backend\",\n    },\n  })\n\n  if (!response.ok) {\n    throw new RepoNotAccessibleError(\n      `Repository ${owner}/${repo} is not accessible (GitHub returned ${response.status})`\n    )\n  }\n\n  const data = (await response.json()) as { id: number; name: string; clone_url: string }\n\n  return { id: data.id, owner, name: data.name, cloneUrl: data.clone_url }\n}"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-004",
     "requirement": "El sistema debe rechazar el registro de un repositorio que ya se encuentre registrado.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.service.ts",
+        "code": "const existing = await this.projects.findByGithubId(BigInt(metadata.id))\n\nif (existing !== null) {\n  throw new DuplicateProjectError(`Repository ${metadata.owner}/${metadata.name} is already registered`)\n}"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-005",
     "requirement": "El sistema debe guardar el proyecto con estado QUEUED después de un registro válido.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.service.ts",
+        "code": "const project = await this.projects.create({\n  githubRepositoryId: BigInt(metadata.id),\n  repositoryOwner: metadata.owner,\n  repositoryName: metadata.name,\n  status: \"QUEUED\",\n})"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-006",
     "requirement": "El sistema debe crear una tarea asociada al proyecto durante el registro.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.service.ts",
+        "code": "const task = await this.tasks.create({\n  projectId: project.id,\n  description: `cloning ${metadata.owner}/${metadata.name}`,\n  status: \"Queued\",\n})"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-007",
     "requirement": "El sistema debe clonar el repositorio en el workspace correspondiente al proyecto.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/infrastructure/task-runner/task.runner.ts",
+        "code": "const { stdout, stderr } = await runFile(\"git\", [\"clone\", job.cloneUrl, job.targetDir])\nconst result = { status: \"Succeded\", exitCode: 0, logTrail: `${stdout}\\n${stderr}`.slice(-4000) }"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-008",
     "requirement": "El sistema debe devolver una respuesta 201 cuando el registro y clonación sean exitosos.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.controller.ts",
+        "code": "const project = await service.registerProject(body.repositoryUrl)\nreturn reply.code(201).send({\n  id: project.id,\n  repositoryOwner: project.repositoryOwner,\n  repositoryName: project.repositoryName,\n  status: project.status,\n})"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-009",
     "requirement": "El sistema debe revertir el proyecto y la tarea cuando la clonación falle.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/project/project.service.ts",
+        "code": "if (result.status !== \"Succeded\") {\n  await this.tasks.delete(task.id)\n  await this.projects.delete(project.id)\n  throw new RepoNotAccessibleError(`Repository ${metadata.owner}/${metadata.name} could not be cloned`)\n}"
+      }
+    ]
   },
   {
     "requirement_id": "REQ-010",
     "requirement": "El sistema debe permitir consultar las tareas activas mediante GET /api/tasks/active.",
-    "candidates": []
+    "candidates": [
+      {
+        "file": "backend/src/modules/task/task.controller.ts",
+        "code": "app.get(\"/api/tasks/active\", async () => {\n  const tasks = await service.listActive()\n\n  return tasks.map((task) => ({\n    id: task.id,\n    projectId: task.projectId,\n    repositoryOwner: task.repositoryOwner,\n    repositoryName: task.repositoryName,\n    description: task.description,\n    status: task.status,\n    exitCode: task.exitCode,\n  }))\n})"
+      }
+    ]
   }
 ]
