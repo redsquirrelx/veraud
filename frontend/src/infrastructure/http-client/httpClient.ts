@@ -30,6 +30,26 @@ export interface ActiveTask {
   exitCode: number | null
 }
 
+export interface ProjectSummary {
+  id: number
+  repositoryOwner: string
+  repositoryName: string
+  status: string
+  registeredAt: string
+  branch: string | null
+  commitHash: string | null
+}
+
+export async function listProjects(): Promise<ProjectSummary[]> {
+  const response = await fetch(`${baseUrl}/api/projects`)
+
+  if (!response.ok) {
+    throw new ApiError(response.status, "Could not load projects")
+  }
+
+  return (await response.json()) as ProjectSummary[]
+}
+
 export async function listActiveTasks(): Promise<ActiveTask[]> {
   const response = await fetch(`${baseUrl}/api/tasks/active`)
 
