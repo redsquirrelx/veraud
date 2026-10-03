@@ -1,16 +1,52 @@
 [
   {
     "requirement_id": "REQ-001",
-    "requirement": "El sistema debe validar el formato del correo electrónico.",
-    "candidates": [
-      {
-        "code": "",
-        "correcto": true
-      },
-      {
-        "code": "",
-        "correcto": false
-      }
-    ]
+    "requirement": "El sistema debe registrar un proyecto mediante una URL de repositorio de GitHub.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-002",
+    "requirement": "El sistema debe validar que la URL del repositorio tenga el formato permitido de GitHub.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-003",
+    "requirement": "El sistema debe consultar los metadatos del repositorio de GitHub antes de registrarlo.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-004",
+    "requirement": "El sistema debe rechazar el registro de un repositorio que ya se encuentre registrado.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-005",
+    "requirement": "El sistema debe guardar el proyecto con estado QUEUED después de un registro válido.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-006",
+    "requirement": "El sistema debe crear una tarea asociada al proyecto durante el registro.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-007",
+    "requirement": "El sistema debe clonar el repositorio en el workspace correspondiente al proyecto.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-008",
+    "requirement": "El sistema debe devolver una respuesta 201 cuando el registro y clonación sean exitosos.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-009",
+    "requirement": "El sistema debe revertir el proyecto y la tarea cuando la clonación falle.",
+    "candidates": []
+  },
+  {
+    "requirement_id": "REQ-010",
+    "requirement": "El sistema debe permitir consultar las tareas activas mediante GET /api/tasks/active.",
+    "candidates": []
   }
 ]
