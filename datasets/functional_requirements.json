@@ -1,0 +1,16 @@
+[
+  {
+    "requirement_id": "REQ-001",
+    "requirement": "El sistema debe validar el formato del correo electrónico.",
+    "candidates": [
+      {
+        "code": "",
+        "correcto": true
+      },
+      {
+        "code": "",
+        "correcto": false
+      }
+    ]
+  }
+]
