@@ -78,25 +78,34 @@
   font-size: 12px;
 }
 
-.app-nav a,
-.app-nav-disabled {
+.app-nav a {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   padding: 4px 10px;
   border-radius: 0.25rem;
   color: #334155;
+  font-weight: 500;
   text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.app-nav a:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.app-nav a:active {
+  transform: scale(0.96);
 }
 
 .app-nav a.app-nav-active {
   background: #f2f3ff;
   color: #006194;
-  font-weight: 500;
 }
 
-.app-nav-disabled {
-  opacity: 0.55;
+.app-nav a.app-nav-active:hover {
+  color: #006194;
 }
 
 .app-main {
