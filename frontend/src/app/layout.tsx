@@ -48,10 +48,10 @@ export function AppLayout() {
             <GridIcon />
             Home
           </NavLink>
-          <span className="app-nav-disabled">
+          <NavLink to="/settings" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
             <SlidersIcon />
             General settings
-          </span>
+          </NavLink>
         </nav>
       </header>
       <main className="app-main">
