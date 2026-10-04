@@ -77,6 +77,7 @@ export class TaskRunner implements TaskQueue {
         projectId: task.projectId,
         description: task.description,
         status: task.status,
+        kind: task.kind,
         exitCode: task.exitCode,
       },
     })
@@ -143,6 +144,7 @@ export class TaskRunner implements TaskQueue {
         projectId: task.projectId,
         description: task.description,
         status: task.status,
+        kind: task.kind,
         exitCode: task.exitCode,
       },
     })
@@ -173,6 +175,7 @@ export class TaskRunner implements TaskQueue {
         projectId: task.projectId,
         description: task.description,
         status: task.status,
+        kind: task.kind,
         exitCode: task.exitCode,
       },
     })

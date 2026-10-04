@@ -3,17 +3,21 @@ import { join } from "node:path"
 export type GitCommand =
   | { kind: "clone", cloneUrl: string, folder: string }
   | { kind: "pull", folder: string }
+  | { kind: "fetch", folder: string }
   | { kind: "list-branches", folder: string }
   | { kind: "rev-parse", folder: string, branch: string }
   | { kind: "checkout-detach", folder: string, commitHash: string }
+  | { kind: "checkout-branch", folder: string, branch: string }
   | { kind: "log-commits", folder: string, branch: string, limit: number, offset: number }
 
 const GIT_KINDS: ReadonlySet<string> = new Set([
   "clone",
   "pull",
+  "fetch",
   "list-branches",
   "rev-parse",
   "checkout-detach",
+  "checkout-branch",
   "log-commits",
 ])
 
@@ -30,8 +34,12 @@ export function gitArgv(command: GitCommand, targetDir: string): string[] {
     return ["-C", targetDir, "pull"]
   }
 
+  if (command.kind === "fetch") {
+    return ["-C", targetDir, "fetch"]
+  }
+
   if (command.kind === "list-branches") {
-    return ["-C", targetDir, "branch"]
+    return ["-C", targetDir, "branch", "-a"]
   }
 
   if (command.kind === "rev-parse") {
@@ -40,6 +48,10 @@ export function gitArgv(command: GitCommand, targetDir: string): string[] {
 
   if (command.kind === "checkout-detach") {
     return ["-C", targetDir, "checkout", "--force", "--detach", command.commitHash]
+  }
+
+  if (command.kind === "checkout-branch") {
+    return ["-C", targetDir, "checkout", "--force", command.branch]
   }
 
   return [
@@ -59,6 +71,10 @@ export function touchesProjectStatus(command: GitCommand): boolean {
   }
 
   if (command.kind === "pull") {
+    return true
+  }
+
+  if (command.kind === "fetch") {
     return true
   }
 

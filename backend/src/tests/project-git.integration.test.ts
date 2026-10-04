@@ -52,6 +52,10 @@ describe("project git API", () => {
     execSync(`git -C "${source}" commit -qm first`)
     writeFileSync(join(source, "file.txt"), "two")
     execSync(`git -C "${source}" commit -qam second`)
+    execSync(`git -C "${source}" checkout -qb feature`)
+    writeFileSync(join(source, "file.txt"), "three")
+    execSync(`git -C "${source}" commit -qam third`)
+    execSync(`git -C "${source}" checkout -q main`)
     execSync(`git clone -q "${source}" "${join(workspaceDir, "778-acme-GitDemo")}"`)
     mainHash = execSync(`git -C "${join(workspaceDir, "778-acme-GitDemo")}" rev-parse HEAD`).toString().trim()
 
@@ -70,13 +74,16 @@ describe("project git API", () => {
     await close()
   })
 
-  it("lists branches via a task", async () => {
+  it("lists remote-only branches too", async () => {
     const response = await fetch(`${baseUrl}/api/projects/1/git/branches`, { method: "POST" })
 
     assert.equal(response.status, 200)
-    const body = (await response.json()) as { branches: string[], taskId: number }
+    const body = (await response.json()) as { branches: string[], currentBranch: string | null, detachedHash: string | null, taskId: number }
 
     assert.ok(body.branches.includes("main"))
+    assert.ok(body.branches.includes("feature"))
+    assert.equal(body.currentBranch, "main")
+    assert.equal(body.detachedHash, null)
     assert.equal(typeof body.taskId, "number")
   })
 
@@ -121,6 +128,50 @@ describe("project git API", () => {
     const body = (await response.json()) as { commitHash: string, taskId: number }
 
     assert.equal(body.commitHash, mainHash)
+  })
+
+  it("re-attaches HEAD by checking out a branch", async () => {
+    const detached = await fetch(`${baseUrl}/api/projects/1/git/checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commitHash: mainHash }),
+    })
+    assert.equal(detached.status, 200)
+
+    const whileDetached = await fetch(`${baseUrl}/api/projects/1/git/branches`, { method: "POST" })
+    const detachedState = (await whileDetached.json()) as { branches: string[], currentBranch: string | null, detachedHash: string | null }
+
+    assert.equal(detachedState.currentBranch, null)
+    assert.ok(detachedState.detachedHash !== null && mainHash.startsWith(detachedState.detachedHash))
+    assert.ok(detachedState.branches.includes("main"))
+
+    const response = await fetch(`${baseUrl}/api/projects/1/git/checkout-branch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branch: "feature" }),
+    })
+
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { branch: string, taskId: number }
+
+    assert.equal(body.branch, "feature")
+
+    const listed = await fetch(`${baseUrl}/api/projects/1/git/branches`, { method: "POST" })
+    const state = (await listed.json()) as { currentBranch: string | null, detachedHash: string | null }
+
+    assert.equal(state.currentBranch, "feature")
+    assert.equal(state.detachedHash, null)
+
+    const log = await fetch(`${baseUrl}/api/projects/1/git/log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branch: "feature", limit: 1 }),
+    })
+
+    assert.equal(log.status, 200)
+    const commits = (await log.json()) as { commits: Array<{ commitHash: string, subject: string }> }
+
+    assert.equal(commits.commits[0]?.subject, "third")
   })
 
   it("rejects invalid branches with 400 without creating side effects", async () => {

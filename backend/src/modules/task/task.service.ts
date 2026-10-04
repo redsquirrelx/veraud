@@ -17,6 +17,7 @@ export class TaskService {
       projectId,
       description,
       status: "Queued",
+      kind: command.kind,
     })
 
     const result = await this.runner.enqueue({

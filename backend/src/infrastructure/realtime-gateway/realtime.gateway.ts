@@ -9,6 +9,7 @@ export interface TaskEvent {
     projectId: number
     description: string | null
     status: string
+    kind: string
     exitCode: number | null
   }
 }

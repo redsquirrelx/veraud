@@ -55,7 +55,7 @@ function makeService(options: {
         create: async (data: NewTask): Promise<StoredTask> => {
           taskId += 1
           created.push(data)
-          return { id: taskId, projectId: data.projectId, repositoryOwner: "octocat", repositoryName: "Hello-World", description: data.description, status: data.status, exitCode: null }
+          return { id: taskId, projectId: data.projectId, repositoryOwner: "octocat", repositoryName: "Hello-World", description: data.description, status: data.status, kind: data.kind, exitCode: null }
         },
         update: async () => { throw new Error("not used") },
         delete: async () => { throw new Error("must not delete tasks") },
@@ -77,17 +77,32 @@ function makeService(options: {
 }
 
 describe("ProjectService git commands", () => {
-  it("lists branches parsing the star marker", async () => {
+  it("lists branches parsing local and remote names once", async () => {
     const { service, enqueued } = makeService({
       withWorkspace: true,
-      result: { status: "Succeded", exitCode: 0, logTrail: "* main\n  feature\n" },
+      result: { status: "Succeded", exitCode: 0, logTrail: "* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/feature\n" },
     })
 
     const result = await service.listBranches(7)
 
     assert.deepEqual(result.branches, ["main", "feature"])
+    assert.equal(result.currentBranch, "main")
+    assert.equal(result.detachedHash, null)
     assert.equal(result.taskId, 1)
     assert.deepEqual(enqueued, [{ taskId: 1, projectId: 7, command: { kind: "list-branches", folder: "1296269-octocat-Hello-World" } }])
+  })
+
+  it("reports a detached HEAD with its hash", async () => {
+    const { service } = makeService({
+      withWorkspace: true,
+      result: { status: "Succeded", exitCode: 0, logTrail: "* (HEAD detached at abc1234)\n  main\n  remotes/origin/feature\n" },
+    })
+
+    const result = await service.listBranches(7)
+
+    assert.deepEqual(result.branches, ["main", "feature"])
+    assert.equal(result.currentBranch, null)
+    assert.equal(result.detachedHash, "abc1234")
   })
 
   it("resolves a branch hash trimming newlines", async () => {
@@ -129,6 +144,15 @@ describe("ProjectService git commands", () => {
     const result = await service.checkoutCommit(7, hash)
 
     assert.equal(result.commitHash, hash.toLowerCase())
+  })
+
+  it("checks out a branch attaching HEAD", async () => {
+    const { service, enqueued } = makeService({ withWorkspace: true })
+
+    const result = await service.checkoutBranch(7, "feature")
+
+    assert.deepEqual(result, { branch: "feature", taskId: 1 })
+    assert.deepEqual(enqueued, [{ taskId: 1, projectId: 7, command: { kind: "checkout-branch", folder: "1296269-octocat-Hello-World", branch: "feature" } }])
   })
 
   it("rejects invalid branches without creating tasks", async () => {

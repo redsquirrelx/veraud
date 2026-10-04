@@ -12,6 +12,7 @@ export function registerTaskRoutes(app: FastifyInstance, service: TaskService): 
       repositoryName: task.repositoryName,
       description: task.description,
       status: task.status,
+      kind: task.kind,
       exitCode: task.exitCode,
     }))
   })

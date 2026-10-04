@@ -28,6 +28,7 @@ const storedTask: StoredTask = {
   repositoryName: "Hello-World",
   description: "cloning octocat/Hello-World",
   status: "Queued",
+  kind: "clone",
   exitCode: null,
 }
 
@@ -127,6 +128,7 @@ describe("ProjectService.registerProject", () => {
       projectId: 7,
       description: "cloning octocat/Hello-World",
       status: "Queued",
+      kind: "clone",
     }])
     assert.deepEqual(calls.deletedProjects, [])
     assert.deepEqual(calls.deletedTasks, [])
@@ -215,7 +217,8 @@ describe("ProjectService.syncProject", () => {
   it("pulls when the workspace already has files", async () => {
     const { service, calls, workspaceDir } = makeFakes({ details })
     const folder = join(workspaceDir, "1296269-octocat-Hello-World")
-    mkdirSync(folder, { recursive: true })
+    mkdirSync(join(folder, ".git"), { recursive: true })
+    writeFileSync(join(folder, ".git", "HEAD"), "ref: refs/heads/main\n")
     writeFileSync(join(folder, "file.txt"), "hello")
 
     const synced = await service.syncProject(7)
@@ -223,6 +226,20 @@ describe("ProjectService.syncProject", () => {
     assert.equal(synced.id, 7)
     assert.deepEqual(calls.commands, [{ kind: "pull", folder: "1296269-octocat-Hello-World" }])
     assert.deepEqual(calls.deletedProjects, [])
+  })
+
+  it("fetches without moving HEAD when detached", async () => {
+    const { service, calls, tasks, workspaceDir } = makeFakes({ details })
+    const folder = join(workspaceDir, "1296269-octocat-Hello-World")
+    mkdirSync(join(folder, ".git"), { recursive: true })
+    writeFileSync(join(folder, ".git", "HEAD"), `${"a".repeat(40)}\n`)
+    writeFileSync(join(folder, "file.txt"), "hello")
+
+    const synced = await service.syncProject(7)
+
+    assert.equal(synced.id, 7)
+    assert.deepEqual(calls.commands, [{ kind: "fetch", folder: "1296269-octocat-Hello-World" }])
+    assert.deepEqual(tasks.created.map((created) => created.description), ["fetching octocat/Hello-World"])
   })
 
   it("clones when the workspace is empty", async () => {

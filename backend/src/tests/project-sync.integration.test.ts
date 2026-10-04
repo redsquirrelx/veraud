@@ -94,4 +94,19 @@ describe("project sync API", () => {
 
     assert.equal(response.status, 400)
   })
+
+  it("fetches a detached checkout keeping HEAD in place", async () => {
+    const dir = join(workspaceDir, "777-acme-Demo")
+    const pinned = execSync(`git -C "${dir}" rev-parse HEAD`).toString().trim()
+    execSync(`git -C "${dir}" checkout -q --detach "${pinned}"`)
+
+    const response = await fetch(`${baseUrl}/api/projects/1/sync`, { method: "POST" })
+
+    assert.equal(response.status, 200)
+    const project = (await response.json()) as { status: string, lastSyncedAt: string | null }
+
+    assert.equal(project.status, "READY")
+    assert.equal(typeof project.lastSyncedAt, "string")
+    assert.equal(execSync(`git -C "${dir}" rev-parse HEAD`).toString().trim(), pinned)
+  })
 })

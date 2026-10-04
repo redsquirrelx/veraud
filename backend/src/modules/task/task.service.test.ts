@@ -13,6 +13,7 @@ describe("TaskService.listActive", () => {
       repositoryName: "Hello-World",
       description: "cloning octocat/Hello-World",
       status: "Running",
+      kind: "clone",
       exitCode: null,
     }]
     const store: TaskStore = {
@@ -38,7 +39,7 @@ describe("TaskService.launch", () => {
     const store: TaskStore = {
       create: async (data: NewTask): Promise<StoredTask> => {
         created.push(data)
-        return { id: 4, projectId: data.projectId, repositoryOwner: "acme", repositoryName: "Demo", description: data.description, status: data.status, exitCode: null }
+        return { id: 4, projectId: data.projectId, repositoryOwner: "acme", repositoryName: "Demo", description: data.description, status: data.status, kind: data.kind, exitCode: null }
       },
       update: async () => { throw new Error("not used here") },
       delete: async () => { throw new Error("not used here") },
@@ -55,7 +56,7 @@ describe("TaskService.launch", () => {
 
     const { task, result } = await service.launch(2, "listing branches acme/Demo", { kind: "list-branches", folder: "folder" })
 
-    assert.deepEqual(created, [{ projectId: 2, description: "listing branches acme/Demo", status: "Queued" }])
+    assert.deepEqual(created, [{ projectId: 2, description: "listing branches acme/Demo", status: "Queued", kind: "list-branches" }])
     assert.deepEqual(enqueued, [{ taskId: 4, projectId: 2, command: { kind: "list-branches", folder: "folder" } }])
     assert.equal(task.id, 4)
     assert.equal(result.status, "Succeded")

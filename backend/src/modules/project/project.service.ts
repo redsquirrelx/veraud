@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
@@ -91,16 +91,23 @@ export class ProjectService {
     const hasFiles = existsSync(targetDir) && readdirSync(targetDir).length > 0
     const previousStatus = project.status
 
-    const description = hasFiles
-      ? `pulling ${project.repositoryOwner}/${project.repositoryName}`
-      : `cloning ${project.repositoryOwner}/${project.repositoryName}`
-    const command: TaskCommand = hasFiles
-      ? { kind: "pull", folder }
-      : {
-          kind: "clone",
-          cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
-          folder,
-        }
+    let description: string
+    let command: TaskCommand
+
+    if (!hasFiles) {
+      description = `cloning ${project.repositoryOwner}/${project.repositoryName}`
+      command = {
+        kind: "clone",
+        cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
+        folder,
+      }
+    } else if (isDetachedHead(targetDir)) {
+      description = `fetching ${project.repositoryOwner}/${project.repositoryName}`
+      command = { kind: "fetch", folder }
+    } else {
+      description = `pulling ${project.repositoryOwner}/${project.repositoryName}`
+      command = { kind: "pull", folder }
+    }
 
     const { task, result } = await this.tasks.launch(project.id, description, command)
 
@@ -119,7 +126,7 @@ export class ProjectService {
     return updated
   }
 
-  async listBranches(id: number): Promise<{ branches: string[], taskId: number }> {
+  async listBranches(id: number): Promise<{ branches: string[], currentBranch: string | null, detachedHash: string | null, taskId: number }> {
     const project = await this.projects.findById(id)
 
     if (project === null) {
@@ -137,7 +144,8 @@ export class ProjectService {
       throw new GitOperationError(`Could not list branches for ${project.repositoryOwner}/${project.repositoryName}`)
     }
 
-    return { branches: parseBranches(result.logTrail ?? ""), taskId: task.id }
+    const parsed = parseBranchList(result.logTrail ?? "")
+    return { branches: parsed.branches, currentBranch: parsed.currentBranch, detachedHash: parsed.detachedHash, taskId: task.id }
   }
 
   async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
@@ -207,6 +215,29 @@ export class ProjectService {
     }
   }
 
+  async checkoutBranch(id: number, branch: string): Promise<{ branch: string, taskId: number }> {
+    const cleanBranch = assertValidBranch(branch)
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const { task, result } = await this.tasks.launch(project.id, `checking out branch ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "checkout-branch",
+      folder,
+      branch: cleanBranch,
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Branch ${cleanBranch} could not be checked out`)
+    }
+
+    return { branch: cleanBranch, taskId: task.id }
+  }
+
   async checkoutCommit(id: number, commitHash: string): Promise<{ commitHash: string, taskId: number }> {
     const cleanHash = assertValidHash(commitHash)
     const project = await this.projects.findById(id)
@@ -242,8 +273,16 @@ export class ProjectService {
   }
 }
 
-function assertValidBranch(branch: string): string {
-  const trimmed = branch.trim()
+function isDetachedHead(targetDir: string): boolean {
+  try {
+    const head = readFileSync(join(targetDir, ".git", "HEAD"), "utf8").trim()
+    return head.startsWith("ref: ") === false
+  } catch {
+    return false
+  }
+}
+
+function assertValidBranch(branch: string): string {  const trimmed = branch.trim()
 
   if (trimmed.length === 0 || trimmed.length > 255 || BRANCH_PATTERN.test(trimmed) === false) {
     throw new InvalidGitRequestError("Branch must use letters, numbers, dot, underscore, slash or dash")
@@ -294,8 +333,10 @@ function assertValidOffset(offset?: number): number {
   return offset
 }
 
-function parseBranches(output: string): string[] {
+function parseBranchList(output: string): { branches: string[], currentBranch: string | null, detachedHash: string | null } {
   const branches: string[] = []
+  let currentBranch: string | null = null
+  let detachedHash: string | null = null
 
   for (const line of output.split("\n")) {
     const trimmed = line.trim()
@@ -304,15 +345,41 @@ function parseBranches(output: string): string[] {
       continue
     }
 
-    const withoutMarker = trimmed.startsWith("* ") ? trimmed.slice(2) : trimmed
-    const name = withoutMarker.trim()
+    const isCurrent = trimmed.startsWith("* ")
+    const withoutMarker = isCurrent ? trimmed.slice(2) : trimmed
 
-    if (name.length > 0) {
-      branches.push(name)
+    if (withoutMarker.includes("->")) {
+      continue
+    }
+
+    const detached = withoutMarker.match(/^\((HEAD detached|no branch)(?:, .*?)? (?:at|from) ([0-9a-fA-F]+)\)$/)
+
+    if (detached !== null) {
+      if (isCurrent) {
+        detachedHash = (detached[2] as string).toLowerCase()
+      }
+      continue
+    }
+
+    if (withoutMarker.startsWith("(")) {
+      continue
+    }
+
+    const remote = withoutMarker.match(/^remotes\/[^/]+\/(.+)$/)
+    const name = (remote?.[1] ?? withoutMarker).trim()
+
+    if (name.length === 0 || branches.includes(name)) {
+      continue
+    }
+
+    branches.push(name)
+
+    if (isCurrent && remote === null) {
+      currentBranch = name
     }
   }
 
-  return branches
+  return { branches, currentBranch, detachedHash }
 }
 
 function parseCommits(output: string): GitCommit[] {

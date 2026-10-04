@@ -20,6 +20,7 @@ function makeStore() {
     repositoryName: "Demo",
     description: "git task",
     status: "Queued",
+    kind: "list-branches",
     exitCode: null,
   }
   const statuses: Array<{ id: number, status: string }> = []
@@ -59,7 +60,6 @@ function makeRepo(): { workspace: string, folder: string, mainHash: string, feat
   execSync(`git clone -q "${source}" "${join(workspace, folder)}"`)
   const mainHash = execSync(`git -C "${join(workspace, folder)}" rev-parse main`).toString().trim()
   const featureHash = execSync(`git -C "${source}" rev-parse feature`).toString().trim()
-  execSync(`git -C "${join(workspace, folder)}" fetch -q origin feature:feature`)
   return { workspace, folder, mainHash, featureHash }
 }
 
@@ -113,6 +113,22 @@ describe("TaskRunner git commands", () => {
 
     assert.equal(result.status, "Succeded")
     assert.equal(execSync(`git -C "${join(workspace, folder)}" rev-parse HEAD`).toString().trim(), mainHash)
+    assert.deepEqual(statuses, [])
+    assert.deepEqual(synced, [])
+  })
+
+  it("re-attaches a detached HEAD by checking out a branch", async () => {
+    const { workspace, folder, mainHash } = makeRepo()
+    const { store, projects, statuses, synced } = makeStore()
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+
+    const detached = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "checkout-detach", folder, commitHash: mainHash } })
+    assert.equal(detached.status, "Succeded")
+
+    const attached = await runner.enqueue({ taskId: 2, projectId: 2, command: { kind: "checkout-branch", folder, branch: "feature" } })
+
+    assert.equal(attached.status, "Succeded")
+    assert.equal(execSync(`git -C "${join(workspace, folder)}" symbolic-ref --short HEAD`).toString().trim(), "feature")
     assert.deepEqual(statuses, [])
     assert.deepEqual(synced, [])
   })

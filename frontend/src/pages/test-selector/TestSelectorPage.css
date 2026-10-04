@@ -1,0 +1,13 @@
+.test-selector-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.0rem;
+}
+
+.test-selector-page .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}

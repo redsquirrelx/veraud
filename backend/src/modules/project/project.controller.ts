@@ -179,6 +179,29 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
     }
   })
+
+  app.post("/api/projects/:id/git/checkout-branch", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch"],
+        properties: {
+          branch: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string }
+
+    try {
+      const result = await service.checkoutBranch(Number(params.id), body.branch)
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
 }
 
 function gitErrorCode(error: unknown): number {
