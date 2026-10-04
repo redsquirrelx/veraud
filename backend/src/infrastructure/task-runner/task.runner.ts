@@ -16,25 +16,31 @@ export interface ProjectStatusWriter {
   markSynced(id: number, at: Date): Promise<void>
 }
 
-export interface CloneRunner {
-  enqueueClone(taskId: number, projectId: number, cloneUrl: string, folder: string): Promise<CloneResult>
+export type GitCommand =
+  | { kind: "clone", cloneUrl: string, folder: string }
+
+export interface QueuedTask {
+  taskId: number
+  projectId: number
+  command: GitCommand
 }
 
-export interface CloneResult {
+export interface TaskResult {
   status: string
   exitCode: number | null
   logTrail: string | null
 }
 
-interface CloneJob {
-  taskId: number
-  projectId: number
-  cloneUrl: string
-  targetDir: string
-  done: (result: CloneResult) => void
+export interface TaskQueue {
+  enqueue(task: QueuedTask): Promise<TaskResult>
 }
 
-export class TaskRunner implements CloneRunner {
+interface CloneJob extends QueuedTask {
+  targetDir: string
+  done: (result: TaskResult) => void
+}
+
+export class TaskRunner implements TaskQueue {
   private log = logger.withTag("task-runner")
   private queue: CloneJob[] = []
   private running = false
@@ -46,12 +52,12 @@ export class TaskRunner implements CloneRunner {
     private workspaceDir: string
   ) {}
 
-  async enqueueClone(taskId: number, projectId: number, cloneUrl: string, folder: string): Promise<CloneResult> {
-    const joined = new Promise<CloneResult>((done) => {
-      this.queue.push({ taskId, projectId, cloneUrl, targetDir: join(this.workspaceDir, folder), done })
+  async enqueue(task: QueuedTask): Promise<TaskResult> {
+    const joined = new Promise<TaskResult>((done) => {
+      this.queue.push({ ...task, targetDir: join(this.workspaceDir, task.command.folder), done })
     })
-    this.log.info(`Task ${taskId} queued`)
-    await this.announce(taskId)
+    this.log.info(`Task ${task.taskId} queued`)
+    await this.announce(task.taskId)
     void this.drain()
     return joined
   }
@@ -83,17 +89,23 @@ export class TaskRunner implements CloneRunner {
 
     while (this.queue.length > 0) {
       const job = this.queue.shift() as CloneJob
-      await this.runClone(job)
+      await this.runJob(job)
     }
 
     this.running = false
   }
 
-  private async runClone(job: CloneJob): Promise<void> {
+  private async runJob(job: CloneJob): Promise<void> {
+    if (job.command.kind === "clone") {
+      await this.runClone(job, job.command.cloneUrl)
+    }
+  }
+
+  private async runClone(job: CloneJob, cloneUrl: string): Promise<void> {
     await this.update(job, "Running", null, null)
 
     try {
-      const { stdout, stderr } = await runFile("git", ["clone", job.cloneUrl, job.targetDir])
+      const { stdout, stderr } = await runFile("git", ["clone", cloneUrl, job.targetDir])
       const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
       await this.update(job, result.status, result.exitCode, result.logTrail)
       job.done(result)

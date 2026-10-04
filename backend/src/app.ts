@@ -10,7 +10,7 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 
 import { GithubClient } from "./infrastructure/github-client/github.client.js"
 import { RealtimeGateway } from "./infrastructure/realtime-gateway/realtime.gateway.js"
-import { TaskRunner, type CloneRunner } from "./infrastructure/task-runner/task.runner.js"
+import { TaskRunner, type TaskQueue } from "./infrastructure/task-runner/task.runner.js"
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
@@ -23,7 +23,7 @@ export interface BuildAppOptions {
   workspaceDir: string
   silent?: boolean
   agentServerUrl?: string
-  makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => CloneRunner
+  makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => TaskQueue
 }
 
 export async function buildApp(options: BuildAppOptions) {

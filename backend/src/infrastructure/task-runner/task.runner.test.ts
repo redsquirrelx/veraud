@@ -23,7 +23,7 @@ const stored: StoredTask = {
   exitCode: null,
 }
 
-describe("TaskRunner.enqueueClone", () => {
+describe("TaskRunner.enqueue", () => {
   it("announces the queued task before running it", async () => {
     const events: TaskEvent[] = []
     const projectStatuses: Array<{ id: number; status: string }> = []
@@ -50,7 +50,7 @@ describe("TaskRunner.enqueueClone", () => {
       mkdtempSync(join(tmpdir(), "veraud-runner-"))
     )
 
-    const result = await runner.enqueueClone(1, 2, "not-a-repo", "folder")
+    const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "clone", cloneUrl: "not-a-repo", folder: "folder" } })
 
     assert.equal(result.status, "Failed")
     assert.deepEqual(events.map((event) => event.task.status), ["Queued", "Running", "Failed"])
@@ -85,7 +85,7 @@ describe("TaskRunner.enqueueClone", () => {
     execSync(`git -C "${source}" add .`)
     execSync(`git -C "${source}" -c user.email=t@t -c user.name=t commit -qm init`)
 
-    const result = await runner.enqueueClone(1, 2, source, "clone")
+    const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "clone", cloneUrl: source, folder: "clone" } })
 
     assert.equal(result.status, "Succeded")
     assert.deepEqual(projectStatuses, [{ id: 2, status: "SYNCING" }, { id: 2, status: "READY" }])
