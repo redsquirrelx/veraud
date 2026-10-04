@@ -40,7 +40,7 @@ export function ProjectDetailPage() {
 
   return (
     <section className="project-page">
-      <Sidebar title="Project" items={sectionItems} activeId={section} onSelect={setSection} />
+      <Sidebar title="Project" items={sectionItems} activeId={section} storageKey="sidebar.expanded" onSelect={setSection} />
       <div className="project-content">
         {loading ? (
           <p className="label">Loading project</p>

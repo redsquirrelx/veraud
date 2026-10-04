@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { ChevronLeftIcon, ChevronRightIcon } from "./icons.tsx"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./Sidebar.css"
 
 export interface SidebarItem {
@@ -13,11 +14,22 @@ interface SidebarProps {
   items: SidebarItem[]
   activeId?: string
   defaultExpanded?: boolean
+  storageKey?: string
   onSelect?: (id: string) => void
 }
 
-export function Sidebar({ title, items, activeId, defaultExpanded = true, onSelect }: SidebarProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded)
+export function Sidebar({ title, items, activeId, defaultExpanded = true, storageKey, onSelect }: SidebarProps) {
+  const [expanded, setExpanded] = useState(() =>
+    storageKey === undefined ? defaultExpanded : localStorage.get(storageKey, defaultExpanded)
+  )
+
+  function toggle() {
+    const next = !expanded
+    setExpanded(next)
+    if (storageKey !== undefined) {
+      localStorage.set(storageKey, next)
+    }
+  }
 
   return (
     <aside className={expanded ? "ui-sidebar" : "ui-sidebar ui-sidebar-collapsed"} aria-label={title}>
@@ -28,7 +40,7 @@ export function Sidebar({ title, items, activeId, defaultExpanded = true, onSele
           className="ui-sidebar-toggle"
           aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => toggle()}
         >
           {expanded ? <ChevronLeftIcon /> : <ChevronRightIcon />}
         </button>

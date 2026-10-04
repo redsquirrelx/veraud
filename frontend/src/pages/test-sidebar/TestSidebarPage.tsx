@@ -13,7 +13,7 @@ export function TestSidebarPage() {
 
   return (
     <section className="test-sidebar-page">
-      <Sidebar title="Workspace" items={menuItems} activeId={active} onSelect={setActive} />
+      <Sidebar title="Workspace" items={menuItems} activeId={active} storageKey="sidebar.expanded" onSelect={setActive} />
       <div className="test-sidebar-content">
         <h1>Sidebar playground</h1>
         <Card>

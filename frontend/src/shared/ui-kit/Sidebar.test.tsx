@@ -36,4 +36,18 @@ describe("Sidebar", () => {
 
     expect(onSelect).toHaveBeenCalledWith("settings")
   })
+
+  it("persists the collapsed state through storage", async () => {
+    window.localStorage.clear()
+    const { unmount } = render(<Sidebar title="Menu" items={items} storageKey="sidebar.test" />)
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    unmount()
+
+    render(<Sidebar title="Menu" items={items} storageKey="sidebar.test" />)
+
+    expect(screen.queryByText("Home")).toBeNull()
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeDefined()
+    window.localStorage.clear()
+  })
 })
