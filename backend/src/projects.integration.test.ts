@@ -36,7 +36,7 @@ function freshDatabase(): string {
 }
 
 const noopRunner = {
-  enqueueClone: async () => ({ status: "Succeded", exitCode: 0, logTrail: "" }),
+  enqueue: async () => ({ status: "Succeded", exitCode: 0, logTrail: "" }),
 }
 
 describe("projects API with mocked github", () => {

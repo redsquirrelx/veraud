@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { GithubClient, RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
-import type { CloneResult, CloneRunner } from "../../infrastructure/task-runner/task.runner.js"
+import type { QueuedTask, TaskQueue, TaskResult, GitCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type {
   NewProject,
   ProjectStore,
@@ -27,9 +27,9 @@ const storedTask: StoredTask = {
 function makeFakes(options: {
   existing?: StoredProject | null
   githubId?: number
-  clone?: CloneResult
+  clone?: TaskResult
 } = {}) {
-  const calls = { enqueued: 0, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number> }
+  const calls = { enqueued: 0, commands: [] as Array<GitCommand>, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number> }
 
   const projects: ProjectStore & { created: Array<NewProject> } = {
     created: [],
@@ -78,9 +78,10 @@ function makeFakes(options: {
     cloneUrl: "https://github.com/octocat/Hello-World.git",
   })
 
-  const runner: CloneRunner = {
-    async enqueueClone(): Promise<CloneResult> {
+  const runner: TaskQueue = {
+    async enqueue(task: QueuedTask): Promise<TaskResult> {
       calls.enqueued += 1
+      calls.commands.push(task.command)
       return options.clone ?? { status: "Succeded", exitCode: 0, logTrail: "" }
     },
   }
@@ -103,6 +104,11 @@ describe("ProjectService.registerProject", () => {
       status: "QUEUED",
     }])
     assert.equal(calls.enqueued, 1)
+    assert.deepEqual(calls.commands, [{
+      kind: "clone",
+      cloneUrl: "https://github.com/octocat/Hello-World.git",
+      folder: "1296269-octocat-Hello-World",
+    }])
     assert.deepEqual(tasks.created, [{
       projectId: 7,
       description: "cloning octocat/Hello-World",
@@ -165,7 +171,7 @@ describe("ProjectService.registerProject", () => {
         findActive: async () => [],
       },
       failing,
-      { enqueueClone: async () => { throw new Error("must not enqueue") } }
+      { enqueue: async () => { throw new Error("must not enqueue") } }
     )
 
     await assert.rejects(

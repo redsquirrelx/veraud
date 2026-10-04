@@ -11,7 +11,7 @@ import { buildApp } from "../app.js"
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 
 const noopRunner = {
-  enqueueClone: async () => ({ status: "Succeded", exitCode: 0, logTrail: "" }),
+  enqueue: async () => ({ status: "Succeded", exitCode: 0, logTrail: "" }),
 }
 
 function freshDatabase(): string {

@@ -1,6 +1,6 @@
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import type { TaskStore } from "../task/task.repository.js"
-import type { CloneRunner } from "../../infrastructure/task-runner/task.runner.js"
+import type { TaskQueue } from "../../infrastructure/task-runner/task.runner.js"
 import type { ProjectStore } from "./project.repository.js"
 
 export class InvalidUrlError extends Error {}
@@ -11,7 +11,7 @@ export class ProjectService {
     private projects: ProjectStore,
     private tasks: TaskStore,
     private github: GithubClient,
-    private runner: CloneRunner
+    private runner: TaskQueue
   ) {}
 
   async registerProject(repositoryUrl: string) {
@@ -49,12 +49,15 @@ export class ProjectService {
       description: `cloning ${metadata.owner}/${metadata.name}`,
       status: "Queued",
     })
-    const result = await this.runner.enqueueClone(
-      task.id,
-      project.id,
-      metadata.cloneUrl,
-      `${metadata.id}-${metadata.owner}-${metadata.name}`
-    )
+    const result = await this.runner.enqueue({
+      taskId: task.id,
+      projectId: project.id,
+      command: {
+        kind: "clone",
+        cloneUrl: metadata.cloneUrl,
+        folder: `${metadata.id}-${metadata.owner}-${metadata.name}`,
+      },
+    })
 
     if (result.status !== "Succeded") {
       await this.tasks.delete(task.id)
