@@ -151,3 +151,11 @@ export function ArrowDownIcon({ size = 14 }: IconProps) {
     </svg>
   )
 }
+
+export function ArrowRightIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M2.5 8h11m0 0-3.5-3.5M13.5 8 10 11.5" />
+    </svg>
+  )
+}
