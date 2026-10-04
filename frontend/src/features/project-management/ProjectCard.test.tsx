@@ -10,6 +10,7 @@ const base: ProjectSummary = {
   repositoryName: "Demo",
   status: "READY",
   registeredAt: "2026-01-01",
+  lastSyncedAt: "2026-01-02",
   branch: null,
   commitHash: null,
 }

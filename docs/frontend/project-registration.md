@@ -47,7 +47,7 @@ Response `201`: `id`, `repositoryOwner`, `repositoryName`, `status`.
 Errors: `400` bad URL, `409` duplicate, `422` not accessible/clone failed.
 Live: `GET /api/tasks/active` + WS `/ws` (`task.updated`).
 List: `GET /api/projects` → full array (`id`, `owner`, `name`, `status`,
-`registeredAt`, `branch`/`commitHash` nullable); search, status filter
+`registeredAt`, `lastSyncedAt` (null until first sync), `branch`/`commitHash` nullable); search, status filter
 (All/QUEUED/READY/SYNCING), sort (Title/Date + direction toggle),
 pagination (10 per page, resets on filter change) and empty state
 ("No projects yet") run client-side. Inspect navigates to `/projects/:id`

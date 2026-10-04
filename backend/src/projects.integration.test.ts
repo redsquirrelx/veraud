@@ -182,6 +182,9 @@ describe("projects API with the real github api", () => {
       assert.ok(finished, "expected a finished task row")
       assert.equal(finished?.description, "cloning octocat/Hello-World")
       assert.ok((finished?.logTrail ?? "").length > 0, "expected the clone log to be saved")
+
+      const synced = await db.project.findFirst({ where: { repositoryName: "Hello-World" } })
+      assert.ok(synced?.lastSyncedAt instanceof Date, "expected lastSyncedAt to be saved")
     } finally {
       socket.close()
       await app.close()

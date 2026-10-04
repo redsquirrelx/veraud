@@ -57,6 +57,11 @@ export function ProjectDetailPage() {
                   <span className="project-date">
                     Registered {new Date(project.registeredAt).toLocaleDateString()}
                   </span>
+                  <span className="project-date">
+                    {project.lastSyncedAt === null
+                      ? "Never synced"
+                      : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
+                  </span>
                   <Badge tone={statusTone(project.status)}>{project.status}</Badge>
                 </div>
                 <Button>Sync</Button>

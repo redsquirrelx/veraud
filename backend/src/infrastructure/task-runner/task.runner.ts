@@ -13,6 +13,7 @@ export interface EventSink {
 
 export interface ProjectStatusWriter {
   setStatus(id: number, status: string): Promise<void>
+  markSynced(id: number, at: Date): Promise<void>
 }
 
 export interface CloneRunner {
@@ -119,6 +120,7 @@ export class TaskRunner implements CloneRunner {
     }
     if (status === "Succeded") {
       await this.projects.setStatus(job.projectId, "READY")
+      await this.projects.markSynced(job.projectId, new Date())
     }
 
     this.gateway.broadcast({

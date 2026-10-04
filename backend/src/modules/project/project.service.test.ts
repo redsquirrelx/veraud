@@ -44,6 +44,7 @@ function makeFakes(options: {
       calls.deletedProjects.push(id)
     },
     async setStatus(): Promise<void> {},
+    async markSynced(): Promise<void> {},
     async list() {
       return []
     },
@@ -153,6 +154,7 @@ describe("ProjectService.registerProject", () => {
         findByGithubId: async () => null,
         delete: async () => { throw new Error("must not delete") },
         setStatus: async () => { throw new Error("must not set status") },
+        markSynced: async () => { throw new Error("must not mark synced") },
         list: async () => [],
       },
       {

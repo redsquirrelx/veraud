@@ -84,6 +84,7 @@ describe("project listing API", () => {
       repositoryName: string
       status: string
       registeredAt: string
+      lastSyncedAt: string | null
       branch: string | null
       commitHash: string | null
     }>
@@ -93,6 +94,7 @@ describe("project listing API", () => {
     assert.equal(projects[0]?.branch, "main")
     assert.equal(projects[0]?.commitHash, "abc123")
     assert.equal(typeof projects[0]?.registeredAt, "string")
+    assert.equal(projects[0]?.lastSyncedAt, null)
     assert.equal(projects[1]?.repositoryName, "Other")
     assert.equal(projects[1]?.branch, null)
     assert.equal(projects[1]?.commitHash, null)

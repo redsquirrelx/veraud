@@ -11,6 +11,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       repositoryName: project.repositoryName,
       status: project.status,
       registeredAt: project.registeredAt,
+      lastSyncedAt: project.lastSyncedAt,
       branch: project.branch,
       commitHash: project.commitHash,
     }))
