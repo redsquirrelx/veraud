@@ -10,7 +10,7 @@ afterEach(() => {
 })
 
 const rows = [
-  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", status: "READY", registeredAt: "2026-01-01", branch: null, commitHash: null },
+  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
 ]
 
 function stubProjects() {
@@ -37,6 +37,7 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText("acme/Demo")).toBeDefined()
     expect(screen.getByText("READY")).toBeDefined()
     expect(screen.getByText("Project")).toBeDefined()
+    expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
   })
 

@@ -36,6 +36,7 @@ export interface ProjectSummary {
   repositoryName: string
   status: string
   registeredAt: string
+  lastSyncedAt: string | null
   branch: string | null
   commitHash: string | null
 }

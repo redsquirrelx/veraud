@@ -20,6 +20,7 @@ export interface StoredProjectDetails {
   repositoryName: string
   status: string
   registeredAt: Date
+  lastSyncedAt: Date | null
   branch: string | null
   commitHash: string | null
 }
@@ -29,6 +30,7 @@ export interface ProjectStore {
   findByGithubId(githubRepositoryId: bigint): Promise<StoredProject | null>
   delete(id: number): Promise<void>
   setStatus(id: number, status: string): Promise<void>
+  markSynced(id: number, at: Date): Promise<void>
   list(): Promise<StoredProjectDetails[]>
 }
 
@@ -68,6 +70,10 @@ export class ProjectRepository implements ProjectStore {
     await this.db.project.update({ where: { id }, data: { status } })
   }
 
+  async markSynced(id: number, at: Date): Promise<void> {
+    await this.db.project.update({ where: { id }, data: { lastSyncedAt: at } })
+  }
+
   async list(): Promise<StoredProjectDetails[]> {
     const projects = await this.db.project.findMany({
       orderBy: { id: "asc" },
@@ -79,6 +85,7 @@ export class ProjectRepository implements ProjectStore {
       repositoryName: project.repositoryName,
       status: project.status,
       registeredAt: project.createdAt,
+      lastSyncedAt: project.lastSyncedAt,
       branch: project.selectedVersion?.branch ?? null,
       commitHash: project.selectedVersion?.commitHash ?? null,
     }))
