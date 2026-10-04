@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { HomePage } from "./HomePage.tsx"
+import { ToastProvider } from "../../app/toasts.tsx"
+import { Dock } from "../../app/dock.tsx"
 
 const realFetch = globalThis.fetch
 const realWebSocket = globalThis.WebSocket
@@ -36,7 +38,10 @@ function stubProjects(response: (isPost: boolean) => Response) {
 function renderHome() {
   render(
     <MemoryRouter>
-      <HomePage />
+      <ToastProvider>
+        <HomePage />
+        <Dock />
+      </ToastProvider>
     </MemoryRouter>
   )
 }

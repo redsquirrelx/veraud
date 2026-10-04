@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
-import { Badge, Button, Card, FolderIcon, Sidebar, Toast } from "../../shared/ui-kit/index.ts"
+import { Badge, Button, Card, FolderIcon, Sidebar } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
-import { TaskMenu } from "../../features/project-management/TaskMenu.tsx"
-import { useTasks } from "../../features/project-management/useTasks.ts"
+import { useToasts } from "../../app/use-toasts.ts"
 import { listProjects, syncProject, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
 
@@ -20,24 +19,22 @@ export function ProjectDetailPage() {
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [notice, setNotice] = useState<{ kind: "success" | "error", message: string } | null>(null)
-  const tasks = useTasks()
+  const { pushToast } = useToasts()
 
   async function handleSync() {
     if (project === null || syncing) {
       return
     }
     setSyncing(true)
-    setNotice(null)
     try {
       const updated = await syncProject(project.id)
       setProject(updated)
-      setNotice({ kind: "success", message: `Project ${updated.repositoryOwner}/${updated.repositoryName} synced` })
+      pushToast("success", `Project ${updated.repositoryOwner}/${updated.repositoryName} synced`)
     } catch (error) {
       if (error instanceof ApiError) {
-        setNotice({ kind: "error", message: error.message })
+        pushToast("error", error.message)
       } else {
-        setNotice({ kind: "error", message: "Could not sync the project" })
+        pushToast("error", "Could not sync the project")
       }
     } finally {
       setSyncing(false)
@@ -100,12 +97,6 @@ export function ProjectDetailPage() {
               <p className="label">{section} coming in the next HU</p>
             )}
           </>
-        )}
-      </div>
-      <div className="dock">
-        <TaskMenu tasks={tasks} />
-        {notice !== null && (
-          <Toast kind={notice.kind} message={notice.message} onClose={() => setNotice(null)} />
         )}
       </div>
     </section>

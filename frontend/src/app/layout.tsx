@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom"
 import { GridIcon, ShieldIcon, SlidersIcon } from "../shared/ui-kit/index.ts"
+import { Dock } from "./dock.tsx"
+import { ToastProvider } from "./toasts.tsx"
 import { useBackendStatus, type ServiceStatus } from "./useBackendStatus.ts"
 import "./layout.css"
 
@@ -32,8 +34,9 @@ export function AppLayout() {
   const { backend, agent } = useBackendStatus()
 
   return (
-    <div className="app">
-      <header className="app-header">
+    <ToastProvider>
+      <div className="app">
+        <header className="app-header">
         <NavLink to="/" className="app-brand">
           <ShieldIcon size={18} />
           Veraud
@@ -54,6 +57,8 @@ export function AppLayout() {
       <main className="app-main">
         <Outlet />
       </main>
+      <Dock />
     </div>
+    </ToastProvider>
   )
 }
