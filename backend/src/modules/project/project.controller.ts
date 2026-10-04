@@ -1,6 +1,14 @@
 import type { FastifyInstance } from "fastify"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
-import { DuplicateProjectError, InvalidUrlError, ProjectNotFoundError, ProjectService, SyncFailedError } from "./project.service.js"
+import { DuplicateProjectError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
+
+const idParams = {
+  type: "object",
+  required: ["id"],
+  properties: {
+    id: { type: "string", pattern: "^[0-9]+$" },
+  },
+} as const
 
 export function registerProjectRoutes(app: FastifyInstance, service: ProjectService): void {
   app.get("/api/projects", async () => {
@@ -87,4 +95,131 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       throw error
     }
   })
+
+  app.post("/api/projects/:id/git/branches", {
+    schema: { params: idParams },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+
+    try {
+      const result = await service.listBranches(Number(params.id))
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
+  app.post("/api/projects/:id/git/rev-parse", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch"],
+        properties: {
+          branch: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string }
+
+    try {
+      const result = await service.resolveBranchHash(Number(params.id), body.branch)
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
+  app.post("/api/projects/:id/git/log", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch"],
+        properties: {
+          branch: { type: "string" },
+          limit: { type: "integer" },
+          offset: { type: "integer" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string, limit?: number, offset?: number }
+
+    try {
+      const result = await service.listCommits(Number(params.id), body.branch, body.limit, body.offset)
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
+  app.post("/api/projects/:id/git/checkout", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["commitHash"],
+        properties: {
+          commitHash: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { commitHash: string }
+
+    try {
+      const result = await service.checkoutCommit(Number(params.id), body.commitHash)
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
+  app.post("/api/projects/:id/git/checkout-branch", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch"],
+        properties: {
+          branch: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string }
+
+    try {
+      const result = await service.checkoutBranch(Number(params.id), body.branch)
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+}
+
+function gitErrorCode(error: unknown): number {
+  if (error instanceof ProjectNotFoundError) {
+    return 404
+  }
+
+  if (error instanceof InvalidGitRequestError) {
+    return 400
+  }
+
+  return 422
+}
+
+function gitErrorMessage(error: unknown): string {
+  if (error instanceof ProjectNotFoundError || error instanceof InvalidGitRequestError || error instanceof WorkspaceMissingError || error instanceof GitOperationError) {
+    return error.message
+  }
+
+  throw error
 }

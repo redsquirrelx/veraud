@@ -4,6 +4,7 @@ export interface NewTask {
   projectId: number
   description: string
   status: string
+  kind: string
 }
 
 export interface TaskUpdate {
@@ -19,6 +20,7 @@ export interface StoredTask {
   repositoryName: string
   description: string | null
   status: string
+  kind: string
   exitCode: number | null
 }
 
@@ -71,6 +73,7 @@ export class TaskRepository implements TaskStore {
     projectId: number
     description: string | null
     status: string
+    kind: string
     exitCode: number | null
     project: { repositoryOwner: string; repositoryName: string }
   }): StoredTask {
@@ -81,6 +84,7 @@ export class TaskRepository implements TaskStore {
       repositoryName: task.project.repositoryName,
       description: task.description,
       status: task.status,
+      kind: task.kind,
       exitCode: task.exitCode,
     }
   }

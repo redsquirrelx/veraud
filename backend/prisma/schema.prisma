@@ -130,6 +130,7 @@ model Task {
   projectId   Int    @map("project_id")
   description String?
   status      String
+  kind        String @default("unknown")
   exitCode    Int?   @map("exit_code")
   logTrail    String? @map("log_trail")
 

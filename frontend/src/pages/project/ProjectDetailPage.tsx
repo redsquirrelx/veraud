@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Card, FolderIcon, Sidebar } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
+import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
+import { VersionSelector } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
 import { listProjects, syncProject, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
@@ -20,6 +22,11 @@ export function ProjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const { pushToast } = useToasts()
+  const version = useVersionSelector(project?.id ?? null, {
+    onApplied: (applied) => {
+      pushToast("success", `Version ${applied.branch} at ${applied.commitHash.slice(0, 7)} applied`)
+    },
+  })
 
   async function handleSync() {
     if (project === null || syncing) {
@@ -30,6 +37,7 @@ export function ProjectDetailPage() {
       const updated = await syncProject(project.id)
       setProject(updated)
       pushToast("success", `Project ${updated.repositoryOwner}/${updated.repositoryName} synced`)
+      await version.refresh()
     } catch (error) {
       if (error instanceof ApiError) {
         pushToast("error", error.message)
@@ -72,6 +80,9 @@ export function ProjectDetailPage() {
           <p>Project not found</p>
         ) : (
           <>
+            <Card>
+              <VersionSelector selection={version} />
+            </Card>
             <Card>
               <div className="project-header">
                 <div className="project-header-info">

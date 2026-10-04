@@ -1,0 +1,58 @@
+.version-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.version-selector .label {
+  font-size: 10px;
+}
+
+.version-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.version-row .ui-item-selector {
+  flex: 2 1 180px;
+  min-width: 0;
+}
+
+.version-row .ui-item-searcher {
+  flex: 3 1 240px;
+  min-width: 0;
+}
+
+.version-row .ui-button {
+  flex-shrink: 0;
+}
+
+.version-status {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.version-state-row {
+  min-height: 14px;
+  align-items: center;
+}
+
+.version-state {
+  font-size: 9px;
+}
+
+.version-selector .ui-item-button,
+.version-selector .ui-item-search-input,
+.version-selector .ui-item,
+.version-selector .ui-button {
+  font-size: 12px;
+}
+
+.version-error {
+  color: #b91c1c;
+  font-size: 12px;
+}

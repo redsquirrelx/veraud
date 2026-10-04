@@ -23,19 +23,48 @@ const rows = [
   { id: 2, repositoryOwner: "acme", repositoryName: "Demo", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
 ]
 
-function stubFetch(handler: (url: string) => Response) {
-  globalThis.fetch = (async (input: unknown) => {
-    return handler(String(input))
+const gitBranches = { branches: ["main"], currentBranch: "main", detachedHash: null, taskId: 1 }
+const gitCommits = {
+  branch: "main",
+  commits: [{ commitHash: "a".repeat(40), subject: "init" }],
+  limit: 30,
+  offset: 0,
+  taskId: 2,
+}
+
+function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    return handler(String(input), init)
   }) as typeof fetch
   globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 }
 
+function gitResponse(url: string, init?: RequestInit): Response | null {
+  if (url.includes("/git/branches")) {
+    return new Response(JSON.stringify(gitBranches), { status: 200 })
+  }
+  if (url.includes("/git/log")) {
+    return new Response(JSON.stringify(gitCommits), { status: 200 })
+  }
+  if (url.includes("/git/checkout-branch")) {
+    return new Response(JSON.stringify({ branch: "main", taskId: 5 }), { status: 200 })
+  }
+  if (url.includes("/git/checkout")) {
+    const body = init?.body === undefined ? {} : (JSON.parse(String(init.body)) as { commitHash?: string })
+    return new Response(JSON.stringify({ commitHash: body.commitHash ?? "a".repeat(40), taskId: 3 }), { status: 200 })
+  }
+  if (url.includes("/git/rev-parse")) {
+    return new Response(JSON.stringify({ branch: "main", commitHash: "a".repeat(40), taskId: 4 }), { status: 200 })
+  }
+  return null
+}
+
 function stubProjects() {
-  stubFetch((url) => {
+  stubFetch((url, init) => {
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
-    return new Response(JSON.stringify(rows), { status: 200 })
+    return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
   })
 }
 
@@ -72,7 +101,8 @@ describe("ProjectDetailPage", () => {
   })
 
   it("syncs on demand and refreshes the header", async () => {
-    stubFetch((url) => {
+    let branchCalls = 0
+    stubFetch((url, init) => {
       if (url.includes("/sync")) {
         return new Response(
           JSON.stringify({ ...rows[0], status: "READY", lastSyncedAt: "2026-02-02" }),
@@ -82,26 +112,31 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      return new Response(JSON.stringify(rows), { status: 200 })
+      if (url.includes("/git/branches")) {
+        branchCalls += 1
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
+    const callsBefore = branchCalls
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
     expect(await screen.findByText(`Last synced ${new Date("2026-02-02").toLocaleDateString()}`)).toBeDefined()
     expect(await screen.findByText("Project acme/Demo synced")).toBeDefined()
+    expect(branchCalls).toBeGreaterThan(callsBefore)
   })
 
   it("shows the sync error and re-enables the button", async () => {
-    stubFetch((url) => {
+    stubFetch((url, init) => {
       if (url.includes("/sync")) {
         return new Response(JSON.stringify({ message: "Could not sync" }), { status: 422 })
       }
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      return new Response(JSON.stringify(rows), { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail("/projects/2")
 
@@ -114,16 +149,32 @@ describe("ProjectDetailPage", () => {
   })
 
   it("shows running sync tasks in the menu", async () => {
-    stubFetch((url) => {
+    stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([
           { id: 5, projectId: 2, repositoryOwner: "acme", repositoryName: "Demo", description: "pulling acme/Demo", status: "Running", exitCode: null },
         ]), { status: 200 })
       }
-      return new Response(JSON.stringify(rows), { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail("/projects/2")
 
     expect(await screen.findByText("pulling acme/Demo")).toBeDefined()
+  })
+
+  it("applies the selected version from the selectors above the header", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    expect(await screen.findByText("Branch")).toBeDefined()
+    expect(screen.getByText("Commit")).toBeDefined()
+    expect(screen.getByLabelText("Search items")).toBeDefined()
+    expect(screen.queryByRole("button", { name: "Apply version" })).toBeNull()
+
+    await userEvent.clear(screen.getByLabelText("Search items"))
+    await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
+
+    expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
   })
 })

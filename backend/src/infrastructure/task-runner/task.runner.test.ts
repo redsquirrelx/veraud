@@ -20,6 +20,7 @@ const stored: StoredTask = {
   repositoryName: "Demo",
   description: "cloning acme/Demo",
   status: "Queued",
+  kind: "clone",
   exitCode: null,
 }
 
@@ -94,8 +95,7 @@ describe("TaskRunner.enqueue", () => {
     assert.ok(syncedAt[0]?.at instanceof Date)
   })
 
-  it("pulls an existing checkout keeping its branch", async () => {
-    const events: TaskEvent[] = []
+  it("pulls an existing checkout keeping its branch", async () => {    const events: TaskEvent[] = []
     const store: TaskStore = {
       create: async () => stored,
       update: async (id, data) => ({ ...stored, id, ...data }),
@@ -127,5 +127,43 @@ describe("TaskRunner.enqueue", () => {
     assert.equal(pulled.status, "Succeded")
     assert.equal(execSync(`git -C "${join(workspace, "clone")}" rev-parse --abbrev-ref HEAD`).toString().trim(), "main")
     assert.equal(events.filter((event) => event.task.id === 2).map((event) => event.task.status).join(","), "Queued,Running,Succeded")
+  })
+
+  it("fetches without moving a detached HEAD while marking sync", async () => {
+    const projectStatuses: Array<{ id: number; status: string }> = []
+    const syncedAt: Array<{ id: number }> = []
+    const store: TaskStore = {
+      create: async () => stored,
+      update: async (id, data) => ({ ...stored, id, ...data }),
+      delete: async () => {},
+      findById: async (id) => ({ ...stored, id }),
+      findActive: async () => [],
+    }
+    const projects = {
+      setStatus: async (id: number, status: string) => {
+        projectStatuses.push({ id, status })
+      },
+      markSynced: async (id: number) => {
+        syncedAt.push({ id })
+      },
+    }
+    const workspace = mkdtempSync(join(tmpdir(), "veraud-runner-"))
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+
+    const source = join(mkdtempSync(join(tmpdir(), "veraud-src-")), "repo")
+    execSync(`git init -q -b main "${source}"`)
+    writeFileSync(join(source, "file.txt"), "hello")
+    execSync(`git -C "${source}" add .`)
+    execSync(`git -C "${source}" -c user.email=t@t -c user.name=t commit -qm init`)
+    execSync(`git clone -q "${source}" "${join(workspace, "clone")}"`)
+    const pinned = execSync(`git -C "${join(workspace, "clone")}" rev-parse HEAD`).toString().trim()
+    execSync(`git -C "${join(workspace, "clone")}" checkout -q --detach "${pinned}"`)
+
+    const fetched = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "fetch", folder: "clone" } })
+
+    assert.equal(fetched.status, "Succeded")
+    assert.equal(execSync(`git -C "${join(workspace, "clone")}" rev-parse HEAD`).toString().trim(), pinned)
+    assert.deepEqual(projectStatuses, [{ id: 2, status: "SYNCING" }, { id: 2, status: "READY" }])
+    assert.deepEqual(syncedAt, [{ id: 2 }])
   })
 })

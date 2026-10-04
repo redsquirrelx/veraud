@@ -1,0 +1,33 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.0rem;
+}
+
+.settings-page .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.settings-hint {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.settings-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 100%;
+}
+
+.settings-task {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}

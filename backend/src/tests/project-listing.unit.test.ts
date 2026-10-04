@@ -38,7 +38,7 @@ function serviceWith(rows: StoredProjectDetails[]) {
     markSynced: async () => {},
     list: async () => rows,
   }
-  return new ProjectService(projects, null as never, new GithubClient(), null as never, "")
+  return new ProjectService(projects, null as never, new GithubClient(), "")
 }
 
 describe("project listing unit", () => {
