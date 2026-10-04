@@ -1,0 +1,33 @@
+.test-sidebar-page {
+  display: flex;
+  align-items: stretch;
+  background: #f2f3ff;
+  min-height: calc(100vh - 48px);
+}
+
+.test-sidebar-page .ui-sidebar {
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+}
+
+.test-sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+  padding: 1.5rem;
+}
+
+.test-sidebar-content h1 {
+  margin-top: 0;
+}
+
+.test-sidebar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}

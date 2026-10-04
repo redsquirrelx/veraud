@@ -4,7 +4,7 @@ export function ProjectDetailPage() {
   const { id } = useParams()
 
   return (
-    <section>
+    <section className="page">
       <h1>Project {id}</h1>
       <p>Details coming in the next HU.</p>
     </section>

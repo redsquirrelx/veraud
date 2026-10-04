@@ -15,7 +15,7 @@ export function HomePage() {
   const tasks = useTasks()
 
   return (
-    <section>
+    <section className="page">
       <div className="home-heading">
         <div>
           <h1>Projects and repositories</h1>
