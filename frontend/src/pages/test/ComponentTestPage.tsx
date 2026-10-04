@@ -29,7 +29,7 @@ export function ComponentTestPage() {
   const hanging = useAsyncAction(() => new Promise<void>(() => {}), { timeoutMs: 3000 })
 
   return (
-    <section>
+    <section className="page">
       <h1>Component playground</h1>
 
       <h2>Containers</h2>
