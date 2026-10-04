@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { ArrowRightIcon, Badge, Button, Card, FolderIcon } from "../../shared/ui-kit/index.ts"
+import { Badge, Button, Card, FolderIcon, ArrowRightIcon } from "../../shared/ui-kit/index.ts"
 import type { ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { statusTone } from "./projectStatus.ts"
 import "./ProjectCard.css"
