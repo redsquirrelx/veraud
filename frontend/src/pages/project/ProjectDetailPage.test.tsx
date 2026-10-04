@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
+import { ToastProvider } from "../../app/toasts.tsx"
+import { Dock } from "../../app/dock.tsx"
 
 const realFetch = globalThis.fetch
 const realWebSocket = globalThis.WebSocket
@@ -40,9 +42,12 @@ function stubProjects() {
 function renderDetail(entry: string) {
   render(
     <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="projects/:id" element={<ProjectDetailPage />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="projects/:id" element={<ProjectDetailPage />} />
+        </Routes>
+        <Dock />
+      </ToastProvider>
     </MemoryRouter>
   )
 }

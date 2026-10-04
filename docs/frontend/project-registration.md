@@ -8,7 +8,9 @@ Source of truth: `frontend/src/features/project-management/`,
 
 ## Pieces (only these)
 
-- `app/`: layout + router (`/` home, `/test` playground).
+- `app/`: layout + router (`/` home, `/test` playground) + global `Dock`
+  (`TaskMenu` + toasts via `ToastProvider`, shared across pages so it
+  survives navigation).
 - `features/project-management/`: `ProjectRegistrationForm` (presentational),
   `useRegisterProject` (owns url + `idle → loading → success | error`),
   `useTasks` (initial `GET /api/tasks/active` + live `/ws` merge),
