@@ -9,6 +9,19 @@ export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
 export class ProjectNotFoundError extends Error {}
 export class SyncFailedError extends Error {}
+export class InvalidGitRequestError extends Error {}
+export class WorkspaceMissingError extends Error {}
+export class GitOperationError extends Error {}
+
+export interface GitCommit {
+  commitHash: string
+  subject: string
+}
+
+const BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/
+const HASH_PATTERN = /^[0-9a-fA-F]{7,40}$/
+const DEFAULT_LOG_LIMIT = 30
+const MAX_LOG_LIMIT = 100
 
 export class ProjectService {
   constructor(
@@ -77,8 +90,7 @@ export class ProjectService {
     return this.projects.list()
   }
 
-  async syncProject(id: number): Promise<StoredProjectDetails> {
-    const project = await this.projects.findById(id)
+  async syncProject(id: number): Promise<StoredProjectDetails> {    const project = await this.projects.findById(id)
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
@@ -123,4 +135,249 @@ export class ProjectService {
 
     return updated
   }
+
+  async listBranches(id: number): Promise<{ branches: string[], taskId: number }> {
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const task = await this.tasks.create({
+      projectId: project.id,
+      description: `listing branches ${project.repositoryOwner}/${project.repositoryName}`,
+      status: "Queued",
+    })
+
+    const result = await this.runner.enqueue({
+      taskId: task.id,
+      projectId: project.id,
+      command: { kind: "list-branches", folder },
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Could not list branches for ${project.repositoryOwner}/${project.repositoryName}`)
+    }
+
+    return { branches: parseBranches(result.logTrail ?? ""), taskId: task.id }
+  }
+
+  async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
+    const cleanBranch = assertValidBranch(branch)
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const task = await this.tasks.create({
+      projectId: project.id,
+      description: `resolving ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`,
+      status: "Queued",
+    })
+
+    const result = await this.runner.enqueue({
+      taskId: task.id,
+      projectId: project.id,
+      command: { kind: "rev-parse", folder, branch: cleanBranch },
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Branch ${cleanBranch} does not exist`)
+    }
+
+    const commitHash = (result.logTrail ?? "").trim().split("\n").pop()?.trim() ?? ""
+
+    if (HASH_PATTERN.test(commitHash) === false || commitHash.length !== 40) {
+      throw new GitOperationError(`Branch ${cleanBranch} does not exist`)
+    }
+
+    return { branch: cleanBranch, commitHash: commitHash.toLowerCase(), taskId: task.id }
+  }
+
+  async listCommits(
+    id: number,
+    branch: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ branch: string, commits: GitCommit[], limit: number, offset: number, taskId: number }> {
+    const cleanBranch = assertValidBranch(branch)
+    const cleanLimit = assertValidLimit(limit)
+    const cleanOffset = assertValidOffset(offset)
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const task = await this.tasks.create({
+      projectId: project.id,
+      description: `listing commits ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`,
+      status: "Queued",
+    })
+
+    const result = await this.runner.enqueue({
+      taskId: task.id,
+      projectId: project.id,
+      command: { kind: "log-commits", folder, branch: cleanBranch, limit: cleanLimit, offset: cleanOffset },
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Branch ${cleanBranch} does not exist`)
+    }
+
+    return {
+      branch: cleanBranch,
+      commits: parseCommits(result.logTrail ?? ""),
+      limit: cleanLimit,
+      offset: cleanOffset,
+      taskId: task.id,
+    }
+  }
+
+  async checkoutCommit(id: number, commitHash: string): Promise<{ commitHash: string, taskId: number }> {
+    const cleanHash = assertValidHash(commitHash)
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const task = await this.tasks.create({
+      projectId: project.id,
+      description: `checking out ${cleanHash} ${project.repositoryOwner}/${project.repositoryName}`,
+      status: "Queued",
+    })
+
+    const result = await this.runner.enqueue({
+      taskId: task.id,
+      projectId: project.id,
+      command: { kind: "checkout-detach", folder, commitHash: cleanHash },
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Commit ${cleanHash} could not be checked out`)
+    }
+
+    return { commitHash: cleanHash.toLowerCase(), taskId: task.id }
+  }
+
+  private requireWorkspace(project: StoredProjectDetails): string {
+    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+    const targetDir = join(this.workspaceDir, folder)
+
+    if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {
+      throw new WorkspaceMissingError(`Project ${project.repositoryOwner}/${project.repositoryName} has no local checkout`)
+    }
+
+    return folder
+  }
+}
+
+function assertValidBranch(branch: string): string {
+  const trimmed = branch.trim()
+
+  if (trimmed.length === 0 || trimmed.length > 255 || BRANCH_PATTERN.test(trimmed) === false) {
+    throw new InvalidGitRequestError("Branch must use letters, numbers, dot, underscore, slash or dash")
+  }
+
+  if (trimmed.includes("..") || trimmed.includes("--") || trimmed.startsWith("-") || trimmed.startsWith("/") || trimmed.startsWith(".")) {
+    throw new InvalidGitRequestError("Branch is not valid")
+  }
+
+  if (trimmed.includes("@{") || trimmed.includes("~") || trimmed.includes("^") || trimmed.includes(":") || trimmed.includes("?") || trimmed.includes("*") || trimmed.includes("[") || trimmed.includes("\\")) {
+    throw new InvalidGitRequestError("Branch is not valid")
+  }
+
+  return trimmed
+}
+
+function assertValidHash(commitHash: string): string {
+  const trimmed = commitHash.trim()
+
+  if (HASH_PATTERN.test(trimmed) === false) {
+    throw new InvalidGitRequestError("Commit hash must be 7 to 40 hex characters")
+  }
+
+  return trimmed
+}
+
+function assertValidLimit(limit?: number): number {
+  if (limit === undefined) {
+    return DEFAULT_LOG_LIMIT
+  }
+
+  if (Number.isInteger(limit) === false || limit < 1 || limit > MAX_LOG_LIMIT) {
+    throw new InvalidGitRequestError("Limit must be an integer between 1 and 100")
+  }
+
+  return limit
+}
+
+function assertValidOffset(offset?: number): number {
+  if (offset === undefined) {
+    return 0
+  }
+
+  if (Number.isInteger(offset) === false || offset < 0) {
+    throw new InvalidGitRequestError("Offset must be an integer equal or greater than 0")
+  }
+
+  return offset
+}
+
+function parseBranches(output: string): string[] {
+  const branches: string[] = []
+
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim()
+
+    if (trimmed.length === 0) {
+      continue
+    }
+
+    const withoutMarker = trimmed.startsWith("* ") ? trimmed.slice(2) : trimmed
+    const name = withoutMarker.trim()
+
+    if (name.length > 0) {
+      branches.push(name)
+    }
+  }
+
+  return branches
+}
+
+function parseCommits(output: string): GitCommit[] {
+  const commits: GitCommit[] = []
+
+  for (const line of output.split("\n")) {
+    if (line.trim().length === 0) {
+      continue
+    }
+
+    const tab = line.indexOf("\t")
+
+    if (tab <= 0) {
+      continue
+    }
+
+    const commitHash = line.slice(0, tab).trim()
+    const subject = line.slice(tab + 1).trim()
+
+    if (/^[0-9a-fA-F]{40}$/.test(commitHash) === false) {
+      continue
+    }
+
+    commits.push({ commitHash: commitHash.toLowerCase(), subject })
+  }
+
+  return commits
 }

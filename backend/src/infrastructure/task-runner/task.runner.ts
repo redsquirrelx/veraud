@@ -19,6 +19,10 @@ export interface ProjectStatusWriter {
 export type GitCommand =
   | { kind: "clone", cloneUrl: string, folder: string }
   | { kind: "pull", folder: string }
+  | { kind: "list-branches", folder: string }
+  | { kind: "rev-parse", folder: string, branch: string }
+  | { kind: "checkout-detach", folder: string, commitHash: string }
+  | { kind: "log-commits", folder: string, branch: string, limit: number, offset: number }
 
 export interface QueuedTask {
   taskId: number
@@ -99,8 +103,96 @@ export class TaskRunner implements TaskQueue {
   private async runJob(job: CloneJob): Promise<void> {
     if (job.command.kind === "clone") {
       await this.runClone(job, job.command.cloneUrl)
-    } else {
+      return
+    }
+    if (job.command.kind === "pull") {
       await this.runPull(job)
+      return
+    }
+    if (job.command.kind === "list-branches") {
+      await this.runListBranches(job)
+      return
+    }
+    if (job.command.kind === "rev-parse") {
+      await this.runRevParse(job, job.command.branch)
+      return
+    }
+    if (job.command.kind === "checkout-detach") {
+      await this.runCheckoutDetach(job, job.command.commitHash)
+      return
+    }
+    await this.runLogCommits(job, job.command.branch, job.command.limit, job.command.offset)
+  }
+
+  private async runListBranches(job: CloneJob): Promise<void> {
+    await this.updateTaskOnly(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", ["-C", job.targetDir, "branch"])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    }
+  }
+
+  private async runRevParse(job: CloneJob, branch: string): Promise<void> {
+    await this.updateTaskOnly(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", ["-C", job.targetDir, "rev-parse", branch])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    }
+  }
+
+  private async runCheckoutDetach(job: CloneJob, commitHash: string): Promise<void> {
+    await this.updateTaskOnly(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", ["-C", job.targetDir, "checkout", "--force", "--detach", commitHash])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    }
+  }
+
+  private async runLogCommits(job: CloneJob, branch: string, limit: number, offset: number): Promise<void> {
+    await this.updateTaskOnly(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", [
+        "-C",
+        job.targetDir,
+        "log",
+        "--format=%H%x09%s",
+        `--max-count=${limit}`,
+        `--skip=${offset}`,
+        branch,
+      ])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
     }
   }
 
@@ -134,6 +226,28 @@ export class TaskRunner implements TaskQueue {
       await this.update(job, result.status, result.exitCode, result.logTrail)
       job.done(result)
     }
+  }
+
+  private async updateTaskOnly(
+    job: CloneJob,
+    status: string,
+    exitCode: number | null,
+    logTrail: string | null
+  ): Promise<void> {
+    const task = await this.tasks.update(job.taskId, { status, exitCode, logTrail })
+
+    this.log.info(`Task ${task.id} is now ${task.status}`)
+
+    this.gateway.broadcast({
+      type: "task.updated",
+      task: {
+        id: task.id,
+        projectId: task.projectId,
+        description: task.description,
+        status: task.status,
+        exitCode: task.exitCode,
+      },
+    })
   }
 
   private async update(
