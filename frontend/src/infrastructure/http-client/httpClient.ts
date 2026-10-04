@@ -36,6 +36,7 @@ export interface ProjectSummary {
   repositoryName: string
   status: string
   registeredAt: string
+  lastSyncedAt: string | null
   branch: string | null
   commitHash: string | null
 }
@@ -58,6 +59,21 @@ export async function listActiveTasks(): Promise<ActiveTask[]> {
   }
 
   return (await response.json()) as ActiveTask[]
+}
+
+export async function syncProject(id: number): Promise<ProjectSummary> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/sync`, {
+    method: "POST",
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not sync the project")
+  }
+
+  return body as ProjectSummary
 }
 
 export async function registerProject(repositoryUrl: string): Promise<RegisteredProject> {

@@ -1,0 +1,54 @@
+.project-page {
+  display: flex;
+  align-items: stretch;
+  background: #f2f3ff;
+  min-height: calc(100vh - 48px);
+}
+
+.project-page .ui-sidebar {
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+}
+
+.project-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+  padding: 1.0rem;
+}
+
+.project-content .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.project-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.project-header .ui-button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.project-content .mono {
+  font-size: 15px;
+  font-weight: 600;
+}

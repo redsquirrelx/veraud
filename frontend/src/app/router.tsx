@@ -3,6 +3,7 @@ import { AppLayout } from "./layout.tsx"
 import { HomePage } from "../pages/home/HomePage.tsx"
 import { ProjectDetailPage } from "../pages/project/ProjectDetailPage.tsx"
 import { ComponentTestPage } from "../pages/test/ComponentTestPage.tsx"
+import { TestSidebarPage } from "../pages/test-sidebar/TestSidebarPage.tsx"
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: "projects/:id", element: <ProjectDetailPage /> },
       { path: "test", element: <ComponentTestPage /> },
+      { path: "test_sidebar", element: <TestSidebarPage /> },
     ],
   },
 ])

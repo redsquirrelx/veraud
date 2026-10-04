@@ -11,6 +11,7 @@ Source of truth: `backend/src/modules/project/`
 Response `200` (empty array when none, never 404): `id` (number),
 `repositoryOwner` (string), `repositoryName` (string), `status`
 (`QUEUED`/`READY`/`SYNCING`), `registeredAt` (ISO datetime),
+`lastSyncedAt` (ISO datetime or null, set when a clone succeeds),
 `branch` (string or null), `commitHash` (string or null).
 
 Flow: controller → service passthrough → Prisma `findMany` ordered by

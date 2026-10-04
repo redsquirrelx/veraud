@@ -10,6 +10,7 @@ const base: ProjectSummary = {
   repositoryName: "Demo",
   status: "READY",
   registeredAt: "2026-01-01",
+  lastSyncedAt: "2026-01-02",
   branch: null,
   commitHash: null,
 }
@@ -28,7 +29,7 @@ describe("ProjectCard", () => {
 
     expect(screen.getByText("acme/Demo")).toBeDefined()
     expect(screen.getByText("READY")).toBeDefined()
-    expect(screen.getByRole("button", { name: "Inspect ΓåÆ" }).hasAttribute("disabled")).toBe(false)
+    expect(screen.getByRole("button", { name: "Inspect" }).hasAttribute("disabled")).toBe(false)
   })
 
   it("navigates through the title only when ready", () => {
@@ -55,7 +56,7 @@ describe("ProjectCard", () => {
           <ProjectCard project={{ ...base, status }} />
         </MemoryRouter>
       )
-      expect(screen.getByRole("button", { name: "Inspect ΓåÆ" }).hasAttribute("disabled")).toBe(true)
+      expect(screen.getByRole("button", { name: "Inspect" }).hasAttribute("disabled")).toBe(true)
       unmount()
     }
   })

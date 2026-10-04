@@ -8,7 +8,9 @@ Source of truth: `frontend/src/features/project-management/`,
 
 ## Pieces (only these)
 
-- `app/`: layout + router (`/` home, `/test` playground).
+- `app/`: layout + router (`/` home, `/test` playground) + global `Dock`
+  (`TaskMenu` + toasts via `ToastProvider`, shared across pages so it
+  survives navigation).
 - `features/project-management/`: `ProjectRegistrationForm` (presentational),
   `useRegisterProject` (owns url + `idle → loading → success | error`),
   `useTasks` (initial `GET /api/tasks/active` + live `/ws` merge),
@@ -47,9 +49,11 @@ Response `201`: `id`, `repositoryOwner`, `repositoryName`, `status`.
 Errors: `400` bad URL, `409` duplicate, `422` not accessible/clone failed.
 Live: `GET /api/tasks/active` + WS `/ws` (`task.updated`).
 List: `GET /api/projects` → full array (`id`, `owner`, `name`, `status`,
-`registeredAt`, `branch`/`commitHash` nullable); search, status filter
+`registeredAt`, `lastSyncedAt` (null until first sync), `branch`/`commitHash` nullable); search, status filter
 (All/QUEUED/READY/SYNCING), sort (Title/Date + direction toggle),
 pagination (10 per page, resets on filter change) and empty state
-("No projects yet") run client-side. Inspect navigates to `/projects/:id`
-(stub page, next HU).
-Full spec: `docs/backend/project-registration.md`, `docs/backend/project-listing.md`.
+("No projects yet") run client-side. Inspect navigates to `/projects/:id`,
+whose header (`owner/name`, registered date, last sync, status badge)
+has a working Sync button (`POST /api/projects/:id/sync`), the live
+task menu and result toasts in the same dock.
+Full spec: `docs/backend/project-registration.md`, `docs/backend/project-listing.md`, `docs/backend/project-sync.md`.

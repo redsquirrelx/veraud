@@ -1,10 +1,10 @@
-import { Panel, Toast } from "../../shared/ui-kit/index.ts"
+import { useEffect, useRef } from "react"
+import { Panel } from "../../shared/ui-kit/index.ts"
 import { ProjectList } from "../../features/project-management/ProjectList.tsx"
 import { ProjectRegistrationForm } from "../../features/project-management/ProjectRegistrationForm.tsx"
-import { TaskMenu } from "../../features/project-management/TaskMenu.tsx"
 import { useProjects } from "../../features/project-management/useProjects.ts"
 import { useRegisterProject } from "../../features/project-management/useRegisterProject.ts"
-import { useTasks } from "../../features/project-management/useTasks.ts"
+import { useToasts } from "../../app/use-toasts.ts"
 import "./HomePage.css"
 
 export function HomePage() {
@@ -12,10 +12,25 @@ export function HomePage() {
   const registration = useRegisterProject({
     onRegistered: () => void listing.refresh(),
   })
-  const tasks = useTasks()
+  const { pushToast } = useToasts()
+  const notified = useRef("")
+
+  useEffect(() => {
+    if (registration.message === "") {
+      notified.current = ""
+      return
+    }
+    if (registration.state === "success" || registration.state === "error") {
+      const key = `${registration.state}:${registration.message}`
+      if (notified.current !== key) {
+        notified.current = key
+        pushToast(registration.state, registration.message)
+      }
+    }
+  }, [registration.state, registration.message, pushToast])
 
   return (
-    <section>
+    <section className="page">
       <div className="home-heading">
         <div>
           <h1>Projects and repositories</h1>
@@ -29,15 +44,6 @@ export function HomePage() {
         <ProjectRegistrationForm registration={registration} />
       </Panel>
       <ProjectList listing={listing} />
-      <div className="dock">
-        {registration.state === "success" && (
-          <Toast kind="success" message={registration.message} onClose={() => registration.reset()} />
-        )}
-        {registration.state === "error" && (
-          <Toast kind="error" message={registration.message} onClose={() => registration.reset()} />
-        )}
-        <TaskMenu tasks={tasks} />
-      </div>
     </section>
   )
 }
