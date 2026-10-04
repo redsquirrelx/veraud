@@ -1,17 +1,23 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { GithubClient, RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import type { QueuedTask, TaskQueue, TaskResult, GitCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type {
   NewProject,
   ProjectStore,
   StoredProject,
+  StoredProjectDetails,
 } from "./project.repository.js"
 import type { NewTask, StoredTask, TaskStore } from "../task/task.repository.js"
 import {
   DuplicateProjectError,
   InvalidUrlError,
+  ProjectNotFoundError,
   ProjectService,
+  SyncFailedError,
 } from "./project.service.js"
 
 const storedTask: StoredTask = {
@@ -26,11 +32,13 @@ const storedTask: StoredTask = {
 
 function makeFakes(options: {
   existing?: StoredProject | null
+  details?: StoredProjectDetails | null
   githubId?: number
   clone?: TaskResult
 } = {}) {
-  const calls = { enqueued: 0, commands: [] as Array<GitCommand>, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number> }
+  const calls = { enqueued: 0, commands: [] as Array<GitCommand>, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number>, statuses: [] as Array<{ id: number; status: string }> }
 
+  const workspaceDir = mkdtempSync(join(tmpdir(), "veraud-svc-"))
   const projects: ProjectStore & { created: Array<NewProject> } = {
     created: [],
     async create(data: NewProject): Promise<StoredProject> {
@@ -40,10 +48,15 @@ function makeFakes(options: {
     async findByGithubId(): Promise<StoredProject | null> {
       return options.existing ?? null
     },
+    async findById(): Promise<StoredProjectDetails | null> {
+      return options.details ?? null
+    },
     async delete(id: number): Promise<void> {
       calls.deletedProjects.push(id)
     },
-    async setStatus(): Promise<void> {},
+    async setStatus(id: number, status: string): Promise<void> {
+      calls.statuses.push({ id, status })
+    },
     async markSynced(): Promise<void> {},
     async list() {
       return []
@@ -86,8 +99,8 @@ function makeFakes(options: {
     },
   }
 
-  const service = new ProjectService(projects, tasks, github, runner)
-  return { service, projects, tasks, calls }
+  const service = new ProjectService(projects, tasks, github, runner, workspaceDir)
+  return { service, projects, tasks, calls, workspaceDir }
 }
 
 describe("ProjectService.registerProject", () => {
@@ -158,6 +171,7 @@ describe("ProjectService.registerProject", () => {
       {
         create: async () => { throw new Error("must not persist") },
         findByGithubId: async () => null,
+        findById: async () => null,
         delete: async () => { throw new Error("must not delete") },
         setStatus: async () => { throw new Error("must not set status") },
         markSynced: async () => { throw new Error("must not mark synced") },
@@ -171,12 +185,73 @@ describe("ProjectService.registerProject", () => {
         findActive: async () => [],
       },
       failing,
-      { enqueue: async () => { throw new Error("must not enqueue") } }
+      { enqueue: async () => { throw new Error("must not enqueue") } },
+      join(tmpdir(), "veraud-unused")
     )
 
     await assert.rejects(
       service.registerProject("https://github.com/octocat/Hello-World"),
       /Could not reach repository/
     )
+  })
+})
+
+describe("ProjectService.syncProject", () => {
+  const details: StoredProjectDetails = {
+    id: 7,
+    githubRepositoryId: BigInt(1296269),
+    repositoryOwner: "octocat",
+    repositoryName: "Hello-World",
+    status: "READY",
+    registeredAt: new Date("2026-01-02T03:04:05.000Z"),
+    lastSyncedAt: null,
+    branch: null,
+    commitHash: null,
+  }
+
+  it("pulls when the workspace already has files", async () => {
+    const { service, calls, workspaceDir } = makeFakes({ details })
+    const folder = join(workspaceDir, "1296269-octocat-Hello-World")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, "file.txt"), "hello")
+
+    const synced = await service.syncProject(7)
+
+    assert.equal(synced.id, 7)
+    assert.deepEqual(calls.commands, [{ kind: "pull", folder: "1296269-octocat-Hello-World" }])
+    assert.deepEqual(calls.deletedProjects, [])
+  })
+
+  it("clones when the workspace is empty", async () => {
+    const { service, calls } = makeFakes({ details })
+
+    const synced = await service.syncProject(7)
+
+    assert.equal(synced.id, 7)
+    assert.deepEqual(calls.commands, [{
+      kind: "clone",
+      cloneUrl: "https://github.com/octocat/Hello-World.git",
+      folder: "1296269-octocat-Hello-World",
+    }])
+  })
+
+  it("rejects unknown projects", async () => {
+    const { service } = makeFakes()
+
+    await assert.rejects(service.syncProject(99), ProjectNotFoundError)
+  })
+
+  it("restores the previous status when sync fails", async () => {
+    const { service, calls, workspaceDir } = makeFakes({
+      details,
+      clone: { status: "Failed", exitCode: 1, logTrail: "fatal" },
+    })
+    const folder = join(workspaceDir, "1296269-octocat-Hello-World")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, "file.txt"), "hello")
+
+    await assert.rejects(service.syncProject(7), SyncFailedError)
+    assert.deepEqual(calls.deletedTasks, [9])
+    assert.deepEqual(calls.statuses, [{ id: 7, status: "READY" }])
   })
 })
