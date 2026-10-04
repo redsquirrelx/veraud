@@ -15,6 +15,12 @@
   transform: scale(0.97);
 }
 
+.ui-button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .ui-button-primary {
   background: #006194;
   color: #ffffff;

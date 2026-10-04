@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { Badge, Button, Card, FolderIcon } from "../../shared/ui-kit/index.ts"
+import { Badge, Button, Card, FolderIcon, ArrowRightIcon } from "../../shared/ui-kit/index.ts"
 import type { ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectCard.css"
 
@@ -38,7 +38,7 @@ export function ProjectCard({ project }: { project: ProjectSummary }) {
         </span>
         <Badge tone={statusTone(project.status)}>{project.status}</Badge>
         <Button disabled={!ready} onClick={() => void navigate(`/projects/${project.id}`)}>
-          Inspect ΓåÆ
+          Inspect<ArrowRightIcon />
         </Button>
       </div>
     </Card>
