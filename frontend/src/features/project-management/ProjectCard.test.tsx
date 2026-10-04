@@ -55,7 +55,6 @@ describe("ProjectCard", () => {
           <ProjectCard project={{ ...base, status }} />
         </MemoryRouter>
       )
-      
       expect(screen.getByRole("button", { name: "Inspect" }).hasAttribute("disabled")).toBe(true)
       unmount()
     }

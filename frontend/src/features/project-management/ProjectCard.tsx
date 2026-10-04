@@ -1,17 +1,8 @@
 import { useNavigate } from "react-router-dom"
-import { Badge, Button, Card, FolderIcon, ArrowRightIcon } from "../../shared/ui-kit/index.ts"
+import { ArrowRightIcon, Badge, Button, Card, FolderIcon } from "../../shared/ui-kit/index.ts"
 import type { ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
+import { statusTone } from "./projectStatus.ts"
 import "./ProjectCard.css"
-
-function statusTone(status: string): "success" | "warning" | "info" {
-  if (status === "READY") {
-    return "success"
-  }
-  if (status === "SYNCING") {
-    return "info"
-  }
-  return "warning"
-}
 
 export function ProjectCard({ project }: { project: ProjectSummary }) {
   const navigate = useNavigate()
