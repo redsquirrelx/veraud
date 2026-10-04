@@ -12,6 +12,7 @@ import type {
   StoredProjectDetails,
 } from "./project.repository.js"
 import type { NewTask, StoredTask, TaskStore } from "../task/task.repository.js"
+import { TaskService } from "../task/task.service.js"
 import {
   DuplicateProjectError,
   InvalidUrlError,
@@ -99,7 +100,7 @@ function makeFakes(options: {
     },
   }
 
-  const service = new ProjectService(projects, tasks, github, runner, workspaceDir)
+  const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir)
   return { service, projects, tasks, calls, workspaceDir }
 }
 
@@ -177,15 +178,17 @@ describe("ProjectService.registerProject", () => {
         markSynced: async () => { throw new Error("must not mark synced") },
         list: async () => [],
       },
-      {
-        create: async () => { throw new Error("must not create tasks") },
-        update: async () => { throw new Error("must not update") },
-        delete: async () => { throw new Error("must not delete tasks") },
-        findById: async () => null,
-        findActive: async () => [],
-      },
+      new TaskService(
+        {
+          create: async () => { throw new Error("must not create tasks") },
+          update: async () => { throw new Error("must not update") },
+          delete: async () => { throw new Error("must not delete tasks") },
+          findById: async () => null,
+          findActive: async () => [],
+        },
+        { enqueue: async () => { throw new Error("must not enqueue") } }
+      ),
       failing,
-      { enqueue: async () => { throw new Error("must not enqueue") } },
       join(tmpdir(), "veraud-unused")
     )
 

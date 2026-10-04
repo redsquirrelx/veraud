@@ -1,8 +1,8 @@
 import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
-import type { TaskStore } from "../task/task.repository.js"
-import type { TaskQueue } from "../../infrastructure/task-runner/task.runner.js"
+import { TaskService } from "../task/task.service.js"
+import type { TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 
 export class InvalidUrlError extends Error {}
@@ -26,9 +26,8 @@ const MAX_LOG_LIMIT = 100
 export class ProjectService {
   constructor(
     private projects: ProjectStore,
-    private tasks: TaskStore,
+    private tasks: TaskService,
     private github: GithubClient,
-    private runner: TaskQueue,
     private workspaceDir: string
   ) {}
 
@@ -62,23 +61,14 @@ export class ProjectService {
       status: "QUEUED",
     })
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: `cloning ${metadata.owner}/${metadata.name}`,
-      status: "Queued",
-    })
-    const result = await this.runner.enqueue({
-      taskId: task.id,
-      projectId: project.id,
-      command: {
-        kind: "clone",
-        cloneUrl: metadata.cloneUrl,
-        folder: `${metadata.id}-${metadata.owner}-${metadata.name}`,
-      },
+    const { task, result } = await this.tasks.launch(project.id, `cloning ${metadata.owner}/${metadata.name}`, {
+      kind: "clone",
+      cloneUrl: metadata.cloneUrl,
+      folder: `${metadata.id}-${metadata.owner}-${metadata.name}`,
     })
 
     if (result.status !== "Succeded") {
-      await this.tasks.delete(task.id)
+      await this.tasks.remove(task.id)
       await this.projects.delete(project.id)
       throw new RepoNotAccessibleError(`Repository ${metadata.owner}/${metadata.name} could not be cloned`)
     }
@@ -101,28 +91,21 @@ export class ProjectService {
     const hasFiles = existsSync(targetDir) && readdirSync(targetDir).length > 0
     const previousStatus = project.status
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: hasFiles
-        ? `pulling ${project.repositoryOwner}/${project.repositoryName}`
-        : `cloning ${project.repositoryOwner}/${project.repositoryName}`,
-      status: "Queued",
-    })
+    const description = hasFiles
+      ? `pulling ${project.repositoryOwner}/${project.repositoryName}`
+      : `cloning ${project.repositoryOwner}/${project.repositoryName}`
+    const command: TaskCommand = hasFiles
+      ? { kind: "pull", folder }
+      : {
+          kind: "clone",
+          cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
+          folder,
+        }
 
-    const result = hasFiles
-      ? await this.runner.enqueue({ taskId: task.id, projectId: project.id, command: { kind: "pull", folder } })
-      : await this.runner.enqueue({
-          taskId: task.id,
-          projectId: project.id,
-          command: {
-            kind: "clone",
-            cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
-            folder,
-          },
-        })
+    const { task, result } = await this.tasks.launch(project.id, description, command)
 
     if (result.status !== "Succeded") {
-      await this.tasks.delete(task.id)
+      await this.tasks.remove(task.id)
       await this.projects.setStatus(project.id, previousStatus)
       throw new SyncFailedError(`Project ${project.repositoryOwner}/${project.repositoryName} could not be synced`)
     }
@@ -145,16 +128,9 @@ export class ProjectService {
 
     const folder = this.requireWorkspace(project)
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: `listing branches ${project.repositoryOwner}/${project.repositoryName}`,
-      status: "Queued",
-    })
-
-    const result = await this.runner.enqueue({
-      taskId: task.id,
-      projectId: project.id,
-      command: { kind: "list-branches", folder },
+    const { task, result } = await this.tasks.launch(project.id, `listing branches ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "list-branches",
+      folder,
     })
 
     if (result.status !== "Succeded") {
@@ -174,16 +150,10 @@ export class ProjectService {
 
     const folder = this.requireWorkspace(project)
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: `resolving ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`,
-      status: "Queued",
-    })
-
-    const result = await this.runner.enqueue({
-      taskId: task.id,
-      projectId: project.id,
-      command: { kind: "rev-parse", folder, branch: cleanBranch },
+    const { task, result } = await this.tasks.launch(project.id, `resolving ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "rev-parse",
+      folder,
+      branch: cleanBranch,
     })
 
     if (result.status !== "Succeded") {
@@ -216,16 +186,12 @@ export class ProjectService {
 
     const folder = this.requireWorkspace(project)
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: `listing commits ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`,
-      status: "Queued",
-    })
-
-    const result = await this.runner.enqueue({
-      taskId: task.id,
-      projectId: project.id,
-      command: { kind: "log-commits", folder, branch: cleanBranch, limit: cleanLimit, offset: cleanOffset },
+    const { task, result } = await this.tasks.launch(project.id, `listing commits ${cleanBranch} ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "log-commits",
+      folder,
+      branch: cleanBranch,
+      limit: cleanLimit,
+      offset: cleanOffset,
     })
 
     if (result.status !== "Succeded") {
@@ -251,16 +217,10 @@ export class ProjectService {
 
     const folder = this.requireWorkspace(project)
 
-    const task = await this.tasks.create({
-      projectId: project.id,
-      description: `checking out ${cleanHash} ${project.repositoryOwner}/${project.repositoryName}`,
-      status: "Queued",
-    })
-
-    const result = await this.runner.enqueue({
-      taskId: task.id,
-      projectId: project.id,
-      command: { kind: "checkout-detach", folder, commitHash: cleanHash },
+    const { task, result } = await this.tasks.launch(project.id, `checking out ${cleanHash} ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "checkout-detach",
+      folder,
+      commitHash: cleanHash,
     })
 
     if (result.status !== "Succeded") {

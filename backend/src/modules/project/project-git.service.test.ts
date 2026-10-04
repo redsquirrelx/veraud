@@ -7,6 +7,7 @@ import { GithubClient } from "../../infrastructure/github-client/github.client.j
 import type { QueuedTask, TaskQueue, TaskResult } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredProjectDetails } from "./project.repository.js"
 import type { NewTask, StoredTask } from "../task/task.repository.js"
+import { TaskService } from "../task/task.service.js"
 import { GitOperationError, InvalidGitRequestError, ProjectNotFoundError, ProjectService, WorkspaceMissingError } from "./project.service.js"
 
 const details: StoredProjectDetails = {
@@ -49,24 +50,26 @@ function makeService(options: {
       markSynced: async () => { throw new Error("must not mark synced") },
       list: async () => [],
     },
-    {
-      create: async (data: NewTask): Promise<StoredTask> => {
-        taskId += 1
-        created.push(data)
-        return { id: taskId, projectId: data.projectId, repositoryOwner: "octocat", repositoryName: "Hello-World", description: data.description, status: data.status, exitCode: null }
+    new TaskService(
+      {
+        create: async (data: NewTask): Promise<StoredTask> => {
+          taskId += 1
+          created.push(data)
+          return { id: taskId, projectId: data.projectId, repositoryOwner: "octocat", repositoryName: "Hello-World", description: data.description, status: data.status, exitCode: null }
+        },
+        update: async () => { throw new Error("not used") },
+        delete: async () => { throw new Error("must not delete tasks") },
+        findById: async () => null,
+        findActive: async () => [],
       },
-      update: async () => { throw new Error("not used") },
-      delete: async () => { throw new Error("must not delete tasks") },
-      findById: async () => null,
-      findActive: async () => [],
-    },
+      {
+        enqueue: async (task: QueuedTask): Promise<TaskResult> => {
+          enqueued.push(task)
+          return options.result ?? { status: "Succeded", exitCode: 0, logTrail: "" }
+        },
+      } as TaskQueue
+    ),
     new GithubClient(),
-    {
-      enqueue: async (task: QueuedTask): Promise<TaskResult> => {
-        enqueued.push(task)
-        return options.result ?? { status: "Succeded", exitCode: 0, logTrail: "" }
-      },
-    } as TaskQueue,
     workspaceDir
   )
 
