@@ -44,7 +44,7 @@ export async function buildApp(options: BuildAppOptions) {
   const runner = options.makeRunner
     ? options.makeRunner(taskRepository, projectRepository, gateway)
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
-  const projectService = new ProjectService(projectRepository, taskRepository, github, runner)
+  const projectService = new ProjectService(projectRepository, taskRepository, github, runner, options.workspaceDir)
   const taskService = new TaskService(taskRepository)
 
   await app.register(websocket)

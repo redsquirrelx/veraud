@@ -37,3 +37,21 @@ h2 {
   color: #64748b;
   text-transform: uppercase;
 }
+
+.dock {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 360px;
+  max-width: calc(100vw - 3rem);
+}
+
+.dock .ui-toast,
+.dock .task-menu {
+  width: 320px;
+  max-width: 100%;
+}

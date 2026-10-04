@@ -6,6 +6,7 @@ import { ProjectService } from "../modules/project/project.service.js"
 
 const withVersion: StoredProjectDetails = {
   id: 1,
+  githubRepositoryId: BigInt(111),
   repositoryOwner: "acme",
   repositoryName: "Demo",
   status: "QUEUED",
@@ -17,6 +18,7 @@ const withVersion: StoredProjectDetails = {
 
 const withoutVersion: StoredProjectDetails = {
   id: 2,
+  githubRepositoryId: BigInt(222),
   repositoryOwner: "acme",
   repositoryName: "Other",
   status: "QUEUED",
@@ -30,12 +32,13 @@ function serviceWith(rows: StoredProjectDetails[]) {
   const projects: ProjectStore = {
     create: async () => { throw new Error("not used here") },
     findByGithubId: async () => null,
+    findById: async () => null,
     delete: async () => {},
     setStatus: async () => {},
     markSynced: async () => {},
     list: async () => rows,
   }
-  return new ProjectService(projects, null as never, new GithubClient(), null as never)
+  return new ProjectService(projects, null as never, new GithubClient(), null as never, "")
 }
 
 describe("project listing unit", () => {

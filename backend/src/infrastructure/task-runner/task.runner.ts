@@ -18,6 +18,7 @@ export interface ProjectStatusWriter {
 
 export type GitCommand =
   | { kind: "clone", cloneUrl: string, folder: string }
+  | { kind: "pull", folder: string }
 
 export interface QueuedTask {
   taskId: number
@@ -98,6 +99,24 @@ export class TaskRunner implements TaskQueue {
   private async runJob(job: CloneJob): Promise<void> {
     if (job.command.kind === "clone") {
       await this.runClone(job, job.command.cloneUrl)
+    } else {
+      await this.runPull(job)
+    }
+  }
+
+  private async runPull(job: CloneJob): Promise<void> {
+    await this.update(job, "Running", null, null)
+
+    try {
+      const { stdout, stderr } = await runFile("git", ["-C", job.targetDir, "pull"])
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      await this.update(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
+    } catch (error) {
+      const output = error instanceof Error ? error.message : String(error)
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      await this.update(job, result.status, result.exitCode, result.logTrail)
+      job.done(result)
     }
   }
 

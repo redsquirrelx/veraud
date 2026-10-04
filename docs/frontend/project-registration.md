@@ -50,6 +50,8 @@ List: `GET /api/projects` → full array (`id`, `owner`, `name`, `status`,
 `registeredAt`, `lastSyncedAt` (null until first sync), `branch`/`commitHash` nullable); search, status filter
 (All/QUEUED/READY/SYNCING), sort (Title/Date + direction toggle),
 pagination (10 per page, resets on filter change) and empty state
-("No projects yet") run client-side. Inspect navigates to `/projects/:id`
-(stub page, next HU).
-Full spec: `docs/backend/project-registration.md`, `docs/backend/project-listing.md`.
+("No projects yet") run client-side. Inspect navigates to `/projects/:id`,
+whose header (`owner/name`, registered date, last sync, status badge)
+has a working Sync button (`POST /api/projects/:id/sync`), the live
+task menu and result toasts in the same dock.
+Full spec: `docs/backend/project-registration.md`, `docs/backend/project-listing.md`, `docs/backend/project-sync.md`.
