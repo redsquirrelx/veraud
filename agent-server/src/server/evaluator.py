@@ -5,6 +5,7 @@ from server.semantic_matcher import find_best_match
 
 
 DATASET_PATH = Path(__file__).resolve().parents[3] / "datasets" / "functional_requirements.json"
+RESULTS_PATH = Path(__file__).resolve().parents[2] / "results" / "evaluation_results.json"
 
 
 def evaluate_dataset() -> dict:
@@ -61,14 +62,24 @@ def evaluate_dataset() -> dict:
     }
 
 
+def save_results(evaluation: dict) -> None:
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(RESULTS_PATH, "w", encoding="utf-8") as file:
+        json.dump(evaluation, file, indent=2, ensure_ascii=False)
+
+
 if __name__ == "__main__":
     evaluation = evaluate_dataset()
+
+    save_results(evaluation)
 
     print("\n=== EVALUACIÓN EN-021 ===")
     print(f"Total de requisitos: {evaluation['total']}")
     print(f"Aciertos: {evaluation['correct']}")
     print(f"Errores: {evaluation['incorrect']}")
     print(f"Precisión: {evaluation['accuracy']:.2f}%")
+    print(f"Resultados guardados en: {RESULTS_PATH}")
 
     print("\nResultados individuales:")
 

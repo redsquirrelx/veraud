@@ -1,0 +1,58 @@
+{
+  "total": 10,
+  "correct": 10,
+  "incorrect": 0,
+  "accuracy": 100.0,
+  "results": [
+    {
+      "requirement_id": "REQ-001",
+      "correct": true,
+      "similarity": 0.3567207455635071
+    },
+    {
+      "requirement_id": "REQ-002",
+      "correct": true,
+      "similarity": 0.2836154103279114
+    },
+    {
+      "requirement_id": "REQ-003",
+      "correct": true,
+      "similarity": 0.23962967097759247
+    },
+    {
+      "requirement_id": "REQ-004",
+      "correct": true,
+      "similarity": 0.2307509481906891
+    },
+    {
+      "requirement_id": "REQ-005",
+      "correct": true,
+      "similarity": 0.039432357996702194
+    },
+    {
+      "requirement_id": "REQ-006",
+      "correct": true,
+      "similarity": 0.06252115219831467
+    },
+    {
+      "requirement_id": "REQ-007",
+      "correct": true,
+      "similarity": 0.020574457943439484
+    },
+    {
+      "requirement_id": "REQ-008",
+      "correct": true,
+      "similarity": 0.18008583784103394
+    },
+    {
+      "requirement_id": "REQ-009",
+      "correct": true,
+      "similarity": 0.17606016993522644
+    },
+    {
+      "requirement_id": "REQ-010",
+      "correct": true,
+      "similarity": 0.3448948562145233
+    }
+  ]
+}
