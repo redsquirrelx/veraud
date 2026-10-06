@@ -48,7 +48,22 @@
   flex-shrink: 0;
 }
 
-.project-content .mono {
+/* only the project title is oversized; shared components keep their own sizes */
+.project-header .mono {
   font-size: 15px;
   font-weight: 600;
+}
+
+.files-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.files-error {
+  color: #b91c1c;
+  font-size: 13px;
 }

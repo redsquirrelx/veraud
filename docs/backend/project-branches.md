@@ -6,8 +6,9 @@ only gains `task` rows (always kept). Read tasks never touch
 `project.status`; the forced checkout neither (it only moves HEAD).
 
 Source of truth: `backend/src/modules/project/`,
-`infrastructure/task-runner/` (`list-branches`, `rev-parse`,
-`checkout-detach`, `checkout-branch`, `log-commits` commands)
+`infrastructure/task-runner/` (`list-branches`, `list-tree`,
+`rev-parse`, `checkout-detach`, `checkout-branch`, `log-commits`
+commands)
 
 ## `POST /api/projects/:id/git/branches`
 
@@ -19,6 +20,15 @@ prefix shortened, deduplicated, locals first), `currentBranch`
 detached, else null) plus `taskId` (number of the kept task). A plain
 `git clone` fetches every branch but checks out only the default
 locally; the remote ones surface here through their `origin/` refs.
+
+## `POST /api/projects/:id/git/tree`
+
+Body: empty object. Response `200`: `files` (string array of the paths
+tracked at `HEAD`, from `git ls-tree -r --name-only HEAD`, relative to
+the repo root and slash separated) plus `taskId`. `HEAD` is what makes
+it follow the checked-out version: a detached commit returns that
+commit's tree, an attached branch returns the branch tip. Read-only, so
+the task never touches `project.status`.
 
 ## `POST /api/projects/:id/git/rev-parse`
 
@@ -65,5 +75,15 @@ missing workspace checkout or git failure (task kept as `Failed`).
 Every transition broadcasts `task.updated` on `/ws` with `id`,
 `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/
 `Failed`), `exitCode`.
+
+## Task output vs log trail
+
+`task.log_trail` keeps only the last 4000 characters (debug aid), so
+the runner also returns the full stdout in `TaskResult.output` and the
+service parses that. Anything that reads a git listing
+(`list-branches`, `list-tree`, `log-commits`, `rev-parse`) must use
+`taskOutput(result)`, never `logTrail`: on a repo with a few hundred
+files the trail alone truncates the list and silently drops the first
+entries.
 
 Out of scope: `ProjectVersion`, frontend selectors.

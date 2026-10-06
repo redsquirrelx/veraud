@@ -5,6 +5,7 @@ export type GitCommand =
   | { kind: "pull", folder: string }
   | { kind: "fetch", folder: string }
   | { kind: "list-branches", folder: string }
+  | { kind: "list-tree", folder: string }
   | { kind: "rev-parse", folder: string, branch: string }
   | { kind: "checkout-detach", folder: string, commitHash: string }
   | { kind: "checkout-branch", folder: string, branch: string }
@@ -15,6 +16,7 @@ const GIT_KINDS: ReadonlySet<string> = new Set([
   "pull",
   "fetch",
   "list-branches",
+  "list-tree",
   "rev-parse",
   "checkout-detach",
   "checkout-branch",
@@ -40,6 +42,10 @@ export function gitArgv(command: GitCommand, targetDir: string): string[] {
 
   if (command.kind === "list-branches") {
     return ["-C", targetDir, "branch", "-a"]
+  }
+
+  if (command.kind === "list-tree") {
+    return ["-C", targetDir, "ls-tree", "-r", "--name-only", "HEAD"]
   }
 
   if (command.kind === "rev-parse") {

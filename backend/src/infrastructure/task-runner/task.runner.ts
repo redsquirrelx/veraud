@@ -31,6 +31,11 @@ export interface TaskResult {
   status: string
   exitCode: number | null
   logTrail: string | null
+  output?: string
+}
+
+export function taskOutput(result: TaskResult): string {
+  return result.output ?? result.logTrail ?? ""
 }
 
 export interface TaskQueue {
@@ -116,12 +121,12 @@ export class TaskRunner implements TaskQueue {
 
     try {
       const { stdout, stderr } = await runFile(description.binary, description.argv)
-      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000) }
+      const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000), output: stdout }
       await announce(job, result.status, result.exitCode, result.logTrail)
       job.done(result)
     } catch (error) {
       const output = error instanceof Error ? error.message : String(error)
-      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000) }
+      const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000), output: "" }
       await announce(job, result.status, result.exitCode, result.logTrail)
       job.done(result)
     }

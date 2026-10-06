@@ -11,6 +11,7 @@ const running: ActiveTask = {
   repositoryName: "Demo",
   description: "cloning acme/Demo",
   status: "Running",
+  kind: "clone",
   exitCode: null,
 }
 
@@ -21,6 +22,7 @@ const queued: ActiveTask = {
   repositoryName: "Other",
   description: "cloning acme/Other",
   status: "Queued",
+  kind: "clone",
   exitCode: null,
 }
 

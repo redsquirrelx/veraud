@@ -54,7 +54,9 @@ describe("project git API", () => {
     execSync(`git -C "${source}" commit -qam second`)
     execSync(`git -C "${source}" checkout -qb feature`)
     writeFileSync(join(source, "file.txt"), "three")
-    execSync(`git -C "${source}" commit -qam third`)
+    writeFileSync(join(source, "feature.txt"), "feature only")
+    execSync(`git -C "${source}" add .`)
+    execSync(`git -C "${source}" commit -qm third`)
     execSync(`git -C "${source}" checkout -q main`)
     execSync(`git clone -q "${source}" "${join(workspaceDir, "778-acme-GitDemo")}"`)
     mainHash = execSync(`git -C "${join(workspaceDir, "778-acme-GitDemo")}" rev-parse HEAD`).toString().trim()
@@ -172,6 +174,32 @@ describe("project git API", () => {
     const commits = (await log.json()) as { commits: Array<{ commitHash: string, subject: string }> }
 
     assert.equal(commits.commits[0]?.subject, "third")
+  })
+
+  it("lists the files tracked at HEAD", async () => {
+    const response = await fetch(`${baseUrl}/api/projects/1/git/tree`, { method: "POST" })
+
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { files: string[], taskId: number }
+
+    assert.ok(body.files.includes("file.txt"))
+    assert.equal(typeof body.taskId, "number")
+  })
+
+  it("follows the checkout when listing files again", async () => {
+    const mainFiles = await (await fetch(`${baseUrl}/api/projects/1/git/tree`, { method: "POST" })).json() as { files: string[] }
+    assert.ok(mainFiles.files.includes("file.txt"))
+
+    const moved = await fetch(`${baseUrl}/api/projects/1/git/checkout-branch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branch: "feature" }),
+    })
+    assert.equal(moved.status, 200)
+
+    const featureFiles = await (await fetch(`${baseUrl}/api/projects/1/git/tree`, { method: "POST" })).json() as { files: string[] }
+
+    assert.ok(featureFiles.files.includes("feature.txt"))
   })
 
   it("rejects invalid branches with 400 without creating side effects", async () => {

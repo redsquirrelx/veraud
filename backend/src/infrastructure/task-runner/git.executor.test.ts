@@ -12,6 +12,14 @@ describe("git executor", () => {
     assert.deepEqual(gitArgv({ kind: "pull", folder: "folder" }, "/ws/folder"), ["-C", "/ws/folder", "pull"])
     assert.deepEqual(gitArgv({ kind: "fetch", folder: "folder" }, "/ws/folder"), ["-C", "/ws/folder", "fetch"])
     assert.deepEqual(gitArgv({ kind: "list-branches", folder: "folder" }, "/ws/folder"), ["-C", "/ws/folder", "branch", "-a"])
+    assert.deepEqual(gitArgv({ kind: "list-tree", folder: "folder" }, "/ws/folder"), [
+      "-C",
+      "/ws/folder",
+      "ls-tree",
+      "-r",
+      "--name-only",
+      "HEAD",
+    ])
     assert.deepEqual(gitArgv({ kind: "rev-parse", folder: "folder", branch: "main" }, "/ws/folder"), [
       "-C",
       "/ws/folder",
@@ -48,6 +56,7 @@ describe("git executor", () => {
     assert.equal(touchesProjectStatus({ kind: "pull", folder: "folder" }), true)
     assert.equal(touchesProjectStatus({ kind: "fetch", folder: "folder" }), true)
     assert.equal(touchesProjectStatus({ kind: "list-branches", folder: "folder" }), false)
+    assert.equal(touchesProjectStatus({ kind: "list-tree", folder: "folder" }), false)
     assert.equal(touchesProjectStatus({ kind: "rev-parse", folder: "folder", branch: "main" }), false)
     assert.equal(touchesProjectStatus({ kind: "checkout-detach", folder: "folder", commitHash: "abc1234" }), false)
     assert.equal(touchesProjectStatus({ kind: "checkout-branch", folder: "folder", branch: "feature" }), false)

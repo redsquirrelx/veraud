@@ -146,6 +146,26 @@ describe("ProjectService git commands", () => {
     assert.equal(result.commitHash, hash.toLowerCase())
   })
 
+  it("lists the tracked files at HEAD", async () => {
+    const { service, enqueued, created } = makeService({
+      withWorkspace: true,
+      result: { status: "Succeded", exitCode: 0, logTrail: "src/app.py\nsrc\nREADME.md\n\n" },
+    })
+
+    const result = await service.listTree(7)
+
+    assert.deepEqual(result.files, ["src/app.py", "src", "README.md"])
+    assert.equal(result.taskId, 1)
+    assert.deepEqual(enqueued, [{ taskId: 1, projectId: 7, command: { kind: "list-tree", folder: "1296269-octocat-Hello-World" } }])
+    assert.deepEqual(created.map((entry) => entry.description), ["listing files octocat/Hello-World"])
+  })
+
+  it("maps a failed tree listing to a git error", async () => {
+    const { service } = makeService({ withWorkspace: true, result: { status: "Failed", exitCode: 1, logTrail: "fatal" } })
+
+    await assert.rejects(service.listTree(7), GitOperationError)
+  })
+
   it("checks out a branch attaching HEAD", async () => {
     const { service, enqueued } = makeService({ withWorkspace: true })
 
