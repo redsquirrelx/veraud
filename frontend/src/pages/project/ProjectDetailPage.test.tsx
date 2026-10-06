@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
@@ -32,7 +32,9 @@ const gitCommits = {
   taskId: 2,
 }
 
-function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
+const gitTree = { files: ["src/index.ts", "README.md"], taskId: 6 }
+
+function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     return handler(String(input), init)
   }) as typeof fetch
@@ -42,6 +44,9 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
 function gitResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes("/git/branches")) {
     return new Response(JSON.stringify(gitBranches), { status: 200 })
+  }
+  if (url.includes("/git/tree")) {
+    return new Response(JSON.stringify(gitTree), { status: 200 })
   }
   if (url.includes("/git/log")) {
     return new Response(JSON.stringify(gitCommits), { status: 200 })
@@ -59,13 +64,24 @@ function gitResponse(url: string, init?: RequestInit): Response | null {
   return null
 }
 
-function stubProjects() {
+function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] }) {
+  let release = () => {}
+  const seen: string[] = []
   stubFetch((url, init) => {
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
+    if (url.includes("/git/tree")) {
+      seen.push(url)
+      if (options?.treePending === true) {
+        return new Promise<Response>((resolve) => {
+          release = () => resolve(new Response(JSON.stringify({ files: options?.treeFiles ?? gitTree.files, taskId: 6 }), { status: 200 }))
+        })
+      }
+    }
     return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
   })
+  return { seen, release: () => release() }
 }
 
 function renderDetail(entry: string) {
@@ -160,6 +176,65 @@ describe("ProjectDetailPage", () => {
     renderDetail("/projects/2")
 
     expect(await screen.findByText("pulling acme/Demo")).toBeDefined()
+  })
+
+  it("shows a loading state and then the project files in the files section", async () => {
+    const stub = stubProjects({ treePending: true })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Files" }))
+
+    expect(await screen.findByText("Loading project files")).toBeDefined()
+
+    stub.release()
+
+    expect(await screen.findByText("src")).toBeDefined()
+    expect(screen.getByText("README.md")).toBeDefined()
+    expect(screen.queryByText("index.ts")).toBeNull()
+    expect(stub.seen.length).toBe(1)
+
+    const rowsInTree = screen.getByRole("tree").querySelectorAll("li")
+    await userEvent.click(rowsInTree[1]?.querySelector("button") as HTMLElement)
+
+    expect(await screen.findByText("index.ts")).toBeDefined()
+  })
+
+  it("refreshes the files after a sync", async () => {
+    let treeCalls = 0
+    stubFetch((url) => {
+      if (url.includes("/sync")) {
+        return new Response(JSON.stringify({ ...rows[0], status: "READY", lastSyncedAt: "2026-03-03" }), { status: 200 })
+      }
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.includes("/git/tree")) {
+        treeCalls += 1
+      }
+      return gitResponse(url) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Files" }))
+    await screen.findByText("README.md")
+
+    const before = treeCalls
+    await userEvent.click(screen.getByRole("button", { name: "Sync" }))
+
+    await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
+  })
+
+  it("keeps the files placeholder for the audits section", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("audits coming in the next HU")).toBeDefined()
+    expect(screen.queryByRole("tree")).toBeNull()
   })
 
   it("applies the selected version from the selectors above the header", async () => {
