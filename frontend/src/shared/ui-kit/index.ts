@@ -5,6 +5,29 @@ export { FilterTabs } from "./FilterTabs.tsx"
 export type { FilterOption } from "./FilterTabs.tsx"
 export { ItemSelector } from "./ItemSelector.tsx"
 export type { ItemSelectorItem } from "./ItemSelector.tsx"
+export { DirectoryTree } from "./DirectoryTree.tsx"
+export {
+  ALL_EXTENSIONS,
+  activeGroupsOf,
+  breadcrumbOf,
+  extensionOf,
+  flattenDirectory,
+  groupOf,
+  isFiltering,
+  listExtensions,
+  matchRows,
+  rowClassName,
+  treeFromPaths,
+  visibleRows,
+} from "./directoryTree.ts"
+export type {
+  DirectoryFilter,
+  DirectoryGroup,
+  DirectoryGroupTone,
+  DirectoryMatch,
+  DirectoryTreeNode,
+  DirectoryTreeRow,
+} from "./directoryTree.ts"
 export { ItemSearcher } from "./ItemSearcher.tsx"
 export { Pagination } from "./Pagination.tsx"
 export { Panel } from "./Panel.tsx"
