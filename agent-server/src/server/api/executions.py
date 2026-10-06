@@ -60,6 +60,11 @@ async def run_agent(body: ExecutionRequest, service: ServiceDep) -> ExecutionRes
     except InvalidInputError as error:
         logger.warning("Invalid input: %s", error)
         raise HTTPException(status_code=422, detail=str(error)) from None
+    except FileNotFoundError as error:
+        # An agent that reads from disk raises this when the path is wrong.
+        # That is a bad request, not a server fault.
+        logger.warning("Path not found: %s", error)
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except TimeoutError:
         logger.error("Agent %r timed out", body.agent_type)
         raise HTTPException(status_code=504, detail="Agent execution timed out") from None
