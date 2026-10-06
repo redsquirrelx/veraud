@@ -1,6 +1,4 @@
-import { TaskMenu } from "../features/project-management/TaskMenu.tsx"
-import { useTasks } from "../features/project-management/useTasks.ts"
-import { isTaskVisible, useTaskVisibility } from "../features/project-management/taskVisibility.ts"
+import { isTaskVisible, TaskMenu, useTaskVisibility, useTasks } from "../shared/task-manager/index.ts"
 import { Toast } from "../shared/ui-kit/index.ts"
 import { useToasts } from "./use-toasts.ts"
 
