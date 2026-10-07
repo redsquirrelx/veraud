@@ -21,11 +21,11 @@ Flow: validate URL → fetch repo metadata (`GET /repos/{owner}/{repo}`) → rej
 
 ## `GET /api/tasks/active`
 
-Read-only. Returns tasks `Queued`/`Running`: `id`, `projectId`, `repositoryOwner`, `repositoryName`, `description` (`"cloning {owner}/{repo}"`), `status`, `exitCode` (number or null).
+Read-only. Returns tasks `Queued`/`Running`: `id`, `projectId`, `repositoryOwner`, `repositoryName`, `description` (`"cloning {owner}/{repo}"`), `status`, `kind` (git command, e.g. `clone`, `pull`, `list-branches`), `exitCode` (number or null).
 
 ## WS `/ws` — `task.updated`
 
-Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/`Failed`), `exitCode` (number or null).
+Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/`Failed`), `kind`, `exitCode` (number or null). The frontend uses `kind` to silence read-only tasks (`list-branches`, `rev-parse`, `log-commits`) unless they fail.
 
 ## Errors
 
@@ -38,6 +38,6 @@ Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`
 ## Data
 
 `project`: `githubRepositoryId` (GitHub numeric id), `repositoryOwner`/`repositoryName`, `status QUEUED`, `name` null until synced, no `project_version` yet.
-`task`: `projectId`, `description`, `status`, `exitCode`, `logTrail` (last 4000 chars, always saved on finish).
+`task`: `projectId`, `description`, `status`, `kind` (command that created it, `unknown` for rows predating the column), `exitCode`, `logTrail` (last 4000 chars, always saved on finish).
 
 Out of scope: Audit/Agent modules, cloning beyond `git clone`.
