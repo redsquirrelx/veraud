@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
-import { DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner } from "../../shared/ui-kit/index.ts"
+import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
+import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
+import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import { VersionSelector } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
@@ -29,8 +31,16 @@ export function ProjectDetailPage() {
     },
   })
   const files = useProjectTree(project?.id ?? null, project?.repositoryName ?? "")
+  const preview = useProjectFile(project?.id ?? null)
   const refreshFiles = files.refresh
+  const clearPreview = preview.clear
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
+
+  function openFile(path: string) {
+    const root = project?.repositoryName ?? ""
+    const relative = root !== "" && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
+    preview.open(relative)
+  }
 
   async function handleSync() {
     if (project === null || syncing) {
@@ -42,6 +52,7 @@ export function ProjectDetailPage() {
       setProject(updated)
       pushToast("success", `Project ${updated.repositoryOwner}/${updated.repositoryName} synced`)
       await version.refresh()
+      clearPreview()
       refreshFiles()
 
     } catch (error) {
@@ -79,9 +90,10 @@ export function ProjectDetailPage() {
   // single driver: entering the files section and any version change refetch the tree
   useEffect(() => {
     if (section === "files") {
+      clearPreview()
       refreshFiles()
     }
-  }, [section, versionKey, refreshFiles])
+  }, [section, versionKey, refreshFiles, clearPreview])
 
   return (
     <section className="project-page">
@@ -99,18 +111,30 @@ export function ProjectDetailPage() {
             <Card>
               <div className="project-header">
                 <div className="project-header-info">
-                  <span className="mono">
-                    {project.repositoryOwner}/{project.repositoryName}
+                  <span className="project-name-row">
+                    <span className="mono">
+                      {project.repositoryOwner}/{project.repositoryName}
+                    </span>
+                    <Badge tone={statusTone(project.status)}>{project.status}</Badge>
+                    <a
+                      className="project-link"
+                      href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open on GitHub<ExternalIcon size={12} />
+                    </a>
                   </span>
-                  <span className="project-date">
-                    Registered {new Date(project.registeredAt).toLocaleDateString()}
+                  <span className="project-dates-row">
+                    <span className="project-date">
+                      Registered {new Date(project.registeredAt).toLocaleDateString()}
+                    </span>
+                    <span className="project-date">
+                      {project.lastSyncedAt === null
+                        ? "Never synced"
+                        : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
+                    </span>
                   </span>
-                  <span className="project-date">
-                    {project.lastSyncedAt === null
-                      ? "Never synced"
-                      : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
-                  </span>
-                  <Badge tone={statusTone(project.status)}>{project.status}</Badge>
                 </div>
                 <Button loading={syncing} loadingText="Syncing" disabled={syncing} onClick={() => void handleSync()}>
                   Sync
@@ -119,18 +143,37 @@ export function ProjectDetailPage() {
             </Card>
             {section === "files" && (
               <Card>
-                {files.loading && files.tree === null ? (
-                  <div className="files-loading" role="status" aria-label="Loading">
-                    <Spinner />
-                    <span className="label">Loading project files</span>
-                  </div>
-                ) : files.error !== "" ? (
-                  <p className="files-error">{files.error}</p>
-                ) : files.tree === null ? (
-                  <p className="label">No files to show</p>
-                ) : (
-                  <DirectoryTree tree={files.tree} onRefresh={files.refresh} />
-                )}
+                <SplitView
+                  label="Resize file preview and directories"
+                  right={
+                    preview.loading && preview.file === null ? (
+                      <div className="files-loading" role="status" aria-label="Loading">
+                        <Spinner />
+                        <span className="label">Loading file</span>
+                      </div>
+                    ) : preview.error !== "" ? (
+                      <p className="files-error">{preview.error}</p>
+                    ) : preview.file === null ? (
+                      <p className="label files-empty">Select a file to preview</p>
+                    ) : (
+                      <CodeViewer code={preview.file.content} language={fileLanguage(preview.file.path)} highlight />
+                    )
+                  }
+                  left={
+                    files.loading && files.tree === null ? (
+                      <div className="files-loading" role="status" aria-label="Loading">
+                        <Spinner />
+                        <span className="label">Loading project files</span>
+                      </div>
+                    ) : files.error !== "" ? (
+                      <p className="files-error">{files.error}</p>
+                    ) : files.tree === null ? (
+                      <p className="label">No files to show</p>
+                    ) : (
+                      <DirectoryTree tree={files.tree} onRefresh={files.refresh} onSelectFile={openFile} />
+                    )
+                  }
+                />
               </Card>
             )}
             {section === "audits" && (
@@ -141,4 +184,9 @@ export function ProjectDetailPage() {
       </div>
     </section>
   )
+}
+
+function fileLanguage(path: string): string {
+  const dot = path.lastIndexOf(".")
+  return dot < 0 ? "" : path.slice(dot + 1).toLowerCase()
 }

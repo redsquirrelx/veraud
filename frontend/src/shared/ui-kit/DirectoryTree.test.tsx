@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DirectoryTree } from "./DirectoryTree.tsx"
 import { flattenDirectory, type DirectoryGroup, type DirectoryTreeNode } from "./directoryTree.ts"
@@ -205,6 +205,32 @@ describe("DirectoryTree filters", () => {
     expect(screen.getByPlaceholderText("File or folder name")).toHaveValue("")
     expect(names().some((text) => text.includes("app.py"))).toBe(true)
   })
+
+  it("opens an overflow menu with working filter controls", async () => {
+    const { container } = render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
+    const opener = container.querySelector(".directory-overflow") as HTMLElement
+
+    fireEvent.click(opener)
+
+    const panel = container.querySelector(".directory-overflow-panel") as HTMLElement
+    expect(panel).not.toBeNull()
+
+    await userEvent.type(within(panel).getByPlaceholderText("File or folder name"), "helper")
+
+    expect(names().some((text) => text.includes("helper.py"))).toBe(true)
+    expect(names().some((text) => text.includes("app.py"))).toBe(false)
+  })
+
+  it("closes the overflow menu with escape", async () => {
+    const { container } = render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
+    const opener = container.querySelector(".directory-overflow") as HTMLElement
+
+    fireEvent.click(opener)
+    expect(container.querySelector(".directory-overflow-panel")).not.toBeNull()
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(container.querySelector(".directory-overflow-panel")).toBeNull()
+  })
 })
 
 describe("DirectoryTree", () => {
@@ -299,6 +325,17 @@ describe("DirectoryTree", () => {
 
     expect(screen.queryByText("flagged")).toBeNull()
     expect(screen.queryByText("ghost")).toBeNull()
+  })
+
+  it("notifies the selected file without notifying folders", async () => {
+    const selected: string[] = []
+    render(<DirectoryTree tree={tree} initialExpanded={["repo/src"]} onSelectFile={(path) => { selected.push(path) }} />)
+
+    await userEvent.click(screen.getByText("nested"))
+    expect(selected).toEqual([])
+
+    await userEvent.click(screen.getByText("a.ts"))
+    expect(selected).toEqual(["repo/src/a.ts"])
   })
 
   it("keeps collapsing folders when no filter is active", async () => {
