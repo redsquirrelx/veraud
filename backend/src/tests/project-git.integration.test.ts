@@ -212,6 +212,42 @@ describe("project git API", () => {
     assert.equal(response.status, 400)
   })
 
+  it("reads a text file from the workspace checkout", async () => {
+    const response = await fetch(`${baseUrl}/api/projects/1/file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "file.txt" }),
+    })
+
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as { path: string, content: string, size: number }
+
+    assert.equal(body.path, "file.txt")
+    assert.equal(typeof body.content, "string")
+    assert.ok(body.content.length > 0)
+    assert.equal(body.size, Buffer.byteLength(body.content, "utf8"))
+  })
+
+  it("rejects traversal paths with 400", async () => {
+    const response = await fetch(`${baseUrl}/api/projects/1/file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "../secret.txt" }),
+    })
+
+    assert.equal(response.status, 400)
+  })
+
+  it("rejects missing files with 422", async () => {
+    const response = await fetch(`${baseUrl}/api/projects/1/file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "nope.txt" }),
+    })
+
+    assert.equal(response.status, 422)
+  })
+
   it("rejects unknown projects with 404", async () => {
     const response = await fetch(`${baseUrl}/api/projects/999/git/branches`, { method: "POST" })
 

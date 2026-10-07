@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
-import { DuplicateProjectError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
+import { DuplicateProjectError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
   type: "object",
@@ -118,6 +118,32 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       const result = await service.listTree(Number(params.id))
       return reply.code(200).send(result)
     } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
+  app.post("/api/projects/:id/file", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["path"],
+        properties: {
+          path: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { path: string }
+
+    try {
+      const result = await service.readFile(Number(params.id), body.path)
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ProjectFileError) {
+        return reply.code(422).send({ message: error.message })
+      }
       return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
     }
   })
