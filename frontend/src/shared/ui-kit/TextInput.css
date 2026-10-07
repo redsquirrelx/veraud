@@ -22,3 +22,35 @@
   background: #f1f5f9;
   cursor: not-allowed;
 }
+
+.ui-text-input {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.ui-text-input .ui-item-legend {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  z-index: 1;
+  padding: 0 4px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+.ui-text-input:focus-within .ui-item-legend {
+  color: #0284c7;
+}
+
+.ui-text-input .ui-input {
+  width: 100%;
+  box-sizing: border-box;
+}

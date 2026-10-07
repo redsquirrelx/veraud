@@ -47,3 +47,11 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.ui-button-square {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  border-color: #94a3b8;
+}
