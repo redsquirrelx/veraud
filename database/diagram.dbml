@@ -61,6 +61,7 @@ Table agent_execution {
   input_tokens int
   output_tokens int
   error text
+  result text
 }
 
 Table ai_provider {
