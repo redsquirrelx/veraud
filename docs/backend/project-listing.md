@@ -17,4 +17,4 @@ Response `200` (empty array when none, never 404): `id` (number),
 Flow: controller → service passthrough → Prisma `findMany` ordered by
 `id` with `selectedVersion` included → mapped rows.
 
-Out of scope: Audit/Agent modules.
+See also: `agent-execution.md`.

@@ -14,6 +14,9 @@ import { TaskRunner, type TaskQueue } from "./infrastructure/task-runner/task.ru
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
+import { AgentExecutionRepository } from "./modules/agent-execution/agent-execution.repository.js"
+import { AgentExecutionService } from "./modules/agent-execution/agent-execution.service.js"
+import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-execution.controller.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
@@ -55,6 +58,10 @@ export async function buildApp(options: BuildAppOptions) {
   gateway.register(app)
   registerProjectRoutes(app, projectService)
   registerTaskRoutes(app, taskService)
+
+  const agentExecutionRepository = new AgentExecutionRepository(db)
+  const agentExecutionService = new AgentExecutionService(agentExecutionRepository)
+  registerAgentExecutionRoutes(app, agentExecutionService, gateway)
 
   app.get("/status", { logLevel: "silent" }, async () => {
     return { status: "ok", service: "backend", agentServer: await checkAgentServer(options.agentServerUrl) }

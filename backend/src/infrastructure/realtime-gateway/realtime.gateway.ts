@@ -14,6 +14,25 @@ export interface TaskEvent {
   }
 }
 
+export interface AgentExecutionEvent {
+  type: "agent-execution.opened" | "agent-execution.updated"
+  execution: {
+    id: number
+    evaluationId: number
+    agentType: string
+    status: string
+    result: string | null
+    error: string | null
+    inputTokens: number | null
+    outputTokens: number | null
+    createdAt: Date
+    startedAt: Date | null
+    finishedAt: Date | null
+  }
+}
+
+export type GatewayEvent = TaskEvent | AgentExecutionEvent
+
 export class RealtimeGateway {
   private log = logger.withTag("realtime-gateway")
   private sockets = new Set<WebSocket>()
@@ -30,7 +49,7 @@ export class RealtimeGateway {
     })
   }
 
-  broadcast(event: TaskEvent): void {
+  broadcast(event: GatewayEvent): void {
     const message = JSON.stringify(event)
 
     for (const socket of this.sockets) {
