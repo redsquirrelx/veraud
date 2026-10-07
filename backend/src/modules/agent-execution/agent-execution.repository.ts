@@ -1,13 +1,14 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
 
 export type AgentExecutionStatus =
-  | "Idle"
+  | "Waiting"
   | "Running"
   | "Completed"
   | "Failed"
 
-/** An agent invocation starts Idle: the request was accepted, nothing has run yet. */
-export const INITIAL_STATUS: AgentExecutionStatus = "Idle"
+/** An agent invocation starts Waiting: the request was accepted, nothing has
+ *  run yet. Title case, matching the `task` module. */
+export const INITIAL_STATUS: AgentExecutionStatus = "Waiting"
 
 export interface NewAgentExecution {
   agentType: string

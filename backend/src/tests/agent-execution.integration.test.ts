@@ -108,7 +108,7 @@ describe("agent execution endpoints", () => {
     assert.equal(typeof body.id, "number")
     assert.equal(body.agentType, "analyzer")
     assert.equal(body.evaluationId, evaluation.id)
-    assert.equal(body.status, "Idle")
+    assert.equal(body.status, "Waiting")
     assert.equal(body.result, null)
     assert.equal(body.finishedAt, null)
   })
