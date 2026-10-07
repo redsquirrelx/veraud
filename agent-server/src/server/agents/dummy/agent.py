@@ -55,14 +55,6 @@ class DummyAgent(BaseAgent[DummyInput, DummyOutput]):
     input_schema = DummyInput
     output_schema = DummyOutput
 
-    system_prompt = (
-        "You are a trial software quality auditor. "
-        "Evaluate the code and answer ONLY with valid JSON using the keys: "
-        '{"evaluated_attribute": str, "score": number 0-100, '
-        '"findings": [{"title": str, "description": str, "severity": str}], '
-        '"recommendations": [str]}.'
-    )
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._graph = self._build_graph()
@@ -99,7 +91,9 @@ class DummyAgent(BaseAgent[DummyInput, DummyOutput]):
                 "recommendations": ["Send a code snippet or test repo path."],
             }}
 
-        prompt = f"{self.system_prompt}\nAttribute: {attribute}\nCode:\n{code}"
+        prompt = (
+            f"{self.system_prompt()}\n\n{self.user_prompt(attribute=attribute, code=code)}"
+        )
 
         try:
             logger.info("analyze: calling model (prompt_chars=%d)", len(prompt))

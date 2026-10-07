@@ -3,11 +3,15 @@
 These are the shapes the backend sends. Every override field is optional:
 None means "use the server default". The service merges them over
 dev_agents_config to produce the resolved ModelSettings.
+
+The contract is agent agnostic on purpose. It never mentions a specific agent,
+so adding one does not change this file. The input and output shapes belong to
+each agent; `GET /api/agents/{agent_type}/schema` publishes them.
 """
 
-from pydantic import BaseModel, Field
+from typing import Any
 
-from ..agents.dummy.schemas import DummyInput, DummyOutput
+from pydantic import BaseModel, Field
 
 
 class ModelConfig(BaseModel):
@@ -29,10 +33,23 @@ class ExecutionConfig(BaseModel):
 
 class ExecutionRequest(BaseModel):
     agent_type: str
-    config: ExecutionConfig = ExecutionConfig()
-    input: DummyInput
+    config: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    input: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Agent input. Validated against that agent's input schema.",
+    )
 
 
 class ExecutionResponse(BaseModel):
     agent_type: str
-    result: DummyOutput
+    result: dict[str, Any] = Field(
+        description="Agent output. Matches that agent's output schema.",
+    )
+
+
+class AgentSchemaResponse(BaseModel):
+    """What one agent accepts and returns, so callers can build a valid request."""
+
+    agent_type: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]

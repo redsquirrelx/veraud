@@ -1,11 +1,11 @@
 import asyncio
 from functools import lru_cache
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from ..agents.analyzer.agent import ProjectAnalyzerAgent
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
-from ..agents.dummy.schemas import DummyInput
 from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
 from ..agents.models.openrouter import OpenRouterModel
@@ -23,6 +23,10 @@ logger = get_logger("execution-service")
 
 
 class InvalidConfigError(ValueError):
+    pass
+
+
+class InvalidInputError(ValueError):
     pass
 
 
@@ -44,6 +48,7 @@ def build_default_registry() -> AgentRegistry:
     registry = AgentRegistry()
     
     registry.register(DummyAgent.agent_type, DummyAgent)
+    registry.register(ProjectAnalyzerAgent.agent_type, ProjectAnalyzerAgent)
 
     return registry
 
@@ -59,6 +64,18 @@ class AgentExecutionService:
 
     def list_agents(self) -> list[str]:
         return self._registry.list_agents()
+
+    def describe_agent(self, agent_type: str) -> dict:
+        """What an agent accepts and returns, read from its own schemas.
+
+        The agent owns its contract, so a new agent needs no change here.
+        """
+        agent_cls = self._registry.get(agent_type)
+        return {
+            "agent_type": agent_type,
+            "input_schema": agent_cls.input_schema.model_json_schema(),
+            "output_schema": agent_cls.output_schema.model_json_schema(),
+        }
 
     def build_agent(
         self, agent_type: str, config: ExecutionConfig
@@ -130,23 +147,35 @@ class AgentExecutionService:
         self,
         agent_type: str,
         config: ExecutionConfig,
-        payload: DummyInput | dict,
-    ):
+        payload: dict,
+    ) -> BaseModel:
+        """Validate the payload against the agent's own input schema, then run it.
+
+        Returns the agent's output model instance. The HTTP layer serialises it.
+        """
         agent, timeout = self.build_agent(agent_type, config)
 
-        if isinstance(payload, dict):
-            payload = DummyInput(**payload)
+        input_schema = type(agent).input_schema
+        try:
+            agent_input = input_schema.model_validate(payload)
+        except ValidationError as error:
+            raise InvalidInputError(
+                f"Invalid input for agent {agent_type!r}: {error}"
+            ) from None
 
-        logger.info("Running agent %r (timeout=%ss)", agent_type, timeout)
+        logger.info(
+            "Running agent %r (timeout=%ss input=%s)",
+            agent_type, timeout, type(agent_input).__name__,
+        )
 
         try:
-            result = await asyncio.wait_for(agent.run(payload), timeout)
+            result = await asyncio.wait_for(agent.run(agent_input), timeout)
         except TimeoutError:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
             raise
 
         logger.info("Agent %r finished", agent_type)
-        
+
         return result
 
 
