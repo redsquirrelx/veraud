@@ -17,6 +17,9 @@ import { registerProjectRoutes } from "./modules/project/project.controller.js"
 import { AgentExecutionRepository } from "./modules/agent-execution/agent-execution.repository.js"
 import { AgentExecutionService } from "./modules/agent-execution/agent-execution.service.js"
 import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-execution.controller.js"
+import { AiProviderRepository } from "./modules/ai-provider/ai-provider.repository.js"
+import { AiProviderService, SEEDED_AI_PROVIDERS } from "./modules/ai-provider/ai-provider.service.js"
+import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.controller.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
@@ -49,14 +52,19 @@ export async function buildApp(options: BuildAppOptions) {
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const taskService = new TaskService(taskRepository, runner)
   const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir)
+  const aiProviderRepository = new AiProviderRepository(db)
+  await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
+  const aiProviderService = new AiProviderService(aiProviderRepository)
 
   await app.register(websocket)
   await app.register(cors, {
     origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
   
   gateway.register(app)
   registerProjectRoutes(app, projectService)
+  registerAiProviderRoutes(app, aiProviderService)
   registerTaskRoutes(app, taskService)
 
   const agentExecutionRepository = new AgentExecutionRepository(db)

@@ -17,6 +17,18 @@
   overflow: hidden;
 }
 
+.project-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+}
+
+.project-title-row .project-github,
+.project-title-row .ui-badge {
+  flex-shrink: 0;
+}
+
 .project-title {
   background: transparent;
   border: none;
@@ -50,4 +62,39 @@
 .project-row .ui-button {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.project-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.project-pin:hover {
+  color: #006194;
+}
+
+.project-pin-active {
+  color: #006194;
+}
+
+.project-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: #94a3b8;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+}
+
+.project-github:hover {
+  color: #006194;
 }

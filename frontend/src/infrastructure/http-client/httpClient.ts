@@ -157,6 +157,29 @@ export async function checkoutBranch(id: number, branch: string): Promise<GitBra
   return postGit<GitBranchCheckout>(id, "checkout-branch", { branch })
 }
 
+export interface ProjectFile {
+  path: string
+  content: string
+  size: number
+}
+
+export async function readProjectFile(id: number, path: string): Promise<ProjectFile> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not read the file")
+  }
+
+  return body as ProjectFile
+}
+
 export interface GitTree {
   files: string[]
   taskId: number
@@ -164,4 +187,80 @@ export interface GitTree {
 
 export async function listProjectFiles(id: number): Promise<GitTree> {
   return postGit<GitTree>(id, "tree", {})
+}
+
+export interface AiModelSummary {
+  id: number
+  name: string
+  inUse: boolean
+}
+
+export interface AiCredentialSummary {
+  id: number
+  name: string
+  apiKeyPreview: string
+  inUse: boolean
+}
+
+export interface AiProviderDetail {
+  id: number
+  name: string
+  models: AiModelSummary[]
+  credentials: AiCredentialSummary[]
+}
+
+export async function listAiProviders(): Promise<AiProviderDetail[]> {
+  const response = await fetch(`${baseUrl}/api/ai-providers`)
+
+  if (!response.ok) {
+    throw new ApiError(response.status, "Could not load AI providers")
+  }
+
+  return (await response.json()) as AiProviderDetail[]
+}
+
+async function postAi<T>(aiProviderId: number, resource: string, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  const payload = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+  }
+
+  return payload as T
+}
+
+async function deleteAi(aiProviderId: number, resource: string, id: number): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
+    method: "DELETE",
+  })
+
+  if (response.status === 204) {
+    return
+  }
+
+  const payload = (await response.json()) as { message?: string }
+
+  throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+}
+
+export async function createAiModel(aiProviderId: number, name: string): Promise<AiModelSummary> {
+  return postAi<AiModelSummary>(aiProviderId, "models", { name })
+}
+
+export async function deleteAiModel(aiProviderId: number, modelId: number): Promise<void> {
+  return deleteAi(aiProviderId, "models", modelId)
+}
+
+export async function createAiCredential(aiProviderId: number, name: string, apiKey: string): Promise<AiCredentialSummary> {
+  return postAi<AiCredentialSummary>(aiProviderId, "credentials", { name, apiKey })
+}
+
+export async function deleteAiCredential(aiProviderId: number, credentialId: number): Promise<void> {
+  return deleteAi(aiProviderId, "credentials", credentialId)
 }

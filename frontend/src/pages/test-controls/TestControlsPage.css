@@ -1,0 +1,27 @@
+.test-controls-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.0rem;
+}
+
+.test-controls-page .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.test-controls-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.test-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

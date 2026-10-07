@@ -61,6 +61,10 @@ function gitResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes("/git/rev-parse")) {
     return new Response(JSON.stringify({ branch: "main", commitHash: "a".repeat(40), taskId: 4 }), { status: 200 })
   }
+  if (url.includes("/api/projects/") && url.endsWith("/file")) {
+    const body = init?.body === undefined ? {} : (JSON.parse(String(init.body)) as { path?: string })
+    return new Response(JSON.stringify({ path: body.path ?? "", content: `# ${body.path ?? ""}\n`, size: 10 }), { status: 200 })
+  }
   return null
 }
 
@@ -107,6 +111,11 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByText("Project")).toBeDefined()
     expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
+
+    const link = screen.getByRole("link", { name: "Open on GitHub" })
+    expect(link.getAttribute("href")).toBe("https://github.com/acme/Demo")
+    expect(link.getAttribute("target")).toBe("_blank")
+    expect(link.getAttribute("rel")).toContain("noreferrer")
   })
 
   it("shows not found for unknown projects", async () => {
@@ -198,6 +207,94 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(rowsInTree[1]?.querySelector("button") as HTMLElement)
 
     expect(await screen.findByText("index.ts")).toBeDefined()
+  })
+
+  it("previews a file right of the directories when selected", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Files" }))
+    await screen.findByText("README.md")
+
+    expect(screen.getByText("Select a file to preview")).toBeDefined()
+
+    const fileButtons = Array.from(screen.getByRole("tree").querySelectorAll("li button"))
+    const readme = fileButtons.find((button) => button.textContent?.includes("README.md"))
+    if (readme === undefined) {
+      throw new Error("README.md row not found")
+    }
+    await userEvent.click(readme)
+
+    expect(await screen.findByText("# README.md")).toBeDefined()
+    expect(screen.queryByText("Select a file to preview")).toBeNull()
+
+    const split = document.querySelector(".ui-split")
+    expect(split).not.toBeNull()
+    const panes = split?.querySelectorAll(":scope > .ui-split-pane") ?? []
+    expect(panes.length).toBe(2)
+    expect(panes[0]?.querySelector(".directory-tree")).not.toBeNull()
+    expect(panes[1]?.querySelector(".ui-code-viewer")).not.toBeNull()
+    expect(document.querySelectorAll(".files-layout").length).toBe(0)
+  })
+
+  it("clears the file preview when the version changes", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Files" }))
+    await screen.findByText("README.md")
+
+    const fileButtons = Array.from(screen.getByRole("tree").querySelectorAll("li button"))
+    const readme = fileButtons.find((button) => button.textContent?.includes("README.md"))
+    if (readme === undefined) {
+      throw new Error("README.md row not found")
+    }
+    await userEvent.click(readme)
+    expect(await screen.findByText("# README.md")).toBeDefined()
+
+    await userEvent.clear(screen.getByLabelText("Search items"))
+    await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
+
+    expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
+    expect(screen.getByText("Select a file to preview")).toBeDefined()
+    expect(screen.queryByText("# README.md")).toBeNull()
+  })
+
+  it("clears the file preview after a sync", async () => {
+    let treeCalls = 0
+    stubFetch((url, init) => {
+      if (url.includes("/sync")) {
+        return new Response(JSON.stringify({ ...rows[0], status: "READY", lastSyncedAt: "2026-03-03" }), { status: 200 })
+      }
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.includes("/git/tree")) {
+        treeCalls += 1
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("button", { name: "Files" }))
+    await screen.findByText("README.md")
+
+    const fileButtons = Array.from(screen.getByRole("tree").querySelectorAll("li button"))
+    const readme = fileButtons.find((button) => button.textContent?.includes("README.md"))
+    if (readme === undefined) {
+      throw new Error("README.md row not found")
+    }
+    await userEvent.click(readme)
+    expect(await screen.findByText("# README.md")).toBeDefined()
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync" }))
+
+    expect(await screen.findByText("Select a file to preview")).toBeDefined()
+    expect(screen.queryByText("# README.md")).toBeNull()
+    expect(treeCalls).toBeGreaterThan(0)
   })
 
   it("refreshes the files after a sync", async () => {

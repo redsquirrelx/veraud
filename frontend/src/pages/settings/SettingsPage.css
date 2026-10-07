@@ -3,6 +3,8 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1.0rem;
+  background: #f2f3ff;
+  min-height: calc(100vh - 48px);
 }
 
 .settings-page .ui-card {
@@ -12,9 +14,58 @@
   align-items: flex-start;
 }
 
+.settings-page .ui-card > .label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.settings-page .settings-llm-head > .label {
+  font-size: 12px;
+  color: #334155;
+}
+
+.settings-llm-row {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.settings-llm-group {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.settings-llm-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.settings-modal-form .ui-button {
+  align-self: center;
+}
+
 .settings-hint {
   margin: 0;
   color: #475569;
+  font-size: 13px;
+}
+
+.settings-error {
+  margin: 0;
+  color: #b91c1c;
   font-size: 13px;
 }
 

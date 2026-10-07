@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react"
-import { ChevronDownIcon, ChevronRightIcon, FolderIcon } from "./icons.tsx"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ChevronDownIcon, ChevronRightIcon, DotsIcon, FolderIcon } from "./icons.tsx"
 import { ItemSelector } from "./ItemSelector.tsx"
 import { Panel } from "./Panel.tsx"
 import { RefreshButton } from "./RefreshButton.tsx"
@@ -28,6 +28,7 @@ interface DirectoryTreeProps {
   initialSelected?: string | null
   initialExpanded?: string[]
   onRefresh?: () => Promise<void> | void
+  onSelectFile?: (path: string) => void
 }
 
 interface DirectoryTreeItemProps {
@@ -47,12 +48,15 @@ export function DirectoryTree({
   initialSelected = null,
   initialExpanded = [],
   onRefresh,
+  onSelectFile,
 }: DirectoryTreeProps) {
   const [expanded, setExpanded] = useState<string[]>([tree.name, ...initialExpanded])
   const [selected, setSelected] = useState<string | null>(initialSelected)
   const [nameFilter, setNameFilter] = useState("")
   const [extension, setExtension] = useState(ALL_EXTENSIONS)
   const [refreshing, setRefreshing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement | null>(null)
 
   const rows = useMemo(() => flattenDirectory(tree), [tree])
   const flagged = useMemo(() => new Set(flaggedPaths), [flaggedPaths])
@@ -75,10 +79,39 @@ export function DirectoryTree({
     setExpanded((current) => current.includes(path) ? current.filter((item) => item !== path) : [...current, path])
   }
 
+  function selectFile(path: string) {
+    setSelected(path)
+    onSelectFile?.(path)
+  }
+
   function resetFilters() {
     setNameFilter("")
     setExtension(ALL_EXTENSIONS)
   }
+
+  // Closes the overflow menu on outside click or Escape. The menu itself is
+  // driven by a container query in CSS, so this only handles dismissal.
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+    function handlePointer(event: MouseEvent) {
+      if (filtersRef.current !== null && !filtersRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handlePointer)
+    document.addEventListener("keydown", handleKey)
+    return () => {
+      document.removeEventListener("mousedown", handlePointer)
+      document.removeEventListener("keydown", handleKey)
+    }
+  }, [menuOpen])
 
   async function refresh() {
     if (refreshing || onRefresh === undefined) {
@@ -98,7 +131,7 @@ export function DirectoryTree({
   return (
     <div className="directory-tree-view" aria-busy={refreshing}>
       <Panel>
-        <div className="directory-filters">
+        <div className="directory-filters" ref={filtersRef}>
           <span className="label">Filter</span>
           <TextInput value={nameFilter} placeholder="File or folder name" disabled={refreshing} onChange={setNameFilter} />
           <span className="label">Extension</span>
@@ -121,6 +154,36 @@ export function DirectoryTree({
             <span className="label">{visible.length} of {rows.length}</span>
           )}
           {onRefresh !== undefined && <RefreshButton loading={refreshing} onClick={() => void refresh()} />}
+          <button
+            type="button"
+            className="directory-overflow"
+            aria-label="More filters"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <DotsIcon size={14} />
+          </button>
+          {menuOpen && (
+            <div className="directory-overflow-panel" role="menu" aria-label="More filters">
+              <span className="label">Filter</span>
+              <TextInput value={nameFilter} placeholder="File or folder name" disabled={refreshing} onChange={setNameFilter} />
+              <span className="label">Extension</span>
+              <ItemSelector
+                items={[
+                  { id: ALL_EXTENSIONS, label: "All" },
+                  ...extensions.map((value) => ({ id: value, label: value })),
+                ]}
+                selectedId={extension}
+                onSelect={setExtension}
+                hasMore={false}
+                onLoadMore={() => {}}
+                emptyText="No extensions"
+                placeholder="All"
+                disabled={refreshing}
+              />
+              {onRefresh !== undefined && <RefreshButton loading={refreshing} onClick={() => void refresh()} />}
+            </div>
+          )}
         </div>
       </Panel>
       <nav className="directory-breadcrumbs" aria-label="Breadcrumb">
@@ -148,7 +211,7 @@ export function DirectoryTree({
               isOpen={isOpen(row.path)}
               group={groupOf(activeGroups, row.path)}
               onToggle={toggle}
-              onSelect={setSelected}
+              onSelect={selectFile}
             />
           ))}
         </ul>

@@ -1,0 +1,36 @@
+.ui-split {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-split-pane {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ui-split-pane-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ui-split-handle {
+  flex: 0 0 auto;
+  width: 10px;
+  margin: 0 4px;
+  border-radius: 0.25rem;
+  cursor: col-resize;
+  touch-action: none;
+  transition: background 120ms ease;
+}
+
+.ui-split-handle:hover,
+.ui-split-handle:focus-visible {
+  background: #e0f2fe;
+  outline: none;
+  box-shadow: inset 2px 0 0 #0284c7, inset -2px 0 0 #0284c7;
+}

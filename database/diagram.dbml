@@ -66,7 +66,7 @@ Table agent_execution {
 
 Table ai_provider {
   id int [pk, not null]
-  name varchar [not null]
+  name varchar [not null, unique]
 }
 
 Table ai_credential {
@@ -81,6 +81,10 @@ Table ai_model {
   id int [pk, not null]
   ai_provider_id int [not null]
   name varchar [not null]
+  
+  indexes {
+    (ai_provider_id, name) [unique]
+  }
 }
 
 Table agent_settings {

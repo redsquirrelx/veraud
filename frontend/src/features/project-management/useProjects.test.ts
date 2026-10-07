@@ -7,6 +7,7 @@ const realFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = realFetch
+  window.localStorage.removeItem("projects.pinned")
 })
 
 const rows: ProjectSummary[] = [
@@ -115,8 +116,7 @@ describe("useProjects", () => {
     expect(result.current.projects.length).toBe(2)
   })
 
-  it("resets to the first page when the search changes", async () => {
-    const many = Array.from({ length: 11 }, (_, index) => ({
+  it("resets to the first page when the search changes", async () => {    const many = Array.from({ length: 11 }, (_, index) => ({
       id: index + 1,
       repositoryOwner: "acme",
       repositoryName: `Repo-${String(index + 1).padStart(2, "0")}`,
@@ -143,5 +143,67 @@ describe("useProjects", () => {
       result.current.setSearch("Repo-01")
     })
     expect(result.current.page).toBe(1)
+  })
+
+  it("lists pinned projects first regardless of the sort", async () => {
+    stubProjects()
+    const { result } = renderHook(() => useProjects())
+
+    await waitFor(() => {
+      expect(result.current.total).toBe(3)
+    })
+    expect(result.current.projects.map((project) => project.repositoryName)).toEqual(["Alpha", "Zulu", "Beta"])
+
+    act(() => {
+      result.current.togglePin(1)
+    })
+    expect(result.current.projects.map((project) => project.repositoryName)).toEqual(["Zulu", "Alpha", "Beta"])
+    expect(result.current.pinned).toEqual([1])
+
+    act(() => {
+      result.current.setSortMode("date")
+      result.current.toggleAzDirection()
+    })
+    expect(result.current.projects.map((project) => project.repositoryName)).toEqual(["Zulu", "Beta", "Alpha"])
+
+    act(() => {
+      result.current.togglePin(1)
+    })
+    expect(result.current.projects.map((project) => project.repositoryName)).toEqual(["Beta", "Alpha", "Zulu"])
+    expect(result.current.pinned).toEqual([])
+  })
+
+  it("persists pins across mounts", async () => {
+    stubProjects()
+    const first = renderHook(() => useProjects())
+
+    await waitFor(() => {
+      expect(first.result.current.total).toBe(3)
+    })
+
+    act(() => {
+      first.result.current.togglePin(3)
+    })
+    first.unmount()
+
+    const second = renderHook(() => useProjects())
+
+    await waitFor(() => {
+      expect(second.result.current.total).toBe(3)
+    })
+    expect(second.result.current.pinned).toEqual([3])
+    expect(second.result.current.projects.map((project) => project.repositoryName)).toEqual(["Beta", "Alpha", "Zulu"])
+  })
+
+  it("prunes pins of missing projects on load", async () => {
+    window.localStorage.setItem("projects.pinned", JSON.stringify([2, 99]))
+    stubProjects()
+    const { result } = renderHook(() => useProjects())
+
+    await waitFor(() => {
+      expect(result.current.total).toBe(3)
+    })
+    expect(result.current.pinned).toEqual([2])
+    expect(JSON.parse(window.localStorage.getItem("projects.pinned") as string)).toEqual([2])
   })
 })

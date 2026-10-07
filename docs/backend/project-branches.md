@@ -74,7 +74,7 @@ limit, offset (no task created). `404` for unknown project. `422` for
 missing workspace checkout or git failure (task kept as `Failed`).
 Every transition broadcasts `task.updated` on `/ws` with `id`,
 `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/
-`Failed`), `exitCode`.
+`Failed`), `kind`, `exitCode`.
 
 ## Task output vs log trail
 

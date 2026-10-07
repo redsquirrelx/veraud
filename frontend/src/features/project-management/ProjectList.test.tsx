@@ -10,6 +10,7 @@ const realFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = realFetch
+  window.localStorage.removeItem("projects.pinned")
 })
 
 const rows: ProjectSummary[] = [
@@ -146,6 +147,32 @@ describe("ProjectList", () => {
     )
 
     expect(await screen.findByText("Could not load projects")).toBeDefined()
+  })
+
+  it("pins a project above the sorted rest from its card", async () => {
+    stubProjects(rows)
+    const { container } = render(
+      <MemoryRouter>
+        <ListHarness />
+      </MemoryRouter>
+    )
+
+    await screen.findByText("acme/Zulu")
+
+    function titles() {
+      return [...container.querySelectorAll(".project-title")].map((node) => node.textContent)
+    }
+    expect(titles()).toEqual(["acme/Alpha", "acme/Zulu"])
+
+    const cards = container.querySelectorAll(".project-row")
+    const zuluPin = cards[1]?.querySelector('button[aria-label="Pin project"]')
+    if (zuluPin === null || zuluPin === undefined) {
+      throw new Error("pin button not found")
+    }
+    await userEvent.click(zuluPin)
+
+    expect(titles()).toEqual(["acme/Zulu", "acme/Alpha"])
+    expect(JSON.parse(window.localStorage.getItem("projects.pinned") as string)).toEqual([1])
   })
 
   it("paginates ten projects per page", async () => {
