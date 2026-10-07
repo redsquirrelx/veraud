@@ -106,7 +106,7 @@ export function ChevronRightIcon({ size = 14 }: IconProps) {
 export function XIcon({ size = 14 }: IconProps) {
   return (
     <svg {...baseProps(size)} aria-hidden="true">
-      <path d="m4 4 8 8m0-4-8 8" />
+      <path d="m4 4 8 8m0-8-8 8" />
     </svg>
   )
 }
@@ -230,6 +230,22 @@ export function ExternalIcon({ size = 14 }: IconProps) {
       <path d="M9.5 2.5h4v4" />
       <path d="M13.5 2.5 7.5 8.5" />
       <path d="M11.5 6.5v5a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h5" />
+    </svg>
+  )
+}
+
+export function PlusIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  )
+}
+
+export function MinusIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M3 8h10" />
     </svg>
   )
 }

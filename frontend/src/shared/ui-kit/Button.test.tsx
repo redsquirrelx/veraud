@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Button } from "./Button.tsx"
+import { PlusIcon } from "./icons.tsx"
 
 describe("Button", () => {
   it("renders its children", () => {
@@ -47,5 +48,13 @@ describe("Button", () => {
 
     expect(screen.getByRole("button", { name: "Wait" })).toBeDefined()
     expect(screen.queryByRole("status", { name: "Loading" })).toBeNull()
+  })
+
+  it("renders square for icon-only actions", () => {
+    render(<Button square ariaLabel="Increase" variant="secondary"><PlusIcon /></Button>)
+
+    const button = screen.getByRole("button", { name: "Increase" })
+
+    expect(button.getAttribute("class")).toContain("ui-button-square")
   })
 })

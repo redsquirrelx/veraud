@@ -30,4 +30,22 @@ describe("TextInput", () => {
 
     expect(screen.getByRole("textbox").hasAttribute("disabled")).toBe(true)
   })
+
+  it("renders a floating legend only when labeled", () => {
+    const { unmount } = render(<TextInput value="" placeholder="repo url" onChange={() => {}} />)
+
+    expect(screen.queryByText("Model name")).toBeNull()
+    unmount()
+
+    render(<TextInput value="" label="Model name" placeholder="gpt-4o" onChange={() => {}} />)
+
+    expect(screen.getByText("Model name")).toBeDefined()
+    expect(screen.getByLabelText("Model name")).toBeDefined()
+  })
+
+  it("hides password values", () => {
+    render(<TextInput value="secret" label="Api Key" type="password" onChange={() => {}} />)
+
+    expect(screen.getByLabelText("Api Key").getAttribute("type")).toBe("password")
+  })
 })
