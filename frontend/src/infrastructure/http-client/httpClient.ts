@@ -157,6 +157,29 @@ export async function checkoutBranch(id: number, branch: string): Promise<GitBra
   return postGit<GitBranchCheckout>(id, "checkout-branch", { branch })
 }
 
+export interface ProjectFile {
+  path: string
+  content: string
+  size: number
+}
+
+export async function readProjectFile(id: number, path: string): Promise<ProjectFile> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not read the file")
+  }
+
+  return body as ProjectFile
+}
+
 export interface GitTree {
   files: string[]
   taskId: number

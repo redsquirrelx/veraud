@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { join, resolve, sep } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
@@ -12,6 +12,7 @@ export class SyncFailedError extends Error {}
 export class InvalidGitRequestError extends Error {}
 export class WorkspaceMissingError extends Error {}
 export class GitOperationError extends Error {}
+export class ProjectFileError extends Error {}
 
 export interface GitCommit {
   commitHash: string
@@ -22,6 +23,7 @@ const BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/
 const HASH_PATTERN = /^[0-9a-fA-F]{7,40}$/
 const DEFAULT_LOG_LIMIT = 30
 const MAX_LOG_LIMIT = 100
+const MAX_FILE_BYTES = 512 * 1024
 
 export class ProjectService {
   constructor(
@@ -169,6 +171,49 @@ export class ProjectService {
     return { files: parseFiles(taskOutput(result)), taskId: task.id }
   }
 
+  async readFile(id: number, requestPath: string): Promise<{ path: string, content: string, size: number }> {
+    const cleanPath = assertValidFilePath(requestPath)
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+    const targetDir = join(this.workspaceDir, folder)
+    const resolved = resolve(targetDir, cleanPath)
+
+    if (resolved !== targetDir && !resolved.startsWith(targetDir + sep)) {
+      throw new InvalidGitRequestError("Path must stay inside the project checkout")
+    }
+
+    let stat: { isFile: () => boolean, size: number }
+    try {
+      const found = statSync(resolved)
+      if (!found.isFile()) {
+        throw new ProjectFileError(`Path ${cleanPath} is not a file`)
+      }
+      stat = found
+    } catch (error) {
+      if (error instanceof ProjectFileError) {
+        throw error
+      }
+      throw new ProjectFileError(`File ${cleanPath} does not exist`)
+    }
+
+    if (stat.size > MAX_FILE_BYTES) {
+      throw new ProjectFileError("File is too large to preview")
+    }
+
+    const buffer = readFileSync(resolved)
+
+    if (buffer.includes(0)) {
+      throw new ProjectFileError("File is not a text file")
+    }
+
+    return { path: cleanPath, content: buffer.toString("utf8"), size: stat.size }
+  }
+
   async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
     const cleanBranch = assertValidBranch(branch)
     const project = await this.projects.findById(id)
@@ -282,8 +327,7 @@ export class ProjectService {
     return { commitHash: cleanHash.toLowerCase(), taskId: task.id }
   }
 
-  private requireWorkspace(project: StoredProjectDetails): string {
-    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+  private requireWorkspace(project: StoredProjectDetails): string {    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
     const targetDir = join(this.workspaceDir, folder)
 
     if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {
@@ -301,6 +345,26 @@ function isDetachedHead(targetDir: string): boolean {
   } catch {
     return false
   }
+}
+
+function assertValidFilePath(requestPath: string): string {
+  const trimmed = requestPath.trim().replace(/\\/g, "/")
+
+  if (trimmed.length === 0 || trimmed.length > 1024 || trimmed.includes("\0")) {
+    throw new InvalidGitRequestError("Path must be a relative file path")
+  }
+
+  const segments = trimmed.split("/")
+
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new InvalidGitRequestError("Path must stay inside the project checkout")
+  }
+
+  if (segments[0] === ".git") {
+    throw new InvalidGitRequestError("Path must stay inside the project checkout")
+  }
+
+  return segments.join("/")
 }
 
 function assertValidBranch(branch: string): string {  const trimmed = branch.trim()

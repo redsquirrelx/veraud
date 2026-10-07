@@ -1,0 +1,13 @@
+.test-file-viewer-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.0rem;
+}
+
+.test-file-viewer-page .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}

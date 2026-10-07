@@ -16,7 +16,7 @@ const statusOptions: Array<FilterOption & { id: ProjectStatusFilter }> = [
 ]
 
 export function ProjectList({ listing }: { listing: ReturnType<typeof useProjects> }) {
-  const { projects, total, countFor, search, setSearch, status, setStatus, sortMode, setSortMode, azDirection, toggleAzDirection, page, pageCount, setPage, loading, loadError, refresh } = listing
+  const { projects, total, countFor, search, setSearch, status, setStatus, sortMode, setSortMode, azDirection, toggleAzDirection, pinned, togglePin, page, pageCount, setPage, loading, loadError, refresh } = listing
 
   const options = statusOptions.map((option) => ({ ...option, count: countFor(option.id) }))
 
@@ -46,7 +46,7 @@ export function ProjectList({ listing }: { listing: ReturnType<typeof useProject
         <>
           <div className="project-list">
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard key={project.id} project={project} pinned={pinned.includes(project.id)} onTogglePin={togglePin} />
             ))}
           </div>
           <div className="pagination-block">

@@ -43,6 +43,18 @@
   overflow: hidden;
 }
 
+.project-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.project-dates-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .project-header .ui-button {
   margin-left: auto;
   flex-shrink: 0;
@@ -63,7 +75,26 @@
   padding: 2rem 0;
 }
 
+.files-empty {
+  width: 100%;
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
+}
+
 .files-error {
   color: #b91c1c;
   font-size: 13px;
+}
+
+.project-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #006194;
+}
+
+.project-link:hover {
+  text-decoration: underline;
 }

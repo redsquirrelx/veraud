@@ -26,6 +26,7 @@ import { DirectoryTree, type DirectoryGroup, type DirectoryTreeNode } from "../.
 | `initialSelected` | `string \| null` | `null` | Path selected on first render only. |
 | `initialExpanded` | `string[]` | `[]` | Extra folders opened on first render; the root is always open. |
 | `onRefresh` | `() => Promise<void> \| void` | — | When present, a `RefreshButton` appears. The button is hidden without it. |
+| `onSelectFile` | `(path: string) => void` | — | Called with the full path when a file is picked. Folders never notify. |
 
 Paths are always **absolute inside the tree**, slash separated and
 without a leading slash: `"payment-gateway-v2/src/modules/engine.ts"`,
@@ -59,21 +60,25 @@ only, so changing them later does nothing.
 
 ## Behaviour
 
-- **Selection**: clicking a file selects it and updates the breadcrumb
-  (top). Clicking a folder only toggles it. `aria-selected` marks the
-  chosen row.
+- **Selection**: clicking a file selects it, updates the breadcrumb
+  and fires `onSelectFile` (top); clicking a folder only toggles it.
+  `aria-selected` marks the chosen row. The breadcrumb bar keeps a fixed
+  `20px` height so the tree below never shifts when the selection (and
+  its text length) changes.
 - **Groups**: a path takes the colour of the **first** group that lists
   it; a path in two groups is coloured once. A group whose `paths` match
   nothing in the tree is dropped, including from the legend, so the
   legend can never advertise a colour that is not on screen.
 - **Legend**: rendered **below** the tree, only when at least one group
-  survives the rule above.
+  survives the rule above. Single row with horizontal scroll, so the
+  column height never changes.
 - **Flags**: `flaggedPaths` is orthogonal to groups. A row can be
   `critical` **and** `flagged`. Ungrouped flagged rows get the amber
   tint; a grouped flagged row keeps the group colour and only its left
   stripe turns dark amber, so both signals stay readable.
 - **Filter by name**: substring, case-insensitive, on files *and*
-  folders.
+  folders. Compact single row (`nowrap`): the input shrinks instead of
+  wrapping, so the toolbar height is constant.
 - **Filter by extension**: single-select, options are derived from the
   tree (files only, lowercased, unique, sorted). Files without an
   extension never match a specific extension. Query and extension
@@ -84,6 +89,12 @@ only, so changing them later does nothing.
   the previous collapse state untouched.
 - **Empty**: `No entries match the filter` plus a `Clear` button that
   appears in the toolbar instead of the `visible of total` counter.
+- **Overflow**: below `460px` of column width (container query, so no
+  measurement loops) the inline controls hide and a "···" button
+  (`DotsIcon`, `aria-label="More filters"`) opens the same filter,
+  extension and refresh controls stacked in a dropdown. It closes on
+  outside click or `Escape`. Every toolbar row is `nowrap` with fixed
+  heights, so narrowing the pane never moves the tree vertically.
 - **Refresh**: awaits `onRefresh`, shows a spinner, disables the filter
   inputs and marks the root `aria-busy`. Filters, expansion and
   selection survive the reload. Rejections are swallowed on purpose:

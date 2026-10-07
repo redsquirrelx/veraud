@@ -8,7 +8,7 @@ import type { QueuedTask, TaskQueue, TaskResult } from "../../infrastructure/tas
 import type { StoredProjectDetails } from "./project.repository.js"
 import type { NewTask, StoredTask } from "../task/task.repository.js"
 import { TaskService } from "../task/task.service.js"
-import { GitOperationError, InvalidGitRequestError, ProjectNotFoundError, ProjectService, WorkspaceMissingError } from "./project.service.js"
+import { GitOperationError, InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, ProjectService, WorkspaceMissingError } from "./project.service.js"
 
 const details: StoredProjectDetails = {
   id: 7,
@@ -73,7 +73,7 @@ function makeService(options: {
     workspaceDir
   )
 
-  return { service, enqueued, created }
+  return { service, enqueued, created, workspaceDir }
 }
 
 describe("ProjectService git commands", () => {
@@ -164,6 +164,51 @@ describe("ProjectService git commands", () => {
     const { service } = makeService({ withWorkspace: true, result: { status: "Failed", exitCode: 1, logTrail: "fatal" } })
 
     await assert.rejects(service.listTree(7), GitOperationError)
+  })
+
+  it("reads a file from the workspace checkout", async () => {
+    const { service, enqueued } = makeService({ withWorkspace: true })
+
+    const result = await service.readFile(7, "file.txt")
+
+    assert.deepEqual(result, { path: "file.txt", content: "hello", size: 5 })
+    assert.deepEqual(enqueued, [])
+  })
+
+  it("reads a nested file normalizing the path", async () => {
+    const { service, workspaceDir } = makeService({ withWorkspace: true })
+    mkdirSync(join(workspaceDir, "1296269-octocat-Hello-World", "src"), { recursive: true })
+    writeFileSync(join(workspaceDir, "1296269-octocat-Hello-World", "src", "app.ts"), "export {}\n")
+
+    const result = await service.readFile(7, "src\\app.ts")
+
+    assert.equal(result.path, "src/app.ts")
+    assert.equal(result.content, "export {}\n")
+  })
+
+  it("rejects traversal, absolute and git paths without touching the runner", async () => {
+    const { service, enqueued } = makeService({ withWorkspace: true })
+
+    for (const path of ["../secret.txt", "..", "/etc/passwd", ".git/HEAD", "", "src/../../x"]) {
+      await assert.rejects(service.readFile(7, path), InvalidGitRequestError)
+    }
+    assert.deepEqual(enqueued, [])
+  })
+
+  it("rejects missing files, directories and binary content", async () => {
+    const { service, workspaceDir } = makeService({ withWorkspace: true })
+    mkdirSync(join(workspaceDir, "1296269-octocat-Hello-World", "empty"), { recursive: true })
+    writeFileSync(join(workspaceDir, "1296269-octocat-Hello-World", "blob.bin"), Buffer.from([0x89, 0x00, 0xff]))
+
+    await assert.rejects(service.readFile(7, "nope.txt"), ProjectFileError)
+    await assert.rejects(service.readFile(7, "empty"), ProjectFileError)
+    await assert.rejects(service.readFile(7, "blob.bin"), ProjectFileError)
+  })
+
+  it("rejects unknown projects when reading files", async () => {
+    const { service } = makeService({ details: null, withWorkspace: true })
+
+    await assert.rejects(service.readFile(99, "file.txt"), ProjectNotFoundError)
   })
 
   it("checks out a branch attaching HEAD", async () => {

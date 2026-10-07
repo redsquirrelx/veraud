@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { listProjects, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
+import { loadPinnedProjects, savePinnedProjects } from "./projectPins.ts"
 
 export type ProjectStatusFilter = "ALL" | "QUEUED" | "READY" | "SYNCING"
 export type ProjectSortMode = "title" | "date"
@@ -15,11 +16,22 @@ export function useProjects() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [pinned, setPinned] = useState<number[]>(loadPinnedProjects)
+
+  useEffect(() => {
+    savePinnedProjects(pinned)
+  }, [pinned])
+
+  const prunePins = useCallback((rows: ProjectSummary[]) => {
+    setPinned((current) => current.filter((id) => rows.some((project) => project.id === id)))
+  }, [])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setProjects(await listProjects())
+      const rows = await listProjects()
+      setProjects(rows)
+      prunePins(rows)
       setLoadError(false)
     } catch {
       setProjects([])
@@ -27,7 +39,7 @@ export function useProjects() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [prunePins])
 
   useEffect(() => {
     let alive = true
@@ -35,6 +47,7 @@ export function useProjects() {
       (rows) => {
         if (alive) {
           setProjects(rows)
+          prunePins(rows)
           setLoading(false)
         }
       },
@@ -49,7 +62,7 @@ export function useProjects() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [prunePins])
 
   const filtered = projects.filter((project) => {
     const matchesText = `${project.repositoryOwner}/${project.repositoryName}`
@@ -60,6 +73,11 @@ export function useProjects() {
   })
 
   const sorted = [...filtered].sort((left, right) => {
+    const leftPinned = pinned.includes(left.id)
+    const rightPinned = pinned.includes(right.id)
+    if (leftPinned !== rightPinned) {
+      return leftPinned ? -1 : 1
+    }
     const leftKey = sortMode === "title"
       ? `${left.repositoryOwner}/${left.repositoryName}`
       : left.registeredAt
@@ -102,5 +120,10 @@ export function useProjects() {
     setPage(1)
   }
 
-  return { projects: visible, total: projects.length, filteredTotal: filtered.length, countFor, search, setSearch: updateSearch, status, setStatus: updateStatus, sortMode, setSortMode: updateSortMode, azDirection, toggleAzDirection, page: safePage, pageCount, setPage, loading, loadError, refresh }
+  function togglePin(id: number) {
+    setPinned((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])
+    setPage(1)
+  }
+
+  return { projects: visible, total: projects.length, filteredTotal: filtered.length, countFor, search, setSearch: updateSearch, status, setStatus: updateStatus, sortMode, setSortMode: updateSortMode, azDirection, toggleAzDirection, pinned, togglePin, page: safePage, pageCount, setPage, loading, loadError, refresh }
 }
