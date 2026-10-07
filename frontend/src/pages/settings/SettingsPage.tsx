@@ -1,5 +1,5 @@
 import { Card } from "../../shared/ui-kit/index.ts"
-import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../features/project-management/taskVisibility.ts"
+import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../shared/task-manager/index.ts"
 import "./SettingsPage.css"
 
 export function SettingsPage() {

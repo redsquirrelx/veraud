@@ -21,6 +21,7 @@ interface ItemSelectorProps {
   placeholder?: string
   label?: string
   loading?: boolean
+  disabled?: boolean
   onOpen?: () => void
 }
 
@@ -36,6 +37,7 @@ export function ItemSelector({
   placeholder = "Select an item",
   label = "",
   loading = false,
+  disabled = false,
   onOpen,
 }: ItemSelectorProps) {
   const [open, setOpen] = useState(false)
@@ -67,7 +69,7 @@ export function ItemSelector({
   }
 
   function toggle() {
-    if (loading) {
+    if (loading || disabled) {
       return
     }
     if (!open) {
@@ -84,7 +86,7 @@ export function ItemSelector({
         className="ui-item-button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={loading}
+        disabled={loading || disabled}
         onClick={toggle}
       >
         {loading ? (
@@ -111,6 +113,7 @@ export function ItemSelector({
                   role="option"
                   aria-selected={item.id === selectedId}
                   className={item.id === selectedId ? "ui-item ui-item-active" : "ui-item"}
+                  disabled={disabled}
                   onClick={() => pick(item.id)}
                 >
                   <span className="mono">{item.label}</span>

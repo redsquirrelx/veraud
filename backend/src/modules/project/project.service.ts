@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
-import type { TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
+import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 
 export class InvalidUrlError extends Error {}
@@ -144,8 +144,29 @@ export class ProjectService {
       throw new GitOperationError(`Could not list branches for ${project.repositoryOwner}/${project.repositoryName}`)
     }
 
-    const parsed = parseBranchList(result.logTrail ?? "")
+    const parsed = parseBranchList(taskOutput(result))
     return { branches: parsed.branches, currentBranch: parsed.currentBranch, detachedHash: parsed.detachedHash, taskId: task.id }
+  }
+
+  async listTree(id: number): Promise<{ files: string[], taskId: number }> {
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const folder = this.requireWorkspace(project)
+
+    const { task, result } = await this.tasks.launch(project.id, `listing files ${project.repositoryOwner}/${project.repositoryName}`, {
+      kind: "list-tree",
+      folder,
+    })
+
+    if (result.status !== "Succeded") {
+      throw new GitOperationError(`Could not list the files of ${project.repositoryOwner}/${project.repositoryName}`)
+    }
+
+    return { files: parseFiles(taskOutput(result)), taskId: task.id }
   }
 
   async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
@@ -168,7 +189,7 @@ export class ProjectService {
       throw new GitOperationError(`Branch ${cleanBranch} does not exist`)
     }
 
-    const commitHash = (result.logTrail ?? "").trim().split("\n").pop()?.trim() ?? ""
+    const commitHash = taskOutput(result).trim().split("\n").pop()?.trim() ?? ""
 
     if (HASH_PATTERN.test(commitHash) === false || commitHash.length !== 40) {
       throw new GitOperationError(`Branch ${cleanBranch} does not exist`)
@@ -208,7 +229,7 @@ export class ProjectService {
 
     return {
       branch: cleanBranch,
-      commits: parseCommits(result.logTrail ?? ""),
+      commits: parseCommits(taskOutput(result)),
       limit: cleanLimit,
       offset: cleanOffset,
       taskId: task.id,
@@ -331,6 +352,22 @@ function assertValidOffset(offset?: number): number {
   }
 
   return offset
+}
+
+function parseFiles(output: string): string[] {
+  const files: string[] = []
+
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim()
+
+    if (trimmed.length === 0) {
+      continue
+    }
+
+    files.push(trimmed.replace(/\\/g, "/"))
+  }
+
+  return files
 }
 
 function parseBranchList(output: string): { branches: string[], currentBranch: string | null, detachedHash: string | null } {

@@ -156,3 +156,12 @@ export interface GitBranchCheckout {
 export async function checkoutBranch(id: number, branch: string): Promise<GitBranchCheckout> {
   return postGit<GitBranchCheckout>(id, "checkout-branch", { branch })
 }
+
+export interface GitTree {
+  files: string[]
+  taskId: number
+}
+
+export async function listProjectFiles(id: number): Promise<GitTree> {
+  return postGit<GitTree>(id, "tree", {})
+}

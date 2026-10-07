@@ -1,0 +1,23 @@
+.test-directory-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.0rem;
+}
+
+.test-directory-page .ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.directory-flagged {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}

@@ -109,6 +109,19 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     }
   })
 
+  app.post("/api/projects/:id/git/tree", {
+    schema: { params: idParams },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+
+    try {
+      const result = await service.listTree(Number(params.id))
+      return reply.code(200).send(result)
+    } catch (error) {
+      return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
+    }
+  })
+
   app.post("/api/projects/:id/git/rev-parse", {
     schema: {
       params: idParams,

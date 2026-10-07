@@ -1,13 +1,13 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { execSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { FastifyBaseLogger } from "fastify"
 import { logger } from "../../config/logger.js"
 import type { StoredTask, TaskStore } from "../../modules/task/task.repository.js"
-import { TaskRunner } from "./task.runner.js"
+import { TaskRunner, taskOutput } from "./task.runner.js"
 
 const quiet = { child: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }
 logger.configure(quiet as unknown as FastifyBaseLogger)
@@ -131,6 +131,45 @@ describe("TaskRunner git commands", () => {
     assert.equal(execSync(`git -C "${join(workspace, folder)}" symbolic-ref --short HEAD`).toString().trim(), "feature")
     assert.deepEqual(statuses, [])
     assert.deepEqual(synced, [])
+  })
+
+  it("lists the files tracked at HEAD without touching the project status", async () => {
+    const { workspace, folder } = makeRepo()
+    const { store, projects, statuses, synced } = makeStore()
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+
+    const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "list-tree", folder } })
+
+    assert.equal(result.status, "Succeded")
+    assert.match(result.logTrail ?? "", /file\.txt/)
+    assert.deepEqual(statuses, [])
+    assert.deepEqual(synced, [])
+  })
+
+  it("returns the whole listing even when it does not fit in the log trail", async () => {
+    const { workspace } = makeRepo()
+    const { store, projects } = makeStore()
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const source = join(workspace, "source")
+    execSync(`git init -q -b main "${source}"`)
+    execSync(`git -C "${source}" config user.email t@t`)
+    execSync(`git -C "${source}" config user.name t`)
+
+    const many = Array.from({ length: 300 }, (_, index) => `src/nested/deep/module-${String(index).padStart(4, "0")}.ts`)
+    mkdirSync(join(source, "src", "nested", "deep"), { recursive: true })
+    for (const relative of many) {
+      writeFileSync(join(source, relative), "export {}\n")
+    }
+    execSync(`git -C "${source}" add .`)
+    execSync(`git -C "${source}" commit -qm many`)
+    execSync(`git clone -q "${source}" "${join(workspace, "many")}"`)
+
+    const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "list-tree", folder: "many" } })
+
+    assert.equal(result.status, "Succeded")
+    assert.equal(result.logTrail?.length, 4000)
+    assert.equal(taskOutput(result).split("\n").length, 301)
+    assert.ok(taskOutput(result).startsWith("src/"))
   })
 
   it("fails cleanly for unknown branches", async () => {
