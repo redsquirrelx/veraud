@@ -18,7 +18,7 @@ export interface AgentExecutionEvent {
   type: "agent-execution.opened" | "agent-execution.updated"
   execution: {
     id: number
-    evaluationId: number
+    evaluationId: number | null
     agentType: string
     status: string
     result: string | null

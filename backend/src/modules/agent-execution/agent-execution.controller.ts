@@ -4,7 +4,11 @@ import type {
   RealtimeGateway,
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
-import type { StoredAgentExecution } from "./agent-execution.repository.js"
+import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
+import {
+  UnknownExecutionTargetError,
+  type StoredAgentExecution,
+} from "./agent-execution.repository.js"
 import {
   AgentExecutionNotFoundError,
   AgentExecutionService,
@@ -28,6 +32,15 @@ const openBody = {
   },
 } as const
 
+const openDirectBody = {
+  type: "object",
+  required: ["agentType", "input"],
+  properties: {
+    agentType: { type: "string", minLength: 1 },
+    input: { type: "object", minProperties: 1 },
+  },
+} as const
+
 const closeBody = {
   type: "object",
   required: ["status"],
@@ -48,22 +61,58 @@ export function registerAgentExecutionRoutes(
   /**
    * Registers an agent invocation and returns its id.
    *
-   * The backend calls this when it invokes an agent, then passes the id to the
-   * agent-server. The agent never creates rows: it only reports progress by
-   * calling the endpoints below.
+   * The backend calls this when it invokes an agent. The row comes back Waiting
+   * and the run continues in the background, so the response does not wait for
+   * the agent. The endpoints below stay available for an agent that reports its
+   * own progress, and are safe to call after the fact: a finished run is never
+   * overwritten.
    */
   app.post("/api/agent-executions", { schema: { body: openBody } }, async (request, reply) => {
     const body = request.body as { agentType: string; evaluationId: number }
 
-    const execution = await service.open(body.agentType, body.evaluationId)
+    try {
+      const execution = await service.open(body.agentType, body.evaluationId)
 
-    logger
-      .withTag("agent-execution")
-      .info(`Registered agent execution ${execution.id} agentType=${execution.agentType}`)
+      logger
+        .withTag("agent-execution")
+        .info(`Registered agent execution ${execution.id} agentType=${execution.agentType}`)
 
-    broadcast(gateway, "agent-execution.opened", execution)
+      return reply.code(201).send(toResponse(execution))
+    } catch (error) {
+      if (error instanceof UnknownExecutionTargetError) {
+        return reply.code(422).send({ error: error.message })
+      }
 
-    return reply.code(201).send(toResponse(execution))
+      throw error
+    }
+  })
+
+  /**
+   * Registers a direct invocation with an explicit agent input.
+   *
+   * No evaluation or project version is created: the row stores
+   * evaluationId null and the input goes to the agent as given, except
+   * `root_path` which must resolve inside the workspace. Registered before
+   * `/:id` for clarity (`:id` only matches digits, so there is no conflict).
+   */
+  app.post("/api/agent-executions/direct", { schema: { body: openDirectBody } }, async (request, reply) => {
+    const body = request.body as { agentType: string; input: Record<string, unknown> }
+
+    try {
+      const execution = await service.openDirect(body.agentType, body.input)
+
+      logger
+        .withTag("agent-execution")
+        .info(`Registered direct agent execution ${execution.id} agentType=${execution.agentType}`)
+
+      return reply.code(201).send(toResponse(execution))
+    } catch (error) {
+      if (error instanceof UnknownExecutionTargetError || error instanceof InvalidDirectInputError) {
+        return reply.code(422).send({ error: error.message })
+      }
+
+      throw error
+    }
   })
 
   app.get("/api/agent-executions/:id", { schema: { params: idParams } }, async (request, reply) => {

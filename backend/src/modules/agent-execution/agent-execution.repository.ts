@@ -1,4 +1,13 @@
-import type { PrismaClient } from "../../generated/prisma/client.js"
+import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
+
+/** agent_type and evaluation_id are both foreign keys, so an unknown value is a
+ *  bad request rather than a server fault. Prisma reports that as P2003. */
+export class UnknownExecutionTargetError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "UnknownExecutionTargetError"
+  }
+}
 
 export type AgentExecutionStatus =
   | "Waiting"
@@ -12,7 +21,7 @@ export const INITIAL_STATUS: AgentExecutionStatus = "Waiting"
 
 export interface NewAgentExecution {
   agentType: string
-  evaluationId: number
+  evaluationId: number | null
 }
 
 export interface AgentExecutionCompletion {
@@ -25,7 +34,7 @@ export interface AgentExecutionCompletion {
 
 export interface StoredAgentExecution {
   id: number
-  evaluationId: number
+  evaluationId: number | null
   agentType: string
   status: AgentExecutionStatus
   result: string | null
@@ -48,15 +57,27 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient) {}
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
-    const execution = await this.db.agentExecution.create({
-      data: {
-        agentType: data.agentType,
-        evaluationId: data.evaluationId,
-        status: INITIAL_STATUS,
-      },
-    })
+    try {
+      const execution = await this.db.agentExecution.create({
+        data: {
+          agentType: data.agentType,
+          evaluationId: data.evaluationId,
+          status: INITIAL_STATUS,
+        },
+      })
 
-    return this.toStored(execution)
+      return this.toStored(execution)
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+        throw new UnknownExecutionTargetError(
+          data.evaluationId === null
+            ? `No agent type ${data.agentType} is registered`
+            : `No agent type ${data.agentType} is registered, or evaluation ${data.evaluationId} does not exist`,
+        )
+      }
+
+      throw error
+    }
   }
 
   async complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution> {
@@ -96,7 +117,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
   private toStored(execution: {
     id: number
-    evaluationId: number
+    evaluationId: number | null
     agentType: string
     status: string
     result: string | null

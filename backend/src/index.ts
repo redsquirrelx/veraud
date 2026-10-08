@@ -16,9 +16,11 @@ const { app } = await buildApp({
 app.addHook('onReady', async () => {
   const log = logger.withTag('agent-server')
   const port = env.PORT_AGENTSERVER
+  const base = `http://localhost:${port}`
 
   try {
-    const response = await fetch(`http://localhost:${port}/status`)
+    // The agent-server serves this under /api, like its run endpoint.
+    const response = await fetch(`${base}/api/status`)
 
     if (!response.ok) {
       throw new Error(`Agent server returned ${response.status}`)

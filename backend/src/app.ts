@@ -11,6 +11,11 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 import { GithubClient } from "./infrastructure/github-client/github.client.js"
 import { RealtimeGateway } from "./infrastructure/realtime-gateway/realtime.gateway.js"
 import { TaskRunner, type TaskQueue } from "./infrastructure/task-runner/task.runner.js"
+import { AgentServerClient, type AgentInvoker } from "./infrastructure/agent-server-client/agent-server.client.js"
+import {
+  AgentTargetResolverImpl,
+  type AgentTargetResolver,
+} from "./infrastructure/agent-target/agent-target.resolver.js"
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
@@ -30,6 +35,10 @@ export interface BuildAppOptions {
   silent?: boolean
   agentServerUrl?: string
   makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => TaskQueue
+  /** How agents are reached and what they are invoked with. Tests override these
+   *  to keep a run from leaving the machine; production leaves them unset. */
+  makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
+  makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -68,7 +77,19 @@ export async function buildApp(options: BuildAppOptions) {
   registerTaskRoutes(app, taskService)
 
   const agentExecutionRepository = new AgentExecutionRepository(db)
-  const agentExecutionService = new AgentExecutionService(agentExecutionRepository)
+  const agentInvoker = options.makeAgentInvoker
+    ? options.makeAgentInvoker(options.agentServerUrl)
+    : buildAgentInvoker(options.agentServerUrl)
+  const agentTargets = options.makeAgentTargets
+    ? options.makeAgentTargets(options.workspaceDir)
+    : new AgentTargetResolverImpl(db, options.workspaceDir)
+  const agentExecutionService = new AgentExecutionService(
+    agentExecutionRepository,
+    agentInvoker,
+    agentTargets,
+    gateway,
+    options.workspaceDir,
+  )
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
 
   app.get("/status", { logLevel: "silent" }, async () => {
@@ -78,12 +99,31 @@ export async function buildApp(options: BuildAppOptions) {
   return { app, db }
 }
 
+/** The agent-server serves this under /api, same as its run endpoint. */
+const AGENT_STATUS_PATH = "/api/status"
+
+/** index.ts passes the URL from PORT_AGENTSERVER. Without it there is nowhere to
+ *  send an agent, so the run fails with that reason instead of hanging. The URL
+ *  is not defaulted here on purpose: reading env in this file would make
+ *  building the app depend on a .env being present, which the tests do not have. */
+function buildAgentInvoker(url: string | undefined): AgentInvoker {
+  if (url === undefined || url === "") {
+    return {
+      run: async () => {
+        throw new Error("No agent server url is configured")
+      },
+    }
+  }
+
+  return new AgentServerClient(url)
+}
+
 async function checkAgentServer(url: string | undefined): Promise<string> {
   if (url === undefined) {
     return "unknown"
   }
   try {
-    const response = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) })
+    const response = await fetch(`${url}${AGENT_STATUS_PATH}`, { signal: AbortSignal.timeout(2000) })
     return response.ok ? "online" : "offline"
   } catch {
     return "offline"
