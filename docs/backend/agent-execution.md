@@ -1,37 +1,61 @@
 # Backend Contract — Agent Executions
 
-Tracks one invocation of one agent. The **backend** creates the row when it
-invokes an agent and passes the id to the agent-server; the agent-server only
-ever **updates** that row. Agents never create executions.
+Tracks one invocation of one agent. The **backend** creates the row and starts the
+agent; the agent-server only ever **updates** that row. Agents never create
+executions.
 
 Source of truth: `backend/src/modules/agent-execution/`
 (repository, service, controller)
 
 ## Lifecycle
 
+The backend starts the agent over HTTP and then gets out of the way. The agent
+reports its own progress back over HTTP, because it is the only side that knows
+how the run went.
+
 ```
-backend                      agent-server                  row
+backend                        agent-server                  row
    |
-   |-- POST /api/agent-executions ------> |
-   |<- 201 { id, status: "Idle" }
-   |                                       |
-   |-- pass id to agent ---------> run ----+--> POST /:id/running        -> "Running"
-   |                                    or
-   |                                       +--> POST /:id/completion     -> "Completed" | "Failed"
+   |-- POST /api/agent-executions -> 201 { id, status: "Waiting" }
+   |
+   |  (background, never awaited)
+   |-- resolve evaluation -> workspace path
+   |-- POST /api/agents/run ------>  |
+   |    { agent_type, input,          |-- POST /:id/running      -> "Running"
+   |      execution_id }              |   or
+   |                                   +-- POST /:id/completion  -> "Completed" | "Failed"
    |
    |<- websocket agent-execution.updated (each transition)
 ```
 
 | Status | Meaning |
 |---|---|
-| `Idle` | Invocation registered, nothing has run yet |
-| `Running` | Agent started (optional: the agent may skip this) |
+| `Waiting` | Invocation registered, agent not reached yet |
+| `Running` | Agent started |
 | `Completed` | Finished successfully; `result` holds the output |
 | `Failed` | Finished with an error; `error` is required |
 
 `result` is the serialized agent output and is **opaque** to the backend: each
 agent defines its own shape (e.g. the analyzer returns a project description),
 so the backend stores and returns it without inspecting its fields.
+
+The backend writes `Failed` in exactly one case: the agent-server could not be
+reached, or the run never started. Everything else is reported by the agent.
+
+## Starting the agent
+
+`open(agentType, evaluationId)` creates the row, broadcasts `opened`, and then
+dispatches in the background. It never awaits the run, so the `201` returns while
+the agent is still working: an agent takes minutes.
+
+The input is built by the backend, not by the caller —
+`evaluationId → evaluation → projectVersion → project → the checkout in the
+workspace` — sent as `{ root_path }`. That is the analyzer's shape. A second agent
+needing a different one branches in
+`infrastructure/agent-target/agent-target.resolver.ts`, not at the call site.
+
+`execution_id` travels in the request body: it is what the agent-server reports
+progress against. Without it the agent still runs, it just reports nowhere.
 
 ## `POST /api/agent-executions`
 
@@ -49,15 +73,15 @@ Request:
 `agentType` must already exist in `agent_settings` (foreign key).
 `evaluationId` must reference an existing evaluation.
 
-Response `201`: `id`, `evaluationId`, `agentType`, `status` (`Idle`), `result`,
+Response `201`: `id`, `evaluationId`, `agentType`, `status` (`Waiting`), `result`,
 `error`, `inputTokens`, `outputTokens`, `createdAt`, `startedAt`, `finishedAt`.
 
 Keep the returned `id`: every later call addresses the run by it.
 
 ## `POST /api/agent-executions/:id/running`
 
-Optional. Marks the run as in flight. Returns the same shape as above with
-`status: "Running"`.
+Marks the run as in flight. Called by the agent-server. Returns the same shape as
+above with `status: "Running"`.
 
 ## `POST /api/agent-executions/:id/completion`
 
@@ -93,7 +117,7 @@ is known, and the current status can be polled or awaited over the websocket.
 |---|---|
 | `400` | Malformed body, or non-numeric `:id` |
 | `404` | Unknown agent execution |
-| `422` | `Failed` without an error message |
+| `422` | `Failed` without an error message, or an `agentType`/`evaluationId` that does not exist |
 
 ## Websocket events
 
@@ -101,7 +125,7 @@ Broadcast on `/ws` for every transition:
 
 | Event | When |
 |---|---|
-| `agent-execution.opened` | Row created (`Idle`) |
+| `agent-execution.opened` | Row created (`Waiting`) |
 | `agent-execution.updated` | `Running`, `Completed` or `Failed` |
 
 Payload is `{ type, execution }` where `execution` has the same fields as the
@@ -111,5 +135,9 @@ HTTP response. The UI keys off `execution.id`.
 
 - **No authentication yet.** Any caller can close an execution with an arbitrary
   result. Local use only until a shared secret or signature is added.
-- `agent_settings` is currently empty, so registering any `agentType` fails on
-  the foreign key until a row exists for it.
+- `agent_settings` must have a row for the `agentType`; both it and
+  `evaluationId` are foreign keys, and a missing one is reported as `422`.
+- The agent-server derives where to report from `PORT_BACKEND`. If it is not
+  configured the run still works, it just reports nowhere and the row stays
+  `Waiting`.
+- Token counts stay null: the agent-server does not return usage yet.
