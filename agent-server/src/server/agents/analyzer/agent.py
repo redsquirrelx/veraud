@@ -1,4 +1,5 @@
 import json
+import sys
 
 from ...config.logs import get_logger
 from ...services.collection.schemas import CollectionInput
@@ -16,6 +17,14 @@ MAX_PROMPT_CHARS = 24000
 # because build123d's is 289 lines of pure re-exports with zero defs of its own,
 # and missing it made the analyzer report a library with no entry point at all.
 MIN_PUBLIC_API_LINES = 60
+
+# Standard library names. They are not project dependencies: every Python
+# project imports them, so listing them only buries the third-party signal.
+STDLIB = frozenset(sys.stdlib_module_names) | {"__future__"}
+
+# Circular groups reported to the model. The graph computes all of them; this
+# keeps a pathological repository from crowding out the rest of the facts.
+MAX_REPORTED_CYCLES = 5
 
 
 class ProjectAnalyzerAgent(BaseAgent[ProjectInput, ProjectDescription]):
@@ -87,8 +96,9 @@ class ProjectAnalyzerAgent(BaseAgent[ProjectInput, ProjectDescription]):
             "stats": collection.get("stats", {}),
             "package_entrypoints": _package_entrypoints(files),
             "entrypoint_candidates": _entrypoint_candidates(files),
-            "dependencies": _declared_dependencies(collection),
+            "third_party_dependencies": _declared_dependencies(collection),
             "hub_modules": _hub_modules(graph.get("edges", []), limit=12),
+            "circular_import_groups": _cycles(collection),
             "files": [
                 {
                     "path": item.get("path"),
@@ -141,11 +151,13 @@ def _package_entrypoints(files: list[dict]) -> list[str]:
 
 
 def _declared_dependencies(collection: dict) -> list[str]:
-    """Distinct third-party import names seen across the repo.
+    """Third-party import names seen across the repo, stdlib excluded.
 
     Reads what the code imports rather than what pyproject declares, because the
-    dependency graph is what the collection already has. Names are deduplicated
-    and sorted so the same repo always produces the same prompt.
+    dependency graph is what the collection already has. Standard library names
+    are dropped: every project imports os and json, so they say nothing about
+    what the project is. Names are deduplicated and sorted so the same repo
+    always produces the same prompt.
     """
     names = set()
 
@@ -158,10 +170,27 @@ def _declared_dependencies(collection: dict) -> list[str]:
         if not specifier:
             continue
         head = specifier.split(".", 1)[0].strip()
-        if head:
+        if head and head not in STDLIB and head not in names:
             names.add(head)
 
     return sorted(names)
+
+
+def _cycles(collection: dict) -> list[list[str]]:
+    """Circular import groups, already computed by the dependency graph.
+
+    These are facts, not judgements: Tarjan found them. The model is told they
+    exist so it can interpret them, not asked to re-derive them.
+    """
+    cycles = collection.get("dependency_graph", {}).get("stats", {}).get("cycles", [])
+
+    if not cycles:
+        return []
+
+    # Largest first: a big cycle is the more meaningful structural fact, and the
+    # list is capped so a pathological repo cannot crowd out the rest.
+    ordered = sorted(cycles, key=len, reverse=True)
+    return [sorted(group) for group in ordered[:MAX_REPORTED_CYCLES]]
 
 
 def _entrypoint_candidates(files: list[dict]) -> list[str]:
