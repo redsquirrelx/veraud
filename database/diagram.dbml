@@ -52,7 +52,7 @@ Table task {
 
 Table agent_execution {
   id int [pk, not null]
-  evaluation_id int [not null]
+  evaluation_id int
   agent_type varchar [not null]
   status varchar [not null]
   created_at datetime [not null]
@@ -110,7 +110,7 @@ Ref: "public"."project_version"."project_id" ?> "public"."project"."id"
 
 Ref: "project_version"."id" <? "evaluation"."project_version_id"
 
-Ref: "evaluation"."id" <? "agent_execution"."evaluation_id"
+Ref: "evaluation"."id" -? "agent_execution"."evaluation_id"
 
 Ref: "agent_execution"."agent_type" ?> "agent_settings"."agent_type"
 
