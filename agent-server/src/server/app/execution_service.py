@@ -18,6 +18,8 @@ from ..config.schemas import (
     ModelCredentials,
     ModelSettings,
 )
+from ..infrastructure.callback.client import CallbackClient
+from ..infrastructure.callback.schemas import CallbackConfig, ExecutionOutcome
 from .agent_registry import AgentRegistry
 
 logger = get_logger("execution-service")
@@ -29,6 +31,22 @@ class InvalidConfigError(ValueError):
 
 class InvalidInputError(ValueError):
     pass
+
+
+def _backend_url() -> str | None:
+    """Where to report progress, from PORT_BACKEND, or None if unavailable.
+
+    Imported here rather than at module level so that everything in this package
+    still imports when there is no .env, which the dev runners rely on.
+    """
+    try:
+        from ..config.settings import get_server_settings
+
+        settings = get_server_settings()
+    except ValidationError:
+        return None
+
+    return f"http://localhost:{settings.port_backend}"
 
 
 def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model:
@@ -153,10 +171,16 @@ class AgentExecutionService:
         agent_type: str,
         config: ExecutionConfig,
         payload: dict,
+        execution_id: int | None = None,
     ) -> BaseModel:
         """Validate the payload against the agent's own input schema, then run it.
 
         Returns the agent's output model instance. The HTTP layer serialises it.
+
+        When `execution_id` is given, the run reports its own progress back to the
+        backend that created that row: once when it starts and once when it ends.
+        The agent itself knows nothing about this, so no agent has to change to
+        take part.
         """
         agent, timeout = self.build_agent(agent_type, config)
 
@@ -169,24 +193,94 @@ class AgentExecutionService:
             ) from None
 
         logger.info(
-            "Running agent %r (timeout=%ss input=%s)",
-            agent_type, timeout, type(agent_input).__name__,
+            "Running agent %r (timeout=%ss input=%s execution=%s)",
+            agent_type, timeout, type(agent_input).__name__, execution_id,
         )
 
+        callbacks = self._callbacks(execution_id)
+
         try:
+            await self._mark_running(callbacks, execution_id)
+
             result = await tracing.traced_agent_run(
                 asyncio.wait_for(agent.run(agent_input), timeout),
                 name=agent_type,
                 model=agent.model.settings.name,
                 timeout_seconds=timeout,
             )
+
+            await self._report(callbacks, execution_id, result)
+
+            return result
+
         except TimeoutError:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
+            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s")
             raise
+        except Exception as error:
+            await self._report_failure(callbacks, execution_id, str(error))
+            raise
+        finally:
+            if callbacks is not None:
+                await callbacks.aclose()
 
-        logger.info("Agent %r finished", agent_type)
+    @staticmethod
+    def _callbacks(execution_id: int | None) -> CallbackClient | None:
+        """A client for reporting this run, or None when nobody asked for one."""
+        if execution_id is None:
+            return None
 
-        return result
+        backend_url = _backend_url()
+        if backend_url is None:
+            logger.warning(
+                "execution_id=%s given but no backend url is configured, "
+                "so progress cannot be reported",
+                execution_id,
+            )
+            return None
+
+        return CallbackClient(CallbackConfig(backend_url=backend_url))
+
+    async def _mark_running(
+        self, callbacks: CallbackClient | None, execution_id: int | None
+    ) -> None:
+        if callbacks is None or execution_id is None:
+            return
+
+        await callbacks.mark_running(execution_id)
+
+    async def _report(
+        self,
+        callbacks: CallbackClient | None,
+        execution_id: int | None,
+        result: BaseModel,
+    ) -> None:
+        """Close the row with the agent's output, serialized.
+
+        The backend stores `result` as an opaque string, so it is JSON here rather
+        than a nested object.
+        """
+        if callbacks is None or execution_id is None:
+            return
+
+        await callbacks.complete(
+            execution_id,
+            ExecutionOutcome(status="Completed", result=result.model_dump_json()),
+        )
+
+    async def _report_failure(
+        self,
+        callbacks: CallbackClient | None,
+        execution_id: int | None,
+        error: str,
+    ) -> None:
+        if callbacks is None or execution_id is None:
+            return
+
+        await callbacks.complete(
+            execution_id,
+            ExecutionOutcome(status="Failed", error=error),
+        )
 
 
 @lru_cache(maxsize=1)
