@@ -62,7 +62,7 @@ model Evaluation {
 
 model AgentExecution {
   id           Int       @id @default(autoincrement())
-  evaluationId Int       @map("evaluation_id")
+  evaluationId Int?      @map("evaluation_id")
   agentType    String    @map("agent_type")
   status       String
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -73,7 +73,7 @@ model AgentExecution {
   error        String?
   result       String?
 
-  evaluation    Evaluation    @relation(fields: [evaluationId], references: [id])
+  evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
 
   @@map("agent_execution")
