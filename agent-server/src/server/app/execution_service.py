@@ -10,6 +10,7 @@ from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
 from ..agents.models.openrouter import OpenRouterModel
 from ..api.schemas import ExecutionConfig
+from ..config import tracing
 from ..config.dev_agents_config import load_dev_agents_config
 from ..config.logs import get_logger
 from ..config.schemas import (
@@ -61,6 +62,10 @@ class AgentExecutionService:
     def __init__(self, registry: AgentRegistry | None = None) -> None:
         self._registry = registry or build_default_registry()
         self._base_config = load_dev_agents_config()
+
+        # Before any agent runs, so the LangSmith flags are in place by the
+        # time the first graph builds its tracer.
+        tracing.setup()
 
     def list_agents(self) -> list[str]:
         return self._registry.list_agents()
@@ -139,9 +144,9 @@ class AgentExecutionService:
 
     @staticmethod
     def _server_api_key() -> str:
-        from ..config.settings import settings as app_settings
+        from ..config.settings import get_server_settings
 
-        return app_settings.llm_api_key
+        return get_server_settings().llm_api_key
 
     async def run(
         self,
@@ -169,7 +174,12 @@ class AgentExecutionService:
         )
 
         try:
-            result = await asyncio.wait_for(agent.run(agent_input), timeout)
+            result = await tracing.traced_agent_run(
+                asyncio.wait_for(agent.run(agent_input), timeout),
+                name=agent_type,
+                model=agent.model.settings.name,
+                timeout_seconds=timeout,
+            )
         except TimeoutError:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
             raise

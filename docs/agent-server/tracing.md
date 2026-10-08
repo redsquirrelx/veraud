@@ -12,35 +12,50 @@ LANGSMITH_API_KEY=lsv2_pt_...
 ```
 
 Put it in the repo `.env` at the root or export it before starting the server.
-The module loads that file itself, resolved from its own location rather than
-the working directory, so it does not matter where the process was started from.
 
-Without a key, `tracing.setup()` returns `None`, touches no environment
-variables, and the two helpers become plain pass-throughs: agents behave exactly
-as before and pay nothing.
+Without a key, `tracing.setup()` returns `None`, writes nothing to the
+environment, and the two helpers become plain pass-throughs: agents behave
+exactly as before and pay nothing.
 
-| Variable | Default | Effect |
-|---|---|---|
-| `LANGSMITH_API_KEY` | — | The switch. Absent means no tracing. |
-| `LANGSMITH_PROJECT` | `agent-server` | Project the traces land in. |
-| `LANGSMITH_TAGS` | — | Comma separated tags added to every span. |
-| `LANGSMITH_ENDPOINT` | LangSmith cloud | Read by LangSmith; point at a self-hosted deployment. |
-| `LANGSMITH_HIDE_INPUTS` | `false` | Send prompt sizes instead of prompt text. |
-| `LANGSMITH_HIDE_OUTPUTS` | `false` | Send response sizes instead of response text. |
+| Variable | Field | Default | Effect |
+|---|---|---|---|
+| `LANGSMITH_API_KEY` | `langsmith_api_key` | — | The switch. Absent means no tracing. |
+| `LANGSMITH_PROJECT` | `langsmith_project` | `agent-server` | Project the traces land in. |
+| `LANGSMITH_TAGS` | `langsmith_tags` | — | Comma separated tags added to every span. |
+| `LANGSMITH_ENDPOINT` | `langsmith_endpoint` | LangSmith cloud | Point at a self-hosted deployment. |
+| `LANGSMITH_HIDE_INPUTS` | `langsmith_hide_inputs` | `false` | Send prompt sizes instead of prompt text. |
+| `LANGSMITH_HIDE_OUTPUTS` | `langsmith_hide_outputs` | `false` | Send response sizes instead of response text. |
 
-Values already exported in the environment win over the file.
+### Where the variables live
 
-### Why the .env is loaded here
+Every variable the server reads is declared in `config/settings.py`, and
+`config/tracing.py` reads it from there. Two classes, split because they fail
+differently:
 
-Pydantic's `Settings` reads the file into its own fields and leaves the
-environment alone, so anything reading `os.environ` sees nothing. LangSmith
-reads `LANGSMITH_ENDPOINT` and `LANGSMITH_TRACING` that same way, which is why
-`config/tracing.py` calls `load_dotenv` instead of only parsing the file for the
-two values it needs.
+- `ServerSettings` — required. A missing value is a deployment mistake, so
+  `get_server_settings()` raises `ValidationError`.
+- `TracingSettings` — a default for everything, so tracing being unconfigured
+  never breaks an import. `get_tracing_settings()` always succeeds.
 
-It does not reuse `Settings` on purpose: that class has required fields, so
-importing it fails without a `.env`, and the dev runners are meant to work
-without one.
+Both read the repo `.env`, whose path is resolved from `settings.py` rather than
+from the working directory, so the runners work from anywhere.
+
+### Why tracing still touches os.environ
+
+Pydantic reads the file into its own fields and leaves the environment alone, so
+a declared variable is not visible to code reading `os.environ`. LangSmith and
+langchain-core both resolve their tracing flag and the project name that way, and
+neither exposes a way to pass them in, so `tracing.setup()` mirrors exactly those
+two back:
+
+```python
+os.environ["LANGSMITH_TRACING_V2"] = "true"
+os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+```
+
+The project one is not cosmetic. LangGraph resolves its spans' project from the
+environment, while the `traceable` spans take it as an argument. Without the
+mirror, the two halves of the same trace would land in different projects.
 
 ## The shape of a trace
 
@@ -85,10 +100,11 @@ child of the surrounding span.
 
 | File | What it does |
 |---|---|
+| `config/settings.py` | declares every variable the server reads |
+| `config/tracing.py` | the module itself |
 | `app/execution_service.py` | `setup()` at construction; `traced_agent_run` around the timed run |
 | `agents/analyzer/agent.py` | `traced_generate` instead of `model.generate` |
 | `agents/dummy/agent.py` | same |
-| `config/tracing.py` | the module itself |
 
 `traced_agent_run` wraps the coroutine rather than the graph on purpose: that is
 what makes the agent span the root that the graph hangs off. The coroutine is

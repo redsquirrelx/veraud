@@ -31,8 +31,8 @@ SAMPLE_CODE = """def calculate_total(items):
 
 def _build_model(model_settings: object) -> GeminiModel:
     try:
-        from server.config.settings import settings as app_settings
-        api_key = app_settings.llm_api_key
+        from server.config.settings import get_server_settings
+        api_key = get_server_settings().llm_api_key
     except ValidationError:
         # No .env / no key: the agent uses its deterministic local fallback.
         api_key = "dev-dummy-key"
