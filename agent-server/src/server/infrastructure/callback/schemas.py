@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -29,7 +31,9 @@ class ExecutionOutcome(BaseModel):
     snake_case body would silently lose the token counts.
     """
 
-    status: str = Field(description="Completed | Failed")
+    status: Literal["Completed", "Failed"] = Field(
+        description="Closing status. Matches the backend agent-execution contract.",
+    )
     result: str | None = Field(default=None, description="Serialized agent output")
     error: str | None = Field(default=None, description="Required when status is Failed")
     input_tokens: int | None = Field(default=None, ge=0, alias="inputTokens")
