@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, requestAnalysis } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestAnalysis } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -145,5 +145,20 @@ describe("getAgentExecution", () => {
     stubFetch(404, { message: "Agent execution 11 not found" })
 
     await expect(getAgentExecution(11)).rejects.toMatchObject({ status: 404 } as Partial<ApiError>)
+  })
+})
+
+describe("listVersions", () => {
+  it("returns the analyzed versions", async () => {
+    const versions = [{ id: 9, branch: "main", commitHash: "b".repeat(40), derivedStatus: "Completed" }]
+    stubFetch(200, versions)
+
+    expect(await listVersions(2)).toEqual(versions)
+  })
+
+  it("throws an ApiError for unknown projects", async () => {
+    stubFetch(404, { message: "Project 4242 does not exist" })
+
+    await expect(listVersions(4242)).rejects.toMatchObject({ status: 404 } as Partial<ApiError>)
   })
 })

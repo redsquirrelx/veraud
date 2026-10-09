@@ -236,6 +236,27 @@ export async function getAgentExecution(executionId: number): Promise<AgentExecu
   return (await response.json()) as AgentExecution
 }
 
+export interface VersionAnalysisSummary {
+  id: number
+  branch: string | null
+  commitHash: string | null
+  analysisStatus: string
+  analyzedAt: string | null
+  evaluationId: number | null
+  execution: AgentExecution | null
+  derivedStatus: string
+}
+
+export async function listVersions(id: number): Promise<VersionAnalysisSummary[]> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/versions`)
+
+  if (!response.ok) {
+    throw new ApiError(response.status, "Could not load analyzed versions")
+  }
+
+  return (await response.json()) as VersionAnalysisSummary[]
+}
+
 export interface AiModelSummary {
   id: number
   name: string

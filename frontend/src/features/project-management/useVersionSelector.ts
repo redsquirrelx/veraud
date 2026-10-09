@@ -200,19 +200,19 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
     await loadInitial(projectId, generation.current)
   }
 
-  async function stageCommit(hash: string) {
-    if (projectId === null || applying || loadingCommits || detached !== null) {
-      return
+  async function stageCommit(hash: string): Promise<boolean> {
+    if (projectId === null || applying || loadingCommits) {
+      return false
     }
     const wanted = hash.trim()
     if (HASH_PATTERN.test(wanted) === false) {
       setCommitHash(wanted)
       setError("Commit hash must be 7 to 40 hex characters")
-      return
+      return false
     }
     if (applied !== null && applied.branch === branch && applied.commitHash.toLowerCase() === wanted.toLowerCase()) {
       setCommitHash(wanted)
-      return
+      return true
     }
     const tip = commits[0]?.commitHash.toLowerCase() ?? ""
     const isTip = tip !== "" && (wanted.toLowerCase() === tip || tip.startsWith(wanted.toLowerCase()))
@@ -223,29 +223,31 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (isTip) {
         await checkoutBranch(projectId, branch)
         if (!mounted.current) {
-          return
+          return false
         }
         setCommitHash(tip)
         setDetached(null)
         const version = { branch, commitHash: tip }
         setApplied(version)
         appliedCallback.current?.(version)
-        return
+        return true
       }
       const result = await checkoutCommit(projectId, wanted)
       if (!mounted.current) {
-        return
+        return false
       }
       setCommitHash(result.commitHash)
       setDetached(result.commitHash)
       setApplied(null)
       const version = { branch, commitHash: result.commitHash }
       appliedCallback.current?.(version)
+      return true
     } catch (failure) {
       if (!mounted.current) {
-        return
+        return false
       }
       setError(describeFailure(failure, isTip ? "Could not check out the branch" : "Could not check out the commit"))
+      return false
     } finally {
       if (mounted.current) {
         setApplying(false)

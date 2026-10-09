@@ -397,4 +397,63 @@ describe("ProjectDetailPage", () => {
 
     expect(await screen.findByText("Analyzing the project")).toBeDefined()
   })
+
+  it("checks out an analyzed version and shows its stored run", async () => {
+    const completed = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const waitingRun = { ...completed, id: 22, status: "Waiting", result: null, finishedAt: null }
+    const versions = [
+      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, execution: waitingRun, derivedStatus: "Waiting" },
+    ]
+    const seen: string[] = []
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify(versions), { status: 200 })
+      }
+      if (url.includes("/agent-executions/22")) {
+        return new Response(JSON.stringify(waitingRun), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      if (url.includes("/git/checkout") && !url.includes("checkout-branch")) {
+        seen.push(String(init?.body ?? ""))
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    expect(await screen.findByText(`(HEAD detached at ${"b".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
+    expect(seen[0]).toContain("b".repeat(40))
+    expect(screen.getByText("analyzer run #21")).toBeDefined()
+    expect(screen.getByText("Completed")).toBeDefined()
+
+    // A second pick moves the detached checkout without re-attaching first.
+    await userEvent.click(screen.getByRole("button", { name: "main @ bbbbbbb · Completed" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ ccccccc · Waiting" }))
+
+    expect(await screen.findByText(`(HEAD detached at ${"c".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
+    expect(seen[1]).toContain("c".repeat(40))
+    expect(screen.getByText("analyzer run #22")).toBeDefined()
+  })
 })

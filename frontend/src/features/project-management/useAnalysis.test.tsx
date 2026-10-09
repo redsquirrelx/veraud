@@ -130,4 +130,61 @@ describe("useAnalysis", () => {
     expect(calls).toBe(0)
     expect(result.current.phase).toBe("idle")
   })
+
+  it("lands the result through polling when the socket stays silent", async () => {
+    const completed = { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" }
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes("/agent-executions/")) {
+        return new Response(JSON.stringify(completed), { status: 200 })
+      }
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waiting }), { status: 201 })
+    }) as typeof fetch
+
+    const { result } = renderHook(() => useAnalysis(2, { pollIntervalMs: 50 }), { wrapper })
+
+    await act(async () => {
+      await result.current.start("main", "a".repeat(40))
+    })
+    expect(result.current.phase).toBe("tracking")
+
+    // No websocket event is ever pushed: the poller must pick it up.
+    await waitFor(() => {
+      expect(result.current.phase).toBe("done")
+    })
+    expect(result.current.execution?.result).toBe("{\"kind\":\"library\"}")
+  })
+
+  it("reopens the last run after a reload", async () => {
+    const completed = { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" }
+    window.localStorage.setItem("analysis.lastExecution.2", "11")
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify(completed), { status: 200 })
+    }) as typeof fetch
+
+    const { result } = renderHook(() => useAnalysis(2), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.phase).toBe("done")
+    })
+    expect(result.current.execution?.id).toBe(11)
+  })
+
+  it("displays a stored run without requesting", async () => {
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return new Response(JSON.stringify({}), { status: 200 })
+    }) as typeof fetch
+
+    const { result } = renderHook(() => useAnalysis(2), { wrapper })
+    const completed = { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" }
+
+    act(() => {
+      result.current.show(completed)
+    })
+
+    expect(result.current.phase).toBe("done")
+    expect(result.current.execution?.result).toBe("{\"kind\":\"library\"}")
+    expect(calls).toBe(0)
+  })
 })

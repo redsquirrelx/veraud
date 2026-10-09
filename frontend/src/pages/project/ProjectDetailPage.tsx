@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
+import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
-import { VersionSelector } from "../../features/project-management/VersionSelector.tsx"
+import { VersionSelector, type VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
 import { listProjects, syncProject, type AgentExecution, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
@@ -34,10 +35,19 @@ export function ProjectDetailPage() {
   const files = useProjectTree(project?.id ?? null, project?.repositoryName ?? "")
   const preview = useProjectFile(project?.id ?? null)
   const analysis = useAnalysis(project?.id ?? null)
+  const analyzed = useAnalyzedVersions(project?.id ?? null)
+  const [versionMode, setVersionMode] = useState<VersionMode>("git")
+  const [analyzedId, setAnalyzedId] = useState<number | null>(null)
+  const refreshedExecution = useRef<number | null>(null)
+  const analyzedVersions = analyzed.versions.filter((item) => item.evaluationId !== null)
+  const selectedAnalyzed = analyzedVersions.find((item) => item.id === analyzedId) ?? null
   const refreshFiles = files.refresh
   const clearPreview = preview.clear
+  const refreshAnalyzed = analyzed.refresh
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
-  const canAnalyze = version.applied !== null && version.detached === null && !version.applying
+  const activeHash = version.detached ?? version.applied?.commitHash ?? null
+  const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
+  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits
 
   function openFile(path: string) {
     const root = project?.repositoryName ?? ""
@@ -98,17 +108,69 @@ export function ProjectDetailPage() {
     }
   }, [section, versionKey, refreshFiles, clearPreview])
 
+  // analyzed versions load lazily when their tab opens
+  useEffect(() => {
+    if (versionMode === "analyzed") {
+      refreshAnalyzed()
+    }
+  }, [versionMode, refreshAnalyzed])
+
   useEffect(() => {
     if (analysis.phase === "error" && analysis.message !== "") {
       pushToast("error", analysis.message)
     }
   }, [analysis.phase, analysis.message, pushToast])
 
-  function handleAnalyze() {
-    if (version.applied === null) {
+  useEffect(() => {
+    const finished = analysis.execution
+    if (analysis.phase !== "done" || finished === null || refreshedExecution.current === finished.id) {
       return
     }
-    void analysis.start(version.applied.branch, version.applied.commitHash)
+    refreshedExecution.current = finished.id
+    void refreshAnalyzed()
+  }, [analysis.phase, analysis.execution, refreshAnalyzed])
+
+  function handleAnalyze() {
+    if (activeBranch === null || activeHash === null) {
+      return
+    }
+    void analysis.start(activeBranch, activeHash)
+  }
+
+  /** Picks an analyzed version: checks out its commit, then shows its run. */
+  async function selectAnalyzed(id: number) {
+    const target = analyzedVersions.find((item) => item.id === id) ?? null
+    if (target === null || target.commitHash === null) {
+      return
+    }
+    const landed = await version.stageCommit(target.commitHash)
+    if (!landed) {
+      return
+    }
+    setAnalyzedId(id)
+    analysis.show(target.execution)
+  }
+
+  function handleModeChange(next: VersionMode) {
+    setVersionMode(next)
+    if (next === "git") {
+      setAnalyzedId(null)
+      analysis.show(null)
+    }
+  }
+
+  const gitSelection = {
+    ...version,
+    changeBranch: (name: string) => {
+      setAnalyzedId(null)
+      analysis.show(null)
+      return version.changeBranch(name)
+    },
+    stageCommit: (hash: string) => {
+      setAnalyzedId(null)
+      analysis.show(null)
+      return version.stageCommit(hash)
+    },
   }
 
   return (
@@ -123,8 +185,18 @@ export function ProjectDetailPage() {
           <>
             <Card>
               <VersionSelector
-                selection={version}
+                selection={gitSelection}
                 analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
+                mode={versionMode}
+                onModeChange={handleModeChange}
+                analyzed={{
+                  versions: analyzedVersions,
+                  loading: analyzed.loading,
+                  error: analyzed.error,
+                  selectedId: analyzedId,
+                  onSelect: (id) => void selectAnalyzed(id),
+                  onRefresh: () => void analyzed.refresh(),
+                }}
               />
             </Card>
             <Card>
