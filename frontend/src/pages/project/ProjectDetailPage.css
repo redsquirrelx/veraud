@@ -99,6 +99,11 @@
   text-decoration: underline;
 }
 
+.project-summary {
+  font-size: 12px;
+  color: #334155;
+}
+
 .audit-status-row {
   display: flex;
   align-items: center;
