@@ -107,21 +107,31 @@ def build_description(
     read_rounds: int,
     hypothesis_confirmed: bool,
     known_files: set[str],
+    key_components: list[str],
+    entrypoints: list[str],
+    primary_language: str,
 ) -> ProjectDescription:
-    """Shape the synthesis answer into a valid description."""
+    """Shape the synthesis answer into a valid description.
+
+    The model writes kind, summary and confidence. The structural fields come
+    from the collection instead: a model asked to pick components varies run
+    to run, while the derived ranking is identical every time. Anything the
+    model sent for those keys is ignored; the derived lists are still filtered
+    to known paths so a stale collection cannot leak a phantom path.
+    """
     kind = read_kind(parsed)
     summary = read_text(parsed, "summary") or "The model returned no summary."
 
     return ProjectDescription(
         kind=kind,
         summary=summary,
-        primary_language=read_text(parsed, "primary_language") or "unknown",
+        primary_language=primary_language,
         files_read=files_read,
         read_rounds=read_rounds,
         hypothesis_confirmed=hypothesis_confirmed,
         confidence=read_confidence(parsed, kind),
-        entrypoints=read_paths(parsed, "entrypoints", known_files),
-        key_components=read_paths(parsed, "key_components", known_files),
+        entrypoints=[path for path in entrypoints if path in known_files],
+        key_components=[path for path in key_components if path in known_files],
     )
 
 

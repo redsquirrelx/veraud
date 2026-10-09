@@ -9,17 +9,9 @@ Answer ONLY with a JSON object. Its keys:
   it.
 - "summary": string. Two or three plain sentences. Say what the project is FOR,
   not what files it has. Use the source you read to make it concrete.
-- "primary_language": string. The dominant language, for example python.
-- "entrypoints": array of strings. Repository paths where execution starts. Use
-  the package path, such as src/mypkg, when the project exposes a library API,
-  and the file path when there is a main or cli module.
-- "key_components": array of strings. Repository paths carrying most of the
-  code, copied verbatim from the listing. Never list third-party libraries
-  here. Prefer four to eight entries over a long list.
 - "confidence": string. low, medium or high. Use high only if the source you
-  read backs the kind and the components you named. When the excerpts were
-  truncated, or you could not read what you needed, say so with a lower
-  confidence.
+  read backs the kind. When the excerpts were truncated, or you could not read
+  what you needed, say so with a lower confidence.
 
 If you could not read enough to be sure, say so in the summary. A description
 that admits its gaps is more useful to the next agent than one that hides them.

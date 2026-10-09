@@ -55,6 +55,13 @@ class _State(TypedDict, total=False):
     known_files: set[str]
     entrypoints: list[str]
 
+    # Written by collect. Structural fields computed from the collection, never
+    # model-chosen, so the description carries the same components, entry
+    # points and language on every run over the same repository.
+    derived_key_components: list[str]
+    derived_entrypoints: list[str]
+    derived_language: str
+
     # Written by hypothesize.
     hypothesis: dict
     pending: list[str]
@@ -141,7 +148,7 @@ class ProjectAnalyzerAgent(BaseAgent[ProjectInput, ProjectDescription]):
         data = collection.model_dump()
         files = data.get("repo_map", {}).get("files", [])
         facts, trimmed = fact_tools.build_facts(data, MAX_FACTS_CHARS)
-
+        edges = data.get("dependency_graph", {}).get("edges", [])
         logger.info(
             "run: %d files, %d chars of facts (trimmed=%s)",
             len(files), len(facts), trimmed,
@@ -153,6 +160,9 @@ class ProjectAnalyzerAgent(BaseAgent[ProjectInput, ProjectDescription]):
             "facts": facts,
             "known_files": fact_tools.known_paths(files),
             "entrypoints": _evidence_floor(files),
+            "derived_key_components": fact_tools.derived_key_components(edges, files),
+            "derived_entrypoints": fact_tools.derived_entrypoints(files),
+            "derived_language": fact_tools.derived_primary_language(files),
             "read_paths": [],
             "excerpts": "",
             "rounds": 0,
@@ -281,6 +291,9 @@ class ProjectAnalyzerAgent(BaseAgent[ProjectInput, ProjectDescription]):
             read_rounds=state["rounds"],
             hypothesis_confirmed=state["confirmed"],
             known_files=state["known_files"],
+            key_components=state["derived_key_components"],
+            entrypoints=state["derived_entrypoints"],
+            primary_language=state["derived_language"],
         )}
 
     # -- helpers ------------------------------------------------------------

@@ -6,6 +6,10 @@ Kept apart from the graph so the graph reads as steps rather than as parsing.
 import json
 import sys
 
+# Key components reported in a description. The prompt used to ask for "four
+# to eight"; eight keeps the listing informative without crowding the prompt.
+MAX_KEY_COMPONENTS = 8
+
 # A package __init__.py at least this long is treated as a public API. Chosen
 # because build123d's is 289 lines of pure re-exports with zero defs of its own,
 # and missing it made the analyzer report a library with no entry point at all.
@@ -173,6 +177,57 @@ def entrypoint_candidates(files: list[dict]) -> list[str]:
     return sorted(found)
 
 
+def derived_entrypoints(files: list[dict]) -> list[str]:
+    """Where execution starts, computed instead of model-chosen.
+
+    Named entry files plus public package APIs, sorted. Deterministic for a
+    given listing: the same repository always yields the same entry points,
+    which a model asked to pick them cannot promise run to run.
+    """
+    return sorted(set(entrypoint_candidates(files)) | set(package_entrypoints(files)))
+
+
+def derived_key_components(
+    edges: list[dict], files: list[dict], limit: int = MAX_KEY_COMPONENTS
+) -> list[str]:
+    """Paths carrying most of the code, computed instead of model-chosen.
+
+    The top hub modules by import degree: where the project holds together.
+    Ties break alphabetically so the ranking is stable. When the graph has no
+    internal edges at all (languages without import extraction), the largest
+    files by lines stand in, same ordering rule. Either way the answer is a
+    pure function of the collection, identical on every run.
+    """
+    hubs = hub_modules(edges, limit=limit)
+    if hubs:
+        return [entry["path"] for entry in hubs]
+
+    ranked = sorted(
+        (item for item in files if item.get("path")),
+        key=lambda item: (-(item.get("lines") or 0), item["path"]),
+    )
+    return [item["path"] for item in ranked[:limit]]
+
+
+def derived_primary_language(files: list[dict]) -> str:
+    """Dominant language by lines, alphabetical tie-break.
+
+    Lines, not file count: a hundred tiny config files should not outvote the
+    language the project is written in.
+    """
+    totals: dict[str, int] = {}
+
+    for item in files:
+        language = item.get("language") or "unknown"
+        totals[language] = totals.get(language, 0) + (item.get("lines") or 0)
+
+    if not totals or sum(totals.values()) <= 0:
+        return "unknown"
+
+    best = max(totals.values())
+    return min(name for name, total in totals.items() if total == best)
+
+
 def third_party_dependencies(collection: dict) -> list[str]:
     """Distinct external import names, standard library excluded.
 
@@ -222,7 +277,7 @@ def hub_modules(edges: list[dict], limit: int) -> list[dict]:
 
     ranked = sorted(
         degrees.items(),
-        key=lambda item: -(item[1].get("in", 0) + item[1].get("out", 0)),
+        key=lambda item: (-(item[1].get("in", 0) + item[1].get("out", 0)), item[0]),
     )
 
     return [
