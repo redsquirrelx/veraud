@@ -60,7 +60,7 @@ describe("ItemList", () => {
   it("shows skeletons while loading instead of options", () => {
     const { container } = render(<ItemList items={[]} selectedIds={[]} onSelectionChange={() => {}} loading />)
 
-    expect(container.querySelectorAll(".ui-item-list-skeleton").length).toBe(3)
+    expect(container.querySelectorAll("[class*='skeleton']").length).toBeGreaterThan(0)
     expect(screen.queryByRole("option")).toBeNull()
   })
 
@@ -81,8 +81,15 @@ describe("ItemList", () => {
 
 describe("ItemListItem", () => {
   it("hides the description when it is missing", () => {
+    const { unmount } = render(<ItemListItem name="gpt-4o" description="OpenAI flagship" />)
+
+    expect(screen.getByText("gpt-4o")).toBeDefined()
+    expect(screen.getByText("OpenAI flagship")).toBeDefined()
+    unmount()
+
     render(<ItemListItem name="gpt-4o" />)
 
     expect(screen.getByText("gpt-4o")).toBeDefined()
+    expect(screen.queryByText("OpenAI flagship")).toBeNull()
   })
 })

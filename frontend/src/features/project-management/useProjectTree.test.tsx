@@ -131,8 +131,16 @@ describe("useProjectTree", () => {
 })
 
 describe("useProjectTree inside a view", () => {
-  it("releases the tree when the view unmounts", async () => {
-    stubFiles(["README.md"])
+  it("ignores a late response after the view unmounts", async () => {
+    let release = () => {}
+    globalThis.fetch = (() => new Promise<Response>((resolve) => {
+      release = () => resolve(new Response(JSON.stringify({ files: ["README.md"], taskId: 1 }), { status: 200 }))
+    })) as typeof fetch
+    const errors: unknown[] = []
+    const consoleError = console.error
+    console.error = (...args: unknown[]) => {
+      errors.push(args)
+    }
 
     function Harness({ id }: { id: number | null }) {
       const files = useProjectTree(id, "Demo")
@@ -145,11 +153,18 @@ describe("useProjectTree inside a view", () => {
       return <span>{files.tree === null ? "empty" : (files.tree.name as string)}</span>
     }
 
-    const { unmount } = render(<Harness id={2} />)
+    try {
+      const { unmount } = render(<Harness id={2} />)
+      unmount()
 
-    await waitFor(() => expect(screen.getByText("Demo")).toBeDefined())
-    unmount()
-    expect(document.body.textContent).toBe("")
+      await act(async () => {
+        release()
+      })
+
+      expect(errors).toEqual([])
+    } finally {
+      console.error = consoleError
+    }
   })
 
   it("lets the auditor filter the loaded tree", async () => {

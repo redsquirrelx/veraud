@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { renderHook, waitFor } from "@testing-library/react"
+import { act, renderHook, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { AgentExecutionsProvider } from "./agentMonitor.tsx"
 import { useAgentExecutions } from "./useAgentExecutions.ts"
@@ -93,11 +93,16 @@ describe("AgentExecutionsProvider", () => {
 
     const { result } = renderHook(() => useAgentExecutions(), { wrapper })
 
+    await waitFor(() => {
+      expect(FakeSocket.instances.length).toBe(1)
+    })
+
     FakeSocket.instances[0]?.push({ type: "task.updated", task: { id: 1 } })
     FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { id: "x" } })
     FakeSocket.instances[0]?.push("not json }")
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await act(async () => {})
+
     expect(result.current).toEqual([])
   })
 

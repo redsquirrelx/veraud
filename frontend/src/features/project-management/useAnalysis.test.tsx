@@ -194,11 +194,19 @@ describe("useAnalysis", () => {
     }) as typeof fetch
 
     const { result } = renderHook(() => useAnalysis(2), { wrapper })
+    const completed = { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" }
 
     await act(async () => {
       await result.current.start("main", "a".repeat(40))
     })
 
     expect(result.current.tracked).toBe(true)
+
+    act(() => {
+      result.current.show(completed)
+    })
+
+    expect(result.current.tracked).toBe(false)
+    expect(result.current.phase).toBe("done")
   })
 })

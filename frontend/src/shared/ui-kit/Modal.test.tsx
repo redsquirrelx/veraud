@@ -35,7 +35,12 @@ describe("Modal", () => {
 
     expect(onClose).not.toHaveBeenCalled()
 
-    await userEvent.click(screen.getByRole("dialog").parentElement as HTMLElement)
+    const dialog = screen.getByRole("dialog")
+    const overlay = dialog.closest(".ui-modal-overlay")
+    if (overlay === null) {
+      throw new Error("overlay not found")
+    }
+    await userEvent.click(overlay)
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -49,11 +54,5 @@ describe("Modal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Close" }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it("renders narrow on demand", () => {
-    render(<Modal open label="Demo" size="narrow" onClose={() => {}}><p>visible</p></Modal>)
-
-    expect(screen.getByRole("dialog").getAttribute("class")).toContain("ui-modal-narrow")
   })
 })

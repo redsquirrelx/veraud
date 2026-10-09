@@ -38,6 +38,6 @@ describe("ProjectRegistrationForm", () => {
     await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Register project" }))
 
-    expect(screen.getByTestId("state").textContent).not.toBe("idle")
+    expect(screen.getByTestId("state").textContent).toBe("loading")
   })
 })

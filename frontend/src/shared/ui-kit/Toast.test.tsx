@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Toast } from "./Toast.tsx"
 
@@ -43,18 +43,21 @@ describe("Toast", () => {
   })
 
   it("pauses dismissal while hovered", async () => {
-    const onClose = vi.fn()
-    const user = userEvent.setup()
-    render(<Toast kind="success" message="done" durationMs={150} onClose={onClose} />)
+    vi.useFakeTimers()
+    try {
+      const onClose = vi.fn()
+      render(<Toast kind="success" message="done" durationMs={150} onClose={onClose} />)
 
-    await user.hover(screen.getByRole("status"))
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    expect(onClose).not.toHaveBeenCalled()
+      fireEvent.mouseOver(screen.getByRole("status"))
+      await vi.advanceTimersByTimeAsync(250)
+      expect(onClose).not.toHaveBeenCalled()
 
-    await user.unhover(screen.getByRole("status"))
-    await waitFor(() => {
+      fireEvent.mouseOut(screen.getByRole("status"))
+      await vi.advanceTimersByTimeAsync(500)
       expect(onClose).toHaveBeenCalledTimes(1)
-    })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("offers an expander for long messages", async () => {

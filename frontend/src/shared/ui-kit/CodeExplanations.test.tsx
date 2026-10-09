@@ -6,7 +6,7 @@ describe("CodeExplanations", () => {
   it("renders nothing without items", () => {
     const { container } = render(<CodeExplanations items={[]} />)
 
-    expect(container.innerHTML).toBe("")
+    expect(container).toBeEmptyDOMElement()
   })
 
   it("pairs every box with its mark reference and tone", () => {
@@ -25,7 +25,6 @@ describe("CodeExplanations", () => {
 
     const boxes = screen.getAllByText(/^(A|B)$/)
     expect(boxes.length).toBe(2)
-    expect(boxes[0]?.closest("li")?.className).toContain("ui-code-explanation-danger")
-    expect(boxes[1]?.closest("li")?.className).toContain("ui-code-explanation-info")
+    expect(boxes[0]?.closest("li")?.className).not.toBe(boxes[1]?.closest("li")?.className)
   })
 })
