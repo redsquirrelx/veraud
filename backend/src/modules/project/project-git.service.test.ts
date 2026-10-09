@@ -52,6 +52,8 @@ function makeService(options: {
       upsertVersion: async () => { throw new Error("not used") },
       setSelectedVersion: async () => { throw new Error("not used") },
       createEvaluation: async () => { throw new Error("not used") },
+      listVersions: async () => { throw new Error("not used") },
+      findOpenExecution: async () => { throw new Error("not used") },
     },
     new TaskService(
       {

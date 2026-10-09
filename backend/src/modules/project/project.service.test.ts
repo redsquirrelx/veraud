@@ -72,6 +72,12 @@ function makeFakes(options: {
     async createEvaluation(): Promise<never> {
       throw new Error("not used here")
     },
+    async listVersions() {
+      return []
+    },
+    async findOpenExecution() {
+      return null
+    },
   }
 
   const tasks: TaskStore & { created: Array<NewTask> } = {
@@ -193,6 +199,8 @@ describe("ProjectService.registerProject", () => {
         upsertVersion: async () => { throw new Error("must not upsert versions") },
         setSelectedVersion: async () => { throw new Error("must not select versions") },
         createEvaluation: async () => { throw new Error("must not create evaluations") },
+        listVersions: async () => { throw new Error("must not list versions") },
+        findOpenExecution: async () => { throw new Error("must not search executions") },
       },
       new TaskService(
         {

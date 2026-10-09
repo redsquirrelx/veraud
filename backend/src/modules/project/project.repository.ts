@@ -45,6 +45,31 @@ export interface StoredEvaluation {
   type: string
 }
 
+export interface StoredAgentExecutionSummary {
+  id: number
+  evaluationId: number | null
+  agentType: string
+  status: string
+  result: string | null
+  error: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  createdAt: Date
+  startedAt: Date | null
+  finishedAt: Date | null
+}
+
+export interface StoredVersionAnalysis {
+  id: number
+  projectId: number
+  branch: string | null
+  commitHash: string | null
+  analysisStatus: string
+  analyzedAt: Date | null
+  evaluation: StoredEvaluation | null
+  execution: StoredAgentExecutionSummary | null
+}
+
 export interface ProjectStore {
   create(data: NewProject): Promise<StoredProject>
   findByGithubId(githubRepositoryId: bigint): Promise<StoredProject | null>
@@ -56,6 +81,8 @@ export interface ProjectStore {
   upsertVersion(projectId: number, data: NewProjectVersion): Promise<StoredProjectVersion>
   setSelectedVersion(projectId: number, versionId: number): Promise<void>
   createEvaluation(projectVersionId: number, type: string): Promise<StoredEvaluation>
+  listVersions(projectId: number): Promise<StoredVersionAnalysis[]>
+  findOpenExecution(projectId: number, commitHash: string): Promise<{ id: number } | null>
 }
 
 export class ProjectRepository implements ProjectStore {
@@ -151,6 +178,63 @@ export class ProjectRepository implements ProjectStore {
     })
 
     return { id: evaluation.id, projectVersionId: evaluation.projectVersionId, type: evaluation.type }
+  }
+
+  /** Versions with their latest evaluation and run, newest first. */
+  async listVersions(projectId: number): Promise<StoredVersionAnalysis[]> {
+    const versions = await this.db.projectVersion.findMany({
+      where: { projectId },
+      orderBy: { id: "desc" },
+      include: {
+        evaluations: {
+          orderBy: { id: "desc" },
+          take: 1,
+          include: { agentExecutions: { orderBy: { id: "desc" }, take: 1 } },
+        },
+      },
+    })
+
+    return versions.map((version) => {
+      const evaluation = version.evaluations[0] ?? null
+      const run = evaluation?.agentExecutions[0] ?? null
+      return {
+        id: version.id,
+        projectId: version.projectId,
+        branch: version.branch,
+        commitHash: version.commitHash,
+        analysisStatus: version.analysisStatus,
+        analyzedAt: version.analyzedAt,
+        evaluation: evaluation === null
+          ? null
+          : { id: evaluation.id, projectVersionId: evaluation.projectVersionId, type: evaluation.type },
+        execution: run === null
+          ? null
+          : {
+              id: run.id,
+              evaluationId: run.evaluationId,
+              agentType: run.agentType,
+              status: run.status,
+              result: run.result,
+              error: run.error,
+              inputTokens: run.inputTokens,
+              outputTokens: run.outputTokens,
+              createdAt: run.createdAt,
+              startedAt: run.startedAt,
+              finishedAt: run.finishedAt,
+            },
+      }
+    })
+  }
+
+  /** An open run on the same version, if any, to avoid analyzing it twice at once. */
+  async findOpenExecution(projectId: number, commitHash: string): Promise<{ id: number } | null> {
+    return this.db.agentExecution.findFirst({
+      where: {
+        status: { in: ["Waiting", "Running"] },
+        evaluation: { projectVersion: { projectId, commitHash } },
+      },
+      select: { id: true },
+    })
   }
 
   private toDetails(project: {

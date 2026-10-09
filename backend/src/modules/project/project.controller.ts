@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import { DuplicateProjectError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
+import { DuplicateProjectError, AnalysisAlreadyRunningError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
   type: "object",
@@ -273,8 +273,33 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof InvalidGitRequestError) {
         return reply.code(400).send({ message: error.message })
       }
-      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError) {
+      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError) {
         return reply.code(422).send({ message: error.message })
+      }
+      throw error
+    }
+  })
+
+  app.get("/api/projects/:id/versions", {
+    schema: { params: idParams },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+
+    try {
+      const versions = await service.listVersions(Number(params.id))
+      return reply.code(200).send(versions.map((version) => ({
+        id: version.id,
+        branch: version.branch,
+        commitHash: version.commitHash,
+        analysisStatus: version.analysisStatus,
+        analyzedAt: version.analyzedAt,
+        evaluationId: version.evaluationId,
+        execution: version.execution === null ? null : toExecution(version.execution),
+        derivedStatus: version.derivedStatus,
+      })))
+    } catch (error) {
+      if (error instanceof ProjectNotFoundError) {
+        return reply.code(404).send({ message: error.message })
       }
       throw error
     }

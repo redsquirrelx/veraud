@@ -212,4 +212,88 @@ describe("project analyze endpoint", () => {
     assert.equal(response.statusCode, 422)
     assert.match(response.json().message, /analyzer/)
   })
+
+  it("422s when the same version already has an open run", async () => {
+    const stalling: AgentInvoker = { run: () => new Promise<AgentInput>(() => {}) }
+    const { app, db, project } = await start({ invoker: stalling })
+    await seedAnalyzer(db)
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/analyze`,
+      payload: { branch: "main", commitHash: COMMIT },
+    })
+    assert.equal(first.statusCode, 201)
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/analyze`,
+      payload: { branch: "main", commitHash: COMMIT },
+    })
+
+    assert.equal(second.statusCode, 422)
+    assert.match(second.json().message, new RegExp(String(first.json().execution.id)))
+  })
+
+  it("allows another version while one is running", async () => {
+    const stalling: AgentInvoker = { run: () => new Promise<AgentInput>(() => {}) }
+    const { app, db, project } = await start({ invoker: stalling })
+    await seedAnalyzer(db)
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/analyze`,
+      payload: { branch: "main", commitHash: COMMIT },
+    })
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/analyze`,
+      payload: { branch: "main", commitHash: "b".repeat(40) },
+    })
+
+    assert.equal(first.statusCode, 201)
+    assert.equal(second.statusCode, 201)
+  })
+
+  it("lists versions with their latest run", async () => {
+    const { app, db, project } = await start()
+    await seedAnalyzer(db)
+
+    const empty = await app.inject({ method: "GET", url: `/api/projects/${project.id}/versions` })
+    assert.equal(empty.statusCode, 200)
+    assert.deepEqual(empty.json(), [])
+
+    const opened = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/analyze`,
+      payload: { branch: "main", commitHash: COMMIT },
+    })
+    const executionId = opened.json().execution.id as number
+
+    await app.inject({
+      method: "POST",
+      url: `/api/agent-executions/${executionId}/completion`,
+      payload: { status: "Completed", result: "{\"kind\":\"library\"}" },
+    })
+
+    const listed = await app.inject({ method: "GET", url: `/api/projects/${project.id}/versions` })
+    assert.equal(listed.statusCode, 200)
+
+    const versions = listed.json()
+    assert.equal(versions.length, 1)
+    assert.equal(versions[0].branch, "main")
+    assert.equal(versions[0].commitHash, COMMIT)
+    assert.equal(versions[0].evaluationId, opened.json().evaluationId)
+    assert.equal(versions[0].execution.id, executionId)
+    assert.equal(versions[0].execution.status, "Completed")
+    assert.equal(versions[0].derivedStatus, "Completed")
+  })
+
+  it("404s versions for an unknown project", async () => {
+    const { app } = await start()
+
+    const response = await app.inject({ method: "GET", url: "/api/projects/4242/versions" })
+
+    assert.equal(response.statusCode, 404)
+  })
 })
