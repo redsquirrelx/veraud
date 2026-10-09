@@ -38,6 +38,7 @@ export function ProjectDetailPage() {
   const analyzed = useAnalyzedVersions(project?.id ?? null)
   const [versionMode, setVersionMode] = useState<VersionMode>("git")
   const [analyzedId, setAnalyzedId] = useState<number | null>(null)
+  const notifiedExecution = useRef<number | null>(null)
   const refreshedExecution = useRef<number | null>(null)
   const analyzedVersions = analyzed.versions.filter((item) => item.evaluationId !== null)
   const selectedAnalyzed = analyzedVersions.find((item) => item.id === analyzedId) ?? null
@@ -120,6 +121,19 @@ export function ProjectDetailPage() {
       pushToast("error", analysis.message)
     }
   }, [analysis.phase, analysis.message, pushToast])
+
+  useEffect(() => {
+    const finished = analysis.execution
+    if (analysis.phase !== "done" || finished === null || !analysis.tracked || notifiedExecution.current === finished.id) {
+      return
+    }
+    notifiedExecution.current = finished.id
+    if (finished.status === "Completed") {
+      pushToast("success", "Analysis completed")
+    } else {
+      pushToast("error", finished.error ?? "Analysis failed")
+    }
+  }, [analysis.phase, analysis.execution, analysis.tracked, pushToast])
 
   useEffect(() => {
     const finished = analysis.execution

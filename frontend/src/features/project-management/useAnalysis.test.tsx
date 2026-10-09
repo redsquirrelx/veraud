@@ -187,4 +187,18 @@ describe("useAnalysis", () => {
     expect(result.current.execution?.result).toBe("{\"kind\":\"library\"}")
     expect(calls).toBe(0)
   })
+
+  it("tracks launched runs but not shown ones", async () => {
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waiting }), { status: 201 })
+    }) as typeof fetch
+
+    const { result } = renderHook(() => useAnalysis(2), { wrapper })
+
+    await act(async () => {
+      await result.current.start("main", "a".repeat(40))
+    })
+
+    expect(result.current.tracked).toBe(true)
+  })
 })

@@ -30,6 +30,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   const [polled, setPolled] = useState<AgentExecution | null>(null)
   const [starting, setStarting] = useState(false)
   const [failure, setFailure] = useState("")
+  const [tracked, setTracked] = useState(false)
 
   // Switching projects drops the previous run (render-phase reset).
   if (trackedProject !== projectId) {
@@ -38,6 +39,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setPolled(null)
     setStarting(false)
     setFailure("")
+    setTracked(false)
   }
 
   const wantedId = seed?.id ?? polled?.id ?? null
@@ -106,6 +108,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(null)
+    setTracked(true)
     try {
       const response = await requestAnalysis(projectId, branch, commitHash)
       localStorage.set(lastExecutionKey(projectId), response.execution.id)
@@ -125,6 +128,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setPolled(null)
     setStarting(false)
     setFailure("")
+    setTracked(false)
   }
 
   /** Displays a stored run, e.g. picked from the analyzed versions. */
@@ -133,6 +137,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(execution)
+    setTracked(false)
     if (projectId !== null && execution !== null) {
       localStorage.set(lastExecutionKey(projectId), execution.id)
     }
@@ -143,6 +148,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     execution,
     message: failure,
     analyzing: phase === "starting" || phase === "tracking",
+    tracked,
     start,
     reset,
     show,

@@ -456,4 +456,43 @@ describe("ProjectDetailPage", () => {
     expect(seen[1]).toContain("c".repeat(40))
     expect(screen.getByText("analyzer run #22")).toBeDefined()
   })
+
+  it("does not toast when showing a stored analysis", async () => {
+    const completed = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+    expect(screen.queryByText("Analysis completed")).toBeNull()
+  })
 })
