@@ -1,0 +1,104 @@
+.agent-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 320px;
+  background: #f2f3ff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 12px;
+  animation: menu-in 0.25s ease-out;
+}
+
+.agent-menu-closing {
+  animation: menu-out 0.2s ease-in forwards;
+}
+
+@keyframes menu-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+@keyframes menu-out {
+  to {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+.agent-menu-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agent-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #334155;
+}
+
+.agent-menu-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.agent-menu-close:hover {
+  color: #0f172a;
+}
+
+.agent-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  animation: menu-list-in 0.2s ease-out;
+}
+
+@keyframes menu-list-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agent-row .mono {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-row .label {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.agent-icon-done {
+  display: inline-flex;
+  color: #059669;
+}
+
+.agent-icon-failed {
+  display: inline-flex;
+  color: #be123c;
+}
