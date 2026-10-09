@@ -189,6 +189,53 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
   return postGit<GitTree>(id, "tree", {})
 }
 
+export interface AgentExecution {
+  id: number
+  evaluationId: number | null
+  agentType: string
+  status: string
+  result: string | null
+  error: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface AnalysisRequest {
+  versionId: number
+  evaluationId: number
+  execution: AgentExecution
+}
+
+export async function requestAnalysis(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch, commitHash }),
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not analyze the project")
+  }
+
+  return body as AnalysisRequest
+}
+
+export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
+  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}`)
+
+  if (!response.ok) {
+    throw new ApiError(response.status, "Could not load the agent execution")
+  }
+
+  return (await response.json()) as AgentExecution
+}
+
 export interface AiModelSummary {
   id: number
   name: string

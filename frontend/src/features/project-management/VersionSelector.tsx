@@ -1,10 +1,16 @@
-import { ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
+import { Button, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
 import type { useVersionSelector } from "./useVersionSelector.ts"
 import "./VersionSelector.css"
 
 type Selection = ReturnType<typeof useVersionSelector>
 
-export function VersionSelector({ selection }: { selection: Selection }) {
+export interface AnalysisAction {
+  canAnalyze: boolean
+  analyzing: boolean
+  onAnalyze: () => void
+}
+
+export function VersionSelector({ selection, analysis }: { selection: Selection; analysis?: AnalysisAction }) {
   return (
     <div className="version-selector">
       <div className="version-row version-state-row">
@@ -53,6 +59,18 @@ export function VersionSelector({ selection }: { selection: Selection }) {
           loading={selection.loadingCommits}
           disabled={selection.detached !== null || selection.applying}
         />
+        {analysis !== undefined && (
+          <span className="version-analyze">
+            <Button
+              onClick={analysis.onAnalyze}
+              disabled={!analysis.canAnalyze || analysis.analyzing}
+              loading={analysis.analyzing}
+              loadingText="Analyzing"
+            >
+              Analyze
+            </Button>
+          </span>
+        )}
       </div>
     </div>
   )

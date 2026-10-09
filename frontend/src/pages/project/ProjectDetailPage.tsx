@@ -5,11 +5,12 @@ import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Sp
 import { statusTone } from "../../features/project-management/projectStatus.ts"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
+import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import { VersionSelector } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
-import { listProjects, syncProject, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
+import { listProjects, syncProject, type AgentExecution, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
 
 const sectionItems = [
@@ -32,9 +33,11 @@ export function ProjectDetailPage() {
   })
   const files = useProjectTree(project?.id ?? null, project?.repositoryName ?? "")
   const preview = useProjectFile(project?.id ?? null)
+  const analysis = useAnalysis(project?.id ?? null)
   const refreshFiles = files.refresh
   const clearPreview = preview.clear
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
+  const canAnalyze = version.applied !== null && version.detached === null && !version.applying
 
   function openFile(path: string) {
     const root = project?.repositoryName ?? ""
@@ -95,6 +98,19 @@ export function ProjectDetailPage() {
     }
   }, [section, versionKey, refreshFiles, clearPreview])
 
+  useEffect(() => {
+    if (analysis.phase === "error" && analysis.message !== "") {
+      pushToast("error", analysis.message)
+    }
+  }, [analysis.phase, analysis.message, pushToast])
+
+  function handleAnalyze() {
+    if (version.applied === null) {
+      return
+    }
+    void analysis.start(version.applied.branch, version.applied.commitHash)
+  }
+
   return (
     <section className="project-page">
       <Sidebar title="Project" items={sectionItems} activeId={section} storageKey="sidebar.expanded" onSelect={setSection} />
@@ -106,7 +122,10 @@ export function ProjectDetailPage() {
         ) : (
           <>
             <Card>
-              <VersionSelector selection={version} />
+              <VersionSelector
+                selection={version}
+                analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
+              />
             </Card>
             <Card>
               <div className="project-header">
@@ -141,6 +160,9 @@ export function ProjectDetailPage() {
                 </Button>
               </div>
             </Card>
+            {section === "overview" && analysis.execution !== null && (
+              <AnalysisResultCard execution={analysis.execution} />
+            )}
             {section === "files" && (
               <Card>
                 <SplitView
@@ -177,7 +199,11 @@ export function ProjectDetailPage() {
               </Card>
             )}
             {section === "audits" && (
-              <p className="label">audits coming in the next HU</p>
+              analysis.execution === null ? (
+                <p className="label">No analysis yet — pick a version and press Analyze</p>
+              ) : (
+                <AnalysisResultCard execution={analysis.execution} />
+              )
             )}
           </>
         )}
@@ -189,4 +215,37 @@ export function ProjectDetailPage() {
 function fileLanguage(path: string): string {
   const dot = path.lastIndexOf(".")
   return dot < 0 ? "" : path.slice(dot + 1).toLowerCase()
+}
+
+function AnalysisResultCard({ execution }: { execution: AgentExecution }) {
+  return (
+    <Card>
+      <div className="audit-status-row">
+        <Badge tone={auditTone(execution.status)}>{execution.status}</Badge>
+        <span className="label">
+          {execution.agentType} run #{execution.id}
+        </span>
+      </div>
+      {execution.status === "Failed" ? (
+        <p className="files-error">{execution.error ?? "Analysis failed"}</p>
+      ) : execution.result === null ? (
+        <div className="files-loading" role="status" aria-label="Loading">
+          <Spinner />
+          <span className="label">Analyzing the project</span>
+        </div>
+      ) : (
+        <CodeViewer code={execution.result} language="json" highlight />
+      )}
+    </Card>
+  )
+}
+
+function auditTone(status: string): "success" | "warning" | "info" {
+  if (status === "Completed") {
+    return "success"
+  }
+  if (status === "Failed") {
+    return "warning"
+  }
+  return "info"
 }

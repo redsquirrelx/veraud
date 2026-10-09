@@ -98,3 +98,9 @@
 .project-link:hover {
   text-decoration: underline;
 }
+
+.audit-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

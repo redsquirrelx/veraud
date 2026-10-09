@@ -330,7 +330,7 @@ describe("ProjectDetailPage", () => {
     await screen.findByText("acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("audits coming in the next HU")).toBeDefined()
+    expect(await screen.findByText("No analysis yet — pick a version and press Analyze")).toBeDefined()
     expect(screen.queryByRole("tree")).toBeNull()
   })
 
@@ -348,5 +348,53 @@ describe("ProjectDetailPage", () => {
     await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
 
     expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
+  })
+
+  it("analyzes the applied version and shows the run in audits", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/analyze")) {
+        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          execution: {
+            id: 11,
+            evaluationId: 7,
+            agentType: "analyzer",
+            status: "Waiting",
+            result: null,
+            error: null,
+            inputTokens: null,
+            outputTokens: null,
+            createdAt: "2026-01-01",
+            startedAt: null,
+            finishedAt: null,
+          },
+        }), { status: 201 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+
+    expect(seen.length).toBe(1)
+    expect(seen[0]?.url).toContain("/api/projects/2/analyze")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+
+    // The run shows right below in the overview tab.
+    expect(await screen.findByText("Analyzing the project")).toBeDefined()
+    expect(screen.getByText("Waiting")).toBeDefined()
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("Analyzing the project")).toBeDefined()
   })
 })
