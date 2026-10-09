@@ -7,7 +7,7 @@ describe("Pagination", () => {
   it("renders nothing on a single page", () => {
     const { container } = render(<Pagination page={1} pageCount={1} onChange={() => {}} />)
 
-    expect(container.innerHTML).toBe("")
+    expect(container).toBeEmptyDOMElement()
   })
 
   it("shows the current page and navigates", async () => {
@@ -24,9 +24,15 @@ describe("Pagination", () => {
   })
 
   it("disables the edges", () => {
-    render(<Pagination page={1} pageCount={3} onChange={() => {}} />)
+    const { unmount } = render(<Pagination page={1} pageCount={3} onChange={() => {}} />)
 
     expect(screen.getByRole("button", { name: "Previous page" }).hasAttribute("disabled")).toBe(true)
     expect(screen.getByRole("button", { name: "Next page" }).hasAttribute("disabled")).toBe(false)
+    unmount()
+
+    render(<Pagination page={3} pageCount={3} onChange={() => {}} />)
+
+    expect(screen.getByRole("button", { name: "Previous page" }).hasAttribute("disabled")).toBe(false)
+    expect(screen.getByRole("button", { name: "Next page" }).hasAttribute("disabled")).toBe(true)
   })
 })

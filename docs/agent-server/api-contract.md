@@ -3,6 +3,9 @@
 Base URL (dev): `http://localhost:7502`
 Source of truth: `agent-server/src/server/api/schemas.py` (contract), `agent-server/src/server/api/executions.py` (controller)
 
+Every execution is traced to LangSmith when `LANGSMITH_API_KEY` is set. See
+[tracing.md](tracing.md).
+
 ## `GET /api/status`
 
 ```json

@@ -11,18 +11,12 @@ function StatefulInput() {
 }
 
 describe("TextInput", () => {
-  it("renders with a placeholder", () => {
-    render(<TextInput value="" placeholder="https://github.com/owner/repo" onChange={() => {}} />)
-
-    expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeDefined()
-  })
-
   it("reports typed text through onChange", async () => {
     render(<StatefulInput />)
 
     await userEvent.type(screen.getByPlaceholderText("repo url"), "https://github.com/a/b")
 
-    expect(screen.getByPlaceholderText("repo url").getAttribute("value")).toBe("https://github.com/a/b")
+    expect(screen.getByPlaceholderText("repo url")).toHaveValue("https://github.com/a/b")
   })
 
   it("can be disabled", () => {

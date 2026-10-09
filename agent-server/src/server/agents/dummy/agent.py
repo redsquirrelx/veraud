@@ -7,6 +7,7 @@ from typing import TypedDict
 from langgraph.graph import END, StateGraph
 
 from ...config.logs import get_logger
+from ...config.tracing import traced_generate
 from ..base import BaseAgent
 from .schemas import DummyInput, DummyOutput, Finding
 
@@ -97,7 +98,7 @@ class DummyAgent(BaseAgent[DummyInput, DummyOutput]):
 
         try:
             logger.info("analyze: calling model (prompt_chars=%d)", len(prompt))
-            response = await self.model.generate(prompt)
+            response = await traced_generate(self.model, prompt)
             text = _extract_text(response)
             match = _JSON_RE.search(text)
 

@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import sys
+import textwrap
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -23,19 +24,31 @@ if __package__ in (None, ""):
     # Launched by path: no package context, so make `server` importable.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from server.agents.analyzer.agent import ProjectAnalyzerAgent
-from server.agents.analyzer.schemas import ProjectDescription, ProjectInput
-from server.agents.models.base import Model
-from server.agents.models.gemini import GeminiModel
-from server.agents.models.openrouter import OpenRouterModel
-from server.config.dev_agents_config import load_dev_agents_config
-from server.config.schemas import AgentSettings, ModelCredentials, ModelSettings
+from server.agents.analyzer import facts as fact_tools
+from server.agents.analyzer.agent import MAX_FACTS_CHARS, ProjectAnalyzerAgent
+from server.agents.analyzer.evidence import (
+    MAX_CHARS_PER_RUN,
+    read_excerpts,
+    render_excerpts,
+)
+from server.agents.analyzer.schemas import ProjectDescription
+from server.api.schemas import ExecutionConfig
+from server.app.agent_registry import AgentRegistry
+from server.app.execution_service import (
+    AgentExecutionService,
+    InvalidConfigError,
+    InvalidInputError,
+)
 
 logger = logging.getLogger("run-analyzer")
 
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
-DEFAULT_MAX_TOKENS = 4000
-DEFAULT_TIMEOUT = 120
+
+class _BadArguments(Exception):
+    """The arguments on the command line do not make sense."""
+
+
+class _NoSuchRepository(Exception):
+    """The path given is not a repository the analyzer can read."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +71,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="Maximum directory depth to walk (default: 8)",
+    )
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=2,
+        help="How many times the agent may read more files (default: 2)",
+    )
+    parser.add_argument(
+        "--files-per-round",
+        type=int,
+        default=8,
+        help="Files the model may pick per round (default: 8)",
     )
     parser.add_argument(
         "--provider",
@@ -123,57 +148,64 @@ def main(argv: list[str] | None = None) -> int:
 
         setup_logging()
 
-    if args.dry_run:
-        return _dry_run(args)
-    if args.facts:
-        return _facts(args)
-
-    return _describe(args)
+    try:
+        if args.dry_run:
+            return _dry_run(args)
+        if args.facts:
+            return _facts(args)
+        return _describe(args)
+    except _BadArguments as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except _NoSuchRepository as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
 
 
 # -- modes -----------------------------------------------------------------
 
 
 def _describe(args) -> int:
-    """Full run: collect, call the model, print the description."""
-    try:
-        payload = ProjectInput(
-            root_path=args.root,
-            max_files=args.max_files,
-            max_depth=args.max_depth,
-        )
-    except ValidationError as error:
-        print(f"error: invalid arguments\n{error}", file=sys.stderr)
-        return 2
+    """Full run: describe the repository with the analyzer agent."""
+    payload = {
+        "root_path": args.root,
+        "max_files": args.max_files,
+        "max_depth": args.max_depth,
+        "max_read_rounds": args.rounds,
+        "max_files_per_round": args.files_per_round,
+    }
 
-    try:
-        model, timeout = _build_model(args)
-    except (ValueError, ValidationError) as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-
-    settings = AgentSettings(
-        agent_id=ProjectAnalyzerAgent.agent_type,
-        timeout_seconds=timeout,
+    config = ExecutionConfig(
+        model={
+            "provider": args.provider,
+            "name": args.model,
+            "temperature": args.temperature,
+        },
+        timeout_seconds=args.timeout,
+        api_key=args.api_key,
     )
 
-    agent = ProjectAnalyzerAgent(settings=settings, model=model)
-
-    logger.info(
-        "Describing %s with %s", payload.root_path,
-        type(model).__name__,
-    )
+    registry = AgentRegistry()
+    registry.register(ProjectAnalyzerAgent.agent_type, ProjectAnalyzerAgent)
+    service = AgentExecutionService(registry=registry)
 
     try:
-        result = asyncio.run(asyncio.wait_for(agent.run(payload), timeout))
+        result = asyncio.run(service.run(
+            ProjectAnalyzerAgent.agent_type,
+            config,
+            payload,
+        ))
+    except InvalidInputError as error:
+        print(f"error: invalid input\n{error}", file=sys.stderr)
+        return 2
     except FileNotFoundError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    except ValidationError as error:
-        print(f"error: invalid input\n{error}", file=sys.stderr)
+    except InvalidConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
         return 2
     except TimeoutError:
-        print(f"error: the analyzer timed out after {timeout}s", file=sys.stderr)
+        print("error: the analyzer timed out", file=sys.stderr)
         return 1
 
     if args.json:
@@ -184,77 +216,87 @@ def _describe(args) -> int:
     return 0
 
 
-def _build_model(args) -> tuple[Model, int]:
-    """Build the model client for this run, and resolve the timeout with it.
-
-    Resolves provider and name from, in order: the flags, then
-    dev-agents.yaml, then a default. The credential comes from the flags, then
-    LLM_API_KEY, and never falls back to a placeholder: a run that cannot
-    authenticate should say so here rather than return kind=unknown later.
-    """
-    base_settings, base_model = _base_config().get(
-        ProjectAnalyzerAgent.agent_type, (None, None)
-    )
-
-    provider = (args.provider or (base_model.provider if base_model else "gemini")).lower()
-    name = args.model or (base_model.name if base_model else DEFAULT_MODEL)
-    temperature = args.temperature if args.temperature is not None else (
-        base_model.temperature if base_model else 0.2
-    )
-    max_tokens = (
-        base_model.max_tokens if base_model else DEFAULT_MAX_TOKENS
-    )
-    timeout = args.timeout if args.timeout is not None else (
-        base_settings.timeout_seconds if base_settings else DEFAULT_TIMEOUT
-    )
-
-    if timeout <= 0:
-        raise ValueError("--timeout must be positive")
-
-    api_key = args.api_key or _api_key()
-    if not api_key:
-        raise ValueError(
-            "No API key. Pass --api-key or set LLM_API_KEY in .env"
-        )
-
-    logger.info(
-        "Model provider=%r name=%r temperature=%s max_tokens=%s timeout=%ss",
-        provider, name, temperature, max_tokens, timeout,
-    )
-
-    model_settings = ModelSettings(
-        provider=provider,
-        name=name,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    credentials = ModelCredentials(api_key=api_key)
-
-    if provider in ("gemini", "google"):
-        return GeminiModel(settings=model_settings, credentials=credentials), timeout
-
-    if provider in ("openrouter", "openai"):
-        return OpenRouterModel(settings=model_settings, credentials=credentials), timeout
-
-    raise ValueError(f"Unsupported provider: {provider!r}")
-
-
-def _base_config() -> dict:
-    return load_dev_agents_config()
-
-
-def _api_key() -> str | None:
-    try:
-        from server.config.settings import settings
-
-        return settings.llm_api_key
-    except ValidationError as error:
-        logger.warning("No usable settings: %s", error)
-        return None
-
-
 def _facts(args) -> int:
     """Just the collected facts, no model involved."""
+    facts, trimmed, _root, _files = _collected_facts(args)
+
+    print(facts)
+    print()
+    print(f"prompt chars: {len(facts)} | trimmed: {trimmed}")
+    return 0
+
+
+def _dry_run(args) -> int:
+    """Render every prompt the graph will send, without calling a model.
+
+    Reads what the analyzer would read, so the prompts can be checked against
+    the repository without spending a single call.
+    """
+    from server.config.prompts import load_prompt, render_prompt
+
+    facts, trimmed, root, files = _collected_facts(args)
+    entrypoints = fact_tools.entrypoint_candidates(files)[: args.files_per_round]
+    excerpts = render_excerpts(read_excerpts(root, entrypoints, MAX_CHARS_PER_RUN))
+
+    values = {
+        "hypothesize": {"facts": facts},
+        "select": {
+            "max_paths": args.files_per_round,
+            "read_paths": _bullets(entrypoints),
+            "excerpts": excerpts,
+        },
+        "verify": {
+            "hypothesis": json.dumps({"kind": "library", "reasoning": "..."}, indent=2),
+            "excerpts": excerpts,
+        },
+        "synthesize": {
+            "facts": facts,
+            "excerpts": excerpts,
+            "read_paths": _bullets(entrypoints),
+            "rounds": 1,
+            "files_read": len(entrypoints),
+            "verdict": "not confirmed",
+        },
+    }
+
+    for name, filled in values.items():
+        print("=" * 70)
+        print(f"prompts/analyzer/{name}.md")
+        print("=" * 70)
+
+        try:
+            print(render_prompt(load_prompt("analyzer", name), **filled))
+        except KeyError as error:
+            print(
+                f"error: prompt {name!r} declares a placeholder nothing fills: {error}",
+                file=sys.stderr,
+            )
+            return 1
+
+        print()
+
+    print("=" * 70)
+    print(f"facts chars: {len(facts)} | trimmed: {trimmed} | files: {len(files)}")
+    print(f"would read {len(entrypoints)} entry point candidate(s)")
+    print("no model was called")
+    return 0
+
+
+def _collected_facts(args) -> tuple[str, bool, Path, list[dict]]:
+    """Collect, condense, and hand back what the prompts are built from."""
+    collection = _collect(args)
+    data = collection.model_dump()
+    facts, trimmed = fact_tools.build_facts(data, MAX_FACTS_CHARS)
+
+    return facts, trimmed, Path(collection.root), data.get("repo_map", {}).get("files", [])
+
+
+def _bullets(paths: list[str]) -> str:
+    return "\n".join(f"- {path}" for path in paths) or "(none)"
+
+
+def _collect(args):
+    """Collect the representations, or raise with the message to show."""
     from server.services.collection.schemas import CollectionInput
     from server.services.collection.service import CollectionService
 
@@ -265,70 +307,14 @@ def _facts(args) -> int:
             max_depth=args.max_depth,
         )
     except ValidationError as error:
-        print(f"error: invalid arguments\n{error}", file=sys.stderr)
-        return 2
+        raise _BadArguments(f"invalid arguments\n{error}") from error
 
     try:
-        collection = asyncio.run(CollectionService().collect(payload))
+        return asyncio.run(CollectionService().collect(payload))
     except FileNotFoundError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
+        raise _NoSuchRepository(str(error)) from error
     except ValidationError as error:
-        print(f"error: invalid arguments\n{error}", file=sys.stderr)
-        return 2
-
-    facts, trimmed = ProjectAnalyzerAgent._build_facts(collection.model_dump())
-
-    print(facts)
-    print()
-    print(f"prompt chars: {len(facts)} | trimmed: {trimmed}")
-    print(f"stats: {json.dumps(collection.stats)}")
-    return 0
-
-
-def _dry_run(args) -> int:
-    """Collect, build the prompt, print it, never call a model."""
-    from server.services.collection.schemas import CollectionInput
-    from server.services.collection.service import CollectionService
-
-    try:
-        collection_input = CollectionInput(
-            root_path=args.root,
-            max_files=args.max_files,
-            max_depth=args.max_depth,
-        )
-    except ValidationError as error:
-        print(f"error: invalid arguments\n{error}", file=sys.stderr)
-        return 2
-
-    try:
-        collection = asyncio.run(CollectionService().collect(collection_input))
-    except FileNotFoundError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
-    except ValidationError as error:
-        print(f"error: invalid arguments\n{error}", file=sys.stderr)
-        return 2
-
-    facts, trimmed = ProjectAnalyzerAgent._build_facts(collection.model_dump())
-
-    system = ProjectAnalyzerAgent.system_prompt()
-    user = ProjectAnalyzerAgent.user_prompt(facts=facts)
-
-    print("=" * 70)
-    print("SYSTEM PROMPT  (prompts/analyzer/system.md)")
-    print("=" * 70)
-    print(system)
-    print()
-    print("=" * 70)
-    print("USER PROMPT  (prompts/analyzer/user.md + collected facts)")
-    print("=" * 70)
-    print(user)
-    print()
-    print("=" * 70)
-    print(f"system chars: {len(system)} | facts chars: {len(facts)} | trimmed: {trimmed}")
-    print("no model was called")
-    return 0
+        raise _BadArguments(f"invalid arguments\n{error}") from error
 
 
 # -- output ----------------------------------------------------------------
@@ -338,6 +324,9 @@ def _print_description(description: ProjectDescription) -> None:
     print(f"kind              : {description.kind}")
     print(f"primary_language  : {description.primary_language}")
     print(f"confidence        : {description.confidence}")
+    print(f"evidence          : {description.files_read} file(s) read "
+          f"in {description.read_rounds} round(s), "
+          f"hypothesis {'confirmed' if description.hypothesis_confirmed else 'not confirmed'}")
     print()
     print("summary:")
     for line in _wrap(description.summary, 76):
@@ -355,8 +344,6 @@ def _print_description(description: ProjectDescription) -> None:
 
 
 def _wrap(text: str, width: int) -> list[str]:
-    import textwrap
-
     return textwrap.wrap(text, width=width) or [""]
 
 

@@ -43,16 +43,27 @@ describe("useAsyncAction", () => {
 
   it("settles quietly after unmount", async () => {
     const gate = deferred()
-    const { result, unmount } = renderHook(() => useAsyncAction(() => gate.promise))
+    const errors: unknown[] = []
+    const consoleError = console.error
+    console.error = (...args: unknown[]) => {
+      errors.push(args)
+    }
+    try {
+      const { result, unmount } = renderHook(() => useAsyncAction(() => gate.promise))
 
-    act(() => {
-      void result.current.run()
-    })
-    unmount()
+      act(() => {
+        void result.current.run()
+      })
+      unmount()
 
-    await act(async () => {
-      gate.resolve()
-    })
+      await act(async () => {
+        gate.resolve()
+      })
+
+      expect(errors).toEqual([])
+    } finally {
+      console.error = consoleError
+    }
   })
 
   it("surfaces action errors and stops loading", async () => {

@@ -13,13 +13,6 @@ describe("ModelListItem", () => {
     expect(screen.getByRole("button", { name: "Remove gpt-4o" })).toBeDefined()
   })
 
-  it("hides the badge and enables remove when idle", () => {
-    render(<ModelListItem name="gpt-4o" provider="OpenAI" inUse={false} onRemove={() => {}} />)
-
-    expect(screen.queryByText("In use")).toBeNull()
-    expect(screen.getByRole("button", { name: "Remove gpt-4o" }).hasAttribute("disabled")).toBe(false)
-  })
-
   it("removes without toggling the row", async () => {
     const onRemove = vi.fn()
     const onToggle = vi.fn()

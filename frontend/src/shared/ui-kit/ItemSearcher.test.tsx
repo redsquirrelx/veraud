@@ -125,16 +125,6 @@ describe("ItemSearcher", () => {
     expect(screen.getByText("Loading")).toBeDefined()
     expect(screen.getByRole("button")).toBeDisabled()
     expect(screen.queryByLabelText("Search items")).toBeNull()
-  })
-
-  it("shows loading instead of empty text while loading", () => {
-    render(
-      <ItemSearcher items={[]} selectedId={null} onSelect={() => {}} hasMore={false} onLoadMore={() => {}} loading />
-    )
-
-    expect(screen.getByText("Loading")).toBeDefined()
-    expect(screen.getByRole("button")).toBeDisabled()
-    expect(screen.queryByLabelText("Search items")).toBeNull()
     expect(screen.queryByText("No matches")).toBeNull()
   })
 

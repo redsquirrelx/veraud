@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
@@ -330,7 +330,7 @@ describe("ProjectDetailPage", () => {
     await screen.findByText("acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("audits coming in the next HU")).toBeDefined()
+    expect(await screen.findByText("No analysis yet — pick a version and press Analyze")).toBeDefined()
     expect(screen.queryByRole("tree")).toBeNull()
   })
 
@@ -348,5 +348,252 @@ describe("ProjectDetailPage", () => {
     await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
 
     expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
+  })
+
+  it("analyzes the applied version and shows the run in audits", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/analyze")) {
+        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          execution: {
+            id: 11,
+            evaluationId: 7,
+            agentType: "analyzer",
+            status: "Waiting",
+            result: null,
+            error: null,
+            inputTokens: null,
+            outputTokens: null,
+            createdAt: "2026-01-01",
+            startedAt: null,
+            finishedAt: null,
+          },
+        }), { status: 201 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+
+    expect(seen.length).toBe(1)
+    expect(seen[0]?.url).toContain("/api/projects/2/analyze")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+
+    // The run shows in the header card spinner.
+    expect(await screen.findByText("Analyzing the project")).toBeDefined()
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("analyzer run #11")).toBeDefined()
+    expect(screen.getByText("Waiting")).toBeDefined()
+  })
+
+  it("checks out an analyzed version and shows its stored run", async () => {
+    const completed = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const waitingRun = { ...completed, id: 22, status: "Waiting", result: null, finishedAt: null }
+    const versions = [
+      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, execution: waitingRun, derivedStatus: "Waiting" },
+    ]
+    const seen: string[] = []
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify(versions), { status: 200 })
+      }
+      if (url.includes("/agent-executions/22")) {
+        return new Response(JSON.stringify(waitingRun), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      if (url.includes("/git/checkout") && !url.includes("checkout-branch")) {
+        seen.push(String(init?.body ?? ""))
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    expect(await screen.findByText(`(HEAD detached at ${"b".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
+    expect(seen[0]).toContain("b".repeat(40))
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+    expect(screen.getByText("Completed")).toBeDefined()
+
+    // A second pick moves the detached checkout without re-attaching first.
+    await userEvent.click(screen.getByRole("button", { name: "Overview" }))
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "main @ bbbbbbb · Completed" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ ccccccc · Waiting" }))
+
+    expect(await screen.findByText(`(HEAD detached at ${"c".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
+    expect(seen[1]).toContain("c".repeat(40))
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("analyzer run #22")).toBeDefined()
+  })
+
+  it("does not toast when showing a stored analysis", async () => {
+    const completed = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+    expect(screen.queryByText("Analysis completed")).toBeNull()
+  })
+
+  it("shows the analysis verdict in the header card", async () => {
+    const completed = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\",\"confidence\":\"high\",\"summary\":\"A widget library for tests.\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    expect(await screen.findByText("Type")).toBeDefined()
+    expect(screen.getByText("library")).toBeDefined()
+    expect(screen.getByText("Confidence")).toBeDefined()
+    expect(screen.getByText("high")).toBeDefined()
+    expect(screen.getByText("A widget library for tests.")).toBeDefined()
+    expect(screen.queryByText("Analyzing")).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+  })
+
+  it("shows an Analyzing badge while the run is open", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/analyze")) {
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          execution: {
+            id: 11,
+            evaluationId: 7,
+            agentType: "analyzer",
+            status: "Waiting",
+            result: null,
+            error: null,
+            inputTokens: null,
+            outputTokens: null,
+            createdAt: "2026-01-01",
+            startedAt: null,
+            finishedAt: null,
+          },
+        }), { status: 201 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+
+    const headerRow = screen.getByText("acme/Demo").closest(".project-name-row")
+    if (headerRow === null) {
+      throw new Error("project header row not found")
+    }
+    expect(within(headerRow as HTMLElement).getByText("Analyzing")).toBeDefined()
+    expect(screen.queryByText("library")).toBeNull()
   })
 })

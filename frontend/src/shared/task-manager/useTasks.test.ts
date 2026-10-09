@@ -78,14 +78,18 @@ describe("useTasks", () => {
   })
 
   it("starts empty when the backend is down", async () => {
+    let calls = 0
     globalThis.fetch = (async () => {
+      calls += 1
       throw new Error("down")
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
     const { result } = renderHook(() => useTasks())
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await waitFor(() => {
+      expect(calls).toBeGreaterThan(0)
+    })
     expect(result.current).toEqual([])
   })
 

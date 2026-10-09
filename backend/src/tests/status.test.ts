@@ -49,7 +49,18 @@ describe("status endpoint", () => {
   }
 
   it("reports the agent server online", async () => {
-    const agent = createServer((_request, response) => {
+    // Answers only on the path the agent-server actually serves, so a wrong one
+    // shows up as offline instead of passing by accident.
+    const requested: string[] = []
+    const agent = createServer((request, response) => {
+      requested.push(request.url ?? "")
+
+      if (request.url !== "/api/status") {
+        response.writeHead(404)
+        response.end()
+        return
+      }
+
       response.writeHead(200, { "Content-Type": "application/json" })
       response.end(JSON.stringify({ status: "ok" }))
     })
@@ -62,6 +73,7 @@ describe("status endpoint", () => {
 
       assert.equal(response.statusCode, 200)
       assert.deepEqual(response.json(), { status: "ok", service: "backend", agentServer: "online" })
+      assert.deepEqual(requested, ["/api/status"])
     } finally {
       await new Promise<void>((resolve) => agent.close(() => resolve()))
     }

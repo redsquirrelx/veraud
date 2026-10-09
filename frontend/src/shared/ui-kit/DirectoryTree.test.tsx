@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { useState } from "react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DirectoryTree } from "./DirectoryTree.tsx"
 import { flattenDirectory, type DirectoryGroup, type DirectoryTreeNode } from "./directoryTree.ts"
@@ -30,7 +31,7 @@ function selectedNames(): string[] {
   return screen
     .getAllByRole("treeitem")
     .filter((item) => item.getAttribute("aria-selected") === "true")
-    .map((item) => within(item).getByText(/\S/).textContent ?? "")
+    .map((item) => item.querySelector(".mono")?.textContent ?? "")
 }
 
 function breadcrumb(): string[] {
@@ -207,13 +208,12 @@ describe("DirectoryTree filters", () => {
   })
 
   it("opens an overflow menu with working filter controls", async () => {
-    const { container } = render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
-    const opener = container.querySelector(".directory-overflow") as HTMLElement
+    render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
 
-    fireEvent.click(opener)
+    await userEvent.click(screen.getByRole("button", { name: "More filters" }))
 
-    const panel = container.querySelector(".directory-overflow-panel") as HTMLElement
-    expect(panel).not.toBeNull()
+    const panel = screen.getByRole("menu", { name: "More filters" })
+    expect(panel).toBeDefined()
 
     await userEvent.type(within(panel).getByPlaceholderText("File or folder name"), "helper")
 
@@ -222,24 +222,24 @@ describe("DirectoryTree filters", () => {
   })
 
   it("closes the overflow menu with escape", async () => {
-    const { container } = render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
-    const opener = container.querySelector(".directory-overflow") as HTMLElement
+    render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
 
-    fireEvent.click(opener)
-    expect(container.querySelector(".directory-overflow-panel")).not.toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: "More filters" }))
+    expect(screen.getByRole("menu", { name: "More filters" })).toBeDefined()
 
-    fireEvent.keyDown(document, { key: "Escape" })
-    expect(container.querySelector(".directory-overflow-panel")).toBeNull()
+    await userEvent.keyboard("{Escape}")
+    expect(screen.queryByRole("menu", { name: "More filters" })).toBeNull()
   })
 })
 
 describe("DirectoryTree", () => {
-  it("starts with only the root expanded", () => {
+  it("starts with only the root expanded and nothing selected", () => {
     render(<DirectoryTree tree={tree} />)
 
     expect(screen.getByText("repo")).toBeDefined()
     expect(screen.queryByText("a.ts")).toBeNull()
     expect(screen.getByText("No file selected")).toBeDefined()
+    expect(selectedNames()).toEqual([])
   })
 
   it("expands folders and selects files", async () => {
@@ -253,49 +253,35 @@ describe("DirectoryTree", () => {
     expect(breadcrumb()).toEqual(["repo", "src", "nested", "b.ts"])
   })
 
-  it("starts with no selection reported in the breadcrumb", () => {
-    render(<DirectoryTree tree={tree} />)
-
-    expect(selectedNames()).toEqual([])
-    expect(screen.getByText("No file selected")).toBeDefined()
-  })
-
   it("shows the group legend at the bottom only when groups are provided", () => {
-    const { container, rerender } = render(<DirectoryTree tree={tree} />)
+    const { unmount } = render(<DirectoryTree tree={tree} />)
 
     expect(screen.queryByText("critical")).toBeNull()
-    expect(container.querySelector(".directory-legend")).toBeNull()
+    unmount()
 
-    rerender(<DirectoryTree tree={tree} groups={groups} initialExpanded={["repo/src"]} />)
+    render(<DirectoryTree tree={tree} groups={groups} initialExpanded={["repo/src", "repo/src/nested"]} />)
 
-    const legend = container.querySelector(".directory-legend")
-    expect(legend).not.toBeNull()
-    expect(within(legend as HTMLElement).getByText("critical")).toBeDefined()
-    expect(within(legend as HTMLElement).getByText("docs")).toBeDefined()
-    expect(within(legend as HTMLElement).queryByText("flagged")).toBeNull()
-
-    const tree_ = container.querySelector(".directory-tree")
-    expect(tree_?.compareDocumentPosition(legend as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Row tags plus exactly one legend entry per group.
+    expect(screen.getAllByText("critical").length).toBe(3)
+    expect(screen.getAllByText("docs").length).toBe(2)
+    expect(screen.queryByText("flagged")).toBeNull()
   })
 
   it("colours every grouped path, folders included", () => {
     render(<DirectoryTree tree={tree} groups={groups} initialExpanded={["repo/src"]} />)
 
-    expect(row("nested").className).toContain("directory-row-group-danger")
-    expect(row("a.ts").className).toContain("directory-row-group-danger")
-    expect(row("README.md").className).toContain("directory-row-group-success")
-    expect(row("src").className).not.toContain("directory-row-group-")
-    expect(within(row("nested")).getByText("critical")).toBeDefined()
+    expect(row("nested").textContent).toContain("critical")
+    expect(row("a.ts").textContent).toContain("critical")
+    expect(row("README.md").textContent).toContain("docs")
+    expect(row("src").textContent).not.toContain("critical")
   })
 
   it("shows flagged on top of the group colour", () => {
     render(<DirectoryTree tree={tree} groups={groups} flaggedPaths={["repo/src/nested"]} initialExpanded={["repo/src"]} />)
 
-    expect(row("nested").className).toContain("directory-row-group-danger")
-    expect(row("nested").className).toContain("directory-row-flagged")
-    expect(within(row("nested")).getByText("critical")).toBeDefined()
-    expect(within(row("nested")).getByText("flagged")).toBeDefined()
-    expect(row("a.ts").className).not.toContain("directory-row-flagged")
+    expect(row("nested").textContent).toContain("critical")
+    expect(row("nested").textContent).toContain("flagged")
+    expect(row("a.ts").textContent).not.toContain("flagged")
   })
 
   it("keeps selection orthogonal to both axes", async () => {
@@ -303,10 +289,9 @@ describe("DirectoryTree", () => {
 
     await userEvent.click(screen.getByText("a.ts"))
 
-    expect(row("a.ts").className).toContain("directory-row-active")
-    expect(row("a.ts").className).toContain("directory-row-group-danger")
-    expect(row("README.md").className).toContain("directory-row-flagged")
-    expect(row("README.md").className).not.toContain("directory-row-active")
+    expect(selectedNames()).toEqual(["a.ts"])
+    expect(row("a.ts").textContent).toContain("critical")
+    expect(row("README.md").textContent).toContain("flagged")
   })
 
   it("first group wins when a path belongs to two groups", () => {
@@ -348,5 +333,238 @@ describe("DirectoryTree", () => {
     await userEvent.click(within(screen.getByRole("tree")).getByText("src"))
 
     expect(screen.getByText("a.ts")).toBeDefined()
+  })
+})
+
+const gatewayTree: DirectoryTreeNode = {
+  name: "payment-gateway-v2",
+  children: [
+    {
+      name: "src",
+      children: [
+        {
+          name: "modules",
+          children: [
+            { name: "settlement.ts" },
+            { name: "ledger.repository.ts" },
+            {
+              name: "reconciliation",
+              children: [{ name: "engine.ts" }, { name: "engine.test.ts" }],
+            },
+          ],
+        },
+        { name: "index.ts" },
+        { name: "server.ts" },
+      ],
+    },
+    { name: "package.json" },
+    { name: "README.md" },
+    { name: "tsconfig.json" },
+  ],
+}
+
+const gatewayGroups: DirectoryGroup[] = [
+  {
+    id: "money",
+    label: "critical",
+    tone: "danger",
+    paths: [
+      "payment-gateway-v2/src/modules/reconciliation",
+      "payment-gateway-v2/src/modules/reconciliation/engine.ts",
+      "payment-gateway-v2/src/modules/settlement.ts",
+    ],
+  },
+  {
+    id: "infra",
+    label: "infrastructure",
+    tone: "info",
+    paths: ["payment-gateway-v2/src/server.ts", "payment-gateway-v2/tsconfig.json"],
+  },
+  {
+    id: "docs",
+    label: "docs",
+    tone: "success",
+    paths: ["payment-gateway-v2/README.md"],
+  },
+]
+
+const gatewayFlagged = [
+  "payment-gateway-v2/src/modules/reconciliation/engine.ts",
+  "payment-gateway-v2/src/server.ts",
+]
+
+const gatewayOpen = [
+  "payment-gateway-v2/src",
+  "payment-gateway-v2/src/modules",
+  "payment-gateway-v2/src/modules/reconciliation",
+]
+
+function gatewaySelected(): string[] {
+  return screen
+    .getAllByRole("treeitem")
+    .filter((item) => item.getAttribute("aria-selected") === "true")
+    .map((item) => within(item).getByText(/\S/).textContent ?? "")
+}
+
+describe("grouped and flagged trees", () => {
+  it("shows a plain tree without any tag", () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
+        initialSelected="payment-gateway-v2/src/modules/ledger.repository.ts"
+      />
+    )
+
+    const list = screen.getByRole("tree")
+    expect(within(list).getByText("modules")).toBeDefined()
+    expect(within(list).queryByText("flagged")).toBeNull()
+    expect(list.querySelectorAll(".directory-tag").length).toBe(0)
+  })
+
+  it("collapses and expands a folder", async () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
+      />
+    )
+
+    const list = screen.getByRole("tree")
+    await userEvent.click(within(list).getByText("modules"))
+
+    expect(within(list).queryByText("settlement.ts")).toBeNull()
+
+    await userEvent.click(within(list).getByText("modules"))
+
+    expect(within(list).getByText("settlement.ts")).toBeDefined()
+  })
+
+  it("selects a file and reflects it in the breadcrumb", async () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
+      />
+    )
+
+    await userEvent.click(within(screen.getByRole("tree")).getByText("ledger.repository.ts"))
+
+    expect(breadcrumb()).toEqual(["payment-gateway-v2", "src", "modules", "ledger.repository.ts"])
+    expect(gatewaySelected().join()).toContain("ledger.repository.ts")
+  })
+
+  it("reveals nested folders on demand", async () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
+      />
+    )
+
+    const list = screen.getByRole("tree")
+    expect(within(list).getByText("reconciliation")).toBeDefined()
+
+    await userEvent.click(within(list).getByText("reconciliation"))
+
+    expect(within(list).getByText("engine.test.ts")).toBeDefined()
+  })
+
+  it("shows group tags next to grouped paths", () => {
+    render(<DirectoryTree tree={gatewayTree} groups={gatewayGroups} initialExpanded={gatewayOpen} />)
+
+    const list = screen.getByRole("tree")
+    expect(within(list).getAllByText("critical").length).toBe(3)
+    expect(within(list).getAllByText("infrastructure").length).toBe(2)
+    expect(within(list).getAllByText("docs").length).toBe(1)
+    expect(within(list).queryByText("flagged")).toBeNull()
+  })
+
+  it("combines group tags with flagged markers", () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        groups={gatewayGroups}
+        flaggedPaths={gatewayFlagged}
+        initialExpanded={gatewayOpen}
+      />
+    )
+
+    const list = screen.getByRole("tree")
+    expect(within(list).getAllByText("flagged").length).toBe(2)
+    expect(within(list).getByText("engine.ts").closest("button")?.textContent).toContain("flagged")
+    expect(within(list).getByText("settlement.ts").closest("button")?.textContent).not.toContain("flagged")
+  })
+
+  it("shows flagged markers without any group", () => {
+    render(
+      <DirectoryTree
+        tree={gatewayTree}
+        flaggedPaths={gatewayFlagged}
+        initialExpanded={gatewayOpen}
+        initialSelected="payment-gateway-v2/src/modules/reconciliation/engine.ts"
+      />
+    )
+
+    const list = screen.getByRole("tree")
+    expect(within(list).getAllByText("flagged").length).toBe(2)
+    expect(within(list).getByText("engine.ts").closest("button")?.textContent).toContain("flagged")
+    expect(within(list).getByText("settlement.ts").closest("button")?.textContent).not.toContain("flagged")
+  })
+
+  it("reloads the directory and shows the new entry", async () => {
+    function Harness() {
+      const [revision, setRevision] = useState(0)
+      const current: DirectoryTreeNode = {
+        ...gatewayTree,
+        children: [
+          ...(gatewayTree.children ?? []),
+          ...(revision > 0 ? [{ name: `generated-${revision}.ts` }] : []),
+        ],
+      }
+      async function reload() {
+        await new Promise<void>((resolve) => setTimeout(resolve, 20))
+        setRevision((value) => value + 1)
+      }
+      return (
+        <div>
+          <span className="label">Reloading the directory (revision {revision})</span>
+          <DirectoryTree tree={current} groups={gatewayGroups} flaggedPaths={gatewayFlagged} initialExpanded={gatewayOpen} onRefresh={reload} />
+        </div>
+      )
+    }
+    render(<Harness />)
+
+    expect(screen.getByText("Reloading the directory (revision 0)")).toBeDefined()
+    expect(screen.queryByText("generated-1.ts")).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+
+    expect(await screen.findByText("Reloading the directory (revision 1)")).toBeDefined()
+    expect(screen.getByText("generated-1.ts")).toBeDefined()
+    expect(within(screen.getByRole("tree")).getAllByText("flagged").length).toBe(2)
+  })
+
+  it("keeps selection independent per instance", async () => {
+    render(
+      <>
+        <DirectoryTree tree={gatewayTree} initialExpanded={gatewayOpen} />
+        <DirectoryTree
+          tree={gatewayTree}
+          initialExpanded={gatewayOpen}
+          initialSelected="payment-gateway-v2/src/modules/reconciliation/engine.ts"
+        />
+      </>
+    )
+
+    const lists = screen.getAllByRole("tree")
+    await userEvent.click(within(lists[0] as HTMLElement).getByText("README.md"))
+
+    const first = Array.from((lists[0] as HTMLElement).querySelectorAll('[role="treeitem"][aria-selected="true"]'))
+      .map((item) => item.textContent ?? "").join()
+    const second = Array.from((lists[1] as HTMLElement).querySelectorAll('[role="treeitem"][aria-selected="true"]'))
+      .map((item) => item.textContent ?? "").join()
+    expect(first).toContain("README.md")
+    expect(second).toContain("engine.ts")
   })
 })

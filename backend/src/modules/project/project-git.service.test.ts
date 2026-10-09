@@ -49,6 +49,11 @@ function makeService(options: {
       setStatus: async () => { throw new Error("must not touch project status") },
       markSynced: async () => { throw new Error("must not mark synced") },
       list: async () => [],
+      upsertVersion: async () => { throw new Error("not used") },
+      setSelectedVersion: async () => { throw new Error("not used") },
+      createEvaluation: async () => { throw new Error("not used") },
+      listVersions: async () => { throw new Error("not used") },
+      findOpenExecution: async () => { throw new Error("not used") },
     },
     new TaskService(
       {
@@ -70,7 +75,8 @@ function makeService(options: {
       } as TaskQueue
     ),
     new GithubClient(),
-    workspaceDir
+    workspaceDir,
+    { open: async () => { throw new Error("not used") } }
   )
 
   return { service, enqueued, created, workspaceDir }

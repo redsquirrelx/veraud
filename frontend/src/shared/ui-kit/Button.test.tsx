@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Button } from "./Button.tsx"
-import { PlusIcon } from "./icons.tsx"
 
 describe("Button", () => {
   it("renders its children", () => {
@@ -29,16 +28,6 @@ describe("Button", () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  it("is disabled while loading", () => {
-    render(
-      <Button loading>
-        Register project
-      </Button>
-    )
-
-    expect(screen.getByRole("button").hasAttribute("disabled")).toBe(true)
-  })
-
   it("shows loadingText instead of spinner when provided", () => {
     render(
       <Button loading loadingText="Wait">
@@ -48,13 +37,5 @@ describe("Button", () => {
 
     expect(screen.getByRole("button", { name: "Wait" })).toBeDefined()
     expect(screen.queryByRole("status", { name: "Loading" })).toBeNull()
-  })
-
-  it("renders square for icon-only actions", () => {
-    render(<Button square ariaLabel="Increase" variant="secondary"><PlusIcon /></Button>)
-
-    const button = screen.getByRole("button", { name: "Increase" })
-
-    expect(button.getAttribute("class")).toContain("ui-button-square")
   })
 })

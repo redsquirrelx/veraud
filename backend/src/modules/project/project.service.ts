@@ -3,6 +3,7 @@ import { join, resolve, sep } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
+import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 
 export class InvalidUrlError extends Error {}
@@ -13,6 +14,7 @@ export class InvalidGitRequestError extends Error {}
 export class WorkspaceMissingError extends Error {}
 export class GitOperationError extends Error {}
 export class ProjectFileError extends Error {}
+export class AnalysisAlreadyRunningError extends Error {}
 
 export interface GitCommit {
   commitHash: string
@@ -25,12 +27,38 @@ const DEFAULT_LOG_LIMIT = 30
 const MAX_LOG_LIMIT = 100
 const MAX_FILE_BYTES = 512 * 1024
 
+export const ANALYZER_AGENT_TYPE = "analyzer"
+export const ANALYSIS_EVALUATION_TYPE = "Analysis"
+
+/** Opens an agent run for an evaluation. Satisfied by AgentExecutionService. */
+export interface AnalysisRunner {
+  open(agentType: string, evaluationId: number): Promise<StoredAgentExecution>
+}
+
+export interface AnalysisRequest {
+  versionId: number
+  evaluationId: number
+  execution: StoredAgentExecution
+}
+
+export interface VersionAnalysis {
+  id: number
+  branch: string | null
+  commitHash: string | null
+  analysisStatus: string
+  analyzedAt: Date | null
+  evaluationId: number | null
+  execution: StoredAgentExecution | null
+  derivedStatus: string
+}
+
 export class ProjectService {
   constructor(
     private projects: ProjectStore,
     private tasks: TaskService,
     private github: GithubClient,
-    private workspaceDir: string
+    private workspaceDir: string,
+    private analyses: AnalysisRunner
   ) {}
 
   async registerProject(repositoryUrl: string) {
@@ -325,6 +353,60 @@ export class ProjectService {
     }
 
     return { commitHash: cleanHash.toLowerCase(), taskId: task.id }
+  }
+
+  /**
+   * Runs the analyzer on the selected version: the version row is saved (or
+   * reused), it becomes the selected one, a fresh evaluation is created, and
+   * the agent is started in the background. The execution comes back Waiting;
+   * the agent reports its own progress afterwards.
+   */
+  async analyzeProject(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
+    const cleanBranch = assertValidBranch(branch)
+    const cleanHash = assertValidHash(commitHash).toLowerCase()
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    this.requireWorkspace(project)
+
+    const running = await this.projects.findOpenExecution(project.id, cleanHash)
+
+    if (running !== null) {
+      throw new AnalysisAlreadyRunningError(
+        `Version ${cleanBranch} at ${cleanHash.slice(0, 7)} is already being analyzed (execution ${running.id})`
+      )
+    }
+
+    const version = await this.projects.upsertVersion(project.id, { branch: cleanBranch, commitHash: cleanHash })
+    await this.projects.setSelectedVersion(project.id, version.id)
+    const evaluation = await this.projects.createEvaluation(version.id, ANALYSIS_EVALUATION_TYPE)
+    const execution = await this.analyses.open(ANALYZER_AGENT_TYPE, evaluation.id)
+
+    return { versionId: version.id, evaluationId: evaluation.id, execution }
+  }
+
+  async listVersions(id: number): Promise<VersionAnalysis[]> {
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    const versions = await this.projects.listVersions(project.id)
+
+    return versions.map((version) => ({
+      id: version.id,
+      branch: version.branch,
+      commitHash: version.commitHash,
+      analysisStatus: version.analysisStatus,
+      analyzedAt: version.analyzedAt,
+      evaluationId: version.evaluation?.id ?? null,
+      execution: version.execution === null ? null : { ...version.execution, status: version.execution.status as StoredAgentExecution["status"] },
+      derivedStatus: version.execution?.status ?? (version.evaluation === null ? "NeverAnalyzed" : "Pending"),
+    }))
   }
 
   private requireWorkspace(project: StoredProjectDetails): string {    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`

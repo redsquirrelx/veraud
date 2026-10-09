@@ -38,6 +38,14 @@ class ExecutionRequest(BaseModel):
         default_factory=dict,
         description="Agent input. Validated against that agent's input schema.",
     )
+    execution_id: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Row the backend created for this run. When present the server reports "
+            "progress back to it over HTTP; absent means nobody is listening."
+        ),
+    )
 
 
 class ExecutionResponse(BaseModel):

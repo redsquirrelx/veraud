@@ -27,6 +27,8 @@ Read-only. Returns tasks `Queued`/`Running`: `id`, `projectId`, `repositoryOwner
 
 Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/`Failed`), `kind`, `exitCode` (number or null). The frontend uses `kind` to silence read-only tasks (`list-branches`, `rev-parse`, `log-commits`) unless they fail.
 
+Agent executions broadcast `agent-execution.opened` / `agent-execution.updated`; see `agent-execution.md`.
+
 ## Errors
 
 | Code | Meaning |
@@ -40,4 +42,4 @@ Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`
 `project`: `githubRepositoryId` (GitHub numeric id), `repositoryOwner`/`repositoryName`, `status QUEUED`, `name` null until synced, no `project_version` yet.
 `task`: `projectId`, `description`, `status`, `kind` (command that created it, `unknown` for rows predating the column), `exitCode`, `logTrail` (last 4000 chars, always saved on finish).
 
-Out of scope: Audit/Agent modules, cloning beyond `git clone`.
+Out of scope: Agent invocations are covered in `agent-execution.md`.

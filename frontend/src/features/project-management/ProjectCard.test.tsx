@@ -25,40 +25,24 @@ function renderCard(project: ProjectSummary, pinned = false, onTogglePin: (id: n
 }
 
 describe("ProjectCard", () => {
-  it("shows owner/name with an enabled Inspect button when ready", () => {
-    renderCard(base)
-
-    expect(screen.getByText("acme/Demo")).toBeDefined()
-    expect(screen.getByText("READY")).toBeDefined()
-    expect(screen.getByRole("button", { name: "Inspect" }).hasAttribute("disabled")).toBe(false)
-  })
-
-  it("navigates through the title only when ready", () => {
-    const { unmount } = render(
-      <MemoryRouter initialEntries={["/"]}>
-        <ProjectCard project={base} pinned={false} onTogglePin={() => {}} />
-      </MemoryRouter>
-    )
-    expect(screen.getByRole("button", { name: "acme/Demo" }).hasAttribute("disabled")).toBe(false)
-    unmount()
-
+  it.each([
+    { status: "READY", enabled: true },
+    { status: "QUEUED", enabled: false },
+    { status: "SYNCING", enabled: false },
+  ])("gates Inspect and the title link on status $status", ({ status, enabled }) => {
     render(
       <MemoryRouter initialEntries={["/"]}>
-        <ProjectCard project={{ ...base, status: "QUEUED" }} pinned={false} onTogglePin={() => {}} />
+        <ProjectCard project={{ ...base, status }} pinned={false} onTogglePin={() => {}} />
       </MemoryRouter>
     )
-    expect(screen.getByRole("button", { name: "acme/Demo" }).hasAttribute("disabled")).toBe(true)
-  })
 
-  it("disables Inspect unless ready", () => {
-    for (const status of ["QUEUED", "SYNCING"]) {
-      const { unmount } = render(
-        <MemoryRouter>
-          <ProjectCard project={{ ...base, status }} pinned={false} onTogglePin={() => {}} />
-        </MemoryRouter>
-      )
-      expect(screen.getByRole("button", { name: "Inspect" }).hasAttribute("disabled")).toBe(true)
-      unmount()
+    expect(screen.getByText("acme/Demo")).toBeDefined()
+    if (enabled) {
+      expect(screen.getByRole("button", { name: "Inspect" })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "acme/Demo" })).toBeEnabled()
+    } else {
+      expect(screen.getByRole("button", { name: "Inspect" })).toBeDisabled()
+      expect(screen.getByRole("button", { name: "acme/Demo" })).toBeDisabled()
     }
   })
 

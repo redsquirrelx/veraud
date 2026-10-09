@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, listAiProviders } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestAnalysis } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -95,5 +95,70 @@ describe("deleteAiCredential", () => {
     stubFetch(409, { message: "Credential prod is assigned to an agent" })
 
     await expect(deleteAiCredential(3, 20)).rejects.toMatchObject({ status: 409 } as Partial<ApiError>)
+  })
+})
+
+const waitingExecution = {
+  id: 11,
+  evaluationId: 7,
+  agentType: "analyzer",
+  status: "Waiting",
+  result: null,
+  error: null,
+  inputTokens: null,
+  outputTokens: null,
+  createdAt: "2026-01-01",
+  startedAt: null,
+  finishedAt: null,
+}
+
+describe("requestAnalysis", () => {
+  it("posts the selected version and returns the run", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    globalThis.fetch = (async (url: string, init?: { body?: string }) => {
+      seen.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") as unknown })
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waitingExecution }), { status: 201 })
+    }) as typeof fetch
+
+    const response = await requestAnalysis(2, "main", "a".repeat(40))
+
+    expect(response).toEqual({ versionId: 3, evaluationId: 7, execution: waitingExecution })
+    expect(seen[0]?.url).toContain("/api/projects/2/analyze")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+  })
+
+  it("reports a missing checkout with the backend message", async () => {
+    stubFetch(422, { message: "Project acme/Demo has no local checkout" })
+
+    await expect(requestAnalysis(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422, message: "Project acme/Demo has no local checkout" } as Partial<ApiError>)
+  })
+})
+
+describe("getAgentExecution", () => {
+  it("returns the execution by id", async () => {
+    stubFetch(200, waitingExecution)
+
+    expect(await getAgentExecution(11)).toEqual(waitingExecution)
+  })
+
+  it("throws an ApiError when the execution is unknown", async () => {
+    stubFetch(404, { message: "Agent execution 11 not found" })
+
+    await expect(getAgentExecution(11)).rejects.toMatchObject({ status: 404 } as Partial<ApiError>)
+  })
+})
+
+describe("listVersions", () => {
+  it("returns the analyzed versions", async () => {
+    const versions = [{ id: 9, branch: "main", commitHash: "b".repeat(40), derivedStatus: "Completed" }]
+    stubFetch(200, versions)
+
+    expect(await listVersions(2)).toEqual(versions)
+  })
+
+  it("throws an ApiError for unknown projects", async () => {
+    stubFetch(404, { message: "Project 4242 does not exist" })
+
+    await expect(listVersions(4242)).rejects.toMatchObject({ status: 404 } as Partial<ApiError>)
   })
 })

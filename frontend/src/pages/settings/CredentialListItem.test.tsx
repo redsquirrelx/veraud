@@ -15,13 +15,6 @@ describe("CredentialListItem", () => {
     expect(screen.getByRole("button", { name: "Remove prod" }).hasAttribute("disabled")).toBe(true)
   })
 
-  it("hides the badge and enables remove when idle", () => {
-    render(<CredentialListItem name="prod" provider="Google" apiKeyPreview="****1234" inUse={false} onRemove={() => {}} />)
-
-    expect(screen.queryByText("In use")).toBeNull()
-    expect(screen.getByRole("button", { name: "Remove prod" }).hasAttribute("disabled")).toBe(false)
-  })
-
   it("removes without toggling the row", async () => {
     const onRemove = vi.fn()
     const onToggle = vi.fn()

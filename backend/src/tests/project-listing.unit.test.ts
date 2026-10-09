@@ -37,8 +37,15 @@ function serviceWith(rows: StoredProjectDetails[]) {
     setStatus: async () => {},
     markSynced: async () => {},
     list: async () => rows,
+    upsertVersion: async () => { throw new Error("not used here") },
+    setSelectedVersion: async () => { throw new Error("not used here") },
+    createEvaluation: async () => { throw new Error("not used here") },
+    listVersions: async () => { throw new Error("not used here") },
+    findOpenExecution: async () => { throw new Error("not used here") },
   }
-  return new ProjectService(projects, null as never, new GithubClient(), "")
+  return new ProjectService(projects, null as never, new GithubClient(), "", {
+    open: async () => { throw new Error("not used here") },
+  })
 }
 
 describe("project listing unit", () => {
