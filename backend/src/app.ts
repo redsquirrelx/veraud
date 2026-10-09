@@ -60,7 +60,21 @@ export async function buildApp(options: BuildAppOptions) {
     ? options.makeRunner(taskRepository, projectRepository, gateway)
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const taskService = new TaskService(taskRepository, runner)
-  const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir)
+  const agentExecutionRepository = new AgentExecutionRepository(db)
+  const agentInvoker = options.makeAgentInvoker
+    ? options.makeAgentInvoker(options.agentServerUrl)
+    : buildAgentInvoker(options.agentServerUrl)
+  const agentTargets = options.makeAgentTargets
+    ? options.makeAgentTargets(options.workspaceDir)
+    : new AgentTargetResolverImpl(db, options.workspaceDir)
+  const agentExecutionService = new AgentExecutionService(
+    agentExecutionRepository,
+    agentInvoker,
+    agentTargets,
+    gateway,
+    options.workspaceDir,
+  )
+  const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir, agentExecutionService)
   const aiProviderRepository = new AiProviderRepository(db)
   await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
   const aiProviderService = new AiProviderService(aiProviderRepository)
@@ -76,20 +90,6 @@ export async function buildApp(options: BuildAppOptions) {
   registerAiProviderRoutes(app, aiProviderService)
   registerTaskRoutes(app, taskService)
 
-  const agentExecutionRepository = new AgentExecutionRepository(db)
-  const agentInvoker = options.makeAgentInvoker
-    ? options.makeAgentInvoker(options.agentServerUrl)
-    : buildAgentInvoker(options.agentServerUrl)
-  const agentTargets = options.makeAgentTargets
-    ? options.makeAgentTargets(options.workspaceDir)
-    : new AgentTargetResolverImpl(db, options.workspaceDir)
-  const agentExecutionService = new AgentExecutionService(
-    agentExecutionRepository,
-    agentInvoker,
-    agentTargets,
-    gateway,
-    options.workspaceDir,
-  )
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
 
   app.get("/status", { logLevel: "silent" }, async () => {

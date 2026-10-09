@@ -63,6 +63,15 @@ function makeFakes(options: {
     async list() {
       return []
     },
+    async upsertVersion(): Promise<never> {
+      throw new Error("not used here")
+    },
+    async setSelectedVersion(): Promise<void> {
+      throw new Error("not used here")
+    },
+    async createEvaluation(): Promise<never> {
+      throw new Error("not used here")
+    },
   }
 
   const tasks: TaskStore & { created: Array<NewTask> } = {
@@ -101,7 +110,9 @@ function makeFakes(options: {
     },
   }
 
-  const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir)
+  const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
+    open: async () => { throw new Error("not used here") },
+  })
   return { service, projects, tasks, calls, workspaceDir }
 }
 
@@ -179,6 +190,9 @@ describe("ProjectService.registerProject", () => {
         setStatus: async () => { throw new Error("must not set status") },
         markSynced: async () => { throw new Error("must not mark synced") },
         list: async () => [],
+        upsertVersion: async () => { throw new Error("must not upsert versions") },
+        setSelectedVersion: async () => { throw new Error("must not select versions") },
+        createEvaluation: async () => { throw new Error("must not create evaluations") },
       },
       new TaskService(
         {
@@ -191,7 +205,8 @@ describe("ProjectService.registerProject", () => {
         { enqueue: async () => { throw new Error("must not enqueue") } }
       ),
       failing,
-      join(tmpdir(), "veraud-unused")
+      join(tmpdir(), "veraud-unused"),
+      { open: async () => { throw new Error("must not open executions") } }
     )
 
     await assert.rejects(

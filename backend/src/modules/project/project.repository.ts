@@ -26,6 +26,25 @@ export interface StoredProjectDetails {
   commitHash: string | null
 }
 
+export interface NewProjectVersion {
+  branch: string
+  commitHash: string
+}
+
+export interface StoredProjectVersion {
+  id: number
+  projectId: number
+  branch: string | null
+  commitHash: string | null
+  analysisStatus: string
+}
+
+export interface StoredEvaluation {
+  id: number
+  projectVersionId: number
+  type: string
+}
+
 export interface ProjectStore {
   create(data: NewProject): Promise<StoredProject>
   findByGithubId(githubRepositoryId: bigint): Promise<StoredProject | null>
@@ -34,6 +53,9 @@ export interface ProjectStore {
   setStatus(id: number, status: string): Promise<void>
   markSynced(id: number, at: Date): Promise<void>
   list(): Promise<StoredProjectDetails[]>
+  upsertVersion(projectId: number, data: NewProjectVersion): Promise<StoredProjectVersion>
+  setSelectedVersion(projectId: number, versionId: number): Promise<void>
+  createEvaluation(projectVersionId: number, type: string): Promise<StoredEvaluation>
 }
 
 export class ProjectRepository implements ProjectStore {
@@ -95,6 +117,40 @@ export class ProjectRepository implements ProjectStore {
       include: { selectedVersion: true },
     })
     return projects.map((project) => this.toDetails(project))
+  }
+
+  /** Records the checked-out version, reusing the row when it is analyzed again. */
+  async upsertVersion(projectId: number, data: NewProjectVersion): Promise<StoredProjectVersion> {
+    const version = await this.db.projectVersion.upsert({
+      where: { projectId_commitHash: { projectId, commitHash: data.commitHash } },
+      create: {
+        projectId,
+        branch: data.branch,
+        commitHash: data.commitHash,
+        analysisStatus: "Pending",
+      },
+      update: {},
+    })
+
+    return {
+      id: version.id,
+      projectId: version.projectId,
+      branch: version.branch,
+      commitHash: version.commitHash,
+      analysisStatus: version.analysisStatus,
+    }
+  }
+
+  async setSelectedVersion(projectId: number, versionId: number): Promise<void> {
+    await this.db.project.update({ where: { id: projectId }, data: { selectedVersionId: versionId } })
+  }
+
+  async createEvaluation(projectVersionId: number, type: string): Promise<StoredEvaluation> {
+    const evaluation = await this.db.evaluation.create({
+      data: { projectVersionId, type },
+    })
+
+    return { id: evaluation.id, projectVersionId: evaluation.projectVersionId, type: evaluation.type }
   }
 
   private toDetails(project: {

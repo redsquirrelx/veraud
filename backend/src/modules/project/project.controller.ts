@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
+import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import { DuplicateProjectError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
@@ -241,6 +242,43 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       return reply.code(gitErrorCode(error)).send({ message: gitErrorMessage(error) })
     }
   })
+
+  app.post("/api/projects/:id/analyze", {
+    schema: {
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch", "commitHash"],
+        properties: {
+          branch: { type: "string" },
+          commitHash: { type: "string" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string; commitHash: string }
+
+    try {
+      const result = await service.analyzeProject(Number(params.id), body.branch, body.commitHash)
+      return reply.code(201).send({
+        versionId: result.versionId,
+        evaluationId: result.evaluationId,
+        execution: toExecution(result.execution),
+      })
+    } catch (error) {
+      if (error instanceof ProjectNotFoundError) {
+        return reply.code(404).send({ message: error.message })
+      }
+      if (error instanceof InvalidGitRequestError) {
+        return reply.code(400).send({ message: error.message })
+      }
+      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError) {
+        return reply.code(422).send({ message: error.message })
+      }
+      throw error
+    }
+  })
 }
 
 function gitErrorCode(error: unknown): number {
@@ -261,4 +299,20 @@ function gitErrorMessage(error: unknown): string {
   }
 
   throw error
+}
+
+function toExecution(execution: StoredAgentExecution) {
+  return {
+    id: execution.id,
+    evaluationId: execution.evaluationId,
+    agentType: execution.agentType,
+    status: execution.status,
+    result: execution.result,
+    error: execution.error,
+    inputTokens: execution.inputTokens,
+    outputTokens: execution.outputTokens,
+    createdAt: execution.createdAt,
+    startedAt: execution.startedAt,
+    finishedAt: execution.finishedAt,
+  }
 }
