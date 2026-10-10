@@ -36,6 +36,16 @@ MAX_FACTS_CHARS = 24000
 # How many files the survey step may ask to read.
 MAX_FILES_PER_ROUND = 8
 
+# Risks reported at most. A longer list stops being read, and the loudest
+# structural risks fit comfortably.
+MAX_RISKS = 10
+
+# ISO/IEC 25010 maintainability sub-characteristics. Anything else the model
+# writes is dropped: quality notes outside this vocabulary cannot be compared.
+QUALITY_CHARACTERISTICS = frozenset({
+    "modularity", "analysability", "modifiability", "testability",
+})
+
 
 class _State(TypedDict, total=False):
     """What flows between nodes."""
@@ -50,6 +60,10 @@ class _State(TypedDict, total=False):
     entrypoints: list[str]
     derived_key_components: list[str]
 
+    # Written by collect. Derived once, read by map25010 and run().
+    third_party: list[str]
+    cycles: list[list[str]]
+
     # Written by frame.
     frame: dict
     pending: list[str]
@@ -61,6 +75,13 @@ class _State(TypedDict, total=False):
 
     # Written by characterize.
     components: list[dict]
+
+    # Written by connect.
+    data_flow: str
+
+    # Written by map25010.
+    quality_notes: list[dict]
+    risks: list[str]
 
 
 class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
@@ -84,15 +105,21 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
         )
 
         logger.info(
-            "run done: style=%r intended=%r components=%d files_read=%d",
+            "run done: style=%r intended=%r components=%d notes=%d risks=%d files_read=%d",
             frame.get("style", "unknown"), frame.get("intended_style", "unknown"),
-            len(components), len(final.get("read_paths") or []),
+            len(components), len(final.get("quality_notes") or []),
+            len(final.get("risks") or []), len(final.get("read_paths") or []),
         )
         return ArchitectureDescription(
             style=str(frame.get("style") or "unknown"),
             intended_style=str(frame.get("intended_style") or "unknown"),
             deviations=frame.get("deviations") or [],
             components=components,
+            data_flow=str(final.get("data_flow") or ""),
+            third_party=final.get("third_party") or [],
+            cycles=final.get("cycles") or [],
+            quality_notes=final.get("quality_notes") or [],
+            risks=final.get("risks") or [],
         )
 
     # -- graph wiring -------------------------------------------------------
@@ -105,13 +132,17 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
         graph.add_node("survey", self._survey)
         graph.add_node("read", self._read)
         graph.add_node("characterize", self._characterize)
+        graph.add_node("connect", self._connect)
+        graph.add_node("map25010", self._map25010)
 
         graph.set_entry_point("collect")
         graph.add_edge("collect", "frame")
         graph.add_edge("frame", "survey")
         graph.add_edge("survey", "read")
         graph.add_edge("read", "characterize")
-        graph.add_edge("characterize", END)
+        graph.add_edge("characterize", "connect")
+        graph.add_edge("connect", "map25010")
+        graph.add_edge("map25010", END)
 
         return graph.compile()
 
@@ -146,6 +177,8 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
             "known_files": analyzer_facts.known_paths(files),
             "entrypoints": sorted(analyzer_facts.entrypoint_candidates(files)),
             "derived_key_components": analyzer_facts.derived_key_components(edges, files),
+            "third_party": analyzer_facts.third_party_dependencies(data),
+            "cycles": analyzer_facts.cycles(data),
             "read_paths": [],
             "excerpts": "",
         }
@@ -267,6 +300,47 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
             if path in state["known_files"]
         ]}
 
+    async def _connect(self, state: _State) -> dict:
+        """Trace execution flow from the entry points, in prose."""
+        frame = state.get("frame") or {}
+
+        answer = await self._ask_json(self._prompt(
+            "connect",
+            frame=_dump(frame),
+            entrypoints=_bullets(state["entrypoints"]),
+            components=_bullets(state["derived_key_components"]),
+            excerpts=state["excerpts"] or NO_SOURCE_READ,
+        ))
+
+        data_flow = analyzer_parsing.read_text(answer or {}, "data_flow")
+        logger.info("connect: %d chars of flow", len(data_flow))
+
+        return {"data_flow": data_flow}
+
+    async def _map25010(self, state: _State) -> dict:
+        """Report maintainability notes and risks, all with evidence."""
+        frame = state.get("frame") or {}
+
+        answer = await self._ask_json(self._prompt(
+            "map25010",
+            frame=_dump(frame),
+            data_flow=state.get("data_flow") or "(no flow traced)",
+            cycles=_dump(state.get("cycles") or []),
+            third_party=_dump(state.get("third_party") or []),
+            excerpts=state["excerpts"] or NO_SOURCE_READ,
+        ))
+
+        if answer is None:
+            floor = _risks_floor(state)
+            logger.info("map25010: model gave nothing, %d floor risks", len(floor))
+            return {"quality_notes": [], "risks": floor}
+
+        notes = _read_quality_notes(answer, state["known_files"])
+        risks = _read_risks(answer)
+        logger.info("map25010: %d notes, %d risks", len(notes), len(risks))
+
+        return {"quality_notes": notes, "risks": risks}
+
     # -- helpers ------------------------------------------------------------
 
     def _prompt(self, name: str, **values: object) -> str:
@@ -283,6 +357,9 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
         except Exception as error:  # noqa: BLE001 - providers raise varied errors
             logger.warning("model gave no usable answer: %s", error)
             return None
+
+
+NO_SOURCE_READ = "(no source code could be read)"
 
 
 def _ordered_components(described: list[dict], key_components: list[str]) -> list[dict]:
@@ -303,6 +380,74 @@ def _survey_floor(state: _State) -> list[str]:
     wanted = evidence + list(state["entrypoints"]) + state["derived_key_components"]
     already = set(state["read_paths"])
     return _take([path for path in wanted if path not in already], MAX_FILES_PER_ROUND)
+
+
+def _risks_floor(state: _State) -> list[str]:
+    """Risks without a model: deviations plus detected cycles, capped."""
+    frame = state.get("frame") or {}
+    risks: list[str] = []
+
+    for deviation in frame.get("deviations") or []:
+        if not isinstance(deviation, dict):
+            continue
+        observation = analyzer_parsing.read_text(deviation, "observation")
+        if not observation:
+            continue
+        evidence = ", ".join(
+            path for path in deviation.get("evidence", []) if isinstance(path, str)
+        )
+        risks.append(f"{observation} ({evidence})" if evidence else observation)
+
+    for group in state.get("cycles") or []:
+        members = sorted(str(path) for path in group if path)
+        if len(members) > 1:
+            risks.append(f"Circular imports: {' ↔ '.join(members)}")
+
+    seen: set[str] = set()
+    unique = [risk for risk in risks if risk not in seen and not seen.add(risk)]
+    return unique[:MAX_RISKS]
+
+
+def _read_quality_notes(answer: dict, known_files: set[str]) -> list[dict]:
+    """Notes with a valid characteristic and existing evidence paths."""
+    notes: list[dict] = []
+    raw = answer.get("quality_notes")
+
+    if not isinstance(raw, list):
+        return notes
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        characteristic = str(item.get("characteristic") or "").strip().lower()
+        if characteristic not in QUALITY_CHARACTERISTICS:
+            continue
+        observation = analyzer_parsing.read_text(item, "observation")
+        if not observation:
+            continue
+        evidence = [
+            path for path in analyzer_parsing.read_paths(item, "evidence", known_files)
+        ]
+        if not evidence:
+            continue
+        notes.append({
+            "characteristic": characteristic,
+            "observation": observation,
+            "evidence": evidence,
+        })
+
+    return notes
+
+
+def _read_risks(answer: dict) -> list[str]:
+    """Non-empty risk strings, capped."""
+    raw = answer.get("risks")
+
+    if not isinstance(raw, list):
+        return []
+
+    risks = [str(item).strip() for item in raw if isinstance(item, str) and str(item).strip()]
+    return risks[:MAX_RISKS]
 
 
 def _read_deviations(answer: dict, known_files: set[str]) -> list[dict]:
