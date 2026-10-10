@@ -5,7 +5,7 @@ from pathlib import Path
 from ...config.logs import get_logger
 from ..base import BaseRepresentationService
 from .extractors import ImportExtractor, ImportRecord, build_default_extractors
-from .resolver import ModuleResolver
+from .resolver import ModuleResolver, TypeScriptResolver
 from .schemas import (
     DependencyGraphInput,
     DependencyGraphOutput,
@@ -46,9 +46,10 @@ def _is_submodule_probe(record: ImportRecord) -> bool:
 class DependencyGraphService(BaseRepresentationService[DependencyGraphInput, DependencyGraphOutput]):
     """Which repo file depends on which, resolved to real files.
 
-    Two layers: an extractor turns source text into unresolved records, and a
-    shared resolver maps each dotted specifier to a file. Adding a language
-    means adding an extractor, never touching the resolver.
+    Two layers per language: an extractor turns source text into unresolved
+    records, and a resolver maps each specifier to a file. Adding a language
+    means adding an extractor plus its resolver; the edge handling below
+    stays the same.
     """
 
     representation_type = "dependency_graph"
@@ -68,12 +69,14 @@ class DependencyGraphService(BaseRepresentationService[DependencyGraphInput, Dep
             root, input_data.max_depth, input_data.max_files,
         )
 
-        grouped, truncated = _collect_python_files(root, input_data.max_depth, input_data.max_files)
-        resolver = ModuleResolver(root, grouped)
+        collected, truncated = _collect_source_files(root, input_data.max_depth, input_data.max_files)
+        module_resolver = ModuleResolver(root, collected.get("python", {}))
+        ts_resolver = TypeScriptResolver(root, _relative_paths(collected))
 
         sources = [
-            f"{directory}/{name}" if directory else name
-            for directory, names in grouped.items()
+            (f"{directory}/{name}" if directory else name, language)
+            for language in ("python", "typescript", "javascript")
+            for directory, names in collected.get(language, {}).items()
             for name in names
         ]
 
@@ -82,15 +85,16 @@ class DependencyGraphService(BaseRepresentationService[DependencyGraphInput, Dep
         unresolved: list[str] = []
         dynamic = 0
 
-        extractor = self._extractors.get("python")
-
-        for relative in sources:
+        for relative, language in sources:
+            extractor = self._extractors.get(language)
             if extractor is None:
-                break
+                continue
 
             text = _read_text(root / relative)
             if text is None:
                 continue
+
+            resolver = module_resolver if language == "python" else ts_resolver
 
             for record in extractor.extract(text):
                 resolution = resolver.resolve(record, relative)
@@ -116,7 +120,8 @@ class DependencyGraphService(BaseRepresentationService[DependencyGraphInput, Dep
                         edges.append(edge)
                     continue
 
-                is_probe = _is_submodule_probe(record)
+                # The submodule probes below only exist in Python records.
+                is_probe = language == "python" and _is_submodule_probe(record)
 
                 if record.kind == "dynamic":
                     dynamic += 1
@@ -184,13 +189,40 @@ class DependencyGraphService(BaseRepresentationService[DependencyGraphInput, Dep
 # -- file walking ----------------------------------------------------------
 
 
-def _collect_python_files(root: Path, max_depth: int, max_files: int) -> tuple[dict[str, list[str]], bool]:
-    """Python files grouped by repo-relative directory, in stable order.
+def _language_of(filename: str) -> str | None:
+    """Representation language for a file name, or None when unsupported."""
+    suffix = Path(filename).suffix.lower()
 
-    Grouping by directory is what lets the resolver tell a package from a
-    plain folder, so it is the shape the resolver consumes.
+    if suffix == ".py":
+        return "python"
+    if suffix in (".ts", ".tsx", ".mts", ".cts"):
+        return "typescript"
+    if suffix in (".js", ".jsx", ".mjs", ".cjs"):
+        return "javascript"
+    return None
+
+
+def _relative_paths(collected: dict[str, dict[str, list[str]]]) -> set[str]:
+    """Every indexed TypeScript/JavaScript path, repo-relative POSIX."""
+    paths: set[str] = set()
+
+    for language in ("typescript", "javascript"):
+        for directory, names in collected.get(language, {}).items():
+            for name in names:
+                paths.add(f"{directory}/{name}" if directory else name)
+
+    return paths
+
+
+def _collect_source_files(
+    root: Path, max_depth: int, max_files: int
+) -> tuple[dict[str, dict[str, list[str]]], bool]:
+    """Source files grouped by language, then by repo-relative directory.
+
+    Directory order within each language is stable, so every consumer sees
+    the same layout on every run.
     """
-    grouped: dict[str, list[str]] = {}
+    collected: dict[str, dict[str, list[str]]] = {}
     total = 0
     truncated = False
 
@@ -203,7 +235,8 @@ def _collect_python_files(root: Path, max_depth: int, max_files: int) -> tuple[d
         dirnames[:] = sorted(name for name in dirnames if _keep_dir(name))
 
         for filename in sorted(filenames):
-            if not filename.endswith(".py"):
+            language = _language_of(filename)
+            if language is None:
                 continue
             if Path(filename).suffix.lower() in IGNORED_SUFFIXES:
                 continue
@@ -212,7 +245,7 @@ def _collect_python_files(root: Path, max_depth: int, max_files: int) -> tuple[d
             if directory == ".":
                 directory = ""
 
-            grouped.setdefault(directory, []).append(filename)
+            collected.setdefault(language, {}).setdefault(directory, []).append(filename)
             total += 1
 
             if total > max_files:
@@ -222,7 +255,7 @@ def _collect_python_files(root: Path, max_depth: int, max_files: int) -> tuple[d
         if truncated:
             break
 
-    return grouped, truncated
+    return collected, truncated
 
 
 def _read_text(path: Path) -> str | None:

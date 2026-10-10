@@ -55,7 +55,7 @@ class ImportEdge(BaseModel):
 
 
 class DependencyGraphStats(BaseModel):
-    files: int = Field(ge=0, description="Python files indexed")
+    files: int = Field(ge=0, description="Source files indexed")
     edges: int = Field(ge=0, description="Edges kept in the output")
     internal: int = Field(ge=0)
     external: int = Field(ge=0, description="Distinct third-party specifiers referenced")
@@ -63,7 +63,7 @@ class DependencyGraphStats(BaseModel):
         default_factory=list,
         description="Specifiers that could be local but were not found: file|specifier",
     )
-    dynamic: int = Field(ge=0, description="importlib/__import__ calls, not statically resolvable")
+    dynamic: int = Field(ge=0, description="Dynamically computed imports, not statically resolvable")
     truncated: bool = Field(default=False)
     cycles: list[list[str]] = Field(
         default_factory=list,

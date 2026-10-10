@@ -19,6 +19,17 @@ MIN_PUBLIC_API_LINES = 60
 # project imports them, so listing them only buries the third-party signal.
 STDLIB = frozenset(sys.stdlib_module_names) | {"__future__"}
 
+# Node.js builtins, plain and `node:`-prefixed. Same idea as STDLIB, for the
+# TypeScript side of the graph: `fs` says nothing about what a project is.
+NODE_STDLIB = frozenset({
+    "assert", "buffer", "child_process", "cluster", "console", "crypto",
+    "dgram", "diagnostics_channel", "dns", "events", "fs", "http", "http2",
+    "https", "inspector", "module", "net", "os", "path", "perf_hooks",
+    "process", "querystring", "readline", "repl", "stream", "string_decoder",
+    "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm",
+    "wasi", "worker_threads", "zlib",
+})
+
 # Circular groups reported to the model. The graph computes all of them; this
 # keeps a pathological repository from crowding out the rest of the facts.
 MAX_REPORTED_CYCLES = 5
@@ -322,7 +333,8 @@ def third_party_dependencies(collection: dict) -> list[str]:
             continue
 
         head = specifier.split(".", 1)[0].strip()
-        if head and head not in STDLIB:
+        bare = head.removeprefix("node:")
+        if head and head not in STDLIB and bare not in NODE_STDLIB:
             names.add(head)
 
     return sorted(names)

@@ -1,3 +1,4 @@
+import posixpath
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -232,6 +233,131 @@ class ModuleResolver:
             return None
 
         return self._modules.get(dotted)
+
+
+TS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs")
+
+# Node.js builtins, with and without the `node:` prefix. A bare specifier
+# naming one of these is the platform, never a third-party dependency.
+NODE_BUILTINS = frozenset({
+    "assert", "buffer", "child_process", "cluster", "console", "crypto",
+    "dgram", "diagnostics_channel", "dns", "events", "fs", "http", "http2",
+    "https", "inspector", "module", "net", "os", "path", "perf_hooks",
+    "process", "querystring", "readline", "repl", "stream", "string_decoder",
+    "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm",
+    "wasi", "worker_threads", "zlib",
+})
+
+
+class TypeScriptResolver:
+    """Maps a TypeScript/JavaScript specifier to a repo file.
+
+    Relative specifiers (`./x`, `../x`) resolve against the importing file,
+    trying each known extension and `index` files, exactly how the bundler
+    would. Bare specifiers (`react`, `fs`) never resolve locally: node_modules
+    is pruned from the walk, so they are external by construction. Kept
+    separate from ModuleResolver on purpose: dotted Python names and
+    slash-separated TS paths resolve by different rules.
+    """
+
+    def __init__(self, root: Path, files: set[str]) -> None:
+        """files holds every indexed source path, repo-relative POSIX."""
+        self._files = files
+        self._declared, self._has_manifest = _read_declared_dependencies(root)
+
+    def resolve(self, record: ImportRecord, source: str) -> Resolution:
+        """Resolve one record relative to the file it was written in."""
+        if record.kind == "dynamic":
+            return Resolution(record, None, False, record.reason or "dynamic")
+
+        specifier = (record.specifier or "").strip()
+
+        if not specifier:
+            return Resolution(record, None, False, "not_found")
+
+        if specifier.startswith(("./", "../")) or specifier in (".", ".."):
+            return self._resolve_relative(record, specifier, source)
+
+        return self._resolve_bare(record, specifier)
+
+    def _resolve_bare(self, record: ImportRecord, specifier: str) -> Resolution:
+        """A bare specifier is never a local file: node_modules is pruned.
+
+        With a package.json in sight, an undeclared name is reported rather
+        than lumped with third-party: it is a typo, a pruned file, or a quiet
+        transitive. Without one there is nothing to check against, so every
+        bare name counts as external.
+        """
+        name = specifier.removeprefix("node:")
+        head = name.split("/")[0]
+        scoped = "/".join(name.split("/")[:2]) if head.startswith("@") else head
+
+        if head in NODE_BUILTINS or specifier.startswith("node:"):
+            return Resolution(record, None, False, "external")
+
+        if not self._has_manifest:
+            return Resolution(record, None, False, "external")
+
+        if head in self._declared or scoped in self._declared or specifier in self._declared:
+            return Resolution(record, None, False, "external")
+
+        return Resolution(record, None, False, "not_found")
+
+    def _resolve_relative(self, record: ImportRecord, specifier: str, source: str) -> Resolution:
+        directory = source.rsplit("/", 1)[0] if "/" in source else ""
+        joined = posixpath.normpath(posixpath.join(directory, specifier))
+
+        if joined == "." or joined.startswith(".."):
+            return Resolution(record, None, False, "too_many_dots")
+
+        # TypeScript imports name the compiled file (`./logger.js` for
+        # `logger.ts`), so drop a source extension before trying candidates.
+        stem = joined
+        for extension in TS_EXTENSIONS:
+            if stem.endswith(extension):
+                stem = stem[: -len(extension)]
+                break
+
+        for candidate in _ts_candidates(stem):
+            if candidate in self._files:
+                return Resolution(record, candidate, True, None)
+
+        return Resolution(record, None, False, "not_found")
+
+
+def _ts_candidates(path: str) -> list[str]:
+    """Where a relative specifier may land, in lookup order."""
+    candidates = [f"{path}{extension}" for extension in TS_EXTENSIONS]
+    candidates += [f"{path}/index{extension}" for extension in TS_EXTENSIONS]
+    return candidates
+
+
+def _read_declared_dependencies(root: Path) -> tuple[frozenset[str], bool]:
+    """Dependency names from the root package.json, plus whether one exists."""
+    manifest = root / "package.json"
+
+    if not manifest.is_file():
+        return frozenset(), False
+
+    try:
+        import json
+
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        logger.debug("could not read package.json: %s", error)
+        return frozenset(), True
+
+    if not isinstance(data, dict):
+        return frozenset(), True
+
+    names: set[str] = set()
+
+    for section in ("dependencies", "devDependencies", "peerDependencies"):
+        declared = data.get(section)
+        if isinstance(declared, dict):
+            names.update(str(name) for name in declared)
+
+    return frozenset(names), True
 
 
 # -- helpers ---------------------------------------------------------------
