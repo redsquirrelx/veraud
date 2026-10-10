@@ -221,6 +221,36 @@ def _print_audit(result: dict) -> None:
             print(f"    {item.get('path')}: {responsibility}")
         else:
             print(f"    {item}")
+    print()
+
+    print("  data_flow:")
+    for line in _wrap(str(description.get("data_flow", "") or "(not traced)"), 76):
+        print(f"    {line}")
+    print()
+
+    third_party = description.get("third_party") or []
+    print(f"  third_party       : {', '.join(third_party) if third_party else '(none)'}")
+    cycles = description.get("cycles") or []
+    print(f"  cycles            : {len(cycles)} group(s)")
+    for group in cycles:
+        print(f"    {' ↔ '.join(group)}")
+    print()
+
+    notes = description.get("quality_notes") or []
+    print(f"  quality_notes ({len(notes)}):")
+    for note in notes or ["(none reported)"]:
+        if isinstance(note, dict):
+            print(f"    - [{note.get('characteristic', '?')}] {note.get('observation', '')}")
+            for path in note.get("evidence", []):
+                print(f"      evidence: {path}")
+        else:
+            print(f"    {note}")
+    print()
+
+    risks = description.get("risks") or []
+    print(f"  risks ({len(risks)}):")
+    for risk in risks or ["(none reported)"]:
+        print(f"    - {risk}")
 
 
 def _wrap(text: str, width: int) -> list[str]:
