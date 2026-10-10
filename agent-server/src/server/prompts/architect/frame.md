@@ -17,6 +17,9 @@ Answer ONLY with a JSON object. Its keys:
   interesting finding. Use unknown when the evidence does not support any
   intention.
 - "reasoning": string. One or two sentences saying which fact drove it.
+  Cite at least one exact path and the mechanism observed there: an import
+  a.py -> b.py, a symbol it defines, a boundary that is missing. A reasoning
+  naming no path and no mechanism cannot be checked, so do not write one.
 - "would_confirm": array of strings. File paths, copied verbatim from the
   listing, whose contents would confirm or refute your reading. Between two
   and six paths: prefer entry points and the most connected modules, since
@@ -40,6 +43,11 @@ and a deviation without evidence is just a suspicion — leave it out.
 Style definitions:
 
 {styles}
+
+Directory profiles (what each top-level directory holds: files, lines,
+languages, imports in and out, entry points, top symbols):
+
+{directory_profiles}
 
 Repository structure:
 

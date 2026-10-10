@@ -228,6 +228,82 @@ def derived_primary_language(files: list[dict]) -> str:
     return min(name for name, total in totals.items() if total == best)
 
 
+# Directories profiled per description. Enough to see what each area holds
+# without reading code; the file listing stays the citable source of paths.
+MAX_PROFILED_DIRS = 10
+MAX_DIR_SYMBOLS = 6
+
+
+def directory_profiles(files: list[dict], edges: list[dict]) -> list[dict]:
+    """Aggregate what each top-level directory holds, sorted by lines.
+
+    Pure function of the collection: file and line counts, languages present,
+    internal import edges in and out, entry files inside, and the top symbol
+    names. Deterministic, so the architect reasons over directory content
+    instead of directory names.
+    """
+    grouped: dict[str, dict] = {}
+
+    for item in files:
+        path = item.get("path") or ""
+        directory = path.split("/", 1)[0] if "/" in path else "(root)"
+
+        entry = grouped.setdefault(directory, {
+            "files": 0,
+            "lines": 0,
+            "languages": {},
+            "symbols": [],
+            "entrypoints": [],
+        })
+        entry["files"] += 1
+        entry["lines"] += item.get("lines") or 0
+
+        language = item.get("language") or "unknown"
+        entry["languages"][language] = entry["languages"].get(language, 0) + 1
+
+        for symbol in item.get("symbols") or []:
+            name = symbol.get("name") if isinstance(symbol, dict) else None
+            if name:
+                entry["symbols"].append(name)
+
+        name = path.rsplit("/", 1)[-1]
+        if name in ENTRYPOINT_NAMES or (
+            name == "__init__.py" and (item.get("lines") or 0) >= MIN_PUBLIC_API_LINES
+        ):
+            entry["entrypoints"].append(path)
+
+    degrees: dict[str, dict[str, int]] = {}
+
+    for edge in edges:
+        target = edge.get("target")
+        if not target:
+            continue
+        _bump(degrees, _top_dir(edge["source"]), "out")
+        _bump(degrees, _top_dir(target), "in")
+
+    profiles = []
+
+    for directory in sorted(grouped, key=lambda name: (-grouped[name]["lines"], name)):
+        entry = grouped[directory]
+        flow = degrees.get(directory, {})
+        profiles.append({
+            "directory": directory,
+            "files": entry["files"],
+            "lines": entry["lines"],
+            "languages": dict(sorted(entry["languages"].items())),
+            "imports": flow.get("out", 0),
+            "imported_by": flow.get("in", 0),
+            "entrypoints": sorted(entry["entrypoints"]),
+            "symbols": sorted(set(entry["symbols"]))[:MAX_DIR_SYMBOLS],
+        })
+
+    return profiles[:MAX_PROFILED_DIRS]
+
+
+def _top_dir(path: str) -> str:
+    return path.split("/", 1)[0] if "/" in path else "(root)"
+
+
 def third_party_dependencies(collection: dict) -> list[str]:
     """Distinct external import names, standard library excluded.
 
