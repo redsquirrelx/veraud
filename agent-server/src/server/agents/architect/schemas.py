@@ -40,6 +40,16 @@ class QualityNote(BaseModel):
     )
 
 
+class Deviation(BaseModel):
+    """One concrete way the code falls short of the intended architecture."""
+
+    observation: str = Field(description="What falls short, in one sentence")
+    evidence: list[str] = Field(
+        default_factory=list,
+        description="Repository paths proving it",
+    )
+
+
 class ArchitectureDescription(BaseModel):
     """How the project is put together. A description, not a judgement.
 
@@ -51,6 +61,11 @@ class ArchitectureDescription(BaseModel):
         default="unknown",
         description="Architectural style, e.g. layered, hexagonal, mvc, modular monolith",
     )
+    intended_style: str = Field(
+        default="unknown",
+        description="Architecture the repository seems to try to be",
+    )
+    deviations: list[Deviation] = Field(default_factory=list)
     components: list[ComponentInfo] = Field(default_factory=list)
     data_flow: str = Field(
         default="",

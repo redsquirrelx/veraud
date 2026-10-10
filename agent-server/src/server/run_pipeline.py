@@ -195,7 +195,32 @@ def _print_audit(result: dict) -> None:
     for item in components:
         print(f"    {item}")
     print()
-    print("description: frame only for now, the full description lands in phase 5")
+
+    description = result.get("description", {})
+    print("architecture:")
+    print(f"  style             : {description.get('style', 'unknown')}")
+    print(f"  intended          : {description.get('intended_style', 'unknown')}")
+    print()
+
+    deviations = description.get("deviations") or []
+    print(f"  deviations ({len(deviations)}):")
+    for deviation in deviations or ["(none reported)"]:
+        if isinstance(deviation, dict):
+            print(f"    - {deviation.get('observation', '')}")
+            for path in deviation.get("evidence", []):
+                print(f"      evidence: {path}")
+        else:
+            print(f"    {deviation}")
+    print()
+
+    described = description.get("components") or []
+    print(f"  components ({len(described)}):")
+    for item in described or ["(none reported)"]:
+        if isinstance(item, dict):
+            responsibility = item.get("responsibility") or "(not described)"
+            print(f"    {item.get('path')}: {responsibility}")
+        else:
+            print(f"    {item}")
 
 
 def _wrap(text: str, width: int) -> list[str]:
