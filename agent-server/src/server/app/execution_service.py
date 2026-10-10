@@ -4,6 +4,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ValidationError
 
 from ..agents.analyzer.agent import ProjectAnalyzerAgent
+from ..agents.architect.agent import ArchitectureAgent
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
 from ..agents.models.base import Model
@@ -68,6 +69,7 @@ def build_default_registry() -> AgentRegistry:
     
     registry.register(DummyAgent.agent_type, DummyAgent)
     registry.register(ProjectAnalyzerAgent.agent_type, ProjectAnalyzerAgent)
+    registry.register(ArchitectureAgent.agent_type, ArchitectureAgent)
 
     return registry
 
