@@ -80,11 +80,16 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
         }
 
     async def _frame(self, collected: dict, input_data: ArchitectInput) -> dict:
-        """Guess the architectural style, and say what would confirm it."""
+        """Guess what the repo tries to be, and why it falls short.
+
+        Returns the observed style, the intended style and the deviations,
+        plus the files that would confirm the reading. Deviations feed the
+        survey step (what is worth reading) and later the risks.
+        """
         analysis = input_data.analysis
         prompt = (
             f"{load_prompt(self.agent_type, 'system')}\n\n---\n\n"
-            f"{render_prompt(load_prompt(self.agent_type, 'frame'), facts=collected['facts'], kind=analysis.kind, summary=analysis.summary)}"
+            f"{render_prompt(load_prompt(self.agent_type, 'frame'), facts=collected['facts'], kind=analysis.kind, summary=analysis.summary, styles=load_prompt(self.agent_type, 'styles'))}"
         )
 
         try:
@@ -92,17 +97,50 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
             answer = analyzer_parsing.parse_json(analyzer_parsing.extract_text(response))
         except Exception as error:  # noqa: BLE001 - providers raise varied errors
             logger.warning("frame: model gave no usable answer: %s", error)
-            return {"style": "unknown", "pending": []}
+            return {"style": "unknown", "intended_style": "unknown", "deviations": [], "pending": []}
 
         wanted = analyzer_parsing.read_paths(answer, "would_confirm", collected["known_files"])
         style = str(answer.get("style") or "unknown").strip().lower()
+        intended = str(answer.get("intended_style") or "unknown").strip().lower()
+        deviations = _read_deviations(answer, collected["known_files"])
 
         logger.info(
-            "frame: style=%r reasoning=%r pending=%d paths",
-            style, analyzer_parsing.read_text(answer, "reasoning")[:120], len(wanted),
+            "frame: style=%r intended=%r reasoning=%r pending=%d paths deviations=%d",
+            style, intended, analyzer_parsing.read_text(answer, "reasoning")[:120],
+            len(wanted), len(deviations),
         )
 
-        return {"style": style, "pending": _take(wanted, MAX_FILES_PER_ROUND)}
+        return {
+            "style": style,
+            "intended_style": intended,
+            "deviations": deviations,
+            "pending": _take(
+                wanted + [path for deviation in deviations for path in deviation["evidence"]],
+                MAX_FILES_PER_ROUND,
+            ),
+        }
+
+
+def _read_deviations(answer: dict, known_files: set[str]) -> list[dict]:
+    """Deviations with existing evidence paths, in the model's order."""
+    found: list[dict] = []
+    raw = answer.get("deviations")
+
+    if not isinstance(raw, list):
+        return found
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        observation = analyzer_parsing.read_text(item, "observation")
+        if not observation:
+            continue
+        evidence = [
+            path for path in analyzer_parsing.read_paths(item, "evidence", known_files)
+        ]
+        found.append({"observation": observation, "evidence": evidence})
+
+    return found
 
 
 def _take(paths: list[str], limit: int) -> list[str]:
