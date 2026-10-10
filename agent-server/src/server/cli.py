@@ -30,3 +30,9 @@ def analyzer() -> None:
     from .run_analyzer import main
 
     raise SystemExit(main())
+
+
+def pipeline() -> None:
+    from .run_pipeline import main
+
+    raise SystemExit(main())

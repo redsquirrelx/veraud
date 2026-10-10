@@ -26,6 +26,7 @@ dev = "server.cli:dev"
 repomap = "server.cli:repomap"
 depgraph = "server.cli:depgraph"
 analyzer = "server.cli:analyzer"
+pipeline = "server.cli:pipeline"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
