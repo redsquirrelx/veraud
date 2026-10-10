@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Emit the analysis and the description as JSON",
+        help="Emit the analysis and the description as JSON (implies --quiet)",
     )
     parser.add_argument(
         "--quiet",
@@ -119,7 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    if args.quiet:
+    # JSON goes to stdout, so logs must not: they would corrupt the payload.
+    if args.quiet or args.json:
         logging.disable(logging.CRITICAL)
     else:
         from server.config.logs import setup_logging
