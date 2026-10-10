@@ -103,23 +103,27 @@ class ArchitectureAgent(BaseAgent[ArchitectInput, ArchitectureDescription]):
             final.get("components") or [],
             final.get("derived_key_components") or [],
         )
+        notes = final.get("quality_notes") or []
+        risks = final.get("risks") or []
+        intended = str(frame.get("intended_style") or "unknown")
 
         logger.info(
             "run done: style=%r intended=%r components=%d notes=%d risks=%d files_read=%d",
-            frame.get("style", "unknown"), frame.get("intended_style", "unknown"),
-            len(components), len(final.get("quality_notes") or []),
-            len(final.get("risks") or []), len(final.get("read_paths") or []),
+            frame.get("style", "unknown"), intended,
+            len(components), len(notes),
+            len(risks), len(final.get("read_paths") or []),
         )
         return ArchitectureDescription(
             style=str(frame.get("style") or "unknown"),
-            intended_style=str(frame.get("intended_style") or "unknown"),
+            intended_style=intended,
             deviations=frame.get("deviations") or [],
             components=components,
             data_flow=str(final.get("data_flow") or ""),
             third_party=final.get("third_party") or [],
             cycles=final.get("cycles") or [],
-            quality_notes=final.get("quality_notes") or [],
-            risks=final.get("risks") or [],
+            quality_notes=notes,
+            risks=risks,
+            confidence=_calibrate_confidence(components, notes, intended),
         )
 
     # -- graph wiring -------------------------------------------------------
@@ -370,6 +374,28 @@ def _ordered_components(described: list[dict], key_components: list[str]) -> lis
         if isinstance(item, dict)
     }
     return [{"path": path, "responsibility": by_path.get(path, "")} for path in key_components]
+
+
+def _calibrate_confidence(components: list[dict], notes: list[dict], intended: str) -> str:
+    """Confidence from evidence, not from the model claiming it.
+
+    High needs everything described, at least one evidenced note, and a known
+    intention. Medium needs at least half described plus something backing it.
+    Anything less is low: the description admits its gaps.
+    """
+    if not components:
+        return "low"
+
+    described = sum(1 for component in components if component.get("responsibility"))
+    ratio = described / len(components)
+    backed = len(notes) > 0
+    known_intent = intended not in ("", "unknown")
+
+    if ratio == 1.0 and backed and known_intent:
+        return "high"
+    if ratio >= 0.5 and (backed or known_intent):
+        return "medium"
+    return "low"
 
 
 def _survey_floor(state: _State) -> list[str]:

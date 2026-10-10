@@ -8,6 +8,7 @@ import asyncio
 
 from server.agents.architect.agent import (
     ArchitectureAgent,
+    _calibrate_confidence,
     _read_quality_notes,
     _read_risks,
     _risks_floor,
@@ -88,6 +89,31 @@ class TestReadRisks:
 
     def test_missing_risks_is_empty(self):
         assert _read_risks({}) == []
+
+
+class TestCalibrateConfidence:
+    def _components(self, described, total=2):
+        paths = ["a.py", "b.py"][:total]
+        return [
+            {"path": path, "responsibility": "Does it." if path in described else ""}
+            for path in paths
+        ]
+
+    def test_high_needs_everything(self):
+        notes = [{"characteristic": "modularity", "observation": "x", "evidence": ["a.py"]}]
+
+        assert _calibrate_confidence(self._components(["a.py", "b.py"]), notes, "hexagonal") == "high"
+
+    def test_medium_on_partial_evidence(self):
+        notes = [{"characteristic": "modularity", "observation": "x", "evidence": ["a.py"]}]
+
+        assert _calibrate_confidence(self._components(["a.py"]), notes, "unknown") == "medium"
+        assert _calibrate_confidence(self._components(["a.py"]), [], "hexagonal") == "medium"
+
+    def test_low_otherwise(self):
+        assert _calibrate_confidence([], [], "hexagonal") == "low"
+        assert _calibrate_confidence(self._components([]), [], "unknown") == "low"
+        assert _calibrate_confidence(self._components(["a.py"]), [], "unknown") == "low"
 
 
 class TestOfflinePhase4:
