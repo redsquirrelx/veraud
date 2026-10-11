@@ -48,7 +48,8 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 
 - `agent_type` (string, required): registered agent id.
 - `config` (object, optional): all fields optional.
-  - `model.provider`: `"gemini"`/`"google"` or `"openrouter"`/`"openai"`.
+  - `model.provider`: `"gemini"`/`"google"`, `"openrouter"`/`"openai"`, or `"groq"`.
+  - Groq uses `https://api.groq.com/openai/v1`. Set `model.name` to a model available in your Groq account and provide a Groq key through `config.api_key` or the server's `LLM_API_KEY`. When switching from another provider to Groq, `model.name` is required so a Gemini/OpenRouter model name is not inherited accidentally.
   - `model.name` / `model.temperature` / `model.max_tokens`.
   - `timeout_seconds` (int > 0): execution timeout.
   - `api_key`: credential override; server key when omitted.

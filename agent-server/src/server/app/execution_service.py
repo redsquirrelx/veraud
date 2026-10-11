@@ -10,6 +10,7 @@ from ..agents.dummy.agent import DummyAgent
 from ..agents.judge.agent import JudgeAgent
 from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
+from ..agents.models.groq import GroqModel
 from ..agents.models.openrouter import OpenRouterModel
 from ..api.schemas import ExecutionConfig
 from ..config import tracing
@@ -61,6 +62,9 @@ def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model
     
     if provider in ("openrouter", "openai"):
         return OpenRouterModel(settings=settings, credentials=credentials)
+
+    if provider == "groq":
+        return GroqModel(settings=settings, credentials=credentials)
     
     raise InvalidConfigError(f"Unsupported model provider: {settings.provider!r}")
 
@@ -115,6 +119,15 @@ class AgentExecutionService:
         provider = config.model.provider or (
             base_model.provider if base_model else "gemini"
         )
+
+        if (
+            provider.lower() == "groq"
+            and not config.model.name
+            and (base_model is None or base_model.provider.lower() != "groq")
+        ):
+            raise InvalidConfigError(
+                "model.name is required when switching to provider 'groq'"
+            )
 
         name = config.model.name or (base_model.name if base_model else None)
         
