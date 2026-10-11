@@ -9,6 +9,7 @@ from pathlib import Path
 
 from server.agents.analyzer import parsing as analyzer_parsing
 from server.agents.analyzer.evidence import read_ranged_excerpts, render_excerpts
+from server.agents.architect.agent import _read_deviations, _read_quality_notes
 
 KNOWN = {"a.py", "b.py"}
 
@@ -78,4 +79,24 @@ class TestReadRangedExcerpts:
 
         assert read_ranged_excerpts(tmp_path, ["a.py:99-120"]) == []
         assert read_ranged_excerpts(tmp_path, ["ghost.py:1-2"]) == []
+
+
+class TestRangedDeviationsAndNotes:
+    def test_deviations_keep_raw_ranged_entries(self):
+        answer = {"deviations": [
+            {"observation": "Skipped port.", "evidence": ["a.py:12-34", "ghost.py:1-2", "a.py:9-3"]},
+        ]}
+
+        assert _read_deviations(answer, KNOWN) == [
+            {"observation": "Skipped port.", "evidence": ["a.py:12-34"]},
+        ]
+
+    def test_notes_keep_raw_ranged_entries(self):
+        answer = {"quality_notes": [
+            {"characteristic": "modularity", "observation": "One job.", "evidence": ["b.py:3"]},
+        ]}
+
+        assert _read_quality_notes(answer, KNOWN) == [
+            {"characteristic": "modularity", "observation": "One job.", "evidence": ["b.py:3"]},
+        ]
 

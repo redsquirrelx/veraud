@@ -1,7 +1,8 @@
 """The frame step keeps what the model proves and drops the rest.
 
-Deviations arrive as free-form JSON: invented paths must not survive, and a
-deviation without an observation says nothing. No model or network involved.
+Deviations arrive as free-form JSON: invented paths must not survive, every
+entry must name its line intervals, and a deviation without an observation
+says nothing. No model or network involved.
 """
 
 from server.agents.architect.agent import _read_deviations
@@ -10,7 +11,18 @@ KNOWN = {"app/handler.py", "app/db.py", "app/main.py"}
 
 
 class TestReadDeviations:
-    def test_keeps_observation_with_existing_evidence(self):
+    def test_keeps_observation_with_ranged_evidence(self):
+        answer = {
+            "deviations": [
+                {"observation": "Handlers import the SQL adapter directly.", "evidence": ["app/handler.py:10-20"]},
+            ]
+        }
+
+        assert _read_deviations(answer, KNOWN) == [
+            {"observation": "Handlers import the SQL adapter directly.", "evidence": ["app/handler.py:10-20"]}
+        ]
+
+    def test_drops_bare_paths_but_keeps_the_observation(self):
         answer = {
             "deviations": [
                 {"observation": "Handlers import the SQL adapter directly.", "evidence": ["app/handler.py"]},
@@ -18,7 +30,7 @@ class TestReadDeviations:
         }
 
         assert _read_deviations(answer, KNOWN) == [
-            {"observation": "Handlers import the SQL adapter directly.", "evidence": ["app/handler.py"]}
+            {"observation": "Handlers import the SQL adapter directly.", "evidence": []}
         ]
 
     def test_drops_invented_paths_but_keeps_the_observation(self):

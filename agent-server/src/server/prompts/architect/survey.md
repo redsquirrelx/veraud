@@ -12,6 +12,11 @@ Answer ONLY with a JSON object. Its keys:
   read), the entry points, then the top key components. Return an empty array
   if nothing is worth reading.
 
+Key components still undescribed (these are why you are reading again, so
+they outrank everything but deviation evidence):
+
+{undescribed}
+
 Repository structure:
 
 {facts}

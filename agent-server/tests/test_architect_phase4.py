@@ -60,18 +60,19 @@ class TestRisksFloor:
 class TestReadQualityNotes:
     def test_keeps_valid_notes_with_existing_evidence(self):
         answer = {"quality_notes": [
-            {"characteristic": "Modularity", "observation": "One job per module.", "evidence": ["a.py"]},
+            {"characteristic": "Modularity", "observation": "One job per module.", "evidence": ["a.py:12-34"]},
         ]}
 
         assert _read_quality_notes(answer, KNOWN) == [
-            {"characteristic": "modularity", "observation": "One job per module.", "evidence": ["a.py"]}
+            {"characteristic": "modularity", "observation": "One job per module.", "evidence": ["a.py:12-34"]}
         ]
 
     def test_drops_off_vocab_empty_and_unevidenced_notes(self):
         answer = {"quality_notes": [
-            {"characteristic": "security", "observation": "Useseval.", "evidence": ["a.py"]},
-            {"characteristic": "modularity", "observation": "  ", "evidence": ["a.py"]},
-            {"characteristic": "modularity", "observation": "No proof.", "evidence": ["ghost.py"]},
+            {"characteristic": "security", "observation": "Useseval.", "evidence": ["a.py:1-2"]},
+            {"characteristic": "modularity", "observation": "  ", "evidence": ["a.py:1-2"]},
+            {"characteristic": "modularity", "observation": "No proof.", "evidence": ["ghost.py:1-2"]},
+            {"characteristic": "modularity", "observation": "No lines.", "evidence": ["a.py"]},
             "not-a-note",
         ]}
 
