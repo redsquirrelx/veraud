@@ -4,6 +4,7 @@ Kept apart from the graph so the graph reads as steps rather than as parsing.
 """
 
 import json
+import re
 import sys
 
 # Key components reported in a description. The prompt used to ask for "four
@@ -40,6 +41,61 @@ ENTRYPOINT_NAMES = frozenset({
 
 # What makes a directory an importable package.
 PACKAGE_MARKER = "/__init__.py"
+
+# Generated code never carries the project's architecture: it describes the
+# tool, not the design. Matched by path only (segments and suffixes), so no
+# file content is ever read to decide this.
+GENERATED_DIR_MARKERS = frozenset({"generated", "__generated__"})
+GENERATED_FILE_INFIX = ".generated."
+GENERATED_FILE_SUFFIXES = ("_pb2.py", ".d.ts", ".min.js")
+
+# Cross-cutting plumbing: imported everywhere, deciding nowhere. A logs.py or
+# an icons.tsx can top an import-degree ranking while saying nothing about
+# how the project is put together, so they are out of the key-components
+# ranking. Matched per basename segment (split on -_.), exact and
+# case-insensitive, so my_configurator.py and reconfigure.py survive while
+# app_logger.py and icon-button.tsx do not. utils/helpers/config are in on
+# purpose: shared helpers describe the toolbox, not the architecture.
+PLUMBING_STEMS = frozenset({
+    "log", "logs", "logger", "logging",
+    "icon", "icons",
+    "util", "utils", "helper", "helpers",
+    "constant", "constants", "config", "configs",
+    "theme", "themes", "style", "styles",
+})
+
+
+def _is_generated_path(path: str) -> bool:
+    lowered = path.lower().replace("\\", "/")
+    segments = [segment for segment in lowered.split("/") if segment]
+    if any(segment in GENERATED_DIR_MARKERS for segment in segments[:-1]):
+        return True
+    name = segments[-1] if segments else ""
+    if GENERATED_FILE_INFIX in name:
+        return True
+    return name.endswith(GENERATED_FILE_SUFFIXES)
+
+
+def _is_plumbing_path(path: str) -> bool:
+    lowered = path.lower().replace("\\", "/")
+    segments = [segment for segment in lowered.split("/") if segment]
+    if not segments:
+        return False
+    name = segments[-1]
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    pieces = [piece for piece in re.split(r"[-_.]+", stem) if piece]
+    return any(piece in PLUMBING_STEMS for piece in pieces)
+
+
+def is_rankable(path: str) -> bool:
+    """Whether a path may compete for key-component ranking.
+
+    Generated files and cross-cutting plumbing are structurally central and
+    architecturally mute, so they sit the ranking out. They stay citable and
+    readable everywhere else: this only decides what the architect is asked
+    to characterize first.
+    """
+    return bool(path) and not _is_generated_path(path) and not _is_plumbing_path(path)
 
 
 def _dump(payload: object) -> str:
@@ -203,18 +259,20 @@ def derived_key_components(
 ) -> list[str]:
     """Paths carrying most of the code, computed instead of model-chosen.
 
-    The top hub modules by import degree: where the project holds together.
-    Ties break alphabetically so the ranking is stable. When the graph has no
-    internal edges at all (languages without import extraction), the largest
-    files by lines stand in, same ordering rule. Either way the answer is a
-    pure function of the collection, identical on every run.
+    The top hub modules by import degree, excluding generated code and
+    cross-cutting plumbing (see is_rankable): where the project's own design
+    holds together. Ties break alphabetically so the ranking is stable. When
+    the graph has no internal edges at all (languages without import
+    extraction), the largest rankable files by lines stand in, same ordering
+    rule. Either way the answer is a pure function of the collection,
+    identical on every run.
     """
     hubs = hub_modules(edges, limit=limit)
     if hubs:
         return [entry["path"] for entry in hubs]
 
     ranked = sorted(
-        (item for item in files if item.get("path")),
+        (item for item in files if item.get("path") and is_rankable(item["path"])),
         key=lambda item: (-(item.get("lines") or 0), item["path"]),
     )
     return [item["path"] for item in ranked[:limit]]
@@ -315,6 +373,15 @@ def _top_dir(path: str) -> str:
     return path.split("/", 1)[0] if "/" in path else "(root)"
 
 
+def specifier_head(specifier: str) -> str:
+    """Top-level name of a dotted import specifier, e.g. `requests` in
+    `requests.sessions`. Empty when the specifier names nothing (as `from .
+    import x` yields). Shared by third-party listing and external-edge
+    mapping so both agree on what a dependency is called.
+    """
+    return (specifier or "").strip().split(".", 1)[0].strip()
+
+
 def third_party_dependencies(collection: dict) -> list[str]:
     """Distinct external import names, standard library excluded.
 
@@ -332,7 +399,7 @@ def third_party_dependencies(collection: dict) -> list[str]:
         if not specifier:
             continue
 
-        head = specifier.split(".", 1)[0].strip()
+        head = specifier_head(specifier)
         bare = head.removeprefix("node:")
         if head and head not in STDLIB and bare not in NODE_STDLIB:
             names.add(head)
@@ -353,14 +420,21 @@ def cycles(collection: dict) -> list[list[str]]:
 
 
 def hub_modules(edges: list[dict], limit: int) -> list[dict]:
-    """Files with the most internal edges: where the project holds together."""
+    """Files with the most internal edges: where the project holds together.
+
+    Edges touching generated or plumbing paths are dropped first, so a hub
+    is a hub of the project's own design rather than of its tooling.
+    """
     degrees: dict[str, dict[str, int]] = {}
 
     for edge in edges:
+        source = edge.get("source")
         target = edge.get("target")
-        if not target:
+        if not source or not target:
             continue
-        _bump(degrees, edge["source"], "out")
+        if not is_rankable(source) or not is_rankable(target):
+            continue
+        _bump(degrees, source, "out")
         _bump(degrees, target, "in")
 
     ranked = sorted(

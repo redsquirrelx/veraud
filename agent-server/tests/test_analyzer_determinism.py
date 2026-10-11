@@ -46,15 +46,15 @@ class TestKeyComponents:
         edges = [
             _edge("app/main.py", "app/core.py"),
             _edge("app/cli.py", "app/core.py"),
-            _edge("app/core.py", "app/util.py"),
+            _edge("app/core.py", "app/db.py"),
         ]
-        files = [_file("app/main.py"), _file("app/cli.py"), _file("app/core.py"), _file("app/util.py")]
+        files = [_file("app/main.py"), _file("app/cli.py"), _file("app/core.py"), _file("app/db.py")]
 
         assert facts.derived_key_components(edges, files) == [
             "app/core.py",
             "app/cli.py",
+            "app/db.py",
             "app/main.py",
-            "app/util.py",
         ]
 
     def test_ties_break_alphabetically(self):
@@ -79,6 +79,70 @@ class TestKeyComponents:
         files = [_file("b.py", lines=50), _file("a.py", lines=50)]
 
         assert facts.derived_key_components([], files) == ["a.py", "b.py"]
+
+
+class TestRankable:
+    def test_generated_paths_are_out(self):
+        assert facts.is_rankable("src/generated/prisma/client.py") is False
+        assert facts.is_rankable("src/__generated__/schema.ts") is False
+        assert facts.is_rankable("src/a.generated.ts") is False
+        assert facts.is_rankable("src/messages_pb2.py") is False
+        assert facts.is_rankable("src/types.d.ts") is False
+        assert facts.is_rankable("src/app.min.js") is False
+        assert facts.is_rankable("src/app/core.py") is True
+
+    def test_plumbing_stems_are_out(self):
+        for name in (
+            "logs.py", "app/logger.ts", "config.py", "src/icons.tsx",
+            "app/utils.py", "date-helpers.ts", "app_logger.py", "constants.ts",
+        ):
+            assert facts.is_rankable(name) is False, name
+        for name in (
+            "app/core.py", "my_configurator.py", "reconfigure.py",
+            "catalog.py", "iconography.md",
+        ):
+            assert facts.is_rankable(name) is True, name
+
+    def test_generated_hubs_do_not_capture_the_ranking(self):
+        edges = [
+            _edge("src/generated/a.py", "src/generated/b.py"),
+            _edge("src/generated/b.py", "src/generated/a.py"),
+            _edge("app/main.py", "app/core.py"),
+        ]
+        files = [
+            _file("src/generated/a.py"), _file("src/generated/b.py"),
+            _file("app/main.py"), _file("app/core.py"),
+        ]
+
+        assert facts.derived_key_components(edges, files) == [
+            "app/core.py",
+            "app/main.py",
+        ]
+
+    def test_plumbing_hubs_do_not_capture_the_ranking(self):
+        edges = [_edge(f"m{i}.py", "logs.py") for i in range(10)]
+        edges.append(_edge("app/main.py", "app/core.py"))
+        files = [_file("logs.py"), _file("app/main.py"), _file("app/core.py")]
+
+        assert "logs.py" not in facts.derived_key_components(edges, files)
+
+    def test_fallback_skips_unrankable_files(self):
+        files = [
+            _file("src/generated/big.py", lines=5000),
+            _file("logs.py", lines=4000),
+            _file("app/core.py", lines=100),
+        ]
+
+        assert facts.derived_key_components([], files) == ["app/core.py"]
+
+
+class TestSpecifierHead:
+    def test_top_level_name(self):
+        assert facts.specifier_head("requests.sessions") == "requests"
+        assert facts.specifier_head("os") == "os"
+        assert facts.specifier_head("node:fs") == "node:fs"
+        assert facts.specifier_head("") == ""
+        assert facts.specifier_head("  ") == ""
 
 
 class TestDerivedEntrypoints:

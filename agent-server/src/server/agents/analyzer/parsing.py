@@ -7,6 +7,7 @@ outside the vocabulary still tells the reader the model was unsure.
 """
 
 import json
+import re
 
 from .schemas import ProjectDescription
 
@@ -84,6 +85,10 @@ def read_paths(parsed: dict, key: str, known: set[str]) -> list[str]:
 
     Models invent paths. An invented path would send the next node to read a
     file that is not there, so anything unrecognised is dropped here.
+
+    Bare paths only: this feeds read targets, where a `:lines` suffix would
+    point at nothing known. Evidence with line ranges goes through
+    read_evidence instead.
     """
     chosen: list[str] = []
 
@@ -93,6 +98,73 @@ def read_paths(parsed: dict, key: str, known: set[str]) -> list[str]:
             chosen.append(path)
 
     return chosen
+
+
+_RANGE_LIST_RE = re.compile(r"^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
+
+
+def split_evidence(entry: str) -> tuple[str, list[tuple[int, int]] | None] | None:
+    """Split `path` or `path:L1-L2,...` into its path and line ranges.
+
+    Returns None when malformed. A bare path yields no ranges, meaning the
+    whole file. Ranges are 1-based inclusive, so `a.py:12-34` proves lines 12
+    through 34 and `a.py:7` proves line 7 alone.
+    """
+    text = entry.strip()
+    if not text:
+        return None
+
+    path, sep, suffix = text.rpartition(":")
+
+    if not sep:
+        return (text, None)
+
+    if not path or not _RANGE_LIST_RE.fullmatch(suffix):
+        return None
+
+    ranges: list[tuple[int, int]] = []
+    for part in suffix.split(","):
+        if "-" in part:
+            start_s, _, end_s = part.partition("-")
+            start, end = int(start_s), int(end_s)
+        else:
+            start = end = int(part)
+        if start < 1 or end < start:
+            return None
+        ranges.append((start, end))
+
+    return (path, ranges)
+
+
+def read_evidence(parsed: dict, key: str, known: set[str], require_ranges: bool = False) -> list[str]:
+    """Evidence entries the model named, keeping the raw `path[:lines]` string.
+
+    Bare paths and ranged entries survive when the path exists in the
+    repository; anything else is dropped like an invented path. The raw string
+    is kept so the line ranges travel with the evidence instead of being
+    parsed away here.
+
+    With require_ranges, bare paths are dropped too: an entry that does not
+    say which lines prove it is not mentioned at all.
+    """
+    kept: list[str] = []
+
+    for value in _as_list(parsed.get(key)):
+        text = str(value).strip()
+        if not text or text in kept:
+            continue
+        if text in known:
+            if not require_ranges:
+                kept.append(text)
+            continue
+        split = split_evidence(text)
+        if split is None:
+            continue
+        path, _ranges = split
+        if path in known:
+            kept.append(text)
+
+    return kept
 
 
 def read_text(parsed: dict, key: str) -> str:
