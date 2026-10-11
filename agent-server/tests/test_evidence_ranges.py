@@ -5,11 +5,17 @@ ranged reading narrows to the cited lines, and malformed entries are dropped
 like invented paths.
 """
 
+import asyncio
+import json
 from pathlib import Path
 
 from server.agents.analyzer import parsing as analyzer_parsing
 from server.agents.analyzer.evidence import read_ranged_excerpts, render_excerpts
 from server.agents.architect.agent import _read_deviations, _read_quality_notes
+from server.agents.judge.agent import JudgeAgent
+from server.agents.judge.schemas import JudgeInput
+from server.agents.models.base import Model
+from server.config.schemas import AgentSettings, ModelCredentials, ModelSettings
 
 KNOWN = {"a.py", "b.py"}
 
@@ -100,3 +106,74 @@ class TestRangedDeviationsAndNotes:
             {"characteristic": "modularity", "observation": "One job.", "evidence": ["b.py:3"]},
         ]
 
+
+class ScriptedModel(Model):
+    def __init__(self, settings, credentials, answers):
+        super().__init__(settings, credentials)
+        self._answers = list(answers)
+        self.calls = []
+
+    async def generate(self, message):
+        self.calls.append(message)
+        return json.dumps(self._answers.pop(0))
+
+
+class TestRangedJudge:
+    def _agent(self, answers):
+        return JudgeAgent(
+            AgentSettings(agent_id="judge", timeout_seconds=120),
+            ScriptedModel(
+                ModelSettings(provider="test", name="test", temperature=0.0, max_tokens=10),
+                ModelCredentials(api_key="test"),
+                answers,
+            ),
+        )
+
+    def _description(self, notes):
+        return {
+            "style": "layered",
+            "components": [],
+            "quality_notes": notes,
+            "confidence": "low",
+        }
+
+    def test_grades_against_cited_lines_only(self, tmp_path):
+        tmp_path.joinpath("a.py").write_text("keep = 1\n" + "\n".join(f"filler {n}" for n in range(30)) + "\ndrop = 2\n")
+        agent = self._agent([{"verdict": "supported", "reason": "keep is there.", "evidence": ["a.py:1"]}])
+
+        report = asyncio.run(agent.run(JudgeInput(
+            root_path=str(tmp_path),
+            description=self._description([
+                {"characteristic": "modularity", "observation": "Keeps one.", "evidence": ["a.py:1"]},
+            ]),
+        )))
+
+        assert [(g.subject, g.verdict) for g in report.grades] == [
+            ("note[0]: modularity", "supported"),
+        ]
+        # The prompt carries the cited line, not the far end of the file.
+        assert "keep = 1" in agent.model.calls[0]
+        assert "drop = 2" not in agent.model.calls[0]
+
+    def test_range_outside_file_is_unverifiable_without_a_call(self, tmp_path):
+        tmp_path.joinpath("a.py").write_text("x = 1\n")
+        agent = self._agent([])
+
+        report = asyncio.run(agent.run(JudgeInput(
+            root_path=str(tmp_path),
+            description=self._description([
+                {"characteristic": "modularity", "observation": "Keeps one.", "evidence": ["a.py:99-120"]},
+            ]),
+        )))
+
+        assert [(g.subject, g.verdict) for g in report.grades] == [
+            ("note[0]: modularity", "unverifiable"),
+        ]
+        assert agent.model.calls == []
+
+    def test_rendered_header_names_the_range(self, tmp_path):
+        tmp_path.joinpath("a.py").write_text("x = 1\ny = 2\n")
+
+        excerpts = read_ranged_excerpts(tmp_path, ["a.py:1-2"])
+
+        assert render_excerpts(excerpts).startswith("--- a.py:1-2\n")

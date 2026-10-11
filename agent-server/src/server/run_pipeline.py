@@ -7,10 +7,11 @@ Any of these works, from anywhere:
     uv run pipeline ../appdata/workspace/123-owner-repo
 
 Runs the analyzer first and feeds its output straight into the architect, so
-one invocation shows the whole describe-then-frame flow. Needs a model
-credential: LLM_API_KEY from .env, or --api-key.
+one invocation shows the whole describe-then-frame flow. With --judge it also
+grades the description against its cited source, using the architect's own
+model. Needs a model credential: LLM_API_KEY from .env, or --api-key.
 
-Timeouts and model settings apply to both agents. Anything agent-specific
+Timeouts and model settings apply to every agent. Anything agent-specific
 still belongs to run_analyzer.py.
 """
 
@@ -34,6 +35,7 @@ from server.app.execution_service import (
     InvalidConfigError,
     build_default_registry,
 )
+from server.config.schemas import AgentSettings
 from server.pipelines.architecture_audit import ArchitectureAuditPipeline
 
 logger = logging.getLogger("run-pipeline")
@@ -63,14 +65,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rounds",
         type=int,
-        default=2,
-        help="How many times the analyzer may read more files (default: 2)",
+        default=3,
+        help="How many times each agent may read more files (default: 3)",
     )
     parser.add_argument(
         "--files-per-round",
         type=int,
         default=8,
-        help="Files the analyzer may pick per round (default: 8)",
+        help="Files each agent may pick per round (default: 8)",
     )
     parser.add_argument(
         "--provider",
@@ -102,6 +104,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=600,
         help="Seconds before giving up on the whole pipeline (default: 600)",
+    )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help=(
+            "Grade the description against its cited source after the audit, "
+            "with the architect's own model"
+        ),
+    )
+    parser.add_argument(
+        "--judge-timeout",
+        type=int,
+        default=300,
+        help="Seconds before giving up on the grading (default: 300)",
     )
     parser.add_argument(
         "--json",
@@ -136,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: invalid config\n{error}", file=sys.stderr)
         return 2
     except TimeoutError:
-        print("error: the pipeline timed out", file=sys.stderr)
+        print("error: timed out", file=sys.stderr)
         return 1
 
 
@@ -169,6 +185,19 @@ async def _audit(args) -> int:
     except FileNotFoundError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    except TimeoutError:
+        print("error: the pipeline timed out", file=sys.stderr)
+        return 1
+
+    if args.judge:
+        try:
+            result["grades"] = await asyncio.wait_for(
+                _grade(architect, args, result["description"]),
+                timeout=args.judge_timeout,
+            )
+        except TimeoutError:
+            print("error: the judge timed out", file=sys.stderr)
+            return 1
 
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -178,6 +207,27 @@ async def _audit(args) -> int:
     return 0
 
 
+async def _grade(architect, args, description: dict) -> dict:
+    """Grade the description with the architect's own model instance."""
+    from server.agents.architect.schemas import ArchitectureDescription
+    from server.agents.judge.agent import JudgeAgent
+    from server.agents.judge.schemas import JudgeInput
+
+    logger.info(
+        "judge borrows the architect model: provider=%r name=%r",
+        architect.model.settings.provider, architect.model.settings.name,
+    )
+    judge = JudgeAgent(
+        settings=AgentSettings(agent_id="judge", timeout_seconds=args.judge_timeout),
+        model=architect.model,
+    )
+    report = await judge.run(JudgeInput(
+        root_path=args.root,
+        description=ArchitectureDescription.model_validate(description),
+    ))
+    return report.model_dump()
+
+
 def _print_audit(result: dict) -> None:
     analysis = result.get("analysis", {})
 
@@ -185,6 +235,8 @@ def _print_audit(result: dict) -> None:
     print(f"  kind              : {analysis.get('kind', 'unknown')}")
     print(f"  primary_language  : {analysis.get('primary_language', 'unknown')}")
     print(f"  confidence        : {analysis.get('confidence', 'low')}")
+    print(f"  evidence          : {analysis.get('files_read', 0)} file(s) read "
+          f"in {analysis.get('read_rounds', 0)} round(s)")
     print()
     print("  summary:")
     for line in _wrap(str(analysis.get("summary", "")), 76):
@@ -201,6 +253,17 @@ def _print_audit(result: dict) -> None:
     print("architecture:")
     print(f"  style             : {description.get('style', 'unknown')}")
     print(f"  intended          : {description.get('intended_style', 'unknown')}")
+    print(f"  confidence        : {description.get('confidence', 'low')}")
+    print()
+    print("  why style:")
+    for line in _wrap(str(description.get('style_explanation', '') or "(not explained)"), 76):
+        print(f"    {line}")
+    print("  why intended:")
+    for line in _wrap(str(description.get('intended_explanation', '') or "(not explained)"), 76):
+        print(f"    {line}")
+    print("  why confidence:")
+    for line in _wrap(str(description.get('confidence_explanation', '') or "(not explained)"), 76):
+        print(f"    {line}")
     print()
 
     deviations = description.get("deviations") or []
@@ -220,6 +283,27 @@ def _print_audit(result: dict) -> None:
         if isinstance(item, dict):
             responsibility = item.get("responsibility") or "(not described)"
             print(f"    {item.get('path')}: {responsibility}")
+        else:
+            print(f"    {item}")
+    print()
+
+    containers = description.get("containers") or []
+    print(f"  containers ({len(containers)}):")
+    for item in containers or ["(none reported)"]:
+        if isinstance(item, dict):
+            responsibility = item.get("responsibility") or "(not described)"
+            print(f"    {item.get('name')}: {responsibility}")
+            for path in item.get("files", []) or []:
+                print(f"      member: {path}")
+        else:
+            print(f"    {item}")
+    print()
+
+    externals = description.get("externals") or []
+    print(f"  externals ({len(externals)}):")
+    for item in externals or ["(none reported)"]:
+        if isinstance(item, dict):
+            print(f"    {item.get('name')}: {', '.join(item.get('members', []) or [])}")
         else:
             print(f"    {item}")
     print()
@@ -252,6 +336,40 @@ def _print_audit(result: dict) -> None:
     print(f"  risks ({len(risks)}):")
     for risk in risks or ["(none reported)"]:
         print(f"    - {risk}")
+    print()
+
+    for key in ("diagram_containers", "diagram_components"):
+        block = description.get(key) or ""
+        print(f"  {key}:")
+        for line in block.strip().splitlines() or ["(empty)"]:
+            print(f"    {line}")
+        print()
+
+    grades = result.get("grades")
+    if grades is not None:
+        _print_grades(grades)
+
+
+def _print_grades(report: dict) -> None:
+    grades = report.get("grades") or []
+    print("grades:")
+    print(f"  supported         : {report.get('supported', 0)}")
+    print(f"  contradicted      : {report.get('contradicted', 0)}")
+    print(f"  unverifiable      : {report.get('unverifiable', 0)}")
+    print(f"  contradiction_rate: {report.get('contradiction_rate', 0.0):.2f}")
+    print()
+
+    marks = {"supported": "+", "contradicted": "!", "unverifiable": "?"}
+    for grade in grades:
+        if isinstance(grade, dict):
+            mark = marks.get(grade.get("verdict", ""), "?")
+            print(f"  [{mark}] [{grade.get('kind', '?')}] {grade.get('subject', '?')}: {grade.get('verdict', '?')}")
+            for path in grade.get("evidence", []) or []:
+                print(f"      evidence: {path}")
+            if grade.get("reason"):
+                print(f"      {grade.get('reason')}")
+        else:
+            print(f"    {grade}")
 
 
 def _wrap(text: str, width: int) -> list[str]:

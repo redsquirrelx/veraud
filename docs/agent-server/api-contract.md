@@ -86,3 +86,29 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 | `404` | Unknown `agent_type` |
 | `422` | Bad config or payload (unsupported provider, missing `model.name`, `timeout_seconds <= 0`) |
 | `504` | Execution timed out |
+
+## Judge agent (CLI-only)
+
+Grades a past architecture description against its cited source: whether
+each responsibility and quality note is `supported`, `contradicted`, or
+`unverifiable`. Blind by design — it never sees the run's confidence.
+
+Source of truth: `agent-server/src/server/agents/judge/`,
+`agent-server/src/server/run_judge.py`.
+
+```bash
+uv run --no-sync python -m server.run_judge <root> <description.json> --json
+```
+
+Same model by construction: the runner resolves the architect's model and
+hands that instance to the judge. There is no `judge` entry in
+`dev-agents.yaml` to drift out of sync. Evidence cites line intervals as
+`path:L1-L2` (bare path means the whole file); the judge re-reads exactly
+those lines plus context, and ranges pointing outside their file land in
+`unverifiable`. Every verdict names its evidence: a supported or
+contradicted verdict with no checkable evidence is demoted to
+`unverifiable`. Empty claims and unreadable evidence
+are `unverifiable` without spending a model call; unparseable grader answers
+fail toward `unverifiable`, never toward trust. The headline metric is the
+contradiction rate: shared-model agreement may be self-agreement, but a
+contradiction is evidence.

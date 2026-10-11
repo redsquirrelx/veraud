@@ -7,6 +7,7 @@ from ..agents.analyzer.agent import ProjectAnalyzerAgent
 from ..agents.architect.agent import ArchitectureAgent
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
+from ..agents.judge.agent import JudgeAgent
 from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
 from ..agents.models.openrouter import OpenRouterModel
@@ -70,6 +71,7 @@ def build_default_registry() -> AgentRegistry:
     registry.register(DummyAgent.agent_type, DummyAgent)
     registry.register(ProjectAnalyzerAgent.agent_type, ProjectAnalyzerAgent)
     registry.register(ArchitectureAgent.agent_type, ArchitectureAgent)
+    registry.register(JudgeAgent.agent_type, JudgeAgent)
 
     return registry
 
