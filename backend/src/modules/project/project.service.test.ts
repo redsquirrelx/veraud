@@ -78,6 +78,9 @@ function makeFakes(options: {
     async findOpenExecution() {
       return null
     },
+    async findAnyOpenExecution() {
+      return null
+    },
   }
 
   const tasks: TaskStore & { created: Array<NewTask> } = {
@@ -117,7 +120,7 @@ function makeFakes(options: {
   }
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
-    open: async () => { throw new Error("not used here") },
+    openPipeline: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
@@ -201,6 +204,7 @@ describe("ProjectService.registerProject", () => {
         createEvaluation: async () => { throw new Error("must not create evaluations") },
         listVersions: async () => { throw new Error("must not list versions") },
         findOpenExecution: async () => { throw new Error("must not search executions") },
+        findAnyOpenExecution: async () => { throw new Error("must not search executions") },
       },
       new TaskService(
         {
@@ -214,7 +218,7 @@ describe("ProjectService.registerProject", () => {
       ),
       failing,
       join(tmpdir(), "veraud-unused"),
-      { open: async () => { throw new Error("must not open executions") } }
+      { openPipeline: async () => { throw new Error("must not open executions") } }
     )
 
     await assert.rejects(

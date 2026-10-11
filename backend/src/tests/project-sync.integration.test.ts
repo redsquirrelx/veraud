@@ -25,6 +25,7 @@ describe("project sync API", () => {
   let baseUrl = ""
   let workspaceDir = ""
   let close = async () => {}
+  let sharedDb: Awaited<ReturnType<typeof buildApp>>["db"] | null = null
 
   before(async () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "veraud-ws-"))
@@ -33,6 +34,7 @@ describe("project sync API", () => {
       workspaceDir,
       silent: true,
     })
+    sharedDb = db
 
     const project = await db.project.create({
       data: {
@@ -93,6 +95,41 @@ describe("project sync API", () => {
     const response = await fetch(`${baseUrl}/api/projects/abc/sync`, { method: "POST" })
 
     assert.equal(response.status, 400)
+  })
+
+  it("422s when an analysis is running", async () => {
+    if (sharedDb === null) {
+      throw new Error("test database not ready")
+    }
+    const db = sharedDb
+    const provider = await db.aiProvider.create({ data: { name: "sync-guard-provider" } })
+    const model = await db.aiModel.create({ data: { name: "sync-guard-model", aiProviderId: provider.id } })
+    const credential = await db.aiCredential.create({
+      data: { name: "sync-guard-credential", apiKey: "test-key", aiProviderId: provider.id },
+    })
+    await db.agentSettings.create({
+      data: { agentType: "analyzer", aiModelId: model.id, aiCredentialId: credential.id },
+    })
+    const version = await db.projectVersion.create({
+      data: { projectId: 1, branch: "main", commitHash: "a".repeat(40), analysisStatus: "Pending" },
+    })
+    const evaluation = await db.evaluation.create({
+      data: { projectVersionId: version.id, type: "Analysis" },
+    })
+    const execution = await db.agentExecution.create({
+      data: { agentType: "analyzer", evaluationId: evaluation.id, status: "Waiting" },
+    })
+
+    const response = await fetch(`${baseUrl}/api/projects/1/sync`, { method: "POST" })
+
+    assert.equal(response.status, 422)
+    assert.match((await response.json() as { message: string }).message, /being analyzed/)
+
+    // Later tests sync the same checkout, so the guard row is closed again.
+    await db.agentExecution.update({
+      where: { id: execution.id },
+      data: { status: "Completed", finishedAt: new Date() },
+    })
   })
 
   it("fetches a detached checkout keeping HEAD in place", async () => {

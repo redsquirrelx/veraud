@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import { DuplicateProjectError, AnalysisAlreadyRunningError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
+import { DuplicateProjectError, AnalysisAlreadyRunningError, AnalysisInProgressError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, SyncInProgressError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
   type: "object",
@@ -55,7 +55,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof ProjectNotFoundError) {
         return reply.code(404).send({ message: error.message })
       }
-      if (error instanceof SyncFailedError) {
+      if (error instanceof SyncFailedError || error instanceof AnalysisInProgressError) {
         return reply.code(422).send({ message: error.message })
       }
       throw error
@@ -264,7 +264,10 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       return reply.code(201).send({
         versionId: result.versionId,
         evaluationId: result.evaluationId,
-        execution: toExecution(result.execution),
+        executions: {
+          analyzer: toExecution(result.executions.analyzer),
+          architect: toExecution(result.executions.architect),
+        },
       })
     } catch (error) {
       if (error instanceof ProjectNotFoundError) {
@@ -273,7 +276,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof InvalidGitRequestError) {
         return reply.code(400).send({ message: error.message })
       }
-      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError) {
+      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
         return reply.code(422).send({ message: error.message })
       }
       throw error
@@ -294,7 +297,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         analysisStatus: version.analysisStatus,
         analyzedAt: version.analyzedAt,
         evaluationId: version.evaluationId,
-        execution: version.execution === null ? null : toExecution(version.execution),
+        executions: version.executions.map((execution) => toExecution(execution)),
         derivedStatus: version.derivedStatus,
       })))
     } catch (error) {

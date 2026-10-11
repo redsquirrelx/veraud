@@ -39,8 +39,10 @@ backend                        agent-server                  row
 agent defines its own shape (e.g. the analyzer returns a project description),
 so the backend stores and returns it without inspecting its fields.
 
-The backend writes `Failed` in exactly one case: the agent-server could not be
-reached, or the run never started. Everything else is reported by the agent.
+The backend writes `Failed` in exactly two cases: the agent-server could not be
+reached, or the run never started — plus the pipeline's `Skipped` close of the
+architect row when the analyzer failed first. Everything else is reported by
+the agent.
 
 ## Starting the agent
 
@@ -50,12 +52,43 @@ the agent is still working: an agent takes minutes.
 
 The input is built by the backend, not by the caller —
 `evaluationId → evaluation → projectVersion → project → the checkout in the
-workspace` — sent as `{ root_path }`. That is the analyzer's shape. A second agent
-needing a different one branches in
-`infrastructure/agent-target/agent-target.resolver.ts`, not at the call site.
+workspace` — sent as `{ root_path }`.
 
 `execution_id` travels in the request body: it is what the agent-server reports
 progress against. Without it the agent still runs, it just reports nowhere.
+
+## Starting a pipeline
+
+`openPipeline(evaluationId)` creates two rows, `analyzer` + `architect`, on the
+same evaluation, broadcasts one `opened` per row, and dispatches the
+architecture-audit pipeline in the background:
+
+```
+backend                        agent-server                  rows
+   |
+   |-- POST /api/pipelines/architecture-audit/run -------->  |
+   |    { input: { root_path },                                |-- POST analyzer/running      -> "Running"
+   |      execution_ids: { analyzer, architect } }             |-- analyze -> POST analyzer/completion
+   |                                                          |-- POST architect/running     -> "Running"
+   |                                                          |-- describe -> POST architect/completion
+   |
+   |<- websocket agent-execution.updated (each transition, both rows)
+```
+
+The pipeline derives the architect input server-side from the analyzer output,
+so the backend never parses one agent's result to feed another. There is no
+chaining in `complete()`: both rows exist before the pipeline starts.
+
+- Analyzer fails → its row closes as `Failed`, the architect row closes as
+  `Failed` with a `Skipped:` error. No row hangs in `Waiting`.
+- Architect fails → the analyzer row stays `Completed`.
+- The pipeline request itself fails to start (unreachable agent-server, missing
+  checkout, no pipeline support in the invoker) → both rows close as `Failed`
+  with the same error.
+- Pipeline timeout (600s) → every row still open closes as `Failed`.
+
+The invoker ceiling for pipelines is 660s (`PIPELINE_INVOKE_TIMEOUT_MS`):
+the 600s pipeline deadline plus headroom for the callbacks to land.
 
 ## `POST /api/agent-executions`
 
@@ -137,6 +170,10 @@ HTTP response. The UI keys off `execution.id`.
   result. Local use only until a shared secret or signature is added.
 - `agent_settings` must have a row for the `agentType`; both it and
   `evaluationId` are foreign keys, and a missing one is reported as `422`.
+  A pipeline needs rows for **both** `analyzer` and `architect`: a missing
+  `architect` row fails `POST /api/projects/:id/analyze` with `422`.
+  `agent_settings` rows are inserted manually (tests seed them); there is no
+  admin endpoint for them yet.
 - The agent-server derives where to report from `PORT_BACKEND`. If it is not
   configured the run still works, it just reports nowhere and the row stays
   `Waiting`.

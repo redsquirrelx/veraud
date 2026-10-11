@@ -4,6 +4,7 @@ import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infr
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
+import type { PipelineExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 
 export class InvalidUrlError extends Error {}
@@ -15,6 +16,8 @@ export class WorkspaceMissingError extends Error {}
 export class GitOperationError extends Error {}
 export class ProjectFileError extends Error {}
 export class AnalysisAlreadyRunningError extends Error {}
+export class AnalysisInProgressError extends Error {}
+export class SyncInProgressError extends Error {}
 
 export interface GitCommit {
   commitHash: string
@@ -27,18 +30,17 @@ const DEFAULT_LOG_LIMIT = 30
 const MAX_LOG_LIMIT = 100
 const MAX_FILE_BYTES = 512 * 1024
 
-export const ANALYZER_AGENT_TYPE = "analyzer"
 export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
-/** Opens an agent run for an evaluation. Satisfied by AgentExecutionService. */
+/** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
-  open(agentType: string, evaluationId: number): Promise<StoredAgentExecution>
+  openPipeline(evaluationId: number): Promise<PipelineExecutions>
 }
 
 export interface AnalysisRequest {
   versionId: number
   evaluationId: number
-  execution: StoredAgentExecution
+  executions: PipelineExecutions
 }
 
 export interface VersionAnalysis {
@@ -48,7 +50,7 @@ export interface VersionAnalysis {
   analysisStatus: string
   analyzedAt: Date | null
   evaluationId: number | null
-  execution: StoredAgentExecution | null
+  executions: StoredAgentExecution[]
   derivedStatus: string
 }
 
@@ -114,6 +116,15 @@ export class ProjectService {
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    // A sync rewrites the checkout a running pipeline is reading.
+    const open = await this.projects.findAnyOpenExecution(project.id)
+
+    if (open !== null) {
+      throw new AnalysisInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already being analyzed (execution ${open.id})`
+      )
     }
 
     const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
@@ -356,10 +367,10 @@ export class ProjectService {
   }
 
   /**
-   * Runs the analyzer on the selected version: the version row is saved (or
-   * reused), it becomes the selected one, a fresh evaluation is created, and
-   * the agent is started in the background. The execution comes back Waiting;
-   * the agent reports its own progress afterwards.
+   * Runs the architecture-audit pipeline on the selected version: the version
+   * row is saved (or reused), it becomes the selected one, a fresh evaluation
+   * is created, and both agents are started in the background. The executions
+   * come back Waiting; the pipeline reports each stage afterwards.
    */
   async analyzeProject(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
     const cleanBranch = assertValidBranch(branch)
@@ -368,6 +379,14 @@ export class ProjectService {
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    // An analysis reads the checkout a running sync is rewriting. The runner
+    // marks the project SYNCING while the sync task is in flight.
+    if (project.status === "SYNCING") {
+      throw new SyncInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
+      )
     }
 
     this.requireWorkspace(project)
@@ -383,9 +402,9 @@ export class ProjectService {
     const version = await this.projects.upsertVersion(project.id, { branch: cleanBranch, commitHash: cleanHash })
     await this.projects.setSelectedVersion(project.id, version.id)
     const evaluation = await this.projects.createEvaluation(version.id, ANALYSIS_EVALUATION_TYPE)
-    const execution = await this.analyses.open(ANALYZER_AGENT_TYPE, evaluation.id)
+    const executions = await this.analyses.openPipeline(evaluation.id)
 
-    return { versionId: version.id, evaluationId: evaluation.id, execution }
+    return { versionId: version.id, evaluationId: evaluation.id, executions }
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {
@@ -404,8 +423,8 @@ export class ProjectService {
       analysisStatus: version.analysisStatus,
       analyzedAt: version.analyzedAt,
       evaluationId: version.evaluation?.id ?? null,
-      execution: version.execution === null ? null : { ...version.execution, status: version.execution.status as StoredAgentExecution["status"] },
-      derivedStatus: version.execution?.status ?? (version.evaluation === null ? "NeverAnalyzed" : "Pending"),
+      executions: version.executions.map((execution) => ({ ...execution, status: execution.status as StoredAgentExecution["status"] })),
+      derivedStatus: deriveStatus(version.evaluation, version.executions),
     }))
   }
 
@@ -420,8 +439,31 @@ export class ProjectService {
   }
 }
 
-function isDetachedHead(targetDir: string): boolean {
-  try {
+/** One status for a version with two pipeline rows: an open run wins, then any
+ *  failure, then completion only when every row completed. */
+function deriveStatus(
+  evaluation: { id: number } | null,
+  executions: Array<{ status: string }>,
+): string {
+  const open = executions.find((execution) => execution.status === "Running")
+    ?? executions.find((execution) => execution.status === "Waiting")
+
+  if (open !== undefined) {
+    return open.status
+  }
+
+  if (executions.some((execution) => execution.status === "Failed")) {
+    return "Failed"
+  }
+
+  if (executions.length > 0 && executions.every((execution) => execution.status === "Completed")) {
+    return "Completed"
+  }
+
+  return evaluation === null ? "NeverAnalyzed" : "Pending"
+}
+
+function isDetachedHead(targetDir: string): boolean {  try {
     const head = readFileSync(join(targetDir, ".git", "HEAD"), "utf8").trim()
     return head.startsWith("ref: ") === false
   } catch {

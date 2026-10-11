@@ -104,6 +104,8 @@ child of the surrounding span.
 | `config/tracing.py` | the module itself |
 | `app/execution_service.py` | `setup()` at construction; `traced_agent_run` around the timed run |
 | `agents/analyzer/agent.py` | `traced_generate` instead of `model.generate` |
+| `agents/architect/agent.py` | same |
+| `agents/judge/agent.py` | same |
 | `agents/dummy/agent.py` | same |
 
 `traced_agent_run` wraps the coroutine rather than the graph on purpose: that is

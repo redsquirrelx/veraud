@@ -67,7 +67,7 @@ export interface StoredVersionAnalysis {
   analysisStatus: string
   analyzedAt: Date | null
   evaluation: StoredEvaluation | null
-  execution: StoredAgentExecutionSummary | null
+  executions: StoredAgentExecutionSummary[]
 }
 
 export interface ProjectStore {
@@ -83,6 +83,7 @@ export interface ProjectStore {
   createEvaluation(projectVersionId: number, type: string): Promise<StoredEvaluation>
   listVersions(projectId: number): Promise<StoredVersionAnalysis[]>
   findOpenExecution(projectId: number, commitHash: string): Promise<{ id: number } | null>
+  findAnyOpenExecution(projectId: number): Promise<{ id: number; agentType: string } | null>
 }
 
 export class ProjectRepository implements ProjectStore {
@@ -180,7 +181,7 @@ export class ProjectRepository implements ProjectStore {
     return { id: evaluation.id, projectVersionId: evaluation.projectVersionId, type: evaluation.type }
   }
 
-  /** Versions with their latest evaluation and run, newest first. */
+  /** Versions with their latest evaluation and runs, newest first. */
   async listVersions(projectId: number): Promise<StoredVersionAnalysis[]> {
     const versions = await this.db.projectVersion.findMany({
       where: { projectId },
@@ -189,14 +190,14 @@ export class ProjectRepository implements ProjectStore {
         evaluations: {
           orderBy: { id: "desc" },
           take: 1,
-          include: { agentExecutions: { orderBy: { id: "desc" }, take: 1 } },
+          include: { agentExecutions: { orderBy: { id: "asc" }, take: 2 } },
         },
       },
     })
 
     return versions.map((version) => {
       const evaluation = version.evaluations[0] ?? null
-      const run = evaluation?.agentExecutions[0] ?? null
+      const runs = evaluation?.agentExecutions ?? []
       return {
         id: version.id,
         projectId: version.projectId,
@@ -207,21 +208,19 @@ export class ProjectRepository implements ProjectStore {
         evaluation: evaluation === null
           ? null
           : { id: evaluation.id, projectVersionId: evaluation.projectVersionId, type: evaluation.type },
-        execution: run === null
-          ? null
-          : {
-              id: run.id,
-              evaluationId: run.evaluationId,
-              agentType: run.agentType,
-              status: run.status,
-              result: run.result,
-              error: run.error,
-              inputTokens: run.inputTokens,
-              outputTokens: run.outputTokens,
-              createdAt: run.createdAt,
-              startedAt: run.startedAt,
-              finishedAt: run.finishedAt,
-            },
+        executions: runs.map((run) => ({
+          id: run.id,
+          evaluationId: run.evaluationId,
+          agentType: run.agentType,
+          status: run.status,
+          result: run.result,
+          error: run.error,
+          inputTokens: run.inputTokens,
+          outputTokens: run.outputTokens,
+          createdAt: run.createdAt,
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt,
+        })),
       }
     })
   }
@@ -234,6 +233,18 @@ export class ProjectRepository implements ProjectStore {
         evaluation: { projectVersion: { projectId, commitHash } },
       },
       select: { id: true },
+    })
+  }
+
+  /** An open run anywhere in the project, if any: a sync must not move the
+   *  checkout out from under a running pipeline. */
+  async findAnyOpenExecution(projectId: number): Promise<{ id: number; agentType: string } | null> {
+    return this.db.agentExecution.findFirst({
+      where: {
+        status: { in: ["Waiting", "Running"] },
+        evaluation: { projectVersion: { projectId } },
+      },
+      select: { id: true, agentType: true },
     })
   }
 

@@ -1,6 +1,6 @@
 import { logger } from "../../config/logger.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
-import type { AgentInput, AgentInvoker } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import type { AgentInput, AgentInvoker, PipelineExecutionIds } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import {
@@ -17,6 +17,15 @@ export class AgentExecutionNotFoundError extends Error {
     super(`Agent execution ${id} not found`)
     this.name = "AgentExecutionNotFoundError"
   }
+}
+
+export const ANALYZER_AGENT_TYPE = "analyzer"
+export const ARCHITECT_AGENT_TYPE = "architect"
+
+/** The two rows one architecture-audit pipeline drives, analyzer first. */
+export interface PipelineExecutions {
+  analyzer: StoredAgentExecution
+  architect: StoredAgentExecution
 }
 
 export class InvalidCompletionError extends Error {
@@ -71,6 +80,39 @@ export class AgentExecutionService {
   }
 
   /**
+   * Registers an architecture-audit pipeline on behalf of an evaluation and
+   * starts it.
+   *
+   * Two rows are created Waiting (analyzer + architect) and returned straight
+   * away, then the pipeline runs in the background like a single-agent dispatch:
+   * the agent-server reports each stage back over HTTP against its own row, so
+   * the caller never waits. Only a failure to start the pipeline at all is
+   * written here, to both rows, since nothing else would ever report it.
+   */
+  async openPipeline(evaluationId: number): Promise<PipelineExecutions> {
+    const analyzer = await this.executions.create({
+      agentType: ANALYZER_AGENT_TYPE,
+      evaluationId,
+    } satisfies NewAgentExecution)
+
+    const architect = await this.executions.create({
+      agentType: ARCHITECT_AGENT_TYPE,
+      evaluationId,
+    } satisfies NewAgentExecution)
+
+    this.log.info(
+      `Opened pipeline executions ${analyzer.id} (analyzer) + ${architect.id} (architect)`,
+    )
+
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(analyzer) })
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(architect) })
+
+    void this.dispatchPipeline(analyzer, architect)
+
+    return { analyzer, architect }
+  }
+
+  /**
    * Registers a direct invocation with an explicit agent input.
    *
    * Unlike open(), no evaluation or project version is involved: the row is
@@ -122,6 +164,31 @@ export class AgentExecutionService {
       await this.agents.run(execution.agentType, input, execution.id)
     } catch (error) {
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /** Starts the pipeline and then gets out of the way. Never throws: a failure
+   *  here fails both rows, because neither stage got far enough to report for
+   *  itself. Anything after the hand-off is reported stage by stage by the
+   *  pipeline, including the architect-skipped case. */
+  private async dispatchPipeline(analyzer: StoredAgentExecution, architect: StoredAgentExecution): Promise<void> {
+    try {
+      if (analyzer.evaluationId === null) {
+        throw new Error(`Execution ${analyzer.id} has no evaluation to resolve`)
+      }
+
+      if (this.agents.runPipeline === undefined) {
+        throw new Error("The agent invoker does not support pipelines")
+      }
+
+      const input = await this.targets.resolve(analyzer.evaluationId)
+      const executionIds: PipelineExecutionIds = { analyzer: analyzer.id, architect: architect.id }
+
+      await this.agents.runPipeline({ root_path: String(input.root_path) }, executionIds)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await this.fail(analyzer.id, message)
+      await this.fail(architect.id, message)
     }
   }
 

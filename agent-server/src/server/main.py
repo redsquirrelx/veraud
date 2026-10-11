@@ -1,6 +1,7 @@
 from fastapi import APIRouter, FastAPI
 
 from .api.executions import router as executions_router
+from .api.pipelines import router as pipelines_router
 
 router = APIRouter(prefix="/api")
 
@@ -14,3 +15,4 @@ def get_status():
 app = FastAPI()
 app.include_router(router)
 app.include_router(executions_router)
+app.include_router(pipelines_router)
