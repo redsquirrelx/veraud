@@ -34,6 +34,7 @@ export type {
   DirectoryTreeRow,
 } from "./directoryTree.ts"
 export { ItemSearcher } from "./ItemSearcher.tsx"
+export { MermaidDiagram } from "./MermaidDiagram.tsx"
 export { Pagination } from "./Pagination.tsx"
 export { Panel } from "./Panel.tsx"
 export { RefreshButton } from "./RefreshButton.tsx"

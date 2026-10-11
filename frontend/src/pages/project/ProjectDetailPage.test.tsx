@@ -1,10 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
+
+vi.mock("../../shared/ui-kit/MermaidDiagram.tsx", () => ({
+  MermaidDiagram: ({ chart, label }: { chart: string; label: string }) => (
+    <div role="img" aria-label={label}>{chart}</div>
+  ),
+}))
 
 const realFetch = globalThis.fetch
 const realWebSocket = globalThis.WebSocket
@@ -93,7 +99,8 @@ function renderDetail(entry: string) {
     <MemoryRouter initialEntries={[entry]}>
       <ToastProvider>
         <Routes>
-          <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="projects/:id" element={<Navigate to="overview" replace />} />
+          <Route path="projects/:id/:section" element={<ProjectDetailPage />} />
         </Routes>
         <Dock />
       </ToastProvider>
@@ -361,18 +368,33 @@ describe("ProjectDetailPage", () => {
         return new Response(JSON.stringify({
           versionId: 9,
           evaluationId: 7,
-          execution: {
-            id: 11,
-            evaluationId: 7,
-            agentType: "analyzer",
-            status: "Waiting",
-            result: null,
-            error: null,
-            inputTokens: null,
-            outputTokens: null,
-            createdAt: "2026-01-01",
-            startedAt: null,
-            finishedAt: null,
+          executions: {
+            analyzer: {
+              id: 11,
+              evaluationId: 7,
+              agentType: "analyzer",
+              status: "Waiting",
+              result: null,
+              error: null,
+              inputTokens: null,
+              outputTokens: null,
+              createdAt: "2026-01-01",
+              startedAt: null,
+              finishedAt: null,
+            },
+            architect: {
+              id: 12,
+              evaluationId: 7,
+              agentType: "architect",
+              status: "Waiting",
+              result: null,
+              error: null,
+              inputTokens: null,
+              outputTokens: null,
+              createdAt: "2026-01-01",
+              startedAt: null,
+              finishedAt: null,
+            },
           },
         }), { status: 201 })
       }
@@ -392,10 +414,36 @@ describe("ProjectDetailPage", () => {
     // The run shows in the header card spinner.
     expect(await screen.findByText("Analyzing the project")).toBeDefined()
 
+    // Sync stays disabled while the pipeline reads the checkout.
+    expect(screen.getByRole("button", { name: "Sync" }).hasAttribute("disabled")).toBe(true)
+
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("analyzer run #11")).toBeDefined()
+    // The architect finishes last, so it is the tracked run.
+    expect(await screen.findByText("architect run #12")).toBeDefined()
     expect(screen.getByText("Waiting")).toBeDefined()
+  })
+
+  it("disables Analyze while a sync is running", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/sync")) {
+        // The sync never settles: the button must stay off meanwhile.
+        return new Promise<Response>(() => {})
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync" }))
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true))
   })
 
   it("checks out an analyzed version and shows its stored run", async () => {
@@ -412,10 +460,11 @@ describe("ProjectDetailPage", () => {
       startedAt: "2026-01-01",
       finishedAt: "2026-01-01",
     }
+    const architectCompleted = { ...completed, id: 31, agentType: "architect", result: "{\"style\":\"layered\"}" }
     const waitingRun = { ...completed, id: 22, status: "Waiting", result: null, finishedAt: null }
     const versions = [
-      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
-      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, execution: waitingRun, derivedStatus: "Waiting" },
+      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed, architectCompleted], derivedStatus: "Completed" },
+      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, executions: [waitingRun], derivedStatus: "Waiting" },
     ]
     const seen: string[] = []
     stubFetch((url, init) => {
@@ -448,8 +497,10 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("analyzer run #21")).toBeDefined()
-    expect(screen.getByText("Completed")).toBeDefined()
+    // The architect carries the final verdict, so a version with both rows
+    // shows the architect run.
+    expect(await screen.findByText("architect run #31")).toBeDefined()
+    expect(screen.getAllByText("Completed").length).toBe(2)
 
     // A second pick moves the detached checkout without re-attaching first.
     await userEvent.click(screen.getByRole("button", { name: "Overview" }))
@@ -462,6 +513,7 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
+    // A version with only the analyzer row falls back to it.
     expect(await screen.findByText("analyzer run #22")).toBeDefined()
   })
 
@@ -485,7 +537,7 @@ describe("ProjectDetailPage", () => {
       }
       if (url.endsWith("/versions")) {
         return new Response(JSON.stringify([
-          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed], derivedStatus: "Completed" },
         ]), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
@@ -526,7 +578,7 @@ describe("ProjectDetailPage", () => {
       }
       if (url.endsWith("/versions")) {
         return new Response(JSON.stringify([
-          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed], derivedStatus: "Completed" },
         ]), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
@@ -541,11 +593,17 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
     await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
 
-    expect(await screen.findByText("Type")).toBeDefined()
-    expect(screen.getByText("library")).toBeDefined()
-    expect(screen.getByText("Confidence")).toBeDefined()
-    expect(screen.getByText("high")).toBeDefined()
-    expect(screen.getByText("A widget library for tests.")).toBeDefined()
+    expect(await screen.findByText("acme/Demo")).toBeDefined()
+    const headerRow = screen.getByText("acme/Demo").closest(".project-name-row")
+    if (headerRow === null) {
+      throw new Error("project header row not found")
+    }
+    expect(within(headerRow as HTMLElement).getByText("Type")).toBeDefined()
+    expect(within(headerRow as HTMLElement).getByText("library")).toBeDefined()
+    expect(within(headerRow as HTMLElement).getByText("Confidence")).toBeDefined()
+    expect(within(headerRow as HTMLElement).getByText("high")).toBeDefined()
+    // The summary shows in the header and again in the Overview result.
+    expect(screen.getAllByText("A widget library for tests.").length).toBe(2)
     expect(screen.queryByText("Analyzing")).toBeNull()
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
@@ -562,18 +620,33 @@ describe("ProjectDetailPage", () => {
         return new Response(JSON.stringify({
           versionId: 9,
           evaluationId: 7,
-          execution: {
-            id: 11,
-            evaluationId: 7,
-            agentType: "analyzer",
-            status: "Waiting",
-            result: null,
-            error: null,
-            inputTokens: null,
-            outputTokens: null,
-            createdAt: "2026-01-01",
-            startedAt: null,
-            finishedAt: null,
+          executions: {
+            analyzer: {
+              id: 11,
+              evaluationId: 7,
+              agentType: "analyzer",
+              status: "Waiting",
+              result: null,
+              error: null,
+              inputTokens: null,
+              outputTokens: null,
+              createdAt: "2026-01-01",
+              startedAt: null,
+              finishedAt: null,
+            },
+            architect: {
+              id: 12,
+              evaluationId: 7,
+              agentType: "architect",
+              status: "Waiting",
+              result: null,
+              error: null,
+              inputTokens: null,
+              outputTokens: null,
+              createdAt: "2026-01-01",
+              startedAt: null,
+              finishedAt: null,
+            },
           },
         }), { status: 201 })
       }
@@ -595,5 +668,171 @@ describe("ProjectDetailPage", () => {
     }
     expect(within(headerRow as HTMLElement).getByText("Analyzing")).toBeDefined()
     expect(screen.queryByText("library")).toBeNull()
+  })
+
+  it("shows the pipeline summary in overview with a button to the analysis", async () => {
+    const analyzer = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\",\"confidence\":\"high\",\"summary\":\"A widget library.\",\"primary_language\":\"python\",\"entrypoints\":[\"main.py\"],\"key_components\":[\"pkg/core.py\"],\"files_read\":4,\"read_rounds\":1,\"hypothesis_confirmed\":true}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const architect = {
+      id: 31,
+      evaluationId: 7,
+      agentType: "architect",
+      status: "Completed",
+      result: "{\"style\":\"layered\",\"intended_style\":\"hexagonal\",\"deviations\":[{\"observation\":\"Handlers skip the port.\",\"evidence\":[\"api/handler.py:10-20\"]}],\"components\":[{\"path\":\"pkg/core.py\",\"responsibility\":\"Holds the core logic.\"}],\"data_flow\":\"Execution starts at main and reaches core.\",\"third_party\":[\"requests\"],\"cycles\":[[\"a.py\",\"b.py\"]],\"quality_notes\":[{\"characteristic\":\"modularity\",\"observation\":\"One job per module.\",\"evidence\":[\"pkg/core.py:1-8\"]}],\"risks\":[\"Circular imports: a.py ↔ b.py\"],\"confidence\":\"medium\",\"diagram_containers\":\"flowchart LR\\n    c[[cli]]\",\"diagram_components\":\"flowchart LR\\n    a[[a]]\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [analyzer, architect], derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    // Header carries both verdicts (and the Overview summary repeats them).
+    expect(screen.getAllByText("library").length).toBe(2)
+    expect(screen.getAllByText("layered").length).toBe(2)
+
+    // The Overview summary shows key details without the full listing.
+    expect(await screen.findByText("Summary")).toBeDefined()
+    expect(screen.getAllByText("A widget library.").length).toBe(2)
+    expect(screen.getByText("Execution starts at main and reaches core.")).toBeDefined()
+    expect(screen.getByText("1 key component(s) · 1 component(s) · 1 risk(s) · 1 quality note(s)")).toBeDefined()
+    expect(screen.queryByText("pkg/core.py")).toBeNull()
+
+    // The button navigates to the analysis subpage without a reload.
+    await userEvent.click(screen.getByRole("button", { name: "View full analysis" }))
+
+    expect(await screen.findByRole("heading", { name: "Architecture" })).toBeDefined()
+    expect(screen.getByRole("heading", { name: "Analysis" })).toBeDefined()
+    expect(screen.queryByText("Summary")).toBeNull()
+    expect(screen.getByText("analyzer run #21")).toBeDefined()
+    expect(screen.getByText("architect run #31")).toBeDefined()
+    // Key component + architecture component; the note evidence carries lines.
+    expect(screen.getAllByText("pkg/core.py").length).toBe(2)
+    expect(screen.getByText("pkg/core.py:1-8")).toBeDefined()
+    expect(screen.getByText("Handlers skip the port.")).toBeDefined()
+    expect(screen.getByText("Circular imports: a.py ↔ b.py")).toBeDefined()
+  })
+
+  it("renders the full analysis at the analysis subpage", async () => {
+    const analyzer = {
+      id: 21,
+      evaluationId: 7,
+      agentType: "analyzer",
+      status: "Completed",
+      result: "{\"kind\":\"library\",\"confidence\":\"high\",\"summary\":\"A widget library.\",\"primary_language\":\"python\",\"entrypoints\":[\"main.py\"],\"key_components\":[\"pkg/core.py\"],\"files_read\":4,\"read_rounds\":1,\"hypothesis_confirmed\":true}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const architect = {
+      id: 31,
+      evaluationId: 7,
+      agentType: "architect",
+      status: "Completed",
+      result: "{\"style\":\"layered\",\"intended_style\":\"hexagonal\",\"deviations\":[{\"observation\":\"Handlers skip the port.\",\"evidence\":[\"api/handler.py:10-20\"]}],\"components\":[{\"path\":\"pkg/core.py\",\"responsibility\":\"Holds the core logic.\"}],\"data_flow\":\"Execution starts at main and reaches core.\",\"third_party\":[\"requests\"],\"cycles\":[[\"a.py\",\"b.py\"]],\"quality_notes\":[{\"characteristic\":\"modularity\",\"observation\":\"One job per module.\",\"evidence\":[\"pkg/core.py:1-8\"]}],\"risks\":[\"Circular imports: a.py ↔ b.py\"],\"confidence\":\"medium\",\"diagram_containers\":\"flowchart LR\\n    c[[cli]]\",\"diagram_components\":\"flowchart LR\\n    a[[a]]\"}",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [analyzer, architect], derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    // Both runs, each result in its own card.
+    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+    expect(screen.getByText("architect run #31")).toBeDefined()
+    const analysisCard = screen.getByRole("heading", { name: "Analysis" }).closest(".ui-card")
+    const architectureCard = screen.getByRole("heading", { name: "Architecture" }).closest(".ui-card")
+    expect(analysisCard).not.toBeNull()
+    expect(architectureCard).not.toBeNull()
+    expect(analysisCard).not.toBe(architectureCard)
+    // Analyzer sections (summary also shows in the header).
+    expect(screen.getAllByText("A widget library.").length).toBe(2)
+    expect(screen.getByText("main.py")).toBeDefined()
+    // Key component, architecture component and ranged quality-note evidence.
+    expect(screen.getAllByText("pkg/core.py").length).toBe(2)
+    expect(screen.getByText("pkg/core.py:1-8")).toBeDefined()
+    // Architecture sections.
+    expect(screen.getByText("hexagonal")).toBeDefined()
+    expect(screen.getByText("Handlers skip the port.")).toBeDefined()
+    expect(screen.getByText("Holds the core logic.", { exact: false })).toBeDefined()
+    expect(screen.getByText("Execution starts at main and reaches core.")).toBeDefined()
+    expect(screen.getByText("Third-party (1)")).toBeDefined()
+    expect(screen.getByText("requests")).toBeDefined()
+    expect(screen.getByText("a.py ↔ b.py")).toBeDefined()
+    expect(screen.getByText("[modularity] One job per module.", { exact: false })).toBeDefined()
+    expect(screen.getByText("Circular imports: a.py ↔ b.py")).toBeDefined()
+    // The summary card belongs to Overview, not to the analysis subpage.
+    expect(screen.queryByText("Summary")).toBeNull()
+    // Diagrams live in their own card on the analysis subpage.
+    expect(screen.getByRole("heading", { name: "Diagrams" })).toBeDefined()
+    expect(await screen.findByRole("img", { name: "Containers diagram" })).toBeDefined()
+    expect(screen.getByRole("img", { name: "Components diagram" })).toBeDefined()
+    const diagramsCard = screen.getByRole("heading", { name: "Diagrams" }).closest(".ui-card")
+    expect(diagramsCard).not.toBeNull()
+    expect(diagramsCard).not.toBe(architectureCard)
+  })
+
+  it("redirects unknown sections to overview", async () => {
+    stubProjects()
+    renderDetail("/projects/2/nope")
+
+    expect(await screen.findByText("acme/Demo")).toBeDefined()
+    expect(screen.queryByText("Select a file to preview")).toBeNull()
+    expect(screen.queryByText("No analysis yet — pick a version and press Analyze")).toBeNull()
   })
 })

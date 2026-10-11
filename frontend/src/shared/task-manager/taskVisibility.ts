@@ -22,6 +22,9 @@ export const TASK_KIND_OPTIONS: TaskKindOption[] = [
 const READ_KINDS = ["list-branches", "rev-parse", "log-commits"]
 const STORAGE_KEY = "tasks.visibility"
 
+/** Task kinds that rewrite the checkout under a running analysis. */
+const SYNC_KINDS = ["clone", "pull", "fetch"]
+
 export type TaskVisibility = Record<string, boolean>
 
 export function defaultTaskVisibility(): TaskVisibility {
@@ -53,6 +56,15 @@ export function isTaskVisible(task: Pick<ActiveTask, "kind" | "status">, visibil
     return true
   }
   return visibility[task.kind] ?? true
+}
+
+/** Whether the project has a sync task (clone/pull/fetch) in flight. An
+ *  analysis must not start while the checkout is being rewritten. */
+export function isSyncActive(tasks: Pick<ActiveTask, "kind" | "projectId">[], projectId: number | null): boolean {
+  if (projectId === null) {
+    return false
+  }
+  return tasks.some((task) => task.projectId === projectId && SYNC_KINDS.includes(task.kind))
 }
 
 const VISIBILITY_CHANGED = "tasks-visibility-changed"

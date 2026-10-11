@@ -1,0 +1,17 @@
+.ui-mermaid {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ui-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.ui-mermaid-fallback {
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: #334155;
+}

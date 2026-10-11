@@ -206,7 +206,7 @@ export interface AgentExecution {
 export interface AnalysisRequest {
   versionId: number
   evaluationId: number
-  execution: AgentExecution
+  executions: { analyzer: AgentExecution; architect: AgentExecution }
 }
 
 export async function requestAnalysis(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
@@ -243,7 +243,7 @@ export interface VersionAnalysisSummary {
   analysisStatus: string
   analyzedAt: string | null
   evaluationId: number | null
-  execution: AgentExecution | null
+  executions: AgentExecution[]
   derivedStatus: string
 }
 

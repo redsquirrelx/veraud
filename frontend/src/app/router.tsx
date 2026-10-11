@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom"
+import { Navigate, createBrowserRouter } from "react-router-dom"
 import { AppLayout } from "./layout.tsx"
 import { HomePage } from "../pages/home/HomePage.tsx"
 import { ProjectDetailPage } from "../pages/project/ProjectDetailPage.tsx"
@@ -16,7 +16,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: "projects/:id", element: <ProjectDetailPage /> },
+      { path: "projects/:id", element: <Navigate to="overview" replace /> },
+      { path: "projects/:id/:section", element: <ProjectDetailPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "test", element: <ComponentTestPage /> },
       { path: "test/selector", element: <TestSelectorPage /> },

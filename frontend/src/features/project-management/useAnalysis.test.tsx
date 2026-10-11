@@ -53,6 +53,12 @@ const waiting = {
   finishedAt: null,
 }
 
+const architectWaiting = { ...waiting, id: 12, agentType: "architect" }
+
+function analyzeResponse() {
+  return { versionId: 3, evaluationId: 7, executions: { analyzer: waiting, architect: architectWaiting } }
+}
+
 afterEach(() => {
   globalThis.fetch = realFetch
   globalThis.WebSocket = realWebSocket
@@ -68,7 +74,7 @@ beforeEach(() => {
 describe("useAnalysis", () => {
   it("starts tracking and completes when the socket reports back", async () => {
     globalThis.fetch = (async () => {
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waiting }), { status: 201 })
+      return new Response(JSON.stringify(analyzeResponse()), { status: 201 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
@@ -81,19 +87,20 @@ describe("useAnalysis", () => {
     })
 
     expect(result.current.phase).toBe("tracking")
+    expect(result.current.execution?.id).toBe(12)
     expect(result.current.execution?.status).toBe("Waiting")
 
     await act(async () => {
       FakeSocket.instances[0]?.push({
         type: "agent-execution.updated",
-        execution: { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" },
+        execution: { ...architectWaiting, status: "Completed", result: "{\"style\":\"layered\"}" },
       })
     })
 
     await waitFor(() => {
       expect(result.current.phase).toBe("done")
     })
-    expect(result.current.execution?.result).toBe("{\"kind\":\"library\"}")
+    expect(result.current.execution?.result).toBe("{\"style\":\"layered\"}")
     expect(result.current.analyzing).toBe(false)
   })
 
@@ -132,12 +139,12 @@ describe("useAnalysis", () => {
   })
 
   it("lands the result through polling when the socket stays silent", async () => {
-    const completed = { ...waiting, status: "Completed", result: "{\"kind\":\"library\"}" }
+    const completed = { ...architectWaiting, status: "Completed", result: "{\"style\":\"layered\"}" }
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes("/agent-executions/")) {
         return new Response(JSON.stringify(completed), { status: 200 })
       }
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waiting }), { status: 201 })
+      return new Response(JSON.stringify(analyzeResponse()), { status: 201 })
     }) as typeof fetch
 
     const { result } = renderHook(() => useAnalysis(2, { pollIntervalMs: 50 }), { wrapper })
@@ -151,7 +158,7 @@ describe("useAnalysis", () => {
     await waitFor(() => {
       expect(result.current.phase).toBe("done")
     })
-    expect(result.current.execution?.result).toBe("{\"kind\":\"library\"}")
+    expect(result.current.execution?.result).toBe("{\"style\":\"layered\"}")
   })
 
   it("reopens the last run after a reload", async () => {
@@ -190,7 +197,7 @@ describe("useAnalysis", () => {
 
   it("tracks launched runs but not shown ones", async () => {
     globalThis.fetch = (async () => {
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, execution: waiting }), { status: 201 })
+      return new Response(JSON.stringify(analyzeResponse()), { status: 201 })
     }) as typeof fetch
 
     const { result } = renderHook(() => useAnalysis(2), { wrapper })

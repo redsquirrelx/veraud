@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
-import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
-import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
+import { Navigate, useNavigate, useParams } from "react-router-dom"
+import { ApiError, listProjects, syncProject, type AgentExecution, type ProjectSummary, type VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
+import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
+import { useTasks } from "../../shared/task-manager/useTasks.ts"
+import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
+import {
+  AnalyzerResultView,
+  ArchitectureResultView,
+  PipelineRunStatus,
+} from "../../features/project-management/PipelineResult.tsx"
+import {
+  confidenceTone,
+  kindTone,
+  parseAnalyzerResult,
+  parseArchitectureResult,
+} from "../../features/project-management/pipelineResult.ts"
+import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, MermaidDiagram, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
@@ -11,18 +25,21 @@ import { useProjectFile } from "../../features/project-management/useProjectFile
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import { VersionSelector, type VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
-import { listProjects, syncProject, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
 
 const sectionItems = [
   { id: "overview", label: "Overview", icon: <FolderIcon /> },
+  { id: "analysis", label: "Analysis", icon: <FolderIcon /> },
   { id: "audits", label: "Audits", icon: <FolderIcon /> },
   { id: "files", label: "Files", icon: <FolderIcon /> },
 ]
 
+const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
+
 export function ProjectDetailPage() {
-  const { id } = useParams()
-  const [section, setSection] = useState("overview")
+  const { id, section } = useParams()
+  const navigate = useNavigate()
+  const activeSection = section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -45,13 +62,30 @@ export function ProjectDetailPage() {
   const refreshFiles = files.refresh
   const clearPreview = preview.clear
   const refreshAnalyzed = analyzed.refresh
-  const analysisSummary = analysis.execution === null || analysis.execution.result === null
-    ? null
-    : parseAnalysisResult(analysis.execution.result)
+  // The tracked run is the architect (it finishes last), so the analyzer row
+  // is picked up as its companion: live first, then the stored versions once
+  // they refresh. Old single-row versions only ever yield the analyzer.
+  const tracked = analysis.execution
+  const liveExecutions = useAgentExecutions()
+  const liveTasks = useTasks()
+  const companion = companionExecution(liveExecutions, analyzedVersions, tracked)
+  const analyzerExec = tracked?.agentType === "analyzer"
+    ? tracked
+    : companion?.agentType === "analyzer" ? companion : null
+  const architectExec = tracked?.agentType === "architect"
+    ? tracked
+    : companion?.agentType === "architect" ? companion : null
+  const analysisSummary = analyzerExec === null ? null : parseAnalyzerResult(analyzerExec.result)
+  const architectureSummary = architectExec === null ? null : parseArchitectureResult(architectExec.result)
+  const summaryConfidence = architectureSummary?.confidence ?? analysisSummary?.confidence ?? null
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
-  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits
+  // Sync and analysis exclude each other: a sync rewrites the checkout the
+  // pipeline reads. Local clicks flip immediately; a sync started elsewhere
+  // shows up through the live tasks and through the backend 422.
+  const syncActive = syncing || isSyncActive(liveTasks, project?.id ?? null)
+  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits && !syncActive
 
   function openFile(path: string) {
     const root = project?.repositoryName ?? ""
@@ -106,11 +140,11 @@ export function ProjectDetailPage() {
 
   // single driver: entering the files section and any version change refetch the tree
   useEffect(() => {
-    if (section === "files") {
+    if (activeSection === "files") {
       clearPreview()
       refreshFiles()
     }
-  }, [section, versionKey, refreshFiles, clearPreview])
+  }, [activeSection, versionKey, refreshFiles, clearPreview])
 
   // analyzed versions load lazily when their tab opens
   useEffect(() => {
@@ -165,7 +199,13 @@ export function ProjectDetailPage() {
       return
     }
     setAnalyzedId(id)
-    analysis.show(target.execution)
+    // The architect carries the final verdict; fall back to the analyzer when
+    // an old version only has that row.
+    analysis.show(
+      target.executions.find((execution) => execution.agentType === "architect")
+        ?? target.executions.find((execution) => execution.agentType === "analyzer")
+        ?? null,
+    )
   }
 
   function handleModeChange(next: VersionMode) {
@@ -190,9 +230,26 @@ export function ProjectDetailPage() {
     },
   }
 
+  const runStatuses = (
+    <>
+      {analyzerExec !== null && <PipelineRunStatus execution={analyzerExec} />}
+      {architectExec !== null && <PipelineRunStatus execution={architectExec} />}
+    </>
+  )
+
+  if (section !== undefined && !VALID_SECTIONS.has(section)) {
+    return <Navigate to={`/projects/${id}/overview`} replace />
+  }
+
   return (
     <section className="project-page">
-      <Sidebar title="Project" items={sectionItems} activeId={section} storageKey="sidebar.expanded" onSelect={setSection} />
+      <Sidebar
+        title="Project"
+        items={sectionItems}
+        activeId={activeSection}
+        storageKey="sidebar.expanded"
+        onSelect={(next) => void navigate(`/projects/${id}/${next}`)}
+      />
       <div className="project-content">
         {loading ? (
           <p className="label">Loading project</p>
@@ -232,6 +289,12 @@ export function ProjectDetailPage() {
                         <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
                       </>
                     )}
+                    {architectureSummary !== null && (
+                      <>
+                        <span className="label">Style</span>
+                        <Badge tone={kindTone(architectureSummary.style)}>{architectureSummary.style}</Badge>
+                      </>
+                    )}
                     {analysisSummary === null && analysis.analyzing && (
                       <Badge tone="info">Analyzing</Badge>
                     )}
@@ -258,7 +321,7 @@ export function ProjectDetailPage() {
                     <span className="project-summary">{analysisSummary.summary}</span>
                   )}
                 </div>
-                <Button loading={syncing} loadingText="Syncing" disabled={syncing} onClick={() => void handleSync()}>
+                <Button loading={syncing} loadingText="Syncing" disabled={syncing || analysis.analyzing} onClick={() => void handleSync()}>
                   Sync
                 </Button>
               </div>
@@ -269,7 +332,89 @@ export function ProjectDetailPage() {
                 </div>
               )}
             </Card>
-            {section === "files" && (
+            {activeSection === "overview" && analysis.execution !== null
+              && (analysisSummary !== null || architectureSummary !== null) && (
+              <Card>
+                <div className="audit-block">
+                  <div className="audit-head">
+                    <h4 className="audit-title">Summary</h4>
+                    <div className="audit-head-right">
+                      <div className="audit-status-row">
+                        {analysisSummary !== null && (
+                          <>
+                            <span className="label">Type</span>
+                            <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
+                          </>
+                        )}
+                        {architectureSummary !== null && (
+                          <>
+                            <span className="label">Style</span>
+                            <Badge tone={kindTone(architectureSummary.style)}>{architectureSummary.style}</Badge>
+                          </>
+                        )}
+                        {summaryConfidence !== null && (
+                          <>
+                            <span className="label">Confidence</span>
+                            <Badge tone={confidenceTone(summaryConfidence)}>{summaryConfidence}</Badge>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {analysisSummary !== null && analysisSummary.summary !== "" && (
+                    <p className="audit-text">{analysisSummary.summary}</p>
+                  )}
+                  {architectureSummary !== null && architectureSummary.dataFlow !== "" && (
+                    <p className="audit-text">{architectureSummary.dataFlow}</p>
+                  )}
+                  <span className="label">{summaryCounts(analysisSummary, architectureSummary)}</span>
+                  <div className="audit-button-row">
+                    <Button onClick={() => void navigate(`/projects/${id}/analysis`)}>
+                      View full analysis
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+            {activeSection === "analysis" && analysis.execution !== null && (
+              <>
+                {analyzerExec !== null && (
+                  <Card>
+                    {analysisSummary !== null
+                      ? <AnalyzerResultView summary={analysisSummary} execution={analyzerExec} />
+                      : <PipelineRunStatus execution={analyzerExec} />}
+                  </Card>
+                )}
+                {architectExec !== null && (
+                  <Card>
+                    {architectureSummary !== null
+                      ? <ArchitectureResultView description={architectureSummary} execution={architectExec} />
+                      : <PipelineRunStatus execution={architectExec} />}
+                  </Card>
+                )}
+                {architectureSummary !== null
+                  && (architectureSummary.diagramContainers !== "" || architectureSummary.diagramComponents !== "") && (
+                  <Card>
+                    <div className="audit-block">
+                      <h4 className="audit-title">Diagrams</h4>
+                      {architectureSummary.diagramContainers !== "" && (
+                        <>
+                          <span className="label">Containers</span>
+                          <MermaidDiagram chart={architectureSummary.diagramContainers} label="Containers diagram" />
+                        </>
+                      )}
+                      {architectureSummary.diagramComponents !== "" && (
+                        <>
+                          <span className="label">Components</span>
+                          <MermaidDiagram chart={architectureSummary.diagramComponents} label="Components diagram" />
+                        </>
+                      )}
+                    </div>
+                  </Card>
+                )}
+              </>
+            )}
+            {activeSection === "files" && (
               <Card>
                 <SplitView
                   label="Resize file preview and directories"
@@ -304,17 +449,12 @@ export function ProjectDetailPage() {
                 />
               </Card>
             )}
-            {section === "audits" && (
+            {activeSection === "audits" && (
               analysis.execution === null ? (
                 <p className="label">No analysis yet — pick a version and press Analyze</p>
               ) : (
                 <Card>
-                  <div className="audit-status-row">
-                    <Badge tone={auditTone(analysis.execution.status)}>{analysis.execution.status}</Badge>
-                    <span className="label">
-                      {analysis.execution.agentType} run #{analysis.execution.id}
-                    </span>
-                  </div>
+                  {runStatuses}
                 </Card>
               )
             )}
@@ -330,68 +470,38 @@ function fileLanguage(path: string): string {
   return dot < 0 ? "" : path.slice(dot + 1).toLowerCase()
 }
 
-function auditTone(status: string): "success" | "warning" | "info" {
-  if (status === "Completed") {
-    return "success"
+/** One line of counts for the overview summary card. */
+function summaryCounts(
+  analysis: { keyComponents: string[] } | null,
+  architecture: { components: unknown[]; risks: unknown[]; qualityNotes: unknown[] } | null,
+): string {
+  const parts: string[] = []
+  if (analysis !== null && analysis.keyComponents.length > 0) {
+    parts.push(`${analysis.keyComponents.length} key component(s)`)
   }
-  if (status === "Failed") {
-    return "warning"
+  if (architecture !== null) {
+    parts.push(`${architecture.components.length} component(s)`)
+    parts.push(`${architecture.risks.length} risk(s)`)
+    parts.push(`${architecture.qualityNotes.length} quality note(s)`)
   }
-  return "info"
+  return parts.join(" · ")
 }
 
-const ANALYSIS_KINDS = new Set([
-  "cli",
-  "library",
-  "web_service",
-  "desktop_app",
-  "data_pipeline",
-  "script",
-  "unknown",
-])
-
-const ANALYSIS_CONFIDENCES = new Set(["low", "medium", "high"])
-
-interface AnalysisSummary {
-  kind: string
-  confidence: string
-  summary: string
-}
-
-/** The analyzer's verdict parsed out of its raw JSON result, if usable. */
-function parseAnalysisResult(result: string | null): AnalysisSummary | null {
-  if (result === null || result.trim() === "") {
+/** The other pipeline row for the same evaluation, if it is known. */
+function companionExecution(
+  live: AgentExecution[],
+  versions: VersionAnalysisSummary[],
+  tracked: AgentExecution | null,
+): AgentExecution | null {
+  if (tracked === null || tracked.evaluationId === null) {
     return null
   }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(result) as unknown
-  } catch {
-    return null
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return null
-  }
-  const record = parsed as Record<string, unknown>
-  const kind = typeof record["kind"] === "string" ? record["kind"] : ""
-  const confidence = typeof record["confidence"] === "string" ? record["confidence"] : ""
-  if (!ANALYSIS_KINDS.has(kind) || !ANALYSIS_CONFIDENCES.has(confidence)) {
-    return null
-  }
-  const summary = typeof record["summary"] === "string" ? record["summary"].trim() : ""
-  return { kind, confidence, summary }
-}
-
-function kindTone(kind: string): "info" | "neutral" {
-  return kind === "unknown" ? "neutral" : "info"
-}
-
-function confidenceTone(confidence: string): "success" | "info" | "warning" {
-  if (confidence === "high") {
-    return "success"
-  }
-  if (confidence === "medium") {
-    return "info"
-  }
-  return "warning"
+  const match = (rows: AgentExecution[]): AgentExecution | null => rows.find(
+    (item) => item.evaluationId === tracked.evaluationId
+      && item.id !== tracked.id
+      && (item.agentType === "analyzer" || item.agentType === "architect"),
+  ) ?? null
+  return match(live)
+    ?? match(versions.flatMap((version) => version.executions))
+    ?? null
 }

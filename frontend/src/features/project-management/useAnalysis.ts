@@ -111,8 +111,10 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setTracked(true)
     try {
       const response = await requestAnalysis(projectId, branch, commitHash)
-      localStorage.set(lastExecutionKey(projectId), response.execution.id)
-      setSeed(response.execution)
+      // The architect finishes last, so its row is the one to track: while the
+      // analyzer works the architect row waits, then it runs to completion.
+      localStorage.set(lastExecutionKey(projectId), response.executions.architect.id)
+      setSeed(response.executions.architect)
     } catch (error) {
       setFailure(describeFailure(error, "Could not analyze the project"))
     } finally {
