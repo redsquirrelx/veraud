@@ -8,8 +8,9 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  height: 48px;
-  padding: 0 1.5rem;
+  min-height: 48px;
+  flex-wrap: wrap;
+  padding: 0.5rem 1.5rem;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -41,6 +42,7 @@
   border: 1px solid #a7f3d0;
   border-radius: 0.25rem;
   padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .app-status-dot {
@@ -70,12 +72,20 @@
   background: #707881;
 }
 
-.app-nav {
+.app-header-links {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.app-nav {
   display: flex;
   gap: 0.25rem;
   align-items: center;
   font-size: 12px;
+  flex-wrap: wrap;
 }
 
 .app-nav a {
@@ -87,6 +97,7 @@
   color: #334155;
   font-weight: 500;
   text-decoration: none;
+  white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
 }
 
@@ -97,6 +108,56 @@
 
 .app-nav a:active {
   transform: scale(0.96);
+}
+
+.app-nav a:focus-visible,
+.app-brand:focus-visible {
+  outline: 2px solid #006194;
+  outline-offset: 2px;
+}
+
+.app-docs-nav {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 0.75rem;
+  gap: 0.5rem;
+}
+
+.app-docs-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.app-docs-nav a {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.app-docs-nav a:hover {
+  border-color: #bfc7d2;
+  background: #f2f3ff;
+  color: #006194;
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    padding: 0.75rem;
+  }
+
+  .app-header-links {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .app-docs-nav {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid #e2e8f0;
+    padding: 0.75rem 0 0;
+  }
 }
 
 .app-nav a.app-nav-active {

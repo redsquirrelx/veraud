@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "./app.js"
+import { auditResponseSerialization } from "./tests/helpers/responseSerializationAudit.js"
 import type { GitCommand } from "./infrastructure/task-runner/git.executor.js"
 
 const realFetch = globalThis.fetch
@@ -56,6 +57,7 @@ describe("projects API with mocked github", () => {
       } }),
     })
 
+    auditResponseSerialization(app)
     await app.listen({ port: 0, host: "127.0.0.1" })
 
     const address = app.server.address() as AddressInfo
@@ -169,6 +171,7 @@ describe("projects API with the real github api", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "veraud-ws-"))
     const { app, db } = await buildApp({ databaseUrl: freshDatabase(), workspaceDir, silent: true })
 
+    auditResponseSerialization(app)
     await app.listen({ port: 0, host: "127.0.0.1" })
 
     const address = app.server.address() as AddressInfo

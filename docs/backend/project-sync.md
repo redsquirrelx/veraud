@@ -2,7 +2,7 @@
 
 `POST /api/projects/:id/sync` re-syncs a project with GitHub.
 No files on disk → clones; attached checkout → `git pull`
-(keeps the current branch and commit); detached HEAD → `git fetch`
+(keeps the current branch but may advance its commit); detached HEAD → `git fetch`
 (refreshes every ref without moving HEAD, since `pull` cannot merge
 without a branch). Recloning uses the original HTTPS or SSH transport;
 pull and fetch use the checkout's configured remote.
@@ -12,6 +12,8 @@ and commits reflect the local checkout. Later syncs can add newer commits.
 
 Source of truth: `backend/src/modules/project/`,
 `infrastructure/task-runner/` (`pull`/`fetch` commands)
+
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
 
 ## `POST /api/projects/:id/sync`
 

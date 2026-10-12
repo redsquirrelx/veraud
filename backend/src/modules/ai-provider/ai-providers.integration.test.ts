@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "../../app.js"
+import { auditResponseSerialization } from "../../tests/helpers/responseSerializationAudit.js"
 
 const backendRoot = fileURLToPath(new URL("../../../", import.meta.url))
 
@@ -37,6 +38,7 @@ describe("ai providers API", () => {
       makeRunner: () => noopRunner,
     })
 
+    auditResponseSerialization(app)
     await app.listen({ port: 0, host: "127.0.0.1" })
 
     const address = app.server.address() as AddressInfo

@@ -1,4 +1,5 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply } from "fastify"
+import { errorResponses } from "../../infrastructure/openapi/routeSchemas.js"
 import type {
   AgentExecutionEvent,
   RealtimeGateway,
@@ -27,8 +28,8 @@ const openBody = {
   type: "object",
   required: ["agentType", "evaluationId"],
   properties: {
-    agentType: { type: "string", minLength: 1 },
-    evaluationId: { type: "integer", minimum: 1 },
+    agentType: { type: "string", minLength: 1, description: "Agent type registered in agent settings.", examples: ["analyzer"] },
+    evaluationId: { type: "integer", minimum: 1, description: "Existing evaluation used to resolve the agent input.", examples: [1] },
   },
 } as const
 
@@ -36,8 +37,8 @@ const openDirectBody = {
   type: "object",
   required: ["agentType", "input"],
   properties: {
-    agentType: { type: "string", minLength: 1 },
-    input: { type: "object", minProperties: 1 },
+    agentType: { type: "string", minLength: 1, examples: ["analyzer"] },
+    input: { type: "object", minProperties: 1, additionalProperties: true, description: "Agent-specific input. root_path, if present, must resolve inside the workspace.", examples: [{ root_path: "project-1-owner-repo" }] },
   },
 } as const
 
@@ -45,11 +46,11 @@ const closeBody = {
   type: "object",
   required: ["status"],
   properties: {
-    status: { type: "string", enum: ["Completed", "Failed"] },
-    result: { type: ["string", "null"] },
-    error: { type: ["string", "null"] },
-    inputTokens: { type: ["integer", "null"], minimum: 0 },
-    outputTokens: { type: ["integer", "null"], minimum: 0 },
+    status: { type: "string", enum: ["Completed", "Failed"], examples: ["Completed"] },
+    result: { type: ["string", "null"], description: "Opaque serialized agent output. Omitted means null.", examples: ['{"summary":"Analysis completed"}'] },
+    error: { type: ["string", "null"], description: "Required to be truthy when failing an open execution. Omitted means null." },
+    inputTokens: { type: ["integer", "null"], minimum: 0, examples: [1200] },
+    outputTokens: { type: ["integer", "null"], minimum: 0, examples: [180] },
   },
 } as const
 
@@ -67,7 +68,11 @@ export function registerAgentExecutionRoutes(
    * own progress, and are safe to call after the fact: a finished run is never
    * overwritten.
    */
-  app.post("/api/agent-executions", { schema: { body: openBody } }, async (request, reply) => {
+  app.post("/api/agent-executions", { schema: { body: openBody,
+    tags: ["Agent Executions"], summary: "Start an agent execution for an evaluation",
+    description: "Returns the Waiting execution immediately and dispatches the agent in the background. Input is resolved from the evaluation. Later dispatch failures update the execution; they do not change this initial HTTP response.",
+    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400, 422], "ExecutionError", false) },
+  } }, async (request, reply) => {
     const body = request.body as { agentType: string; evaluationId: number }
 
     try {
@@ -95,7 +100,11 @@ export function registerAgentExecutionRoutes(
    * `root_path` which must resolve inside the workspace. Registered before
    * `/:id` for clarity (`:id` only matches digits, so there is no conflict).
    */
-  app.post("/api/agent-executions/direct", { schema: { body: openDirectBody } }, async (request, reply) => {
+  app.post("/api/agent-executions/direct", { schema: { body: openDirectBody,
+    tags: ["Agent Executions"], summary: "Start an agent with explicit input",
+    description: "Creates no evaluation/version and returns evaluationId null. Workspace traversal is rejected before creation; an absent checkout fails the execution in the background. Other input fields pass through to the agent.",
+    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400, 422], "ExecutionError", false) },
+  } }, async (request, reply) => {
     const body = request.body as { agentType: string; input: Record<string, unknown> }
 
     try {
@@ -115,7 +124,11 @@ export function registerAgentExecutionRoutes(
     }
   })
 
-  app.get("/api/agent-executions/:id", { schema: { params: idParams } }, async (request, reply) => {
+  app.get("/api/agent-executions/:id", { schema: { params: idParams,
+    tags: ["Agent Executions"], summary: "Get an agent execution",
+    description: "Returns the current execution, including nullable result, error, usage and lifecycle dates.",
+    response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404], "ExecutionError", false) },
+  } }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
     try {
@@ -126,7 +139,11 @@ export function registerAgentExecutionRoutes(
   })
 
   /** Called by the agent-server once the run actually starts. Optional. */
-  app.post("/api/agent-executions/:id/running", { schema: { params: idParams } }, async (request, reply) => {
+  app.post("/api/agent-executions/:id/running", { schema: { params: idParams,
+    tags: ["Agent Executions"], summary: "Report that an agent execution started",
+    description: "Optional agent-server callback. Marks an open execution Running and publishes an update. Finished executions are not overwritten. No body is required.",
+    response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404], "ExecutionError", false) },
+  } }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
     try {
@@ -143,7 +160,11 @@ export function registerAgentExecutionRoutes(
   /** Called by the agent-server when the run finishes, successfully or not. */
   app.post(
     "/api/agent-executions/:id/completion",
-    { schema: { params: idParams, body: closeBody } },
+    { schema: { params: idParams, body: closeBody,
+      tags: ["Agent Executions"], summary: "Report an agent execution result",
+      description: "Agent-server callback. Missing optional fields become null. Failed requires an error for open executions; callbacks on already-finished executions return the stored row unchanged.",
+      response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404, 422], "ExecutionError", false) },
+    } },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const body = request.body as {
@@ -193,7 +214,7 @@ function toResponse(execution: StoredAgentExecution) {
   }
 }
 
-function notFoundOrRethrow(error: unknown, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) {
+function notFoundOrRethrow(error: unknown, reply: FastifyReply) {
   if (error instanceof AgentExecutionNotFoundError) {
     return reply.code(404).send({ error: error.message })
   }

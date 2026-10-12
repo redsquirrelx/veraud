@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 
 from ..app.agent_registry import UnknownAgentError
 from ..app.execution_service import (
@@ -10,12 +10,18 @@ from ..app.execution_service import (
     get_execution_service,
 )
 from ..config.logs import get_logger
-from .schemas import AgentSchemaResponse, ExecutionRequest, ExecutionResponse
+from .schemas import (
+    AgentSchemaResponse,
+    DomainError,
+    ExecutionRequest,
+    ExecutionResponse,
+    RequestValidationErrorResponse,
+)
 
 logger = get_logger("api")
 
 
-router = APIRouter(prefix="/api/agents", tags=["agents"])
+router = APIRouter(prefix="/api/agents", tags=["Agents"])
 
 ServiceDep = Annotated[AgentExecutionService, Depends(get_execution_service)]
 
@@ -49,13 +55,54 @@ def _http_error(
     return HTTPException(status_code=status, detail=text)
 
 
-@router.get("", response_model=list[str])
+@router.get(
+    "",
+    response_model=list[str],
+    summary="List registered agents",
+    description=(
+        "Returns registered agent names in alphabetical order. Use a name from "
+        "this list to inspect its schema or execute it. Entries in the server's "
+        "configuration are not necessarily registered agents."
+    ),
+    responses={200: {
+        "description": "Alphabetically sorted registered agent names.",
+        "content": {"application/json": {"example": ["analyzer", "dummy"]}},
+    }},
+)
 def list_agents(service: ServiceDep) -> list[str]:
     return service.list_agents()
 
 
-@router.get("/{agent_type}/schema", response_model=AgentSchemaResponse)
-def get_agent_schema(agent_type: str, service: ServiceDep) -> AgentSchemaResponse:
+@router.get(
+    "/{agent_type}/schema",
+    response_model=AgentSchemaResponse,
+    summary="Inspect an agent's input and output schemas",
+    description=(
+        "Returns JSON Schema documents generated from the registered agent's "
+        "Pydantic input and output models. Use input_schema to construct the "
+        "input object for POST /api/agents/run; output_schema describes its "
+        "result. Start with GET /api/agents, inspect the chosen agent here, then "
+        "submit its input to POST /api/agents/run. Nested references resolve "
+        "within each schema document."
+    ),
+    responses={
+        200: {"description": "Agent name and its input/output JSON Schema documents."},
+        NOT_FOUND: {
+            "model": DomainError,
+            "description": "The requested agent is not registered.",
+            "content": {"application/json": {"example": {
+                "detail": "\"Unknown agent: 'missing'\"",
+            }}},
+        },
+    },
+)
+def get_agent_schema(
+    agent_type: Annotated[str, Path(
+        description="Registered agent name from GET /api/agents.",
+        examples=["dummy"],
+    )],
+    service: ServiceDep,
+) -> AgentSchemaResponse:
     """Publish one agent's input and output shapes.
 
     The run endpoint is agent agnostic, so this is how a caller learns what to
@@ -69,8 +116,116 @@ def get_agent_schema(agent_type: str, service: ServiceDep) -> AgentSchemaRespons
     return AgentSchemaResponse(**described)
 
 
-@router.post("/run", response_model=ExecutionResponse)
-async def run_agent(body: ExecutionRequest, service: ServiceDep) -> ExecutionResponse:
+@router.post(
+    "/run",
+    response_model=ExecutionResponse,
+    summary="Execute an agent and return its result",
+    description=(
+        "Resolves model configuration, validates input against the selected "
+        "agent's schema, and waits for execution to finish before returning "
+        "the result. This is not a queued-job acknowledgement. Overrides are "
+        "merged with server defaults; an unsupported resolved provider causes "
+        "a configuration error. Optional execution_id enables lifecycle "
+        "callbacks to the backend when its settings are available. The timeout "
+        "covers the agent run, not configuration or callback delivery. Discover "
+        "agent names with GET /api/agents and consult "
+        "GET /api/agents/{agent_type}/schema for the input and result formats. "
+        "Omitted configuration fields use server defaults; null numeric "
+        "overrides also use defaults, while empty provider/name/key strings "
+        "fall back to configured values. Without execution_id, no callbacks "
+        "are sent. With it, the server reports running and Completed/Failed "
+        "outcomes when backend settings are available; callback delivery "
+        "failures do not discard the execution result."
+    ),
+    responses={
+        200: {
+            "description": "Completed execution with the agent's output as a nested result object.",
+            "content": {"application/json": {"example": {
+                "agent_type": "dummy",
+                "result": {
+                    "evaluated_attribute": "maintainability",
+                    "score": 90.0,
+                    "findings": [],
+                    "recommendations": [],
+                },
+            }}},
+        },
+        NOT_FOUND: {
+            "model": DomainError,
+            "description": "The requested agent is not registered.",
+            "content": {"application/json": {"example": {
+                "detail": "\"Unknown agent: 'missing'\"",
+            }}},
+        },
+        UNPROCESSABLE: {
+            "model": DomainError | RequestValidationErrorResponse,
+            "description": (
+                "Invalid HTTP request (detail is a list), or invalid resolved "
+                "configuration, agent input or missing file (detail is a string)."
+            ),
+            "content": {"application/json": {"examples": {
+                "requestValidation": {
+                    "summary": "Missing required request field",
+                    "value": {"detail": [{
+                        "type": "missing", "loc": ["body", "agent_type"],
+                        "msg": "Field required", "input": {},
+                    }]},
+                },
+                "invalidConfiguration": {
+                    "summary": "Unsupported resolved model provider",
+                    "value": {"detail": "Unsupported model provider: 'groq'"},
+                },
+            }}},
+        },
+        TIMED_OUT: {
+            "model": DomainError,
+            "description": "The agent run exceeded its resolved timeout.",
+            "content": {"application/json": {"example": {"detail": TIMEOUT_DETAIL}}},
+        },
+    },
+)
+async def run_agent(
+    body: Annotated[ExecutionRequest, Body(openapi_examples={
+        "dummy": {
+            "summary": "Audit a code snippet with the dummy agent",
+            "description": (
+                "Explicitly selects a supported provider. Requires a configured "
+                "provider key or config.api_key; this is not an offline execution."
+            ),
+            "value": {
+                "agent_type": "dummy",
+                "config": {
+                    "model": {"provider": "openrouter", "name": "openai/gpt-oss-120b"},
+                    "timeout_seconds": 60,
+                },
+                "input": {"code": "def add(a, b): return a + b"},
+            },
+        },
+        "analyzer": {
+            "summary": "Describe a repository with the analyzer agent",
+            "description": (
+                "root_path must exist on the agent-server filesystem. Selects "
+                "a supported provider and requires provider credentials. "
+                "Collection options shown are the input model defaults."
+            ),
+            "value": {
+                "agent_type": "analyzer",
+                "config": {
+                    "model": {"provider": "openrouter", "name": "openai/gpt-oss-120b"},
+                    "timeout_seconds": 120,
+                },
+                "input": {
+                    "root_path": "C:/workspace/example-repository",
+                    "max_files": 500,
+                    "max_depth": 8,
+                    "max_read_rounds": 2,
+                    "max_files_per_round": 8,
+                },
+            },
+        },
+    })],
+    service: ServiceDep,
+) -> ExecutionResponse:
     """Run one agent and return its output.
 
     The service validates the payload against the agent's own schema, builds

@@ -7,6 +7,8 @@ is the clone confirmation. No audit yet.
 Source of truth: `backend/src/modules/project/`, `modules/task/`,
 `infrastructure/github-client/`, `task-runner/`, `realtime-gateway/`
 
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
 ## `POST /api/projects`
 
 Request: `repositoryUrl` (string, required) — `https://github.com/{owner}/{repo}`,

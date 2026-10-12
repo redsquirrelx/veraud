@@ -39,7 +39,7 @@ export class RealtimeGateway {
   private sockets = new Set<WebSocket>()
 
   register(app: FastifyInstance): void {
-    app.get("/ws", { websocket: true }, (socket) => {
+    app.get("/ws", { websocket: true, schema: { hide: true } }, (socket) => {
       this.sockets.add(socket)
       this.log.info("Client connected")
 
