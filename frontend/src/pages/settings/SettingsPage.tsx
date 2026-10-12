@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useId, useState, type FormEvent, type KeyboardEvent } from "react"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { Button, Card, ItemList, ItemSelector, Modal, PlusIcon, TextInput, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
 import { useToasts } from "../../app/use-toasts.ts"
@@ -6,11 +6,30 @@ import { useAiProviders } from "../../features/llm-management/useAiProviders.ts"
 import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../shared/task-manager/index.ts"
 import { ModelListItem } from "./ModelListItem.tsx"
 import { CredentialListItem } from "./CredentialListItem.tsx"
+import { AgentsSettings } from "./AgentsSettings.tsx"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./SettingsPage.css"
 
+const settingsTabs = [
+  { id: "agents", label: "Agents" },
+  { id: "models", label: "Models & credentials" },
+  { id: "preferences", label: "Preferences" },
+] as const
+type SettingsTab = typeof settingsTabs[number]["id"]
+const settingsTabStorageKey = "settings.activeTab"
+
 export function SettingsPage() {
+  const tabsId = useId()
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    const saved = localStorage.get<unknown>(settingsTabStorageKey, "models")
+    return settingsTabs.find((tab) => tab.id === saved)?.id ?? "models"
+  })
+  function selectTab(tab: SettingsTab) {
+    setActiveTab(tab)
+    localStorage.set(settingsTabStorageKey, tab)
+  }
   const [visibility, update] = useTaskVisibility()
-  const { providers, loading, loadError, addModel, editModel, removeModel, addCredential, editCredential, removeCredential } = useAiProviders()
+  const { providers, loading, loadError, refresh, addModel, editModel, removeModel, addCredential, editCredential, removeCredential } = useAiProviders()
   const { pushToast } = useToasts()
   const [modelId, setModelId] = useState<string[]>([])
   const [credentialId, setCredentialId] = useState<string[]>([])
@@ -133,13 +152,48 @@ export function SettingsPage() {
     }
   }
 
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+    event.preventDefault()
+    const nextIndex = event.key === "Home" ? 0
+      : event.key === "End" ? settingsTabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + settingsTabs.length) % settingsTabs.length
+    const nextTab = settingsTabs[nextIndex]!
+    selectTab(nextTab.id)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+  }
+
   return (
     <section className="settings-page">
       <div className="home-heading">
         <div>
-          <h1>General settings</h1>
+          <h1>Settings</h1>
         </div>
       </div>
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {settingsTabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            id={`${tabsId}-tab-${tab.id}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`${tabsId}-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-agents`} aria-labelledby={`${tabsId}-tab-agents`} hidden={activeTab !== "agents"} tabIndex={0}>
+        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError} onAssignmentsSaved={(agent) => {
+          pushToast("success", `Configuration for ${agent.agentType} saved successfully`)
+          void refresh()
+        }} />}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
       <Card>
         <span className="label">Models & credentials</span>
         <p className="settings-hint">When editing a credential, leave the API key blank to keep the current key.</p>
@@ -215,7 +269,8 @@ export function SettingsPage() {
           </>
         )}
       </Card>
-
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={activeTab !== "preferences"} tabIndex={0}>
       <Card>
         <span className="label">Task notifications</span>
         <p className="settings-hint">Read-only tasks stay silent unless they fail. Failed tasks always show.</p>
@@ -233,6 +288,7 @@ export function SettingsPage() {
           ))}
         </div>
       </Card>
+      </div>
       <Modal open={modal === "model"} label={editingModelId === null ? "Add a model" : "Edit a model"} title={editingModelId === null ? "Add a model" : "Edit a model"} size="narrow" onClose={() => setModal(null)}>
         <form className="settings-modal-form" onSubmit={(event) => void submitModel(event)}>
           <ItemSelector

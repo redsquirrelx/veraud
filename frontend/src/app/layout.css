@@ -117,29 +117,11 @@
 }
 
 .app-docs-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   border-left: 1px solid #e2e8f0;
   padding-left: 0.75rem;
-  gap: 0.5rem;
-}
-
-.app-docs-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #64748b;
-}
-
-.app-docs-nav a {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #475569;
-}
-
-.app-docs-nav a:hover {
-  border-color: #bfc7d2;
-  background: #f2f3ff;
-  color: #006194;
 }
 
 @media (max-width: 760px) {

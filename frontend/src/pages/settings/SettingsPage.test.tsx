@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { render, screen, within } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
@@ -17,6 +17,7 @@ afterEach(() => {
   globalThis.fetch = realFetch
   globalThis.WebSocket = realWebSocket
   window.localStorage.removeItem("tasks.visibility")
+  window.localStorage.removeItem("settings.activeTab")
 })
 
 const providers = [{
@@ -58,6 +59,24 @@ function renderSettings(responses: Array<{ status: number, body?: unknown }>) {
 }
 
 describe("SettingsPage", () => {
+  it("restores the stored tab and persists mouse and keyboard selection", async () => {
+    window.localStorage.setItem("settings.activeTab", JSON.stringify("preferences"))
+    renderSettings([{ status: 200, body: providers }])
+    expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "true")
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("tab", { name: "Models & credentials" }))
+    expect(JSON.parse(window.localStorage.getItem("settings.activeTab")!)).toBe("models")
+    await user.keyboard("{ArrowRight}")
+    expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "true")
+    expect(JSON.parse(window.localStorage.getItem("settings.activeTab")!)).toBe("preferences")
+  })
+
+  it("falls back to Models & credentials for an unknown stored tab", () => {
+    window.localStorage.setItem("settings.activeTab", JSON.stringify("unknown"))
+    renderSettings([{ status: 200, body: providers }])
+    expect(screen.getByRole("tab", { name: "Models & credentials" })).toHaveAttribute("aria-selected", "true")
+  })
+
   it("edits a model through its existing modal, keeping the provider fixed", async () => {
     const updated = [{ ...providers[0], models: [{ id: 10, name: "gpt-4.1", inUse: true }] }]
     const calls = renderSettings([
@@ -120,16 +139,33 @@ describe("SettingsPage", () => {
     expect((within(addDialog).getByLabelText("Api Key") as HTMLInputElement).value).toBe("")
   })
 
-  it("shows the title with task notification toggles", () => {
-    renderSettings([{ status: 200, body: [] }])
+  it("shows the title and separates agent, model and preference settings", async () => {
+    renderSettings([
+      { status: 200, body: [] },
+      { status: 200, body: [{ agentType: "analyzer", configured: false, configuration: null }] },
+    ])
 
-    expect(screen.getByRole("heading", { name: "General settings" })).toBeDefined()
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeDefined()
+    expect(screen.getByRole("tab", { name: "Models & credentials" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.queryByRole("checkbox", { name: /Clone/ })).toBeNull()
+    await userEvent.click(screen.getByRole("tab", { name: "Agents" }))
+    expect(screen.getByRole("tabpanel", { name: "Agents" })).toBeDefined()
+    const configure = await screen.findByRole("button", { name: "Configure analyzer" })
+    await userEvent.click(configure)
+    const drawer = screen.getByRole("dialog", { name: "Configure analyzer" })
+    expect(within(drawer).getByRole("button", { name: "Select a model first" })).toBeDisabled()
+    expect(within(drawer).getByRole("button", { name: "Save changes" })).toBeDisabled()
+    await userEvent.click(within(drawer).getAllByRole("button", { name: "Close" })[0]!)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(configure))
+    await userEvent.click(screen.getByRole("tab", { name: "Preferences" }))
     expect(screen.getByText("Task notifications")).toBeDefined()
     expect(screen.getByRole("checkbox", { name: /Clone/ })).toBeDefined()
   })
 
   it("persists muted read tasks as visible", async () => {
     renderSettings([{ status: 200, body: [] }])
+    await userEvent.click(screen.getByRole("tab", { name: "Preferences" }))
 
     const toggle = screen.getByRole("checkbox", { name: /List branches/ })
     expect(toggle).not.toBeChecked()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ApiError, getAgentExecution, requestAnalysis, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
@@ -44,7 +44,11 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
 
   const wantedId = seed?.id ?? polled?.id ?? null
   // Live events win; otherwise the poll beats the stale start snapshot.
-  const execution = wantedId === null ? null : (live.find((item) => item.id === wantedId) ?? polled ?? seed)
+  const latest = wantedId === null ? null : (live.find((item) => item.id === wantedId) ?? polled ?? seed)
+  // Lifecycle events intentionally contain no configuration; retain the HTTP snapshot.
+  const execution = useMemo(() => latest === null ? null : {
+    ...latest, configuration: latest.configuration ?? polled?.configuration ?? seed?.configuration ?? null,
+  }, [latest, polled, seed])
 
   let phase: AnalysisPhase = "idle"
   if (failure !== "") {

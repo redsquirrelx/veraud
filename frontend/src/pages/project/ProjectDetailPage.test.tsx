@@ -382,6 +382,11 @@ describe("ProjectDetailPage", () => {
             id: 11,
             evaluationId: 7,
             agentType: "analyzer",
+            configuration: {
+              model: { id: 1, name: "captured-model", providerId: 1, providerName: "OpenAI" },
+              credential: { id: 2, name: "captured-credential", providerId: 1, providerName: "OpenAI" },
+              temperature: 0.2, maxTokens: 2048,
+            },
             status: "Waiting",
             result: null,
             error: null,
@@ -413,6 +418,9 @@ describe("ProjectDetailPage", () => {
 
     expect(await screen.findByText("analyzer run #11")).toBeDefined()
     expect(screen.getByText("Waiting")).toBeDefined()
+    expect(screen.getByRole("heading", { name: "Configuration used" })).toBeDefined()
+    expect(screen.getByText("captured-model")).toBeDefined()
+    expect(screen.getByText("captured-credential (#2)")).toBeDefined()
   })
 
   it("checks out an analyzed version and shows its stored run", async () => {

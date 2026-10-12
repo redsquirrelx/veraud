@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react"
-import { Badge, Button, Card, ItemList, ItemSearcher, ItemSelector, MinusIcon, Modal, PlusIcon, TextInput, type ItemListEntry, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
+import { Badge, Button, Card, DropdownLinks, ExternalIcon, ItemList, ItemSearcher, ItemSelector, MinusIcon, Modal, PlusIcon, TextInput, type DropdownLinkItem, type ItemListEntry, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
 import "./TestControlsPage.css"
+import { DrawerExamples } from "./DrawerExamples.tsx"
 
 const sampleItems: ItemSelectorItem[] = [
   { id: "openai", label: "OpenAI", detail: "3 models" },
@@ -12,6 +13,19 @@ const sampleEntries: ItemListEntry[] = [
   { id: "gpt-4o", name: "gpt-4o", description: "OpenAI flagship" },
   { id: "claude-3", name: "claude-3", description: "Anthropic model" },
   { id: "gemini-15", name: "gemini-1.5", description: "Google model" },
+]
+
+const backendUrl = (import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")
+const agentServerUrl = (import.meta.env.VITE_AGENT_SERVER_URL ?? "http://localhost:7502").replace(/\/+$/, "")
+const documentationLinks: DropdownLinkItem[] = [
+  { label: "Backend docs", href: `${backendUrl}/docs`, description: "HTTP API ┬╖ Swagger", external: true },
+  { label: "WebSocket docs", href: `${backendUrl}/docs/ws`, description: "Realtime events ┬╖ AsyncAPI", external: true },
+  { label: "Agent-server docs", href: `${agentServerUrl}/docs`, description: "Agent HTTP API ┬╖ Swagger", external: true },
+]
+const navigationLinks: DropdownLinkItem[] = [
+  { label: "Home", href: "/" },
+  { label: "Settings", href: "/settings" },
+  { label: "Playgrounds", href: "/test" },
 ]
 
 export function TestControlsPage() {
@@ -40,6 +54,31 @@ export function TestControlsPage() {
   return (
     <section className="test-controls-page">
       <h1>Controls playground</h1>
+      <Card>
+        <span className="label">Dropdown links ┬╖ external documentation</span>
+        <p className="label">Links open in a new tab. The trigger keeps its label after navigation.</p>
+        <div className="test-controls-row">
+          <DropdownLinks label="API docs" icon={<ExternalIcon size={14} />} items={documentationLinks} />
+        </div>
+      </Card>
+      <Card>
+        <span className="label">Dropdown links ┬╖ internal navigation and right alignment</span>
+        <div className="test-controls-row">
+          <DropdownLinks label="Navigate" items={navigationLinks} />
+          <DropdownLinks label="Right-aligned" items={navigationLinks} align="end" />
+        </div>
+      </Card>
+      <Card>
+        <span className="label">Dropdown links ┬╖ disabled item, disabled control and empty state</span>
+        <div className="test-controls-row">
+          <DropdownLinks label="Available pages" items={[
+            ...navigationLinks,
+            { label: "Reports", href: "/reports", description: "Coming soon", disabled: true },
+          ]} />
+          <DropdownLinks label="Disabled" items={documentationLinks} disabled />
+          <DropdownLinks label="Empty menu" items={[]} emptyText="No documentation registered" />
+        </div>
+      </Card>
       <Card>
         <span className="label">Text inputs with floating legend</span>
         <TextInput value={plain} placeholder="No label here" onChange={setPlain} />
@@ -129,6 +168,7 @@ export function TestControlsPage() {
           </Button>
         </Modal>
       </Card>
+      <DrawerExamples />
     </section>
   )
 }
