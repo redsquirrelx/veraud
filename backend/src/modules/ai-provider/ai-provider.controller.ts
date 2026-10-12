@@ -62,6 +62,26 @@ export function registerAiProviderRoutes(app: FastifyInstance, service: AiProvid
     }
   })
 
+  app.patch("/api/ai-providers/:id/models/:nestedId", {
+    schema: {
+      params: nestedParams,
+      body: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string" } },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string, nestedId: string }
+    const body = request.body as { name: string }
+
+    try {
+      return reply.code(200).send(await service.updateModel(Number(params.id), Number(params.nestedId), body.name))
+    } catch (error) {
+      return reply.code(aiErrorCode(error)).send({ message: aiErrorMessage(error) })
+    }
+  })
+
   app.delete("/api/ai-providers/:id/models/:nestedId", {
     schema: { params: nestedParams },
   }, async (request, reply) => {
@@ -94,6 +114,26 @@ export function registerAiProviderRoutes(app: FastifyInstance, service: AiProvid
     try {
       const credential = await service.createCredential(Number(params.id), body.name, body.apiKey)
       return reply.code(201).send(credential)
+    } catch (error) {
+      return reply.code(aiErrorCode(error)).send({ message: aiErrorMessage(error) })
+    }
+  })
+
+  app.patch("/api/ai-providers/:id/credentials/:nestedId", {
+    schema: {
+      params: nestedParams,
+      body: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string" }, apiKey: { type: "string" } },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string, nestedId: string }
+    const body = request.body as { name: string, apiKey?: string }
+
+    try {
+      return reply.code(200).send(await service.updateCredential(Number(params.id), Number(params.nestedId), body.name, body.apiKey))
     } catch (error) {
       return reply.code(aiErrorCode(error)).send({ message: aiErrorMessage(error) })
     }
