@@ -18,10 +18,11 @@ interface DropdownLinksProps {
   disabled?: boolean
   align?: "start" | "end"
   emptyText?: string
+  iconOnly?: boolean
 }
 
 /** Navigation disclosure: real links, without a persistent selected value. */
-export function DropdownLinks({ label, items, icon, disabled = false, align = "start", emptyText = "No links available" }: DropdownLinksProps) {
+export function DropdownLinks({ label, items, icon, disabled = false, align = "start", emptyText = "No links available", iconOnly = false }: DropdownLinksProps) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -83,12 +84,14 @@ export function DropdownLinks({ label, items, icon, disabled = false, align = "s
         className="ui-dropdown-links-trigger"
         disabled={disabled}
         aria-expanded={expanded}
+        aria-label={label}
+        title={label}
         aria-controls={`${id}-links`}
         onClick={() => setOpen(!expanded)}
       >
         {icon && <span aria-hidden="true">{icon}</span>}
-        <span>{label}</span>
-        <span className="ui-dropdown-links-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>
+        {!iconOnly && <span>{label}</span>}
+        {!iconOnly && <span className="ui-dropdown-links-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>}
       </button>
       {expanded && (
         <nav id={`${id}-links`} className="ui-dropdown-links-panel" data-align={align} aria-labelledby={`${id}-trigger`}>

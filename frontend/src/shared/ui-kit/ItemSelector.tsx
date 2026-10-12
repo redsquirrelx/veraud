@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import "./ItemSelector.css"
@@ -41,6 +41,9 @@ export function ItemSelector({
   onOpen,
 }: ItemSelectorProps) {
   const [open, setOpen] = useState(false)
+  const id = useId()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef(false)
   const root = useRef<HTMLDivElement | null>(null)
   const selected = items.find((item) => item.id === selectedId) ?? null
 
@@ -52,6 +55,7 @@ export function ItemSelector({
     }
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (root.current?.contains(document.activeElement)) trigger.current?.focus()
         setOpen(false)
       }
     }
@@ -63,9 +67,17 @@ export function ItemSelector({
     }
   }, [])
 
+  useEffect(() => {
+    if (open && pendingFocus.current) {
+      pendingFocus.current = false
+      root.current?.querySelector<HTMLButtonElement>("[role=option]:not(:disabled)")?.focus()
+    }
+  }, [open])
+
   function pick(id: string) {
     onSelect(id)
     setOpen(false)
+    trigger.current?.focus()
   }
 
   function toggle() {
@@ -79,10 +91,30 @@ export function ItemSelector({
   }
 
   return (
-    <div className="ui-item-selector" ref={root}>
-      {label !== "" && <span className="ui-item-legend">{label}</span>}
+    <div className="ui-item-selector" ref={root} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+    }} onKeyDown={(event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+      if (loading || disabled) return
+      event.preventDefault()
+      if (!open) {
+        pendingFocus.current = true
+        toggle()
+        return
+      }
+      const options = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("[role=option]:not(:disabled)") ?? [])
+      if (options.length === 0) return
+      const current = options.indexOf(document.activeElement as HTMLButtonElement)
+      const next = current < 0 ? (event.key === "ArrowDown" ? 0 : options.length - 1)
+        : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length
+      options[next]?.focus()
+    }}>
+      {label !== "" && <span id={`${id}-label`} className="ui-item-legend">{label}</span>}
       <button
         type="button"
+        ref={trigger}
+        aria-describedby={label !== "" ? `${id}-label` : undefined}
+        aria-controls={`${id}-panel`}
         className="ui-item-button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -101,11 +133,11 @@ export function ItemSelector({
           </>
         )}
       </button>
-      <div className={open ? "ui-item-panel ui-item-panel-open" : "ui-item-panel"} aria-hidden={!open} inert={!open}>
+      <div id={`${id}-panel`} className={open ? "ui-item-panel ui-item-panel-open" : "ui-item-panel"} aria-hidden={!open} inert={!open}>
         {items.length === 0 && !hasMore ? (
           <p className="label">{emptyText}</p>
         ) : (
-          <ul className="ui-item-list" role="listbox" aria-label="Items">
+          <ul className="ui-item-list" role="listbox" aria-label={label || "Items"}>
             {items.map((item) => (
               <li key={item.id} className="ui-item-enter">
                 <button
