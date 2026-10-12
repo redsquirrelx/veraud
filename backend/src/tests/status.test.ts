@@ -8,6 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 
@@ -44,6 +45,7 @@ describe("status endpoint", () => {
       makeRunner: () => noopRunner,
       ...options,
     })
+    auditResponseSerialization(app)
     dbs.push({ close: async () => { await app.close(); await db.$disconnect() } })
     return app
   }

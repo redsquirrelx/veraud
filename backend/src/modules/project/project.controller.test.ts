@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import Fastify from "fastify"
 import { registerProjectRoutes } from "./project.controller.js"
 import { ProjectService } from "./project.service.js"
+import { registerApiSchemas } from "../../infrastructure/openapi/registerApiSchemas.js"
 
 describe("POST /api/projects clone preference", () => {
   it("accepts both modes, defaults omitted values to full, and rejects invalid values", async () => {
@@ -13,6 +14,7 @@ describe("POST /api/projects clone preference", () => {
       return { id: 1, repositoryOwner: "acme", repositoryName: "repo", status: "QUEUED" }
     }
     const app = Fastify()
+    registerApiSchemas(app)
     registerProjectRoutes(app, service)
     try {
       for (const shallowClone of [false, true, undefined]) {

@@ -4,6 +4,8 @@ import cors from "@fastify/cors"
 import websocket from "@fastify/websocket"
 import pretty from "pino-pretty"
 import { logger } from "./config/logger.js"
+import { registerOpenApi } from "./infrastructure/openapi/registerOpenApi.js"
+import { registerApiSchemas } from "./infrastructure/openapi/registerApiSchemas.js"
 
 import { PrismaClient } from "./generated/prisma/client.js"
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
@@ -79,6 +81,8 @@ export async function buildApp(options: BuildAppOptions) {
   await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
   const aiProviderService = new AiProviderService(aiProviderRepository)
 
+  await registerOpenApi(app)
+  registerApiSchemas(app)
   await app.register(websocket)
   await app.register(cors, {
     origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
@@ -92,7 +96,18 @@ export async function buildApp(options: BuildAppOptions) {
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
 
-  app.get("/status", { logLevel: "silent" }, async () => {
+  app.get("/status", { logLevel: "silent", schema: {
+    tags: ["Status"], summary: "Get backend and agent-server availability",
+    description: "Always returns 200 while the backend handles requests. agentServer is unknown without a configured URL, online on a successful probe, or offline on failure/timeout (2000 ms).",
+    response: { 200: {
+      type: "object", required: ["status", "service", "agentServer"],
+      properties: {
+        status: { type: "string", enum: ["ok"] },
+        service: { type: "string", enum: ["backend"] },
+        agentServer: { type: "string", enum: ["online", "offline", "unknown"] },
+      },
+    } },
+  } }, async () => {
     return { status: "ok", service: "backend", agentServer: await checkAgentServer(options.agentServerUrl) }
   })
 

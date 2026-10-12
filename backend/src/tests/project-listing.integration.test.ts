@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "../app.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 
@@ -37,6 +38,7 @@ describe("project listing API", () => {
       makeRunner: () => noopRunner,
     })
 
+    auditResponseSerialization(app)
     const versioned = await db.project.create({
       data: {
         githubRepositoryId: BigInt(111),

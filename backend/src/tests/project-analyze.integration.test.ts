@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, AgentInvoker } from "../infrastructure/agent-server-client/agent-server.client.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
@@ -54,6 +55,7 @@ describe("project analyze endpoint", () => {
       makeAgentInvoker: () => options.invoker ?? { run: async () => ({ kind: "library" }) },
     })
 
+    auditResponseSerialization(app)
     closers.push(async () => {
       await app.close()
       await db.$disconnect()
