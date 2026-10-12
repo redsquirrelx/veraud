@@ -2,8 +2,6 @@
 
 import asyncio
 import json
-import re
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -92,8 +90,12 @@ def test_portal_and_exact_operation_coverage(api):
         for path, item in spec["paths"].items()
         for method in item if method in {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
     }
-    inventory = (Path(__file__).resolve().parents[2] / "docs/agent-server/http-endpoint-inventory.md").read_text(encoding="utf-8")
-    expected = set(re.findall(r"\| (GET|POST|PATCH|DELETE|PUT) \| `([^`]+)`", inventory))
+    expected = {
+        ("GET", "/api/status"),
+        ("GET", "/api/agents"),
+        ("GET", "/api/agents/{agent_type}/schema"),
+        ("POST", "/api/agents/run"),
+    }
     def application_routes(routes):
         for route in routes:
             if isinstance(route, APIRoute):

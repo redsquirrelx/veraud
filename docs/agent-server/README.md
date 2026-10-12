@@ -17,7 +17,6 @@ use the origin serving the portal; no development host/port is hardcoded.
 
 - [Agent discovery, execution, configuration and callbacks](execution-guide.md).
 - [OpenAPI setup, verification and maintenance](openapi.md).
-- [Initial HTTP endpoint inventory](http-endpoint-inventory.md).
 
 Route metadata and Pydantic models are the source of truth for HTTP contracts.
 Markdown explains usage and architecture. The backend has its own

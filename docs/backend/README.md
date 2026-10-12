@@ -14,6 +14,8 @@ HTTP contracts. Update them alongside endpoint changes.
 ## Architecture and flows
 
 - [OpenAPI setup and maintenance](openapi.md).
+- [AsyncAPI structure and toolchain](asyncapi.md).
+- [WebSocket connection, lifecycle and recovery](websocket-guide.md).
 - [Project registration, cloning and task events](project-registration.md).
 - [Project listing](project-listing.md).
 - [Project synchronization](project-sync.md).
@@ -23,14 +25,12 @@ HTTP contracts. Update them alongside endpoint changes.
 - [Agent execution lifecycle and WebSocket events](agent-execution.md).
 
 These Markdown documents explain behavior and system flows; consult Swagger for
-the current HTTP request/response definitions. WebSocket event contracts remain
-in Markdown and are not included in OpenAPI.
+the current HTTP request/response definitions. WebSocket event contracts are
+generated separately as AsyncAPI from shared TypeScript schemas and are not
+included in OpenAPI; Markdown describes their connection and recovery flows.
 
-## Verification records
-
-- [Initial HTTP endpoint inventory](http-endpoint-inventory.md).
-- [Response serialization review](response-serialization-review.md).
+## Automated verification
 
 The OpenAPI integration test validates the generated specification and compares
-its exact methods/paths against the initial inventory. The endpoint integration
+its exact methods/paths against the baseline defined in the test. The endpoint integration
 suites audit serialized responses for field loss.

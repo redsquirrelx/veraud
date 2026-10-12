@@ -9,7 +9,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
       openapi: "3.0.3",
       info: {
         title: "Veraud Backend API",
-        description: "HTTP API for projects, Git tasks, AI providers, and agent executions. WebSocket event contracts are documented separately.",
+        description: "HTTP API for projects, Git tasks, AI providers, and agent executions. See [WebSocket AsyncAPI documentation](/docs/ws) for realtime event contracts.",
         version: "1.0.0",
       },
       servers: [{ url: "/", description: "Current backend origin" }],

@@ -6,6 +6,7 @@ import pretty from "pino-pretty"
 import { logger } from "./config/logger.js"
 import { registerOpenApi } from "./infrastructure/openapi/registerOpenApi.js"
 import { registerApiSchemas } from "./infrastructure/openapi/registerApiSchemas.js"
+import { registerAsyncApi } from "./infrastructure/asyncapi/registerAsyncApi.js"
 
 import { PrismaClient } from "./generated/prisma/client.js"
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
@@ -82,6 +83,7 @@ export async function buildApp(options: BuildAppOptions) {
   const aiProviderService = new AiProviderService(aiProviderRepository)
 
   await registerOpenApi(app)
+  await registerAsyncApi(app)
   registerApiSchemas(app)
   await app.register(websocket)
   await app.register(cors, {

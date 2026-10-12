@@ -35,8 +35,8 @@ network calls. It checks:
 
 - Portal URLs, metadata and Swagger settings.
 - OpenAPI structure and references using `openapi-spec-validator`.
-- Exact method/path coverage against both registered routes and the initial
-  inventory, including metadata and unique operation IDs.
+- Exact method/path coverage against registered routes and the baseline in the
+  test, including metadata and unique operation IDs.
 - Documented response examples and actual response payloads against JSON Schema.
 - Named dummy/analyzer request examples against the selected agent's input schema.
 - Published agent schemas against their Pydantic models.
@@ -64,8 +64,8 @@ dependency is needed.
 ## Maintenance
 
 1. Update route metadata and Pydantic models alongside HTTP changes.
-2. Update the inventory method/path baseline when adding, removing or renaming
-   an operation. Its other findings remain the initial snapshot.
+2. Update the method/path baseline in `tests/test_openapi_contracts.py` when
+   adding, removing or renaming an operation.
 3. Add representative contract cases when introducing new response behavior.
 4. Keep examples consistent with registered agents and supported providers.
 5. Run the tests, Ruff and `git diff --check`.
@@ -73,17 +73,3 @@ dependency is needed.
 The generated `/openapi.json` is ready to be consumed by a future backend portal
 service selector. Do not maintain a duplicate static specification. The backend
 retains its separate OpenAPI 3.0.3 document at `/docs/json`.
-
-## Verification record
-
-The completed integration was checked through TestClient and HTTP against an
-isolated local server, with no browser installation. A rendered visual review
-or click on Swagger's ΓÇ£Try it outΓÇ¥ was not performed; relative URL resolution
-and the target status endpoint were verified over HTTP instead.
-
-- Full `tests/` suite: **33 tests passed**, including the 10 existing analyzer tests.
-- Ruff on the API, application entry point and new contract tests: passed.
-- `git diff --check`: passed.
-- `/docs`, `/redoc`, `/openapi.json` on a temporary HTTP server: 200.
-- Status URL resolved to that server's actual host/port: 200 with the expected JSON.
-- Temporary HTTP server stopped after verification.

@@ -1,0 +1,377 @@
+# Generated from the TypeScript event catalog and metadata. Do not edit manually.
+asyncapi: 3.1.0
+id: urn:veraud:backend:websocket
+info:
+  title: Veraud Backend WebSocket API
+  version: 1.0.0
+  description: >-
+    Backend perspective of the shared WebSocket event stream for Git tasks and agent executions.
+    Contracts and examples are generated from the same TypeScript schemas used to derive producer
+    event types.
+
+
+    ## Connection
+
+    Connect to `/ws` on the backend host and port using native WebSocket (not Socket.IO). Use `ws`
+    for an HTTP backend or `wss` for a TLS-terminated HTTPS deployment. The development server entry
+    is an editable example, not automatic origin discovery. The backend route does not configure
+    TLS.
+
+
+    The HTTP upgrade uses GET. The application declares no authentication requirement, query
+    parameters or WebSocket subprotocol. HTTP CORS configuration is not a WebSocket authorization
+    policy. No subscribe, acknowledgement or client-command messages are implemented.
+
+
+    ## Delivery
+
+    Every connected client receives all event types as JSON text. Opening the connection sends no
+    greeting, initial snapshot or replay. Notifications describe entity state, not uniquely
+    identified transitions. Messages carry no sequence number, replay cursor or acknowledgement.
+    Events missed during disconnection cannot be replayed, and exactly-once delivery is not
+    guaranteed.
+
+
+    ## Recovery
+
+    Tasks can be recovered with GET `/api/tasks/active`, which returns only Queued/Running rows. The
+    current task hook fetches on mount and on each socket open; its HTTP response can race with
+    notifications. Executions can be recovered by known ID through GET `/api/agent-executions/{id}`.
+    The current agent provider does not fetch initial or reconnect snapshots, and there is no
+    execution-list endpoint to discover missed runs.
+
+
+    Both frontend consumers reconnect after close with a fixed 3000 ms delay by default, close on
+    error and stop retrying on unmount. This is client behavior, not a server retry or replay
+    guarantee. No application heartbeat, ping schedule, error message or custom close-code catalog
+    is defined.
+
+
+    ## Shared channel `/ws`
+
+    One physical WebSocket connection carries all three message types; operation IDs do not create
+    separate subscriptions. Dispatch by the top-level `type` field and reconcile entities by task.id
+    or execution.id. Those identifiers identify entities, not individual messages.
+
+
+    Broadcasts are sent to all connected sockets. WebSocket preserves send order within a live
+    connection, but tasks and executions may interleave, and the application defines no ordering
+    across reconnects. Send failures are logged without an application retry or delivery
+    acknowledgement.
+
+
+    ## Entity lifecycle
+
+    Repeated completion callbacks emit another execution update even when the stored row is
+    unchanged. The running callback currently writes Running without guarding terminal states, so
+    consumers must not assume status transitions are monotonic or that each update represents a new
+    transition.
+
+
+    Task lifecycle: Queued ΓåÆ Running ΓåÆ Succeded or Failed (Succeded is the existing spelling). The
+    running callback for an execution is optional: a run can go from Waiting directly to Completed
+    or Failed. No initial state or history is sent on connection; recover available state through
+    HTTP.
+  license:
+    name: ISC
+defaultContentType: application/json
+servers:
+  development:
+    host: "{hostname}:{port}"
+    protocol: ws
+    description: Local backend connection. Replace the hostname and port with your backend address. For
+      a TLS-terminated deployment, use wss and its external host and port; this example does not
+      configure TLS or discover the current origin.
+    variables:
+      hostname:
+        default: localhost
+        description: Backend hostname, without a URL scheme or path.
+      port:
+        default: "7501"
+        description: Backend listening port.
+channels:
+  realtime:
+    address: /ws
+    title: Backend realtime stream
+    servers:
+      - $ref: "#/servers/development"
+    bindings:
+      ws:
+        method: GET
+        bindingVersion: 0.1.0
+    messages:
+      TaskUpdated:
+        $ref: "#/components/messages/TaskUpdated"
+      AgentExecutionOpened:
+        $ref: "#/components/messages/AgentExecutionOpened"
+      AgentExecutionUpdated:
+        $ref: "#/components/messages/AgentExecutionUpdated"
+operations:
+  sendTaskUpdated:
+    action: send
+    channel:
+      $ref: "#/channels/realtime"
+    summary: Broadcast task.updated notifications.
+    tags:
+      - name: Tasks
+    messages:
+      - $ref: "#/channels/realtime/messages/TaskUpdated"
+  sendAgentExecutionOpened:
+    action: send
+    channel:
+      $ref: "#/channels/realtime"
+    summary: Broadcast agent-execution.opened notifications.
+    tags:
+      - name: Agent Executions
+    messages:
+      - $ref: "#/channels/realtime/messages/AgentExecutionOpened"
+  sendAgentExecutionUpdated:
+    action: send
+    channel:
+      $ref: "#/channels/realtime"
+    summary: Broadcast agent-execution.updated notifications.
+    tags:
+      - name: Agent Executions
+    messages:
+      - $ref: "#/channels/realtime/messages/AgentExecutionUpdated"
+components:
+  schemas:
+    TaskEventPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - projectId
+        - description
+        - command
+        - status
+        - kind
+        - exitCode
+      properties:
+        id:
+          type: integer
+          description: Task identifier.
+        projectId:
+          type: integer
+          description: Owning project identifier.
+        description:
+          type:
+            - string
+            - "null"
+          description: Task description.
+        command:
+          type:
+            - string
+            - "null"
+          description: Readable executable/argument representation, not a shell script. Null when unavailable.
+        status:
+          type: string
+          description: "Runner states: Queued, Running, Succeded (existing spelling), Failed."
+        kind:
+          type: string
+          description: Git command kind; older rows can contain unknown.
+        exitCode:
+          type:
+            - integer
+            - "null"
+          description: Null before completion; runner writes 0 on success and 1 on failure.
+    AgentExecutionEventPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - evaluationId
+        - agentType
+        - status
+        - result
+        - error
+        - inputTokens
+        - outputTokens
+        - createdAt
+        - startedAt
+        - finishedAt
+      properties:
+        id:
+          type: integer
+          description: Execution identifier.
+        evaluationId:
+          type:
+            - integer
+            - "null"
+          description: Evaluation identifier; null for direct executions.
+        agentType:
+          type: string
+          description: Agent name.
+        status:
+          type: string
+          description: "Lifecycle states: Waiting, Running, Completed, Failed."
+        result:
+          type:
+            - string
+            - "null"
+          description: Opaque serialized agent output. It remains a string, not a nested object.
+        error:
+          type:
+            - string
+            - "null"
+          description: Failure message.
+        inputTokens:
+          type:
+            - integer
+            - "null"
+          description: Optional input token usage.
+        outputTokens:
+          type:
+            - integer
+            - "null"
+          description: Optional output token usage.
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp, serialized from a Date.
+        startedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Start timestamp, or null before running.
+        finishedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Finish timestamp, or null before completion.
+  messages:
+    TaskUpdated:
+      name: task.updated
+      title: task.updated
+      summary: Broadcast task.updated notifications.
+      contentType: application/json
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          - type
+          - task
+        properties:
+          type:
+            const: task.updated
+          task:
+            $ref: "#/components/schemas/TaskEventPayload"
+      examples:
+        - name: queued
+          payload:
+            type: task.updated
+            task:
+              id: 1
+              projectId: 3
+              description: fetching acme/Demo
+              command: git -C C:/workspace/Demo fetch
+              status: Queued
+              kind: fetch
+              exitCode: null
+        - name: failed
+          payload:
+            type: task.updated
+            task:
+              id: 1
+              projectId: 3
+              description: null
+              command: null
+              status: Failed
+              kind: fetch
+              exitCode: 1
+    AgentExecutionOpened:
+      name: agent-execution.opened
+      title: agent-execution.opened
+      summary: Broadcast agent-execution.opened notifications.
+      contentType: application/json
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          - type
+          - execution
+        properties:
+          type:
+            const: agent-execution.opened
+          execution:
+            $ref: "#/components/schemas/AgentExecutionEventPayload"
+      examples:
+        - name: waiting
+          payload:
+            type: agent-execution.opened
+            execution:
+              id: 2
+              evaluationId: null
+              agentType: analyzer
+              status: Waiting
+              result: null
+              error: null
+              inputTokens: null
+              outputTokens: null
+              createdAt: 2026-10-11T00:00:00.000Z
+              startedAt: null
+              finishedAt: null
+    AgentExecutionUpdated:
+      name: agent-execution.updated
+      title: agent-execution.updated
+      summary: Broadcast agent-execution.updated notifications.
+      contentType: application/json
+      payload:
+        type: object
+        additionalProperties: false
+        required:
+          - type
+          - execution
+        properties:
+          type:
+            const: agent-execution.updated
+          execution:
+            $ref: "#/components/schemas/AgentExecutionEventPayload"
+      examples:
+        - name: running
+          payload:
+            type: agent-execution.updated
+            execution:
+              id: 2
+              evaluationId: null
+              agentType: analyzer
+              status: Running
+              result: null
+              error: null
+              inputTokens: null
+              outputTokens: null
+              createdAt: 2026-10-11T00:00:00.000Z
+              startedAt: 2026-10-11T00:00:01.000Z
+              finishedAt: null
+        - name: completed
+          payload:
+            type: agent-execution.updated
+            execution:
+              id: 2
+              evaluationId: null
+              agentType: analyzer
+              status: Completed
+              result: '{"kind":"library"}'
+              error: null
+              inputTokens: 1200
+              outputTokens: 180
+              createdAt: 2026-10-11T00:00:00.000Z
+              startedAt: 2026-10-11T00:00:01.000Z
+              finishedAt: 2026-10-11T00:01:00.000Z
+        - name: failed
+          payload:
+            type: agent-execution.updated
+            execution:
+              id: 2
+              evaluationId: null
+              agentType: analyzer
+              status: Failed
+              result: null
+              error: Agent-server unavailable
+              inputTokens: null
+              outputTokens: null
+              createdAt: 2026-10-11T00:00:00.000Z
+              startedAt: null
+              finishedAt: 2026-10-11T00:01:00.000Z

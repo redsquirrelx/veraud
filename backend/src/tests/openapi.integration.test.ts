@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import SwaggerParser from "@apidevtools/swagger-parser"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -49,14 +49,39 @@ describe("OpenAPI portal", () => {
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
       assert.equal(operations.length, 27)
-      const inventory = readFileSync(new URL("../../../docs/backend/http-endpoint-inventory.md", import.meta.url), "utf8")
-      const expectedOperations = [...new Set([...inventory.matchAll(/(GET|POST|PATCH|DELETE|PUT) (\/[^\s`]+)/g)]
-        .filter((match) => match[2] !== "/ws")
-        .map((match) => `${match[1]} ${match[2]!.replace(/:([A-Za-z]+)/g, "{$1}")}`))].sort()
+      const expectedOperations = [
+        "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
+        "DELETE /api/ai-providers/{id}/models/{nestedId}",
+        "GET /api/agent-executions/{id}",
+        "GET /api/ai-providers",
+        "GET /api/ai-providers/{id}",
+        "GET /api/projects",
+        "GET /api/projects/{id}/versions",
+        "GET /api/tasks/active",
+        "GET /status",
+        "PATCH /api/ai-providers/{id}/credentials/{nestedId}",
+        "PATCH /api/ai-providers/{id}/models/{nestedId}",
+        "POST /api/agent-executions",
+        "POST /api/agent-executions/direct",
+        "POST /api/agent-executions/{id}/completion",
+        "POST /api/agent-executions/{id}/running",
+        "POST /api/ai-providers/{id}/credentials",
+        "POST /api/ai-providers/{id}/models",
+        "POST /api/projects",
+        "POST /api/projects/{id}/analyze",
+        "POST /api/projects/{id}/file",
+        "POST /api/projects/{id}/git/branches",
+        "POST /api/projects/{id}/git/checkout",
+        "POST /api/projects/{id}/git/checkout-branch",
+        "POST /api/projects/{id}/git/log",
+        "POST /api/projects/{id}/git/rev-parse",
+        "POST /api/projects/{id}/git/tree",
+        "POST /api/projects/{id}/sync",
+      ].sort()
       const documentedOperations = Object.entries(specification.paths).flatMap(([path, item]) =>
         Object.keys(item as Record<string, unknown>).filter((method) => ["get", "post", "patch", "delete", "put"].includes(method)).map((method) => `${method.toUpperCase()} ${path}`),
       ).sort()
-      assert.deepEqual(documentedOperations, expectedOperations, "OpenAPI must cover the exact methods and paths in the endpoint inventory")
+      assert.deepEqual(documentedOperations, expectedOperations, "OpenAPI must cover the expected HTTP methods and paths")
       for (const operation of operations) {
         assert.ok(operation.tags?.length)
         assert.ok(operation.summary)
