@@ -6,6 +6,9 @@ No files on disk → clones; attached checkout → `git pull`
 (refreshes every ref without moving HEAD, since `pull` cannot merge
 without a branch). Recloning uses the original HTTPS or SSH transport;
 pull and fetch use the checkout's configured remote.
+Recloning also preserves `shallowClone`: shallow projects use `--depth 1`.
+Pull and fetch do not automatically unshallow a repository; available branches
+and commits reflect the local checkout. Later syncs can add newer commits.
 
 Source of truth: `backend/src/modules/project/`,
 `infrastructure/task-runner/` (`pull`/`fetch` commands)

@@ -15,8 +15,13 @@ Request: `repositoryUrl` (string, required) — `https://github.com/{owner}/{rep
 For SSH, Git uses the SSH configuration of the user running the backend; the
 application does not manage keys or prompt for credentials.
 
+`shallowClone` (boolean, optional, defaults to `false` when omitted):
+`false` executes `git clone <url> <destination>`; `true` executes
+`git clone --depth 1 <url> <destination>`, initially downloading only the latest
+commit of the default branch. Both modes support HTTPS and SSH.
+
 ```json
-{ "repositoryUrl": "https://github.com/fintech-core/payment-gateway-v2" }
+{ "repositoryUrl": "https://github.com/fintech-core/payment-gateway-v2", "shallowClone": true }
 ```
 
 Response `201`: `id` (number), `repositoryOwner` (string), `repositoryName` (string), `status` (`QUEUED`).
@@ -36,6 +41,12 @@ Read-only. Returns tasks `Queued`/`Running`: `id`, `projectId`, `repositoryOwner
 
 ## WS `/ws` — `task.updated`
 
+Both `GET /api/tasks/active` and `task.updated` include `command` (string or null).
+The runner saves a readable representation of the executable and arguments
+before announcing `Queued`, then executes those same arguments via `execFile`.
+Arguments needing quotes use JSON string notation; this is a display value,
+not a shell script. Older tasks without a recorded command return null.
+
 Per transition: `id`, `projectId`, `description`, `status` (`Queued`/`Running`/`Succeded`/`Failed`), `kind`, `exitCode` (number or null). The frontend uses `kind` to silence read-only tasks (`list-branches`, `rev-parse`, `log-commits`) unless they fail.
 
 Agent executions broadcast `agent-execution.opened` / `agent-execution.updated`; see `agent-execution.md`.
@@ -50,7 +61,9 @@ Agent executions broadcast `agent-execution.opened` / `agent-execution.updated`;
 
 ## Data
 
-`project`: `githubRepositoryId` (GitHub numeric id), `repositoryOwner`/`repositoryName`, `status QUEUED`, `name` null until synced, no `project_version` yet.
+`project`: `githubRepositoryId` (GitHub numeric id), `repositoryOwner`/`repositoryName`,
+`shallowClone` (boolean, preserved when recloning; defaults to `false`),
+`status QUEUED`, `name` null until synced, no `project_version` yet.
 `task`: `projectId`, `description`, `status`, `kind` (command that created it, `unknown` for rows predating the column), `exitCode`, `logTrail` (last 4000 chars, always saved on finish).
 
 Out of scope: Agent invocations are covered in `agent-execution.md`.
