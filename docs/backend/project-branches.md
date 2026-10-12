@@ -12,7 +12,9 @@ commands)
 
 ## `POST /api/projects/:id/git/branches`
 
-Body: empty object. Response `200`: `branches` (string array parsed
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
+No body required. Response `200`: `branches` (string array parsed
 from `git branch -a`: star marker stripped, `remotes/origin/HEAD ->`
 symlinks and `(HEAD detached` markers skipped, `remotes/<remote>/`
 prefix shortened, deduplicated, locals first), `currentBranch`
@@ -23,7 +25,7 @@ locally; the remote ones surface here through their `origin/` refs.
 
 ## `POST /api/projects/:id/git/tree`
 
-Body: empty object. Response `200`: `files` (string array of the paths
+No body required. Response `200`: `files` (string array of the paths
 tracked at `HEAD`, from `git ls-tree -r --name-only HEAD`, relative to
 the repo root and slash separated) plus `taskId`. `HEAD` is what makes
 it follow the checked-out version: a detached commit returns that

@@ -15,6 +15,8 @@ wiring plus CORS methods in `backend/src/app.ts`.
 
 ## `GET /api/ai-providers`
 
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
 No body. Response `200`: array of `{ id, name, models,
 credentials }` ordered by provider name. Each model is `{ id, name,
 inUse }`; each credential is `{ id, name, apiKeyPreview, inUse }`.

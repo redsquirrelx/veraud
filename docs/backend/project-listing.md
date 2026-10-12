@@ -6,6 +6,8 @@ filtering and paging run client-side (local single-user).
 
 Source of truth: `backend/src/modules/project/`
 
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
 ## `GET /api/projects`
 
 Response `200` (empty array when none, never 404): `id` (number),
