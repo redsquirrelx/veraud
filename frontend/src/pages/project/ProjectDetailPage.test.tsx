@@ -341,9 +341,12 @@ describe("ProjectDetailPage", () => {
     await screen.findByText("acme/Demo")
     expect(await screen.findByText("Branch")).toBeDefined()
     expect(screen.getByText("Commit")).toBeDefined()
-    expect(screen.getByLabelText("Search items")).toBeDefined()
     expect(screen.queryByRole("button", { name: "Apply version" })).toBeNull()
 
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search items")).toHaveValue("aaaaaaa")
+      expect(screen.getByLabelText("Search items")).not.toBeDisabled()
+    })
     await userEvent.clear(screen.getByLabelText("Search items"))
     await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
 
