@@ -5,6 +5,7 @@ import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
+import { projectWorkspaceFolder } from "./project-workspace.js"
 
 export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
@@ -65,42 +66,48 @@ export class ProjectService {
     const parsed = parseGithubUrl(repositoryUrl)
 
     if (parsed === null) {
-      throw new InvalidUrlError("URL must look like https://github.com/{owner}/{repo}")
+      throw new InvalidUrlError("URL must look like https://github.com/{owner}/{repo} or git@github.com:{owner}/{repo}.git")
     }
 
-    let metadata
-    try {
-      metadata = await this.github.checkAccess(parsed.owner, parsed.repo)
-    } catch (error) {
-      if (error instanceof RepoNotAccessibleError) {
-        throw error
+    let metadata: { id: number; owner: string; name: string; cloneUrl: string } | null = null
+    if (parsed.protocol === "https") {
+      try {
+        metadata = await this.github.checkAccess(parsed.owner, parsed.repo)
+      } catch (error) {
+        if (error instanceof RepoNotAccessibleError) {
+          throw error
+        }
+        throw new RepoNotAccessibleError(`Could not reach repository ${parsed.owner}/${parsed.repo}`)
       }
-      throw new RepoNotAccessibleError(`Could not reach repository ${parsed.owner}/${parsed.repo}`)
     }
 
-    const existing = await this.projects.findByGithubId(BigInt(metadata.id))
+    const owner = metadata?.owner ?? parsed.owner
+    const name = metadata?.name ?? parsed.repo
+    const githubRepositoryId = metadata === null ? null : BigInt(metadata.id)
+    const existing = await this.projects.findByRepo(owner, name) ?? (githubRepositoryId === null ? null : await this.projects.findByGithubId(githubRepositoryId))
 
     if (existing !== null) {
-      throw new DuplicateProjectError(`Repository ${metadata.owner}/${metadata.name} is already registered`)
+      throw new DuplicateProjectError(`Repository ${owner}/${name} is already registered`)
     }
 
     const project = await this.projects.create({
-      githubRepositoryId: BigInt(metadata.id),
-      repositoryOwner: metadata.owner,
-      repositoryName: metadata.name,
+      githubRepositoryId,
+      cloneProtocol: parsed.protocol,
+      repositoryOwner: owner,
+      repositoryName: name,
       status: "QUEUED",
     })
 
-    const { task, result } = await this.tasks.launch(project.id, `cloning ${metadata.owner}/${metadata.name}`, {
+    const { task, result } = await this.tasks.launch(project.id, `cloning ${owner}/${name}`, {
       kind: "clone",
-      cloneUrl: metadata.cloneUrl,
-      folder: `${metadata.id}-${metadata.owner}-${metadata.name}`,
+      cloneUrl: parsed.protocol === "ssh" ? `git@github.com:${owner}/${name}.git` : `https://github.com/${owner}/${name}.git`,
+      folder: projectWorkspaceFolder({ ...project, githubRepositoryId }),
     })
 
     if (result.status !== "Succeded") {
       await this.tasks.remove(task.id)
       await this.projects.delete(project.id)
-      throw new RepoNotAccessibleError(`Repository ${metadata.owner}/${metadata.name} could not be cloned`)
+      throw new RepoNotAccessibleError(`Repository ${owner}/${name} could not be cloned`)
     }
 
     return project
@@ -116,7 +123,7 @@ export class ProjectService {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
     }
 
-    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
     const hasFiles = existsSync(targetDir) && readdirSync(targetDir).length > 0
     const previousStatus = project.status
@@ -128,7 +135,9 @@ export class ProjectService {
       description = `cloning ${project.repositoryOwner}/${project.repositoryName}`
       command = {
         kind: "clone",
-        cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
+        cloneUrl: project.cloneProtocol === "ssh"
+          ? `git@github.com:${project.repositoryOwner}/${project.repositoryName}.git`
+          : `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
         folder,
       }
     } else if (isDetachedHead(targetDir)) {
@@ -409,7 +418,7 @@ export class ProjectService {
     }))
   }
 
-  private requireWorkspace(project: StoredProjectDetails): string {    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+  private requireWorkspace(project: StoredProjectDetails): string {    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
 
     if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {

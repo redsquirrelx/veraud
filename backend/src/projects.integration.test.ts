@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "./app.js"
+import type { GitCommand } from "./infrastructure/task-runner/git.executor.js"
 
 const realFetch = globalThis.fetch
 const backendRoot = fileURLToPath(new URL("../", import.meta.url))
@@ -42,13 +43,17 @@ const noopRunner = {
 describe("projects API with mocked github", () => {
   let baseUrl = ""
   let close = async () => {}
+  const commands: GitCommand[] = []
 
   before(async () => {
     const { app, db } = await buildApp({
       databaseUrl: freshDatabase(),
       workspaceDir: mkdtempSync(join(tmpdir(), "veraud-ws-")),
       silent: true,
-      makeRunner: () => noopRunner,
+      makeRunner: () => ({ enqueue: async (task) => {
+        commands.push(task.command)
+        return noopRunner.enqueue()
+      } }),
     })
 
     await app.listen({ port: 0, host: "127.0.0.1" })
@@ -128,6 +133,32 @@ describe("projects API with mocked github", () => {
     })
 
     assert.equal(response.status, 422)
+  })
+
+  it("registers a private SSH URL without GitHub API metadata and reclones with SSH", async () => {
+    mockGithubApi(404, { message: "Not Found" })
+    const response = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "ssh://git@github.com/private-org/Secret.git" }),
+    })
+    assert.equal(response.status, 201)
+    const project = await response.json() as { id: number }
+    assert.deepEqual(commands.at(-1), { kind: "clone", cloneUrl: "git@github.com:private-org/Secret.git", folder: `project-${project.id}-private-org-Secret` })
+
+    const listed = await (await fetch(`${baseUrl}/api/projects`)).json() as Array<{ id: number, cloneProtocol: string }>
+    assert.equal(listed.find((row) => row.id === project.id)?.cloneProtocol, "ssh")
+
+    const retry = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "git@github.com:private-org/Secret.git" }),
+    })
+    assert.equal(retry.status, 409)
+
+    const sync = await fetch(`${baseUrl}/api/projects/${project.id}/sync`, { method: "POST" })
+    assert.equal(sync.status, 200)
+    assert.equal(((await sync.json()) as { cloneProtocol: string }).cloneProtocol, "ssh")
+    assert.deepEqual(commands.at(-1), { kind: "clone", cloneUrl: "git@github.com:private-org/Secret.git", folder: `project-${project.id}-private-org-Secret` })
   })
 })
 
