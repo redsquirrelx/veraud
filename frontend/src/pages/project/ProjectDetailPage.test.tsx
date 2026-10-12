@@ -102,6 +102,33 @@ function renderDetail(entry: string) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("keeps the contextual header and version selection mounted across project sections", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+    await screen.findByRole("heading", { name: "acme/Demo" })
+    const header = screen.getByLabelText("Project context")
+    const controls = within(header)
+    expect(controls.getByText("READY")).toBeDefined()
+    expect(controls.getByText("HTTPS")).toBeDefined()
+    await waitFor(() => expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled())
+    const branch = controls.getByRole("button", { name: "main" })
+    for (const section of ["Audits", "Files", "Overview"]) {
+      await userEvent.click(screen.getByRole("button", { name: section }))
+      expect(screen.getByLabelText("Project context")).toBe(header)
+      expect(controls.getByRole("button", { name: "main" })).toBe(branch)
+      expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled()
+      expect(controls.getByRole("button", { name: "Sync" })).toBeEnabled()
+      if (section === "Overview") {
+        expect(screen.getByRole("region", { name: "Project overview" })).toBeDefined()
+        expect(screen.getByRole("link", { name: "Open on GitHub" })).toBeDefined()
+      } else {
+        expect(screen.queryByRole("region", { name: "Project overview" })).toBeNull()
+        expect(screen.queryByRole("link", { name: "Open on GitHub" })).toBeNull()
+        expect(screen.queryByText(/Last synced/)).toBeNull()
+      }
+    }
+  })
+
   it("shows the project header with sidebar", async () => {
     stubProjects()
     renderDetail("/projects/2")
@@ -531,7 +558,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.queryByText("Analysis completed")).toBeNull()
   })
 
-  it("shows the analysis verdict in the header card", async () => {
+  it("shows the analysis verdict in Overview", async () => {
     const completed = {
       id: 21,
       evaluationId: 7,
@@ -614,7 +641,7 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
 
-    const headerRow = screen.getByText("acme/Demo").closest(".project-name-row")
+    const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {
       throw new Error("project header row not found")
     }

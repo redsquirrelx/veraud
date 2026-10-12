@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
-import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
-import { statusTone } from "../../features/project-management/projectStatus.ts"
+import { CodeViewer, DirectoryTree, Badge, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
+import { ProjectSidebar } from "./ProjectSidebar.tsx"
+import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
-import { VersionSelector, type VersionMode } from "../../features/project-management/VersionSelector.tsx"
+import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
 import { listProjects, syncProject, type ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectDetailPage.css"
@@ -26,6 +27,7 @@ export function ProjectDetailPage() {
   const [section, setSection] = useState("overview")
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { pushToast } = useToasts()
   const version = useVersionSelector(project?.id ?? null, {
@@ -90,12 +92,14 @@ export function ProjectDetailPage() {
       (rows) => {
         if (alive) {
           setProject(rows.find((row) => row.id === Number(id)) ?? null)
+          setLoadError("")
           setLoading(false)
         }
       },
       () => {
         if (alive) {
           setProject(null)
+          setLoadError("Could not load the project")
           setLoading(false)
         }
       }
@@ -193,84 +197,77 @@ export function ProjectDetailPage() {
 
   return (
     <section className="project-page">
-      <Sidebar title="Project" items={sectionItems} activeId={section} storageKey="sidebar.expanded" onSelect={setSection} />
+      <ProjectSidebar items={sectionItems} activeId={section} onSelect={setSection} />
       <div className="project-content">
         {loading ? (
-          <p className="label">Loading project</p>
+          <p className="label" role="status">Loading project</p>
+        ) : loadError !== "" ? (
+          <p role="alert">{loadError}</p>
         ) : project === null ? (
           <p>Project not found</p>
         ) : (
           <>
-            <Card>
-              <VersionSelector
-                selection={gitSelection}
-                analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
-                mode={versionMode}
-                onModeChange={handleModeChange}
-                analyzed={{
+            <ProjectHeader
+              project={project}
+              analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
+              syncing={syncing}
+              onSync={() => void handleSync()}
+              versionSelector={{
+                selection: gitSelection,
+                mode: versionMode,
+                onModeChange: handleModeChange,
+                analyzed: {
                   versions: analyzedVersions,
                   loading: analyzed.loading,
                   error: analyzed.error,
                   selectedId: analyzedId,
                   onSelect: (id) => void selectAnalyzed(id),
                   onRefresh: () => void analyzed.refresh(),
-                }}
-              />
-            </Card>
-            <Card>
-              <div className="project-header">
-                <div className="project-header-info">
-                  <span className="project-name-row">
-                    <span className="mono">
-                      {project.repositoryOwner}/{project.repositoryName}
-                    </span>
-                    <Badge tone={statusTone(project.status)}>{project.status}</Badge>
-                    <Badge tone="neutral">{project.cloneProtocol.toUpperCase()}</Badge>
-                    {analysisSummary !== null && (
-                      <>
-                        <span className="label">Type</span>
-                        <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
-                        <span className="label">Confidence</span>
-                        <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
-                      </>
-                    )}
-                    {analysisSummary === null && analysis.analyzing && (
-                      <Badge tone="info">Analyzing</Badge>
-                    )}
-                    <a
-                      className="project-link"
-                      href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open on GitHub<ExternalIcon size={12} />
-                    </a>
+                },
+              }}
+            />
+            <div className="project-body">
+            {section === "overview" && <Card>
+              <section className="project-overview" aria-label="Project overview">
+                <h2>Overview</h2>
+                <div className="project-dates-row">
+                  <span className="project-date">
+                    Registered {new Date(project.registeredAt).toLocaleDateString()}
                   </span>
-                  <span className="project-dates-row">
-                    <span className="project-date">
-                      Registered {new Date(project.registeredAt).toLocaleDateString()}
-                    </span>
-                    <span className="project-date">
-                      {project.lastSyncedAt === null
-                        ? "Never synced"
-                        : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
-                    </span>
+                  <span className="project-date">
+                    {project.lastSyncedAt === null
+                      ? "Never synced"
+                      : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
                   </span>
-                  {analysisSummary !== null && analysisSummary.summary !== "" && (
-                    <span className="project-summary">{analysisSummary.summary}</span>
+                </div>
+                <a
+                  className="project-link"
+                  href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open on GitHub<ExternalIcon size={12} />
+                </a>
+                {analysisSummary !== null && <div className="project-overview-analysis">
+                  <h3>Analysis summary</h3>
+                  <div className="project-name-row">
+                    <span className="label">Type</span>
+                    <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
+                    <span className="label">Confidence</span>
+                    <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
+                  </div>
+                  {analysisSummary.summary !== "" && (
+                    <p className="project-summary">{analysisSummary.summary}</p>
                   )}
-                </div>
-                <Button loading={syncing} loadingText="Syncing" disabled={syncing} onClick={() => void handleSync()}>
-                  Sync
-                </Button>
-              </div>
-              {analysis.analyzing && (
-                <div className="files-loading" role="status" aria-label="Loading">
-                  <Spinner />
-                  <span className="label">Analyzing the project</span>
-                </div>
-              )}
-            </Card>
+                </div>}
+                {analysis.analyzing && (
+                  <div className="files-loading" role="status" aria-label="Loading">
+                    <Spinner />
+                    <span className="label">Analyzing the project</span>
+                  </div>
+                )}
+              </section>
+            </Card>}
             {section === "files" && (
               <Card>
                 <SplitView
@@ -333,8 +330,9 @@ export function ProjectDetailPage() {
             )}
             {analysis.phase === "error" && <Card>
               <p role="alert">{analysis.message}</p>
-              <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>Review agent configuration</Link>
+             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>Review agent configuration</Link>
             </Card>}
+            </div>
           </>
         )}
       </div>
