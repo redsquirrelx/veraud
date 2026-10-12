@@ -82,7 +82,7 @@ export class AiProviderRepository implements AiProviderStore {
   }
 
   async updateModel(id: number, name: string): Promise<StoredAiModel> {
-    const model = await this.db.aiModel.update({ where: { id }, data: { name } })
+    const model = await this.db.aiModel.update({ where: { id }, data: { name, revision: { increment: 1 } } })
     return { id: model.id, aiProviderId: model.aiProviderId, name: model.name }
   }
 
@@ -116,7 +116,7 @@ export class AiProviderRepository implements AiProviderStore {
   }
 
   async updateCredential(id: number, name: string, apiKey?: string): Promise<StoredAiCredential> {
-    const credential = await this.db.aiCredential.update({ where: { id }, data: { name, ...(apiKey === undefined ? {} : { apiKey }) } })
+    const credential = await this.db.aiCredential.update({ where: { id }, data: { name, ...(apiKey === undefined ? {} : { apiKey, revision: { increment: 1 } }) } })
     return { id: credential.id, aiProviderId: credential.aiProviderId, name: credential.name, apiKey: credential.apiKey }
   }
 

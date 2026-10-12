@@ -1,3 +1,5 @@
+import { configurationSchema } from "../../../modules/agent-settings/agent-settings.schemas.js"
+
 export const agentExecutionSchema = {
   $id: "AgentExecution",
   type: "object",
@@ -14,6 +16,7 @@ export const agentExecutionSchema = {
     createdAt: { type: "string", format: "date-time" },
     startedAt: { type: ["string", "null"], format: "date-time" },
     finishedAt: { type: ["string", "null"], format: "date-time" },
+    configuration: { ...configurationSchema, description: "Immutable configuration captured at execution start, without API keys. Null for historical executions." },
   },
 } as const
 

@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify"
+import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
+import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 import { errorResponses } from "../../infrastructure/openapi/routeSchemas.js"
 import type {
   AgentExecutionEvent,
@@ -70,8 +72,8 @@ export function registerAgentExecutionRoutes(
    */
   app.post("/api/agent-executions", { schema: { body: openBody,
     tags: ["Agent Executions"], summary: "Start an agent execution for an evaluation",
-    description: "Returns the Waiting execution immediately and dispatches the agent in the background. Input is resolved from the evaluation. Later dispatch failures update the execution; they do not change this initial HTTP response.",
-    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400, 422], "ExecutionError", false) },
+    description: "Checks saved model/credential provider consistency and live model access before creating an execution; failures return 422 with affected agents. Captures an immutable configuration without API keys, then returns Waiting and dispatches with that configuration. Input is resolved from the evaluation. Later dispatch failures update the execution; they do not change this initial HTTP response.",
+    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400], "ExecutionError", false), 422: { type: "object", required: ["error"], properties: { error: { type: "string" }, agents: configurationIssuesSchema } } },
   } }, async (request, reply) => {
     const body = request.body as { agentType: string; evaluationId: number }
 
@@ -84,6 +86,7 @@ export function registerAgentExecutionRoutes(
 
       return reply.code(201).send(toResponse(execution))
     } catch (error) {
+      if (error instanceof AgentConfigurationError) return reply.code(422).send({ error: error.message, agents: error.agents })
       if (error instanceof UnknownExecutionTargetError) {
         return reply.code(422).send({ error: error.message })
       }
@@ -102,8 +105,8 @@ export function registerAgentExecutionRoutes(
    */
   app.post("/api/agent-executions/direct", { schema: { body: openDirectBody,
     tags: ["Agent Executions"], summary: "Start an agent with explicit input",
-    description: "Creates no evaluation/version and returns evaluationId null. Workspace traversal is rejected before creation; an absent checkout fails the execution in the background. Other input fields pass through to the agent.",
-    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400, 422], "ExecutionError", false) },
+    description: "Checks saved model/credential provider consistency and live model access before creating an execution; failures return 422 with affected agents. Captures the saved configuration for this run. Creates no evaluation/version and returns evaluationId null. Workspace traversal is rejected before creation; an absent checkout fails the execution in the background. Other input fields pass through to the agent.",
+    response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400], "ExecutionError", false), 422: { type: "object", required: ["error"], properties: { error: { type: "string" }, agents: configurationIssuesSchema } } },
   } }, async (request, reply) => {
     const body = request.body as { agentType: string; input: Record<string, unknown> }
 
@@ -116,6 +119,7 @@ export function registerAgentExecutionRoutes(
 
       return reply.code(201).send(toResponse(execution))
     } catch (error) {
+      if (error instanceof AgentConfigurationError) return reply.code(422).send({ error: error.message, agents: error.agents })
       if (error instanceof UnknownExecutionTargetError || error instanceof InvalidDirectInputError) {
         return reply.code(422).send({ error: error.message })
       }
@@ -211,6 +215,7 @@ function toResponse(execution: StoredAgentExecution) {
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
+    configuration: execution.configuration ?? null,
   }
 }
 

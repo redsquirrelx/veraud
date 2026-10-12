@@ -15,7 +15,9 @@ class OpenRouterModel(Model):
             temperature = settings.temperature,
             max_tokens = settings.max_tokens,
             api_key = credentials.api_key,
-            base_url = "https://openrouter.ai/api/v1",
+            base_url = "https://api.openai.com/v1" if settings.provider.lower() == "openai" else "https://openrouter.ai/api/v1",
+            timeout = 25,
+            max_retries = 0,
         )
 
     async def generate(self, message: str) -> any:

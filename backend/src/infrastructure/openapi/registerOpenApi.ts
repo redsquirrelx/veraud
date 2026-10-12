@@ -19,6 +19,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
         { name: "Tasks", description: "Queued and running Git tasks, including their recorded commands." },
         { name: "AI Providers", description: "Read provider configuration and manage provider-scoped models and masked credentials." },
         { name: "Agent Executions", description: "Start agents, inspect executions and report lifecycle transitions through callbacks." },
+        { name: "Agent Settings", description: "List backend agent types and inspect their saved model and credential assignments." },
         { name: "Status", description: "Backend health and agent-server reachability." },
       ],
     },

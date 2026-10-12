@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
@@ -316,9 +317,24 @@ export function ProjectDetailPage() {
                       {analysis.execution.agentType} run #{analysis.execution.id}
                     </span>
                   </div>
+                  {analysis.execution.configuration && <div className="audit-configuration">
+                    <h3>Configuration used</h3>
+                    <dl>
+                      <dt>Model</dt><dd>{analysis.execution.configuration.model.name}</dd>
+                      <dt>Provider</dt><dd>{analysis.execution.configuration.model.providerName}</dd>
+                      <dt>Credential</dt><dd>{analysis.execution.configuration.credential.name} (#{analysis.execution.configuration.credential.id})</dd>
+                      <dt>Temperature</dt><dd>{analysis.execution.configuration.temperature}</dd>
+                      <dt>Maximum tokens</dt><dd>{analysis.execution.configuration.maxTokens}</dd>
+                    </dl>
+                    <p className="label">Captured when this execution started. Later Settings changes apply to new executions.</p>
+                  </div>}
                 </Card>
               )
             )}
+            {analysis.phase === "error" && <Card>
+              <p role="alert">{analysis.message}</p>
+              <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>Review agent configuration</Link>
+            </Card>}
           </>
         )}
       </div>

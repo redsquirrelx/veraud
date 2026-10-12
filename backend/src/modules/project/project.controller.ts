@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify"
 import { branchInput, commitHashInput, errorResponses, objectResponse } from "../../infrastructure/openapi/routeSchemas.js"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
+import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
+import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 import { DuplicateProjectError, AnalysisAlreadyRunningError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
@@ -279,8 +281,8 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
   app.post("/api/projects/:id/analyze", {
     schema: {
       tags: ["Projects"], summary: "Start analysis of a project version",
-      description: "Saves or reuses and selects the version, creates an evaluation and starts the analyzer in the background. Does not check out the commit. Rejects an already-open execution for the same commit; completion arrives later through callbacks/WebSocket.",
-      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, execution: { $ref: "AgentExecution#" } }), ...errorResponses([400, 404, 422]) },
+      description: "Verifies the analyzer's saved model and credential through a live access check before transactionally selecting the version and creating evaluation/execution records. Invalid access returns 422 with affected agents and creates no partial analysis. Captures the configuration and starts the analyzer in the background. Does not check out the commit. Rejects an already-open execution for the same commit; completion arrives later through callbacks/WebSocket.",
+      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, execution: { $ref: "AgentExecution#" } }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
       params: idParams,
       body: {
         type: "object",
@@ -312,6 +314,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError) {
         return reply.code(422).send({ message: error.message })
       }
+      if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
       throw error
     }
   })
@@ -377,5 +380,6 @@ function toExecution(execution: StoredAgentExecution) {
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
+    configuration: execution.configuration ?? null,
   }
 }

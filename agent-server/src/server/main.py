@@ -1,4 +1,6 @@
 from fastapi import APIRouter, FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from .api.executions import router as executions_router
 from .api.schemas import StatusResponse
@@ -55,3 +57,10 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(executions_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_without_secrets(request, error: RequestValidationError):
+    # FastAPI's default `input` may echo the complete config, including API keys.
+    details = [{key: value for key, value in item.items() if key not in {"input", "ctx"}} for item in error.errors()]
+    return JSONResponse(status_code=422, content={"detail": details})

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
@@ -7,15 +8,19 @@ from ..app.execution_service import (
     AgentExecutionService,
     InvalidConfigError,
     InvalidInputError,
+    build_model,
     get_execution_service,
 )
 from ..config.logs import get_logger
+from ..config.schemas import ModelCredentials, ModelSettings
 from .schemas import (
     AgentSchemaResponse,
     DomainError,
     ExecutionRequest,
     ExecutionResponse,
     RequestValidationErrorResponse,
+    VerifyAccessRequest,
+    VerifyAccessResponse,
 )
 
 logger = get_logger("api")
@@ -24,6 +29,28 @@ logger = get_logger("api")
 router = APIRouter(prefix="/api/agents", tags=["Agents"])
 
 ServiceDep = Annotated[AgentExecutionService, Depends(get_execution_service)]
+
+
+@router.post(
+    "/verify-access", response_model=VerifyAccessResponse,
+    summary="Verify credential access to a model",
+    description="Performs a minimal generation request against the explicit provider and model. May incur provider usage. No agent, callbacks or server credential fallback. Timeout: 25 seconds. Provider error bodies and API keys are never returned.",
+    responses={422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid request, missing/unsupported model or denied model access."}, 504: {"model": DomainError, "description": "Provider verification timed out."}},
+)
+async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
+    if not body.model.provider or not body.model.name or not body.api_key.strip():
+        raise HTTPException(status_code=422, detail="Explicit provider, model and credential are required")
+    try:
+        model = build_model(ModelSettings(
+            provider=body.model.provider, name=body.model.name,
+            temperature=body.model.temperature if body.model.temperature is not None else 0.2, max_tokens=64,
+        ), ModelCredentials(api_key=body.api_key))
+        await asyncio.wait_for(model.generate("Reply with OK."), timeout=25)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="Model access verification timed out") from None
+    except Exception:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
+        raise HTTPException(status_code=422, detail="Model access denied; check provider, model, credential and permissions") from None
+    return VerifyAccessResponse(verified=True)
 
 # Domain error -> HTTP status. Every clause of the except chains below picks a
 # status from here, so the error contract is readable in one place.

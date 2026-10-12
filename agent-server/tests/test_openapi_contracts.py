@@ -95,6 +95,7 @@ def test_portal_and_exact_operation_coverage(api):
         ("GET", "/api/agents"),
         ("GET", "/api/agents/{agent_type}/schema"),
         ("POST", "/api/agents/run"),
+        ("POST", "/api/agents/verify-access"),
     }
     def application_routes(routes):
         for route in routes:
@@ -105,7 +106,7 @@ def test_portal_and_exact_operation_coverage(api):
                 yield from application_routes(route.original_router.routes)
 
     registered = {(method, route.path) for route in application_routes(app.routes) for method in route.methods}
-    assert len(expected) == 4
+    assert len(expected) == 5
     assert operations == registered == expected
     ids = []
     for method, path in operations:

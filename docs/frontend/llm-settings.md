@@ -1,11 +1,19 @@
 # Frontend Contract — Settings LLM Admin
 
-The `Models & credentials` card on `/settings` administers LLM
+The `Models & credentials` tab on `/settings` administers LLM
 models and API keys against the backend (`docs/backend/ai-providers.md`).
 It owns no persistence: `useAiProviders` loads and mutates, the page
 maps provider-scoped data into two flat single-select `ItemList`s
 with domain templates, and outcomes toast globally (see
 `docs/frontend/toasts.md`).
+
+The separate `Agents` tab loads backend-declared types through `GET /api/agent-settings` and
+allows editing saved assignments in Cards and the Drawer, including generation
+parameters. Both show access-verification state and a **Verify access** action.
+Successful saves toast; failed saves retain drafts. Settings remembers its active
+tab through the infrastructure storage abstraction (`settings.activeTab`). See
+[agent settings](../backend/agent-settings.md). `Preferences` contains task
+notification visibility settings.
 
 Source of truth: `frontend/src/pages/settings/SettingsPage.tsx`
 (page), `ModelListItem.tsx` / `CredentialListItem.tsx` (row

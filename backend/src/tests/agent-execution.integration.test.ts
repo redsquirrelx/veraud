@@ -65,6 +65,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
       silent: true,
       makeRunner: () => noopRunner,
       makeAgentInvoker: () => options.invoker ?? stallingInvoker,
+      makeModelAccessVerifier: () => ({ verify: async () => {} }),
     })
 
     auditResponseSerialization(app)
@@ -128,8 +129,10 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
       data: { name: "test-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
 
-    await db.agentSettings.create({
-      data: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+    await db.agentSettings.upsert({
+      where: { agentType },
+      create: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+      update: { aiModelId: model.id, aiCredentialId: credential.id },
     })
   }
 

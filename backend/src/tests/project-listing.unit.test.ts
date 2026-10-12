@@ -50,6 +50,7 @@ function serviceWith(rows: StoredProjectDetails[]) {
   }
   return new ProjectService(projects, null as never, new GithubClient(), "", {
     open: async () => { throw new Error("not used here") },
+    openForProject: async () => { throw new Error("not used here") },
   })
 }
 

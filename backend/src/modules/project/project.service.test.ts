@@ -125,6 +125,7 @@ function makeFakes(options: {
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
     open: async () => { throw new Error("not used here") },
+    openForProject: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
@@ -256,7 +257,7 @@ describe("ProjectService.registerProject", () => {
       ),
       failing,
       join(tmpdir(), "veraud-unused"),
-      { open: async () => { throw new Error("must not open executions") } }
+      { open: async () => { throw new Error("must not open executions") }, openForProject: async () => { throw new Error("must not open executions") } }
     )
 
     await assert.rejects(

@@ -29,7 +29,7 @@ with JSON Schema null unions; Swagger converts these to OpenAPI 3.0-compatible
 schemas. Dates describe their ISO HTTP representation. Public response schemas
 omit internal database fields, including full API keys.
 
-All 27 explicit backend HTTP operations now reference response contracts and
+All 30 explicit backend HTTP operations now reference response contracts and
 include tags, summaries and descriptions. Input examples and service-level
 validation/default descriptions live alongside the route schemas. Response
 schemas participate in Fastify serialization; the existing integration tests
@@ -51,8 +51,8 @@ published separately at `/docs/ws`; see [the AsyncAPI guide](asyncapi.md).
 
 ## Portal organization
 
-The six groups appear in this order: Projects, Project Git, Tasks, AI Providers,
-Agent Executions and Status. Each has a description. Groups start collapsed,
+The seven groups appear in this order: Projects, Project Git, Tasks, AI Providers,
+Agent Executions, Agent Settings and Status. Each has a description. Groups start collapsed,
 operations are ordered alphabetically, and the UI enables filtering, deep links
 and request-duration display.
 

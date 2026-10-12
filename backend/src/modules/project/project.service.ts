@@ -6,6 +6,8 @@ import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/t
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
+import { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
+export { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
 
 export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
@@ -28,12 +30,12 @@ const DEFAULT_LOG_LIMIT = 30
 const MAX_LOG_LIMIT = 100
 const MAX_FILE_BYTES = 512 * 1024
 
-export const ANALYZER_AGENT_TYPE = "analyzer"
 export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
 /** Opens an agent run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
   open(agentType: string, evaluationId: number): Promise<StoredAgentExecution>
+  openForProject(projectId: number, branch: string, commitHash: string, agentType: string): Promise<AnalysisRequest>
 }
 
 export interface AnalysisRequest {
@@ -392,12 +394,7 @@ export class ProjectService {
       )
     }
 
-    const version = await this.projects.upsertVersion(project.id, { branch: cleanBranch, commitHash: cleanHash })
-    await this.projects.setSelectedVersion(project.id, version.id)
-    const evaluation = await this.projects.createEvaluation(version.id, ANALYSIS_EVALUATION_TYPE)
-    const execution = await this.analyses.open(ANALYZER_AGENT_TYPE, evaluation.id)
-
-    return { versionId: version.id, evaluationId: evaluation.id, execution }
+    return this.analyses.openForProject(project.id, cleanBranch, cleanHash, ANALYZER_AGENT_TYPE)
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {

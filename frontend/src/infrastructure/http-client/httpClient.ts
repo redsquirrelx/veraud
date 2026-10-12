@@ -192,6 +192,7 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
 }
 
 export interface AgentExecution {
+  configuration?: AgentConfiguration | null
   id: number
   evaluationId: number | null
   agentType: string
@@ -303,6 +304,47 @@ async function postAi<T>(aiProviderId: number, resource: string, body: unknown):
   }
 
   return payload as T
+}
+
+export interface AgentConfiguration {
+  model: { id: number, name: string, providerId: number, providerName: string }
+  credential: { id: number, name: string, providerId: number, providerName: string }
+  temperature: number | null
+  maxTokens: number | null
+}
+
+export interface AgentSettings {
+  agentType: string
+  configured: boolean
+  configuration: AgentConfiguration | null
+  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null }
+}
+
+export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings`, { signal })
+  if (!response.ok) {
+    const body = await response.json() as { message?: string }
+    throw new ApiError(response.status, body.message ?? "Could not load agent settings")
+  }
+  return await response.json() as AgentSettings[]
+}
+
+export async function saveAgentSettings(agentType: string, modelId: number, credentialId: number, options: { temperature?: number | null, maxTokens?: number | null } = {}): Promise<AgentSettings> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modelId, credentialId, ...options }),
+  })
+  const body = await response.json() as AgentSettings & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save agent settings")
+  return body
+}
+
+export async function verifyAgentSettings(agentType: string): Promise<AgentSettings> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}/verify`, { method: "POST" })
+  const body = await response.json() as AgentSettings & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not verify model access")
+  return body
 }
 
 async function patchAi<T>(aiProviderId: number, resource: string, id: number, body: unknown): Promise<T> {

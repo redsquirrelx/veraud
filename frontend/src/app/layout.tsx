@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom"
-import { ExternalIcon, GridIcon, ShieldIcon, SlidersIcon } from "../shared/ui-kit/index.ts"
+import { DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, type DropdownLinkItem } from "../shared/ui-kit/index.ts"
 import { Dock } from "./dock.tsx"
 import { ToastProvider } from "./toasts.tsx"
 import { useBackendStatus, type ServiceStatus } from "./useBackendStatus.ts"
@@ -8,10 +8,10 @@ import "./layout.css"
 const backendDocsUrl = `${(import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")}/docs`
 const websocketDocsUrl = `${backendDocsUrl}/ws`
 const agentServerDocsUrl = `${(import.meta.env.VITE_AGENT_SERVER_URL ?? "http://localhost:7502").replace(/\/+$/, "")}/docs`
-const documentationLinks = [
-  { label: "Backend docs", url: backendDocsUrl },
-  { label: "WebSocket docs", url: websocketDocsUrl },
-  { label: "Agent-server docs", url: agentServerDocsUrl },
+const documentationLinks: DropdownLinkItem[] = [
+  { label: "Backend docs", href: backendDocsUrl, external: true },
+  { label: "WebSocket docs", href: websocketDocsUrl, external: true },
+  { label: "Agent-server docs", href: agentServerDocsUrl, external: true },
 ]
 
 function StatusBadge({ label, status }: { label: string; status: ServiceStatus }) {
@@ -60,18 +60,12 @@ export function AppLayout() {
               </NavLink>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
                 <SlidersIcon />
-                General settings
+                Settings
               </NavLink>
             </nav>
-            <nav className="app-nav app-docs-nav" aria-label="API documentation">
-              <span className="app-docs-label">API docs</span>
-              {documentationLinks.map(({ label, url }) => (
-                <a key={label} href={url} target="_blank" rel="noopener noreferrer" aria-label={`${label} (opens in a new tab)`}>
-                  <ExternalIcon size={14} />
-                  {label}
-                </a>
-              ))}
-            </nav>
+            <div className="app-docs-nav">
+              <DropdownLinks label="API docs" icon={<ExternalIcon size={14} />} items={documentationLinks} align="end" />
+            </div>
           </div>
         </header>
         <main className="app-main">

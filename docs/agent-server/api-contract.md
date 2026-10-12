@@ -48,7 +48,10 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 
 - `agent_type` (string, required): registered agent id.
 - `config` (object, optional): all fields optional.
-  - `model.provider`: `"gemini"`/`"google"` or `"openrouter"`/`"openai"`.
+  - `model.provider`: `"gemini"`/`"google"`, `"openrouter"`/`"openai"`, or `"anthropic"`.
+    OpenAI uses `https://api.openai.com/v1`; OpenRouter uses
+    `https://openrouter.ai/api/v1`. Google applies temperature and maximum output tokens.
+    Anthropic uses its native client with the saved model, key and generation parameters.
   - `model.name` / `model.temperature` / `model.max_tokens`.
   - `timeout_seconds` (int > 0): execution timeout.
   - `api_key`: credential override; server key when omitted.
@@ -86,3 +89,17 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 | `404` | Unknown `agent_type` |
 | `422` | Bad config or payload (unsupported provider, missing `model.name`, `timeout_seconds <= 0`) |
 | `504` | Execution timed out |
+
+## `POST /api/agents/verify-access`
+
+Accepts `{ "model": { "provider": "OpenAI", "name": "MODEL_NAME" }, "api_key": "PROVIDER_KEY" }`.
+Provider, model and key must be explicit; no server credential fallback is used.
+Performs a minimal generation request with a 25-second deadline and returns
+`{ "verified": true }`. The request may incur provider usage. Denied access or
+unsupported configuration returns `422`; timeout returns `504`. Error messages
+do not contain provider response bodies or API keys. Request validation errors
+omit input values to avoid echoing credentials.
+
+Backend-started executions provide their saved configuration explicitly. See
+[backend agent settings](../backend/agent-settings.md) for access gates and
+immutable execution snapshots.
