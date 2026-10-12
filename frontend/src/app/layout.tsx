@@ -6,7 +6,13 @@ import { useBackendStatus, type ServiceStatus } from "./useBackendStatus.ts"
 import "./layout.css"
 
 const backendDocsUrl = `${(import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")}/docs`
+const websocketDocsUrl = `${backendDocsUrl}/ws`
 const agentServerDocsUrl = `${(import.meta.env.VITE_AGENT_SERVER_URL ?? "http://localhost:7502").replace(/\/+$/, "")}/docs`
+const documentationLinks = [
+  { label: "Backend docs", url: backendDocsUrl },
+  { label: "WebSocket docs", url: websocketDocsUrl },
+  { label: "Agent-server docs", url: agentServerDocsUrl },
+]
 
 function StatusBadge({ label, status }: { label: string; status: ServiceStatus }) {
   const online = status === "online"
@@ -40,41 +46,39 @@ export function AppLayout() {
     <ToastProvider>
       <div className="app">
         <header className="app-header">
-        <NavLink to="/" className="app-brand">
-          <ShieldIcon size={18} />
-          Veraud
-        </NavLink>
-        <StatusBadge label="Backend" status={backend} />
-        <StatusBadge label="Agents Server" status={agent} />
-         <div className="app-header-links">
-         <nav className="app-nav" aria-label="Main navigation">
-          <NavLink to="/" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
-            <GridIcon />
-            Home
+          <NavLink to="/" className="app-brand">
+            <ShieldIcon size={18} />
+            Veraud
           </NavLink>
-          <NavLink to="/settings" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
-            <SlidersIcon />
-             General settings
-           </NavLink>
-         </nav>
-         <nav className="app-nav app-docs-nav" aria-label="API documentation">
-           <span className="app-docs-label">API docs</span>
-          <a href={backendDocsUrl} target="_blank" rel="noopener noreferrer" aria-label="Backend docs (opens in a new tab)">
-            <ExternalIcon size={14} />
-            Backend docs
-          </a>
-          <a href={agentServerDocsUrl} target="_blank" rel="noopener noreferrer" aria-label="Agent-server docs (opens in a new tab)">
-            <ExternalIcon size={14} />
-            Agent-server docs
-          </a>
-         </nav>
-         </div>
-      </header>
-      <main className="app-main">
-        <Outlet />
-      </main>
-      <Dock />
-    </div>
+          <StatusBadge label="Backend" status={backend} />
+          <StatusBadge label="Agents Server" status={agent} />
+          <div className="app-header-links">
+            <nav className="app-nav" aria-label="Main navigation">
+              <NavLink to="/" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
+                <GridIcon />
+                Home
+              </NavLink>
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? "app-nav-active" : "")}>
+                <SlidersIcon />
+                General settings
+              </NavLink>
+            </nav>
+            <nav className="app-nav app-docs-nav" aria-label="API documentation">
+              <span className="app-docs-label">API docs</span>
+              {documentationLinks.map(({ label, url }) => (
+                <a key={label} href={url} target="_blank" rel="noopener noreferrer" aria-label={`${label} (opens in a new tab)`}>
+                  <ExternalIcon size={14} />
+                  {label}
+                </a>
+              ))}
+            </nav>
+          </div>
+        </header>
+        <main className="app-main">
+          <Outlet />
+        </main>
+        <Dock />
+      </div>
     </ToastProvider>
   )
 }
