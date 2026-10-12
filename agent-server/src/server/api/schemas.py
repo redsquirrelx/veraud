@@ -21,7 +21,7 @@ class ModelConfig(BaseModel):
         default=None,
         description=(
             "Model provider override. Supported names are gemini/google and "
-            "openrouter/openai (case-insensitive). Null or an empty string uses "
+            "openrouter/openai and anthropic (case-insensitive). Null or an empty string uses "
             "the agent's base provider, or gemini when no base is configured."
         ),
         examples=["openrouter"],
@@ -158,6 +158,17 @@ class AgentSchemaResponse(BaseModel):
             "the result object returned by POST /api/agents/run."
         ),
     )
+
+
+class VerifyAccessRequest(BaseModel):
+    """Explicit access check; never falls back to a server API key."""
+
+    model: ModelConfig
+    api_key: str = Field(min_length=1, repr=False, description="Credential to verify; never returned.")
+
+
+class VerifyAccessResponse(BaseModel):
+    verified: bool
 
 
 class StatusResponse(BaseModel):
