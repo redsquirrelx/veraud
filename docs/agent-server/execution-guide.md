@@ -21,7 +21,7 @@ backend's execution-start operation runs its work in the background instead.
 
 Swagger has named examples for both agents. They explicitly select an admitted
 provider because the current base configuration uses `groq`, while the model
-factory only supports `gemini`/`google` and `openrouter`/`openai`. A request using
+factory supports `gemini`/`google`, `openrouter`/`openai` and `anthropic`. A request using
 the current base provider without an override returns a configuration `422`.
 The examples require suitable provider credentials and are not offline runs.
 
@@ -75,6 +75,12 @@ describes project kind, summary, language, entrypoints, key components and the
 evidence behind the description.
 
 ## Configuration resolution
+
+Backend-started executions provide the saved model, credential and resolved
+generation parameters explicitly after a live access check. They do not use
+the YAML model/provider/key defaults. OpenAI and OpenRouter use their respective
+provider endpoints; Google generation applies both temperature and token limit.
+The fallback rules below apply to requests with omitted overrides.
 
 Overrides are merged with `agent-server/config/dev-agents.yaml`. Omitting
 `config` creates the default ExecutionConfig; omitting `config.model` creates
