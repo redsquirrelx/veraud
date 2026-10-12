@@ -1,0 +1,12 @@
+body { margin: 0; font-family: system-ui, sans-serif; color: #0f172a; background: #fff; }
+.portal-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid #e2e8f0; }
+.portal-header h1 { margin: 0; font-size: 1.25rem; }
+.portal-header p { margin: 0.5rem 0 0; font-size: 0.875rem; }
+.portal-note { color: #475569; }
+.portal-header nav { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.portal-header a { color: #006194; text-decoration: underline; text-underline-offset: 3px; }
+.portal-header a:focus-visible { outline: 2px solid #006194; outline-offset: 4px; }
+#portal-status, noscript { padding: 1rem 1.5rem; }
+code { overflow-wrap: anywhere; }
+.portal-operation-title { display: inline; font-size: 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+.portal-operation-title::before { content: " ΓÇö "; font-weight: 400; }

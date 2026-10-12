@@ -4,6 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "docs:ws:generate": "tsx src/infrastructure/asyncapi/generateAsyncApi.ts",
+    "docs:ws:check": "tsx src/infrastructure/asyncapi/checkAsyncApi.ts",
+    "docs:ws:validate": "tsx src/infrastructure/asyncapi/validateAsyncApi.ts",
+    "docs:ws:prepare": "pnpm run docs:ws:generate && pnpm run docs:ws:validate && pnpm run docs:ws:check",
+    "predev": "pnpm run docs:ws:prepare",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "dev": "tsx watch ./src/index.ts",
     "lint": "eslint . && echo Lint OK"
@@ -21,6 +26,7 @@
   "packageManager": "pnpm@12.6.0",
   "type": "module",
   "dependencies": {
+    "@asyncapi/react-component": "3.2.1",
     "@fastify/cors": "^11.3.0",
     "@fastify/swagger": "^9.9.2",
     "@fastify/swagger-ui": "^6.1.2",
@@ -29,18 +35,23 @@
     "@prisma/client": "^7.10.0",
     "dotenv": "^18.0.4",
     "fastify": "^5.12.5",
-    "pino-pretty": "^13.1.3"
+    "pino-pretty": "^13.1.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^13.1.0",
+    "@asyncapi/parser": "3.6.3",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",
     "eslint": "^10.11.0",
     "jiti": "^2.7.0",
+    "json-schema-to-ts": "3.1.1",
     "prisma": "^7.10.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.1"
+    "typescript-eslint": "^8.70.1",
+    "yaml": "2.9.1"
   }
 }

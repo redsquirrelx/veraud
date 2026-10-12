@@ -2,37 +2,8 @@ import type { FastifyInstance } from "fastify"
 import type { WebSocket } from "ws"
 import { logger } from "../../config/logger.js"
 
-export interface TaskEvent {
-  type: "task.updated"
-  task: {
-    id: number
-    projectId: number
-    description: string | null
-    command: string | null
-    status: string
-    kind: string
-    exitCode: number | null
-  }
-}
-
-export interface AgentExecutionEvent {
-  type: "agent-execution.opened" | "agent-execution.updated"
-  execution: {
-    id: number
-    evaluationId: number | null
-    agentType: string
-    status: string
-    result: string | null
-    error: string | null
-    inputTokens: number | null
-    outputTokens: number | null
-    createdAt: Date
-    startedAt: Date | null
-    finishedAt: Date | null
-  }
-}
-
-export type GatewayEvent = TaskEvent | AgentExecutionEvent
+import type { GatewayEvent } from "./eventCatalog.js"
+export type { TaskEvent, AgentExecutionEvent, GatewayEvent, GatewayWireEvent } from "./eventCatalog.js"
 
 export class RealtimeGateway {
   private log = logger.withTag("realtime-gateway")
