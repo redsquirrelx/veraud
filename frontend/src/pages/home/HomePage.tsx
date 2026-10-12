@@ -1,19 +1,33 @@
-import { useEffect, useRef } from "react"
-import { Panel } from "../../shared/ui-kit/index.ts"
+import { useEffect, useRef, useState } from "react"
+import { Checkbox, Panel } from "../../shared/ui-kit/index.ts"
 import { ProjectList } from "../../features/project-management/ProjectList.tsx"
 import { ProjectRegistrationForm } from "../../features/project-management/ProjectRegistrationForm.tsx"
 import { useProjects } from "../../features/project-management/useProjects.ts"
 import { useRegisterProject } from "../../features/project-management/useRegisterProject.ts"
 import { useToasts } from "../../app/use-toasts.ts"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./HomePage.css"
 
+const SHALLOW_CLONE_KEY = "projects.shallowClone"
+
 export function HomePage() {
+  const [shallowClone, setShallowClone] = useState(() => {
+    const stored = localStorage.get<unknown>(SHALLOW_CLONE_KEY, null)
+    if (typeof stored === "boolean") return stored
+    return localStorage.get<unknown>("projects.cloneFullRepository", false) !== true
+  })
   const listing = useProjects()
   const registration = useRegisterProject({
+    shallowClone,
     onRegistered: () => void listing.refresh(),
   })
   const { pushToast } = useToasts()
   const notified = useRef("")
+
+  useEffect(() => {
+    localStorage.set(SHALLOW_CLONE_KEY, shallowClone)
+    localStorage.remove("projects.cloneFullRepository")
+  }, [shallowClone])
 
   useEffect(() => {
     if (registration.message === "") {
@@ -42,6 +56,9 @@ export function HomePage() {
       </div>
       <Panel>
         <ProjectRegistrationForm registration={registration} />
+        <div className="home-clone-options">
+          <Checkbox label="Shallow clone" checked={shallowClone} onChange={setShallowClone} />
+        </div>
       </Panel>
       <ProjectList listing={listing} />
     </section>

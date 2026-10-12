@@ -10,7 +10,7 @@ function isTimeout(error: unknown): boolean {
 
 const SUBMIT_COOLDOWN_MS = 2000
 
-export function useRegisterProject(options?: { onRegistered?: () => void }) {
+export function useRegisterProject(options?: { onRegistered?: () => void; shallowClone?: boolean }) {
   const [url, setUrl] = useState("")
   const [cooling, setCooling] = useState(false)
   const [state, setState] = useState<RegisterState>("idle")
@@ -39,6 +39,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void }) {
 
   async function register() {
     const trimmed = url.trim()
+    const shallowClone = options?.shallowClone ?? false
     if (trimmed === "" || cooling) {
       return
     }
@@ -54,7 +55,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void }) {
     setMessage("")
     setProject(null)
     try {
-      const created = await registerProject(trimmed)
+      const created = await registerProject(trimmed, shallowClone)
       if (!mounted.current) {
         return
       }
