@@ -1,7 +1,7 @@
 # Backend Contract ΓÇö AI Providers
 
 `GET /api/ai-providers` lists the fixed providers with their models
-and credentials; the `POST`/`DELETE` routes below manage models and
+and credentials; the `POST`/`PATCH`/`DELETE` routes below manage models and
 credentials scoped by provider. Providers themselves are read-only:
 `OpenAI`, `Anthropic` and `Google` are seeded idempotently at boot
 (`ensureSeeded`, skipped when the name already exists), so a fresh
@@ -36,6 +36,13 @@ numbers dot underscore dash slash colon, no `..`). Names are unique
 per provider. Response `201`: `{ id, name, inUse: false }` (a fresh
 model cannot be referenced yet).
 
+## `PATCH /api/ai-providers/:id/models/:nestedId`
+
+Body: `name` (required, with the same validation as creation). Updates
+the model within its provider, including models in use. Response `200`:
+`{ id, name, inUse }`. The provider cannot be changed. The current name
+is allowed; a duplicate name belonging to a different model returns `409`.
+
 ## `DELETE /api/ai-providers/:id/models/:nestedId`
 
 No body. Response `204` with no content. The model must belong to
@@ -54,6 +61,15 @@ apiKeyPreview, inUse: false }`.
 ```json
 { "name": "prod", "apiKey": "secret-1234" }
 ```
+
+## `PATCH /api/ai-providers/:id/credentials/:nestedId`
+
+Body: `name` (required, with the same validation as creation) and
+`apiKey` (optional). Omitting `apiKey` keeps the existing key; supplying
+a new key validates and replaces it. Response `200`:
+`{ id, name, apiKeyPreview, inUse }` (never the full key). Credentials in
+use may be edited. The provider cannot be changed, and a duplicate name
+belonging to a different credential returns `409`.
 
 ## `DELETE /api/ai-providers/:id/credentials/:nestedId`
 
