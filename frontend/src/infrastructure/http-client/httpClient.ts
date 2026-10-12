@@ -303,6 +303,21 @@ async function postAi<T>(aiProviderId: number, resource: string, body: unknown):
   return payload as T
 }
 
+async function patchAi<T>(aiProviderId: number, resource: string, id: number, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  const payload = (await response.json()) as { message?: string }
+  if (!response.ok) {
+    throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+  }
+
+  return payload as T
+}
+
 async function deleteAi(aiProviderId: number, resource: string, id: number): Promise<void> {
   const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
     method: "DELETE",
@@ -321,12 +336,20 @@ export async function createAiModel(aiProviderId: number, name: string): Promise
   return postAi<AiModelSummary>(aiProviderId, "models", { name })
 }
 
+export async function updateAiModel(aiProviderId: number, modelId: number, name: string): Promise<AiModelSummary> {
+  return patchAi<AiModelSummary>(aiProviderId, "models", modelId, { name })
+}
+
 export async function deleteAiModel(aiProviderId: number, modelId: number): Promise<void> {
   return deleteAi(aiProviderId, "models", modelId)
 }
 
 export async function createAiCredential(aiProviderId: number, name: string, apiKey: string): Promise<AiCredentialSummary> {
   return postAi<AiCredentialSummary>(aiProviderId, "credentials", { name, apiKey })
+}
+
+export async function updateAiCredential(aiProviderId: number, credentialId: number, name: string, apiKey?: string): Promise<AiCredentialSummary> {
+  return patchAi<AiCredentialSummary>(aiProviderId, "credentials", credentialId, { name, ...(apiKey === undefined ? {} : { apiKey }) })
 }
 
 export async function deleteAiCredential(aiProviderId: number, credentialId: number): Promise<void> {

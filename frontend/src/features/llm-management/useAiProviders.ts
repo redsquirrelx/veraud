@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, listAiProviders, type AiCredentialSummary, type AiModelSummary, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, listAiProviders, updateAiCredential, updateAiModel, type AiCredentialSummary, type AiModelSummary, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 
 export function useAiProviders() {
   const [providers, setProviders] = useState<AiProviderDetail[]>([])
@@ -66,6 +66,12 @@ export function useAiProviders() {
     return created
   }, [refresh])
 
+  const editModel = useCallback(async (aiProviderId: number, modelId: number, name: string): Promise<AiModelSummary> => {
+    const updated = await updateAiModel(aiProviderId, modelId, name)
+    await refresh()
+    return updated
+  }, [refresh])
+
   const removeModel = useCallback(async (aiProviderId: number, modelId: number): Promise<void> => {
     await deleteAiModel(aiProviderId, modelId)
     await refresh()
@@ -77,10 +83,16 @@ export function useAiProviders() {
     return created
   }, [refresh])
 
+  const editCredential = useCallback(async (aiProviderId: number, credentialId: number, name: string, apiKey?: string): Promise<AiCredentialSummary> => {
+    const updated = await updateAiCredential(aiProviderId, credentialId, name, apiKey)
+    await refresh()
+    return updated
+  }, [refresh])
+
   const removeCredential = useCallback(async (aiProviderId: number, credentialId: number): Promise<void> => {
     await deleteAiCredential(aiProviderId, credentialId)
     await refresh()
   }, [refresh])
 
-  return { providers, loading, loadError, refresh, addModel, removeModel, addCredential, removeCredential }
+  return { providers, loading, loadError, refresh, addModel, editModel, removeModel, addCredential, editCredential, removeCredential }
 }
