@@ -4,14 +4,16 @@
 No files on disk → clones; attached checkout → `git pull`
 (keeps the current branch and commit); detached HEAD → `git fetch`
 (refreshes every ref without moving HEAD, since `pull` cannot merge
-without a branch).
+without a branch). Recloning uses the original HTTPS or SSH transport;
+pull and fetch use the checkout's configured remote.
 
 Source of truth: `backend/src/modules/project/`,
 `infrastructure/task-runner/` (`pull`/`fetch` commands)
 
 ## `POST /api/projects/:id/sync`
 
-No body. Response `200`: `id`, `repositoryOwner`, `repositoryName`,
+No body. Response `200`: `id`, `repositoryOwner`, `repositoryName`, `cloneProtocol`
+(`https` or `ssh`),
 `status` (`READY`), `registeredAt`, `lastSyncedAt` (just set),
 `branch`/`commitHash` (nullable).
 

@@ -1,6 +1,6 @@
 # Backend Contract — Project Registration
 
-`POST /api/projects` registers a project from a GitHub URL only if it
+`POST /api/projects` registers a project from a GitHub HTTPS or SSH URL only if it
 clones successfully. The request waits for the clone; the success toast
 is the clone confirmation. No audit yet.
 
@@ -9,7 +9,11 @@ Source of truth: `backend/src/modules/project/`, `modules/task/`,
 
 ## `POST /api/projects`
 
-Request: `repositoryUrl` (string, required) — `https://github.com/{owner}/{repo}` (`.git` and trailing `/` allowed).
+Request: `repositoryUrl` (string, required) — `https://github.com/{owner}/{repo}`,
+`git@github.com:{owner}/{repo}.git` or `ssh://git@github.com/{owner}/{repo}.git`
+(`.git` and trailing `/` allowed). The backend detects the transport from the URL.
+For SSH, Git uses the SSH configuration of the user running the backend; the
+application does not manage keys or prompt for credentials.
 
 ```json
 { "repositoryUrl": "https://github.com/fintech-core/payment-gateway-v2" }
@@ -17,7 +21,14 @@ Request: `repositoryUrl` (string, required) — `https://github.com/{owner}/{rep
 
 Response `201`: `id` (number), `repositoryOwner` (string), `repositoryName` (string), `status` (`QUEUED`).
 
-Flow: validate URL → fetch repo metadata (`GET /repos/{owner}/{repo}`) → reject duplicates by `githubRepositoryId` → persist project (`QUEUED`) + `task` (`Queued`, `description: "cloning {owner}/{repo}"`) → broadcast the queued task → await the queued clone into `appdata/workspace/{id}-{owner}-{repo}` (project root) → on success return `201`, on failure roll back (delete task + project) and return `422`. Every task transition broadcasts `task.updated` on `/ws`.
+Flow: validate URL → for HTTPS fetch repo metadata (`GET /repos/{owner}/{repo}`),
+but for SSH skip the public GitHub API (private repos may return `404`) → reject
+duplicates by owner/name (and by GitHub ID for HTTPS) → persist project (`QUEUED`)
++ `task` (`Queued`, `description: "cloning {owner}/{repo}"`) → broadcast the queued
+task → await clone into `appdata/workspace/{githubId}-{owner}-{repo}` for HTTPS
+or `appdata/workspace/project-{projectId}-{owner}-{repo}` for SSH → on success
+return `201`, on failure roll back (delete task + project) and return `422`.
+Every task transition broadcasts `task.updated` on `/ws`.
 
 ## `GET /api/tasks/active`
 

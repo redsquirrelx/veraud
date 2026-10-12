@@ -82,6 +82,7 @@ describe("project listing API", () => {
       id: number
       repositoryOwner: string
       repositoryName: string
+      cloneProtocol: string
       status: string
       registeredAt: string
       lastSyncedAt: string | null
@@ -91,6 +92,7 @@ describe("project listing API", () => {
 
     assert.equal(projects.length, 2)
     assert.equal(projects[0]?.repositoryName, "Demo")
+    assert.equal(projects[0]?.cloneProtocol, "https")
     assert.equal(projects[0]?.branch, "main")
     assert.equal(projects[0]?.commitHash, "abc123")
     assert.equal(typeof projects[0]?.registeredAt, "string")

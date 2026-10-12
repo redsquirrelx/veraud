@@ -3,6 +3,7 @@ import { join } from "node:path"
 import type { PrismaClient } from "../../generated/prisma/client.js"
 import { logger } from "../../config/logger.js"
 import type { AgentInput } from "../agent-server-client/agent-server.client.js"
+import { projectWorkspaceFolder } from "../../modules/project/project-workspace.js"
 
 /** Builds the payload an agent is invoked with.
  *
@@ -47,7 +48,7 @@ export class AgentTargetResolverImpl implements AgentTargetResolver {
     }
 
     const project = evaluation.projectVersion.project
-    const rootPath = this.workspaceOf(project.repositoryOwner, project.repositoryName, project.githubRepositoryId)
+    const rootPath = this.workspaceOf(project)
 
     this.log.info(`Evaluation ${evaluationId} resolves to ${rootPath}`)
 
@@ -55,12 +56,12 @@ export class AgentTargetResolverImpl implements AgentTargetResolver {
   }
 
   /** Same folder convention the project module clones into. */
-  private workspaceOf(owner: string, name: string, githubRepositoryId: bigint): string {
-    const folder = `${githubRepositoryId}-${owner}-${name}`
+  private workspaceOf(project: { id: number; repositoryOwner: string; repositoryName: string; githubRepositoryId: bigint | null }): string {
+    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
 
     if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {
-      throw new WorkspaceMissingError(`Project ${owner}/${name} has no local checkout`)
+      throw new WorkspaceMissingError(`Project ${project.repositoryOwner}/${project.repositoryName} has no local checkout`)
     }
 
     return targetDir

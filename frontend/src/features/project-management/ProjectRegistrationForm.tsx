@@ -11,7 +11,7 @@ export function ProjectRegistrationForm({ registration }: { registration: Regist
     <div className="registration-form">
       <TextInput
         value={registration.url}
-        placeholder="Enter a repository: https://github.com/owner/repo"
+        placeholder="Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git"
         onChange={registration.changeUrl}
       />
       <Button loading={registration.cooling} loadingText="Wait" disabled={!canSubmit} onClick={() => void registration.register()}>

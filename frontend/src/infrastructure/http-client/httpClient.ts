@@ -35,6 +35,7 @@ export interface ProjectSummary {
   id: number
   repositoryOwner: string
   repositoryName: string
+  cloneProtocol: "ssh" | "https"
   status: string
   registeredAt: string
   lastSyncedAt: string | null

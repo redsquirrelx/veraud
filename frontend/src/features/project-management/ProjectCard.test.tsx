@@ -9,6 +9,7 @@ const base: ProjectSummary = {
   id: 1,
   repositoryOwner: "acme",
   repositoryName: "Demo",
+  cloneProtocol: "https",
   status: "READY",
   registeredAt: "2026-01-01",
   lastSyncedAt: "2026-01-02",
@@ -25,6 +26,15 @@ function renderCard(project: ProjectSummary, pinned = false, onTogglePin: (id: n
 }
 
 describe("ProjectCard", () => {
+  it.each([
+    { protocol: "https" as const, label: "HTTPS" },
+    { protocol: "ssh" as const, label: "SSH" },
+  ])("shows the $label protocol badge", ({ protocol, label }) => {
+    renderCard({ ...base, cloneProtocol: protocol })
+
+    expect(screen.getByText(label).classList.contains("ui-badge")).toBe(true)
+  })
+
   it.each([
     { status: "READY", enabled: true },
     { status: "QUEUED", enabled: false },

@@ -18,7 +18,8 @@ model Project {
   createdAt          DateTime       @default(now()) @map("created_at")
   lastSyncedAt       DateTime?      @map("last_synced_at")
   status             String
-  githubRepositoryId BigInt         @unique @map("github_repository_id")
+  githubRepositoryId BigInt?        @unique @map("github_repository_id")
+  cloneProtocol      String         @default("https") @map("clone_protocol")
   repositoryOwner    String         @map("repository_owner")
   repositoryName     String         @map("repository_name")
   selectedVersionId  Int?           @unique @map("selected_version_id")
@@ -27,6 +28,7 @@ model Project {
   versions        ProjectVersion[] @relation("ProjectVersions")
   tasks           Task[]
 
+  @@unique([repositoryOwner, repositoryName])
   @@map("project")
 }
 

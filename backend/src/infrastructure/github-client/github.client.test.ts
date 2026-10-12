@@ -19,6 +19,7 @@ describe("parseGithubUrl", () => {
     assert.deepEqual(parseGithubUrl("https://github.com/octocat/Hello-World"), {
       owner: "octocat",
       repo: "Hello-World",
+      protocol: "https",
     })
   })
 
@@ -26,11 +27,24 @@ describe("parseGithubUrl", () => {
     assert.deepEqual(parseGithubUrl("https://github.com/octocat/Hello-World.git/"), {
       owner: "octocat",
       repo: "Hello-World",
+      protocol: "https",
     })
   })
 
   it("rejects non-github hosts", () => {
     assert.equal(parseGithubUrl("https://gitlab.com/octocat/Hello-World"), null)
+  })
+
+  it("accepts GitHub SSH URLs without consulting the public API", () => {
+    for (const input of ["git@github.com:octocat/Hello-World.git", "ssh://git@github.com/octocat/Hello-World.git"]) {
+      assert.deepEqual(parseGithubUrl(input), { owner: "octocat", repo: "Hello-World", protocol: "ssh" })
+    }
+  })
+
+  it("rejects malformed and unexpected Git/SSH addresses", () => {
+    for (const input of ["git@evil.com:octocat/Hello-World.git", "ssh://root@github.com/octocat/Hello-World.git", "git@github.com:octocat/../repo.git", "https://github.com/owner/repo?ref=main", "file:///owner/repo", "https://github.com/owner/repo/extra"]) {
+      assert.equal(parseGithubUrl(input), null, input)
+    }
   })
 
   it("rejects urls without owner and repo", () => {

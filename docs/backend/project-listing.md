@@ -9,7 +9,8 @@ Source of truth: `backend/src/modules/project/`
 ## `GET /api/projects`
 
 Response `200` (empty array when none, never 404): `id` (number),
-`repositoryOwner` (string), `repositoryName` (string), `status`
+`repositoryOwner` (string), `repositoryName` (string), `cloneProtocol`
+(`https` or `ssh`), `status`
 (`QUEUED`/`READY`/`SYNCING`), `registeredAt` (ISO datetime),
 `lastSyncedAt` (ISO datetime or null, set when a clone succeeds),
 `branch` (string or null), `commitHash` (string or null).

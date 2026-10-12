@@ -224,6 +224,7 @@ export function ProjectDetailPage() {
                       {project.repositoryOwner}/{project.repositoryName}
                     </span>
                     <Badge tone={statusTone(project.status)}>{project.status}</Badge>
+                    <Badge tone="neutral">{project.cloneProtocol.toUpperCase()}</Badge>
                     {analysisSummary !== null && (
                       <>
                         <span className="label">Type</span>

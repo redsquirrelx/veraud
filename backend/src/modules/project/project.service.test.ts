@@ -37,6 +37,7 @@ function makeFakes(options: {
   details?: StoredProjectDetails | null
   githubId?: number
   clone?: TaskResult
+  failGithubLookup?: boolean
 } = {}) {
   const calls = { enqueued: 0, commands: [] as Array<GitCommand>, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number>, statuses: [] as Array<{ id: number; status: string }> }
 
@@ -48,6 +49,9 @@ function makeFakes(options: {
       return { id: 7, repositoryOwner: "octocat", repositoryName: "Hello-World", status: "QUEUED" }
     },
     async findByGithubId(): Promise<StoredProject | null> {
+      return options.existing ?? null
+    },
+    async findByRepo(): Promise<StoredProject | null> {
       return options.existing ?? null
     },
     async findById(): Promise<StoredProjectDetails | null> {
@@ -101,12 +105,15 @@ function makeFakes(options: {
   }
 
   const github = new GithubClient()
-  github.checkAccess = async () => ({
+  github.checkAccess = async () => {
+    if (options.failGithubLookup === true) throw new Error("Public API must not be consulted for SSH")
+    return ({
     id: options.githubId ?? 1296269,
     owner: "octocat",
     name: "Hello-World",
     cloneUrl: "https://github.com/octocat/Hello-World.git",
-  })
+    })
+  }
 
   const runner: TaskQueue = {
     async enqueue(task: QueuedTask): Promise<TaskResult> {
@@ -123,6 +130,27 @@ function makeFakes(options: {
 }
 
 describe("ProjectService.registerProject", () => {
+  it("clones private SSH repositories without requesting public GitHub metadata", async () => {
+    const { service, projects, calls } = makeFakes({ failGithubLookup: true })
+    await service.registerProject("git@github.com:octocat/Hello-World.git")
+
+    assert.deepEqual(projects.created, [{
+      githubRepositoryId: null,
+      cloneProtocol: "ssh",
+      repositoryOwner: "octocat",
+      repositoryName: "Hello-World",
+      status: "QUEUED",
+    }])
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World" }])
+  })
+
+  it("rolls back a failed SSH clone", async () => {
+    const { service, calls } = makeFakes({ failGithubLookup: true, clone: { status: "Failed", exitCode: 1, logTrail: "Permission denied (publickey)" } })
+    await assert.rejects(service.registerProject("ssh://git@github.com/octocat/Hello-World.git"), RepoNotAccessibleError)
+    assert.deepEqual(calls.deletedTasks, [9])
+    assert.deepEqual(calls.deletedProjects, [7])
+  })
+
   it("creates a QUEUED project once its clone succeeds", async () => {
     const { service, projects, tasks, calls } = makeFakes()
 
@@ -131,6 +159,7 @@ describe("ProjectService.registerProject", () => {
     assert.equal(project.id, 7)
     assert.deepEqual(projects.created, [{
       githubRepositoryId: BigInt(1296269),
+      cloneProtocol: "https",
       repositoryOwner: "octocat",
       repositoryName: "Hello-World",
       status: "QUEUED",
@@ -191,6 +220,7 @@ describe("ProjectService.registerProject", () => {
       {
         create: async () => { throw new Error("must not persist") },
         findByGithubId: async () => null,
+        findByRepo: async () => null,
         findById: async () => null,
         delete: async () => { throw new Error("must not delete") },
         setStatus: async () => { throw new Error("must not set status") },
@@ -228,6 +258,7 @@ describe("ProjectService.syncProject", () => {
   const details: StoredProjectDetails = {
     id: 7,
     githubRepositoryId: BigInt(1296269),
+    cloneProtocol: "https",
     repositoryOwner: "octocat",
     repositoryName: "Hello-World",
     status: "READY",
@@ -276,6 +307,12 @@ describe("ProjectService.syncProject", () => {
       cloneUrl: "https://github.com/octocat/Hello-World.git",
       folder: "1296269-octocat-Hello-World",
     }])
+  })
+
+  it("reclones over SSH when an SSH project's workspace is empty", async () => {
+    const { service, calls } = makeFakes({ details: { ...details, githubRepositoryId: null, cloneProtocol: "ssh" } })
+    await service.syncProject(7)
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World" }])
   })
 
   it("rejects unknown projects", async () => {
