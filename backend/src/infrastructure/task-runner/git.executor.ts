@@ -1,7 +1,7 @@
 import { join } from "node:path"
 
 export type GitCommand =
-  | { kind: "clone", cloneUrl: string, folder: string }
+  | { kind: "clone", cloneUrl: string, folder: string, shallowClone?: boolean }
   | { kind: "pull", folder: string }
   | { kind: "fetch", folder: string }
   | { kind: "list-branches", folder: string }
@@ -29,7 +29,7 @@ export function isGitCommand(command: { kind: string }): command is GitCommand {
 
 export function gitArgv(command: GitCommand, targetDir: string): string[] {
   if (command.kind === "clone") {
-    return ["clone", command.cloneUrl, targetDir]
+    return ["clone", ...(command.shallowClone === true ? ["--depth", "1"] : []), command.cloneUrl, targetDir]
   }
 
   if (command.kind === "pull") {
@@ -96,4 +96,12 @@ export function describeGitCommand(
     argv: gitArgv(command, join(workspaceDir, command.folder)),
     mutating: touchesProjectStatus(command),
   }
+}
+
+/** A readable representation of execFile arguments, not a shell script. */
+export function formatCommand(binary: string, argv: string[]): string {
+  return [binary, ...argv].map((argument) => {
+    if (argument !== "" && /^[a-zA-Z0-9_./:@=,+%-]+$/.test(argument)) return argument
+    return JSON.stringify(argument)
+  }).join(" ")
 }

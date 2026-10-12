@@ -71,14 +71,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         required: ["repositoryUrl"],
         properties: {
           repositoryUrl: { type: "string" },
+          shallowClone: { type: "boolean" },
         },
       },
     },
   }, async (request, reply) => {
-    const body = request.body as { repositoryUrl: string }
+    const body = request.body as { repositoryUrl: string; shallowClone?: boolean }
 
     try {
-      const project = await service.registerProject(body.repositoryUrl)
+      const project = await service.registerProject(body.repositoryUrl, body.shallowClone ?? false)
       return reply.code(201).send({
         id: project.id,
         repositoryOwner: project.repositoryOwner,

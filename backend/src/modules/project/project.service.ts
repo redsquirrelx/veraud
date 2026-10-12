@@ -62,7 +62,7 @@ export class ProjectService {
     private analyses: AnalysisRunner
   ) {}
 
-  async registerProject(repositoryUrl: string) {
+  async registerProject(repositoryUrl: string, shallowClone = false) {
     const parsed = parseGithubUrl(repositoryUrl)
 
     if (parsed === null) {
@@ -93,6 +93,7 @@ export class ProjectService {
     const project = await this.projects.create({
       githubRepositoryId,
       cloneProtocol: parsed.protocol,
+      shallowClone,
       repositoryOwner: owner,
       repositoryName: name,
       status: "QUEUED",
@@ -102,6 +103,7 @@ export class ProjectService {
       kind: "clone",
       cloneUrl: parsed.protocol === "ssh" ? `git@github.com:${owner}/${name}.git` : `https://github.com/${owner}/${name}.git`,
       folder: projectWorkspaceFolder({ ...project, githubRepositoryId }),
+      shallowClone,
     })
 
     if (result.status !== "Succeded") {
@@ -139,6 +141,7 @@ export class ProjectService {
           ? `git@github.com:${project.repositoryOwner}/${project.repositoryName}.git`
           : `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
         folder,
+        shallowClone: project.shallowClone,
       }
     } else if (isDetachedHead(targetDir)) {
       description = `fetching ${project.repositoryOwner}/${project.repositoryName}`

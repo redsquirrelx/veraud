@@ -8,12 +8,14 @@ export interface NewTask {
 }
 
 export interface TaskUpdate {
+  command?: string
   status: string
   exitCode: number | null
   logTrail: string | null
 }
 
 export interface StoredTask {
+  command?: string | null
   id: number
   projectId: number
   repositoryOwner: string
@@ -69,6 +71,7 @@ export class TaskRepository implements TaskStore {
   }
 
   private toStored(task: {
+    command: string | null
     id: number
     projectId: number
     description: string | null
@@ -79,6 +82,7 @@ export class TaskRepository implements TaskStore {
   }): StoredTask {
     return {
       id: task.id,
+      command: task.command,
       projectId: task.projectId,
       repositoryOwner: task.project.repositoryOwner,
       repositoryName: task.project.repositoryName,

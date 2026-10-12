@@ -3,6 +3,7 @@ import type { PrismaClient } from "../../generated/prisma/client.js"
 export interface NewProject {
   githubRepositoryId: bigint | null
   cloneProtocol: string
+  shallowClone: boolean
   repositoryOwner: string
   repositoryName: string
   status: string
@@ -19,6 +20,7 @@ export interface StoredProjectDetails {
   id: number
   githubRepositoryId: bigint | null
   cloneProtocol: string
+  shallowClone: boolean
   repositoryOwner: string
   repositoryName: string
   status: string
@@ -249,6 +251,7 @@ export class ProjectRepository implements ProjectStore {
     id: number
     githubRepositoryId: bigint | null
     cloneProtocol: string
+    shallowClone: boolean
     repositoryOwner: string
     repositoryName: string
     status: string
@@ -260,6 +263,7 @@ export class ProjectRepository implements ProjectStore {
       id: project.id,
       githubRepositoryId: project.githubRepositoryId,
       cloneProtocol: project.cloneProtocol,
+      shallowClone: project.shallowClone,
       repositoryOwner: project.repositoryOwner,
       repositoryName: project.repositoryName,
       status: project.status,

@@ -11,6 +11,7 @@ export function registerTaskRoutes(app: FastifyInstance, service: TaskService): 
       repositoryOwner: task.repositoryOwner,
       repositoryName: task.repositoryName,
       description: task.description,
+      command: task.command ?? null,
       status: task.status,
       kind: task.kind,
       exitCode: task.exitCode,
