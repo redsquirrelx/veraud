@@ -39,10 +39,16 @@ Out of scope: Code Explorer, Audit Management.
 
 ## Backend API used
 
-`POST /api/projects` with `repositoryUrl` (string).
+`POST /api/projects` with `repositoryUrl` (string) and `shallowClone` (boolean).
+The "Shallow clone" checkbox persists in localStorage as
+`projects.shallowClone` and defaults to checked, preserving the previous shallow
+default. Stored preferences from the previous full-clone checkbox are inverted
+when migrated. Each submission uses the current preference: unchecked downloads
+full history; checked downloads only the latest commit of the default branch (`--depth 1`). Shallow clones
+initially expose only that branch and commit in the version selector.
 
 ```json
-{ "repositoryUrl": "https://github.com/fintech-core/payment-gateway-v2" }
+{ "repositoryUrl": "https://github.com/fintech-core/payment-gateway-v2", "shallowClone": true }
 ```
 
 Response `201`: `id`, `repositoryOwner`, `repositoryName`, `status`.

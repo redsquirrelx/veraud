@@ -1,8 +1,18 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { describeGitCommand, gitArgv, touchesProjectStatus } from "./git.executor.js"
+import { describeGitCommand, formatCommand, gitArgv, touchesProjectStatus } from "./git.executor.js"
 
 describe("git executor", () => {
+  it("formats arguments with spaces, quotes and empty values unambiguously", () => {
+    assert.equal(formatCommand("git", ["clone", "--depth", "1", "git@github.com:acme/repo.git", "/workspace/my repo"]), 'git clone --depth 1 git@github.com:acme/repo.git "/workspace/my repo"')
+    assert.equal(formatCommand("git", ["", 'a"b']), 'git "" "a\\"b"')
+  })
+  it("uses depth 1 only for shallow clones over HTTPS and SSH", () => {
+    for (const cloneUrl of ["https://github.com/acme/repo.git", "git@github.com:acme/repo.git"]) {
+      assert.deepEqual(gitArgv({ kind: "clone", cloneUrl, folder: "folder", shallowClone: true }, "/ws/folder"), ["clone", "--depth", "1", cloneUrl, "/ws/folder"])
+      assert.deepEqual(gitArgv({ kind: "clone", cloneUrl, folder: "folder", shallowClone: false }, "/ws/folder"), ["clone", cloneUrl, "/ws/folder"])
+    }
+  })
   it("builds argv without shell interpolation", () => {
     assert.deepEqual(gitArgv({ kind: "clone", cloneUrl: "https://example.com/repo.git", folder: "folder" }, "/ws/folder"), [
       "clone",

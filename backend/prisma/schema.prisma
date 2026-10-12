@@ -20,6 +20,7 @@ model Project {
   status             String
   githubRepositoryId BigInt?        @unique @map("github_repository_id")
   cloneProtocol      String         @default("https") @map("clone_protocol")
+  shallowClone       Boolean        @default(false) @map("shallow_clone")
   repositoryOwner    String         @map("repository_owner")
   repositoryName     String         @map("repository_name")
   selectedVersionId  Int?           @unique @map("selected_version_id")
@@ -132,6 +133,7 @@ model Task {
   id          Int    @id @default(autoincrement())
   projectId   Int    @map("project_id")
   description String?
+  command     String?
   status      String
   kind        String @default("unknown")
   exitCode    Int?   @map("exit_code")

@@ -11,6 +11,8 @@ Table project {
   github_repository_id bigint [unique, not null]
   repository_owner varchar [not null]
   repository_name varchar [not null]
+  clone_protocol varchar [not null]
+  shallow_clone int [not null]
 
   selected_version_id int
 }
@@ -44,6 +46,8 @@ Table evaluation {
 Table task {
   id int [pk, not null]
   project_id int [not null]
+  description varchar
+  command varchar
   status varchar [not null]
   kind varchar [not null]
   exit_code int

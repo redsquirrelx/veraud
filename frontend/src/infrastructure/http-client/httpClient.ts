@@ -21,6 +21,7 @@ export function backendWsUrl(): string {
 }
 
 export interface ActiveTask {
+  command?: string | null
   id: number
   projectId: number
   repositoryOwner: string
@@ -78,11 +79,11 @@ export async function syncProject(id: number): Promise<ProjectSummary> {
   return body as ProjectSummary
 }
 
-export async function registerProject(repositoryUrl: string): Promise<RegisteredProject> {
+export async function registerProject(repositoryUrl: string, shallowClone = false): Promise<RegisteredProject> {
   const response = await fetch(`${baseUrl}/api/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repositoryUrl }),
+    body: JSON.stringify({ repositoryUrl, shallowClone }),
     signal: AbortSignal.timeout(600000),
   })
 

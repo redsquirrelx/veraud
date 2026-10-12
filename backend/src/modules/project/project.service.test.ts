@@ -130,6 +130,15 @@ function makeFakes(options: {
 }
 
 describe("ProjectService.registerProject", () => {
+  for (const url of ["https://github.com/octocat/Hello-World", "git@github.com:octocat/Hello-World.git"]) {
+    it(`persists and requests a shallow clone for ${url}`, async () => {
+      const { service, projects, calls } = makeFakes()
+      await service.registerProject(url, true)
+      assert.equal(projects.created[0]?.shallowClone, true)
+      assert.equal(calls.commands[0]?.kind, "clone")
+      assert.equal(calls.commands[0]?.kind === "clone" && calls.commands[0].shallowClone, true)
+    })
+  }
   it("clones private SSH repositories without requesting public GitHub metadata", async () => {
     const { service, projects, calls } = makeFakes({ failGithubLookup: true })
     await service.registerProject("git@github.com:octocat/Hello-World.git")
@@ -137,11 +146,12 @@ describe("ProjectService.registerProject", () => {
     assert.deepEqual(projects.created, [{
       githubRepositoryId: null,
       cloneProtocol: "ssh",
+      shallowClone: false,
       repositoryOwner: "octocat",
       repositoryName: "Hello-World",
       status: "QUEUED",
     }])
-    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World" }])
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World", shallowClone: false }])
   })
 
   it("rolls back a failed SSH clone", async () => {
@@ -160,6 +170,7 @@ describe("ProjectService.registerProject", () => {
     assert.deepEqual(projects.created, [{
       githubRepositoryId: BigInt(1296269),
       cloneProtocol: "https",
+      shallowClone: false,
       repositoryOwner: "octocat",
       repositoryName: "Hello-World",
       status: "QUEUED",
@@ -169,6 +180,7 @@ describe("ProjectService.registerProject", () => {
       kind: "clone",
       cloneUrl: "https://github.com/octocat/Hello-World.git",
       folder: "1296269-octocat-Hello-World",
+      shallowClone: false,
     }])
     assert.deepEqual(tasks.created, [{
       projectId: 7,
@@ -259,6 +271,7 @@ describe("ProjectService.syncProject", () => {
     id: 7,
     githubRepositoryId: BigInt(1296269),
     cloneProtocol: "https",
+    shallowClone: false,
     repositoryOwner: "octocat",
     repositoryName: "Hello-World",
     status: "READY",
@@ -306,13 +319,14 @@ describe("ProjectService.syncProject", () => {
       kind: "clone",
       cloneUrl: "https://github.com/octocat/Hello-World.git",
       folder: "1296269-octocat-Hello-World",
+      shallowClone: false,
     }])
   })
 
   it("reclones over SSH when an SSH project's workspace is empty", async () => {
     const { service, calls } = makeFakes({ details: { ...details, githubRepositoryId: null, cloneProtocol: "ssh" } })
     await service.syncProject(7)
-    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World" }])
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World", shallowClone: false }])
   })
 
   it("rejects unknown projects", async () => {
@@ -320,6 +334,14 @@ describe("ProjectService.syncProject", () => {
 
     await assert.rejects(service.syncProject(99), ProjectNotFoundError)
   })
+
+  for (const cloneProtocol of ["https", "ssh"]) {
+    it(`preserves shallow mode when recloning over ${cloneProtocol}`, async () => {
+      const { service, calls } = makeFakes({ details: { ...details, cloneProtocol, shallowClone: true } })
+      await service.syncProject(7)
+      assert.equal(calls.commands[0]?.kind === "clone" && calls.commands[0].shallowClone, true)
+    })
+  }
 
   it("restores the previous status when sync fails", async () => {
     const { service, calls, workspaceDir } = makeFakes({

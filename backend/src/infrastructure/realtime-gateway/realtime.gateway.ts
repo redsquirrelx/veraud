@@ -8,6 +8,7 @@ export interface TaskEvent {
     id: number
     projectId: number
     description: string | null
+    command: string | null
     status: string
     kind: string
     exitCode: number | null

@@ -14,6 +14,7 @@ const details: StoredProjectDetails = {
   id: 7,
   githubRepositoryId: BigInt(1296269),
   cloneProtocol: "https",
+  shallowClone: false,
   repositoryOwner: "octocat",
   repositoryName: "Hello-World",
   status: "READY",
