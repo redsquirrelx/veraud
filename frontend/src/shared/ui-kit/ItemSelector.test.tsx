@@ -15,6 +15,27 @@ function renderClosed() {
 }
 
 describe("ItemSelector", () => {
+  it("supports arrow-key selection, Escape focus restoration and tabbing out", async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    render(<><ItemSelector items={items} selectedId="main" label="Branch" onSelect={onSelect} hasMore={false} onLoadMore={() => {}} /><button>After selector</button></>)
+    const trigger = screen.getByRole("button", { name: "main" })
+    expect(trigger).toHaveAccessibleDescription("Branch")
+    trigger.focus()
+    await user.keyboard("{ArrowDown}")
+    expect(screen.getByRole("listbox", { name: "Branch" })).toBeDefined()
+    expect(screen.getByRole("option", { name: "main" })).toHaveFocus()
+    await user.keyboard("{ArrowDown}{Enter}")
+    expect(onSelect).toHaveBeenCalledWith("feature-a")
+    expect(trigger).toHaveFocus()
+    await user.keyboard("{ArrowDown}{Escape}")
+    expect(trigger).toHaveFocus()
+    expect(screen.queryByRole("option")).toBeNull()
+    await user.click(trigger)
+    await user.tab({ shift: true })
+    expect(screen.queryByRole("option")).toBeNull()
+  })
+
   it("shows the selected item on the button and stays closed", () => {
     renderClosed()
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "react"
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import type { ItemSelectorItem } from "./ItemSelector.tsx"
@@ -34,6 +34,7 @@ export function ItemSearcher({
   disabled = false,
 }: ItemSearcherProps) {
   const selected = items.find((item) => item.id === selectedId) ?? null
+  const id = useId()
   const [text, setText] = useState(selected?.label ?? selectedId ?? "")
   const [open, setOpen] = useState(false)
   const [filtering, setFiltering] = useState(false)
@@ -118,7 +119,7 @@ export function ItemSearcher({
 
   return (
     <div className="ui-item-searcher" ref={root}>
-      {label !== "" && <span className="ui-item-legend">{label}</span>}
+      {label !== "" && <span id={`${id}-label`} className="ui-item-legend">{label}</span>}
       <div className="ui-item-search-row">
         <div className="ui-item-search-field">
           <input
@@ -128,6 +129,7 @@ export function ItemSearcher({
             value={text}
             placeholder={placeholder}
             aria-label="Search items"
+            aria-describedby={label !== "" ? `${id}-label` : undefined}
             disabled={disabled}
             onChange={(event) => {
               setText(event.target.value)
