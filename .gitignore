@@ -8,6 +8,7 @@ backend/src/generated/prisma
 __pycache__/
 dev-agents.yaml
 .ruff_cache
+.pytest_cache/
 
 # Environment
 .env
