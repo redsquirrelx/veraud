@@ -14,8 +14,8 @@ afterEach(() => {
 })
 
 const rows: ProjectSummary[] = [
-  { id: 1, repositoryOwner: "acme", repositoryName: "Zulu", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
-  { id: 2, repositoryOwner: "acme", repositoryName: "Alpha", status: "QUEUED", registeredAt: "2026-01-02", lastSyncedAt: null, branch: null, commitHash: null },
+  { id: 1, repositoryOwner: "acme", repositoryName: "Zulu", cloneProtocol: "https", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
+  { id: 2, repositoryOwner: "acme", repositoryName: "Alpha", cloneProtocol: "https", status: "QUEUED", registeredAt: "2026-01-02", lastSyncedAt: null, branch: null, commitHash: null },
 ]
 
 function stubProjects(current: ProjectSummary[]) {
@@ -180,6 +180,7 @@ describe("ProjectList", () => {
       id: index + 1,
       repositoryOwner: "acme",
       repositoryName: `Repo-${String(index + 1).padStart(2, "0")}`,
+      cloneProtocol: "https" as const,
       status: "READY",
       registeredAt: "2026-01-01",
       lastSyncedAt: "2026-01-02",

@@ -20,7 +20,7 @@ afterEach(() => {
 })
 
 const rows = [
-  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
+  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", cloneProtocol: "https", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
 ]
 
 const gitBranches = { branches: ["main"], currentBranch: "main", detachedHash: null, taskId: 1 }
@@ -108,6 +108,7 @@ describe("ProjectDetailPage", () => {
 
     expect(await screen.findByText("acme/Demo")).toBeDefined()
     expect(screen.getByText("READY")).toBeDefined()
+    expect(screen.getByText("HTTPS")).toBeDefined()
     expect(screen.getByText("Project")).toBeDefined()
     expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
@@ -116,6 +117,19 @@ describe("ProjectDetailPage", () => {
     expect(link.getAttribute("href")).toBe("https://github.com/acme/Demo")
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noreferrer")
+  })
+
+  it("shows SSH for a repository registered over SSH", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify([{ ...rows[0], cloneProtocol: "ssh" }]), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    expect(await screen.findByText("SSH")).toBeDefined()
+    expect(screen.queryByText("HTTPS")).toBeNull()
   })
 
   it("shows not found for unknown projects", async () => {

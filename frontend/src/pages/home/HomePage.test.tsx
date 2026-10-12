@@ -52,7 +52,7 @@ describe("HomePage", () => {
     renderHome()
 
     expect(screen.getByText("Projects and repositories")).toBeDefined()
-    expect(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo")).toBeDefined()
+    expect(screen.getByPlaceholderText("Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git")).toBeDefined()
     expect(screen.getByRole("button", { name: "Register project" })).toBeDefined()
   })
 
@@ -60,7 +60,7 @@ describe("HomePage", () => {
     stubFetch(() => new Response(JSON.stringify([]), { status: 200 }))
     renderHome()
 
-    await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Demo")
+    await userEvent.type(screen.getByPlaceholderText("Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git"), "https://github.com/acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Register project" }))
 
     expect(await screen.findByRole("button", { name: "Wait" })).toBeDefined()
@@ -73,7 +73,7 @@ describe("HomePage", () => {
     ))
     renderHome()
 
-    await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Demo")
+    await userEvent.type(screen.getByPlaceholderText("Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git"), "https://github.com/acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Register project" }))
 
     expect(await screen.findByText("Project acme/Demo registered")).toBeDefined()
@@ -83,7 +83,7 @@ describe("HomePage", () => {
     stubProjects(() => new Response(JSON.stringify({ message: "Repository is not accessible" }), { status: 422 }))
     renderHome()
 
-    await userEvent.type(screen.getByPlaceholderText("Enter a repository: https://github.com/owner/repo"), "https://github.com/acme/Gone")
+    await userEvent.type(screen.getByPlaceholderText("Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git"), "https://github.com/acme/Gone")
     await userEvent.click(screen.getByRole("button", { name: "Register project" }))
 
     expect(await screen.findByRole("alert")).toBeDefined()

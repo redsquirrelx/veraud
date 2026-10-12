@@ -36,6 +36,7 @@ export function ProjectCard({ project, pinned, onTogglePin }: { project: Project
               <ExternalIcon size={13} />
             </a>
             <Badge tone={statusTone(project.status)}>{project.status}</Badge>
+            <Badge tone="neutral">{project.cloneProtocol.toUpperCase()}</Badge>
           </span>
           <span className="project-date">
             {new Date(project.registeredAt).toLocaleDateString()}
