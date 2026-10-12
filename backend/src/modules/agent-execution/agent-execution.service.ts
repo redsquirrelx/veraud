@@ -3,6 +3,8 @@ import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/
 import type { AgentInput, AgentInvoker } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
+import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
+import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -40,6 +42,7 @@ export class AgentExecutionService {
     private targets: AgentTargetResolver,
     private events: AgentExecutionEvents,
     private workspaceDir: string,
+    private settings: AgentSettingsService,
   ) {}
 
   /**
@@ -56,16 +59,18 @@ export class AgentExecutionService {
    * at all, since nothing else would ever report that.
    */
   async open(agentType: string, evaluationId: number): Promise<StoredAgentExecution> {
+    const [configuration] = await this.settings.prepareExecution([agentType])
     const execution = await this.executions.create({
       agentType,
       evaluationId,
+      configuration: configuration!,
     } satisfies NewAgentExecution)
 
     this.log.info(`Opened execution ${execution.id} agentType=${agentType}`)
 
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
 
-    void this.dispatch(execution)
+    void this.dispatch(execution, configuration!.transport)
 
     return execution
   }
@@ -80,25 +85,35 @@ export class AgentExecutionService {
    */
   async openDirect(agentType: string, input: AgentInput): Promise<StoredAgentExecution> {
     const sanitized = sanitizeDirectInput(input, this.workspaceDir)
+    const [configuration] = await this.settings.prepareExecution([agentType])
 
     const execution = await this.executions.create({
       agentType,
       evaluationId: null,
+      configuration: configuration!,
     } satisfies NewAgentExecution)
 
     this.log.info(`Opened direct execution ${execution.id} agentType=${agentType}`)
 
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
 
-    void this.dispatchDirect(execution, sanitized)
+    void this.dispatchDirect(execution, sanitized, configuration!.transport)
 
     return execution
+  }
+
+  async openForProject(projectId: number, branch: string, commitHash: string, agentType: string) {
+    const [configuration] = await this.settings.prepareExecution([agentType])
+    const result = await this.executions.createForProject(projectId, branch, commitHash, configuration!)
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(result.execution) })
+    void this.dispatch(result.execution, configuration!.transport)
+    return result
   }
 
   /** Starts the agent and then gets out of the way. Never throws: a failure here
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
-  private async dispatch(execution: StoredAgentExecution): Promise<void> {
+  private async dispatch(execution: StoredAgentExecution, config: AgentRunConfig): Promise<void> {
     try {
       if (execution.evaluationId === null) {
         throw new Error(`Execution ${execution.id} has no evaluation to resolve`)
@@ -106,7 +121,7 @@ export class AgentExecutionService {
 
       const input = await this.targets.resolve(execution.evaluationId)
 
-      await this.agents.run(execution.agentType, input, execution.id)
+      await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       // The agent never got far enough to report for itself.
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
@@ -115,11 +130,11 @@ export class AgentExecutionService {
 
   /** Direct twin of dispatch: the input is already known, only the checkout is
    *  verified before handing it to the agent. Never throws. */
-  private async dispatchDirect(execution: StoredAgentExecution, input: AgentInput): Promise<void> {
+  private async dispatchDirect(execution: StoredAgentExecution, input: AgentInput, config: AgentRunConfig): Promise<void> {
     try {
       assertDirectCheckout(input)
 
-      await this.agents.run(execution.agentType, input, execution.id)
+      await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
     }

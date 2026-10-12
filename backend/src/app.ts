@@ -28,6 +28,11 @@ import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-ex
 import { AiProviderRepository } from "./modules/ai-provider/ai-provider.repository.js"
 import { AiProviderService, SEEDED_AI_PROVIDERS } from "./modules/ai-provider/ai-provider.service.js"
 import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.controller.js"
+import { AgentSettingsRepository } from "./modules/agent-settings/agent-settings.repository.js"
+import { AgentSettingsService } from "./modules/agent-settings/agent-settings.service.js"
+import { registerAgentSettingsRoutes } from "./modules/agent-settings/agent-settings.controller.js"
+import { BACKEND_AGENT_TYPES } from "./modules/agent-settings/agent-types.js"
+import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configuration.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
@@ -42,6 +47,7 @@ export interface BuildAppOptions {
    *  to keep a run from leaving the machine; production leaves them unset. */
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
   makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
+  makeModelAccessVerifier?: () => ModelAccessVerifier
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -63,7 +69,13 @@ export async function buildApp(options: BuildAppOptions) {
     ? options.makeRunner(taskRepository, projectRepository, gateway)
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const taskService = new TaskService(taskRepository, runner)
-  const agentExecutionRepository = new AgentExecutionRepository(db)
+  const agentSettingsRepository = new AgentSettingsRepository(db)
+  await agentSettingsRepository.ensureSeeded(BACKEND_AGENT_TYPES)
+  const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
+    ? new AgentServerClient(options.agentServerUrl)
+    : { verify: async () => { throw new Error("No agent-server URL configured; model access cannot be verified") } })
+  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier)
+  const agentExecutionRepository = new AgentExecutionRepository(db, agentSettingsRepository)
   const agentInvoker = options.makeAgentInvoker
     ? options.makeAgentInvoker(options.agentServerUrl)
     : buildAgentInvoker(options.agentServerUrl)
@@ -76,6 +88,7 @@ export async function buildApp(options: BuildAppOptions) {
     agentTargets,
     gateway,
     options.workspaceDir,
+    agentSettingsService,
   )
   const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir, agentExecutionService)
   const aiProviderRepository = new AiProviderRepository(db)
@@ -94,6 +107,7 @@ export async function buildApp(options: BuildAppOptions) {
   gateway.register(app)
   registerProjectRoutes(app, projectService)
   registerAiProviderRoutes(app, aiProviderService)
+  registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)

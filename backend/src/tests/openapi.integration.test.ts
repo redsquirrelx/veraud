@@ -37,7 +37,7 @@ describe("OpenAPI portal", () => {
       assert.equal(specification.info.title, "Veraud Backend API")
       assert.equal(specification.info.version, "1.0.0")
       assert.deepEqual(specification.servers, [{ url: "/", description: "Current backend origin" }])
-      assert.deepEqual(specification.tags.map((tag: { name: string }) => tag.name), ["Projects", "Project Git", "Tasks", "AI Providers", "Agent Executions", "Status"])
+      assert.deepEqual(specification.tags.map((tag: { name: string }) => tag.name), ["Projects", "Project Git", "Tasks", "AI Providers", "Agent Executions", "Agent Settings", "Status"])
       assert.ok(specification.paths["/api/projects"]?.post, "Swagger must be registered before controllers")
       assert.ok(specification.paths["/api/tasks/active"]?.get)
       assert.ok(specification.paths["/api/ai-providers"]?.get)
@@ -48,11 +48,12 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 27)
+      assert.equal(operations.length, 30)
       const expectedOperations = [
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
         "GET /api/agent-executions/{id}",
+        "GET /api/agent-settings",
         "GET /api/ai-providers",
         "GET /api/ai-providers/{id}",
         "GET /api/projects",
@@ -65,6 +66,7 @@ describe("OpenAPI portal", () => {
         "POST /api/agent-executions/direct",
         "POST /api/agent-executions/{id}/completion",
         "POST /api/agent-executions/{id}/running",
+        "POST /api/agent-settings/{agentType}/verify",
         "POST /api/ai-providers/{id}/credentials",
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
@@ -77,6 +79,7 @@ describe("OpenAPI portal", () => {
         "POST /api/projects/{id}/git/rev-parse",
         "POST /api/projects/{id}/git/tree",
         "POST /api/projects/{id}/sync",
+        "PUT /api/agent-settings/{agentType}",
       ].sort()
       const documentedOperations = Object.entries(specification.paths).flatMap(([path, item]) =>
         Object.keys(item as Record<string, unknown>).filter((method) => ["get", "post", "patch", "delete", "put"].includes(method)).map((method) => `${method.toUpperCase()} ${path}`),
@@ -103,6 +106,12 @@ describe("OpenAPI portal", () => {
       const missingExecution = await app.inject({ method: "GET", url: "/api/agent-executions/0" })
       assert.equal(missingExecution.statusCode, 404)
       assert.deepEqual(missingExecution.json(), { error: "Agent execution 0 not found" })
+      const agentSettings = await app.inject({ method: "GET", url: "/api/agent-settings" })
+      assert.equal(agentSettings.statusCode, 200)
+      assert.deepEqual(agentSettings.json(), [
+        { agentType: "analyzer", configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null } },
+        { agentType: "dummy", configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null } },
+      ])
     } finally {
       await app.close()
       await db.$disconnect()

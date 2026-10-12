@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
+import type { AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
 
 export interface NewProject {
   githubRepositoryId: bigint | null
@@ -61,6 +62,7 @@ export interface StoredAgentExecutionSummary {
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
+  configuration?: AgentConfiguration | null
 }
 
 export interface StoredVersionAnalysis {
@@ -231,6 +233,7 @@ export class ProjectRepository implements ProjectStore {
               createdAt: run.createdAt,
               startedAt: run.startedAt,
               finishedAt: run.finishedAt,
+              configuration: run.configurationSnapshot ? JSON.parse(run.configurationSnapshot) as AgentConfiguration : null,
             },
       }
     })

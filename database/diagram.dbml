@@ -66,6 +66,7 @@ Table agent_execution {
   output_tokens int
   error text
   result text
+  configuration_snapshot text
 }
 
 Table ai_provider {
@@ -79,12 +80,14 @@ Table ai_credential {
 
   name varchar [not null]
   api_key varchar [not null]
+  revision int [not null, default: 1]
 }
 
 Table ai_model {
   id int [pk, not null]
   ai_provider_id int [not null]
   name varchar [not null]
+  revision int [not null, default: 1]
   
   indexes {
     (ai_provider_id, name) [unique]
@@ -94,11 +97,14 @@ Table ai_model {
 Table agent_settings {
   agent_type varchar [pk, not null]
 
-  ai_model_id int [not null]
-  ai_credential_id int [not null]
+  ai_model_id int
+  ai_credential_id int
 
   temperature decimal
   max_tokens int
+  verification_fingerprint varchar
+  verification_checked_at timestamp
+  verification_error text
 }
 
 

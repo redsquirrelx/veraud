@@ -79,7 +79,7 @@ function makeService(options: {
     ),
     new GithubClient(),
     workspaceDir,
-    { open: async () => { throw new Error("not used") } }
+    { open: async () => { throw new Error("not used") }, openForProject: async () => { throw new Error("not used") } }
   )
 
   return { service, enqueued, created, workspaceDir }

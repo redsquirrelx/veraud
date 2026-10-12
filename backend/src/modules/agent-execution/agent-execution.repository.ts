@@ -1,4 +1,6 @@
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
+import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
+import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -22,6 +24,7 @@ export const INITIAL_STATUS: AgentExecutionStatus = "Waiting"
 export interface NewAgentExecution {
   agentType: string
   evaluationId: number | null
+  configuration: PreparedAgentConfiguration
 }
 
 export interface AgentExecutionCompletion {
@@ -44,6 +47,7 @@ export interface StoredAgentExecution {
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
+  configuration?: AgentConfiguration | null
 }
 
 export interface AgentExecutionStore {
@@ -51,22 +55,27 @@ export interface AgentExecutionStore {
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
   markRunning(id: number): Promise<StoredAgentExecution>
   findById(id: number): Promise<StoredAgentExecution | null>
+  createForProject(projectId: number, branch: string, commitHash: string, configuration: PreparedAgentConfiguration): Promise<{ versionId: number, evaluationId: number, execution: StoredAgentExecution }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
-  constructor(private db: PrismaClient) {}
+  constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
     try {
-      const execution = await this.db.agentExecution.create({
-        data: {
-          agentType: data.agentType,
-          evaluationId: data.evaluationId,
-          status: INITIAL_STATUS,
-        },
-      })
+      return await this.db.$transaction(async (tx) => {
+        await this.assertCurrent(tx, data.configuration)
+        const execution = await tx.agentExecution.create({
+          data: {
+            agentType: data.agentType,
+            evaluationId: data.evaluationId,
+            status: INITIAL_STATUS,
+            configurationSnapshot: JSON.stringify(data.configuration.snapshot),
+          },
+        })
 
-      return this.toStored(execution)
+        return this.toStored(execution)
+      })
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
         throw new UnknownExecutionTargetError(
@@ -78,6 +87,32 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
       throw error
     }
+  }
+
+  private async assertCurrent(tx: Prisma.TransactionClient, prepared: PreparedAgentConfiguration): Promise<void> {
+    const current = await this.settings.prepare(prepared.agentType, tx)
+    if (current.fingerprint !== prepared.fingerprint) throw new AgentConfigurationError([{ agentType: prepared.agentType, reason: "Configuration changed before starting; retry" }])
+  }
+
+  async createForProject(projectId: number, branch: string, commitHash: string, configuration: PreparedAgentConfiguration) {
+    return this.db.$transaction(async (tx) => {
+      await this.assertCurrent(tx, configuration)
+      const running = await tx.agentExecution.findFirst({ where: {
+        status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
+      } })
+      if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      const version = await tx.projectVersion.upsert({
+        where: { projectId_commitHash: { projectId, commitHash } },
+        create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
+      })
+      await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
+      const execution = await tx.agentExecution.create({ data: {
+        evaluationId: evaluation.id, agentType: configuration.agentType, status: INITIAL_STATUS,
+        configurationSnapshot: JSON.stringify(configuration.snapshot),
+      } })
+      return { versionId: version.id, evaluationId: evaluation.id, execution: this.toStored(execution) }
+    })
   }
 
   async complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution> {
@@ -127,6 +162,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     createdAt: Date
     startedAt: Date | null
     finishedAt: Date | null
+    configurationSnapshot?: string | null
   }): StoredAgentExecution {
     return {
       id: execution.id,
@@ -140,6 +176,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       createdAt: execution.createdAt,
       startedAt: execution.startedAt,
       finishedAt: execution.finishedAt,
+      configuration: execution.configurationSnapshot ? JSON.parse(execution.configurationSnapshot) as AgentConfiguration : null,
     }
   }
 }

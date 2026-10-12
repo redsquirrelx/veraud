@@ -53,6 +53,7 @@ describe("project analyze endpoint", () => {
       silent: true,
       makeRunner: () => noopRunner,
       makeAgentInvoker: () => options.invoker ?? { run: async () => ({ kind: "library" }) },
+      makeModelAccessVerifier: () => ({ verify: async () => {} }),
     })
 
     auditResponseSerialization(app)
@@ -79,8 +80,10 @@ describe("project analyze endpoint", () => {
     const credential = await db.aiCredential.create({
       data: { name: "test-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
-    await db.agentSettings.create({
-      data: { agentType: "analyzer", aiModelId: model.id, aiCredentialId: credential.id },
+    await db.agentSettings.upsert({
+      where: { agentType: "analyzer" },
+      create: { agentType: "analyzer", aiModelId: model.id, aiCredentialId: credential.id },
+      update: { aiModelId: model.id, aiCredentialId: credential.id },
     })
   }
 
@@ -202,7 +205,7 @@ describe("project analyze endpoint", () => {
     assert.equal(response.statusCode, 422)
   })
 
-  it("422s when the analyzer is not registered", async () => {
+  it("422s when the analyzer has no model and credential configured", async () => {
     const { app, project } = await start()
 
     const response = await app.inject({
