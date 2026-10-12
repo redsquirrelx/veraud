@@ -109,6 +109,21 @@ describe("ai providers API", () => {
     const modelId = detail.models[0]?.id
     assert.ok(modelId)
 
+    const updated = await fetch(`${baseUrl}/api/ai-providers/${openai?.id}/models/${modelId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "gpt-4.1" }),
+    })
+    assert.equal(updated.status, 200)
+    assert.deepEqual(await updated.json(), { id: modelId, name: "gpt-4.1", inUse: false })
+
+    const wrongProvider = await fetch(`${baseUrl}/api/ai-providers/9999/models/${modelId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "other" }),
+    })
+    assert.equal(wrongProvider.status, 404)
+
     const removed = await fetch(`${baseUrl}/api/ai-providers/${openai?.id}/models/${modelId}`, { method: "DELETE" })
     assert.equal(removed.status, 204)
 
@@ -137,10 +152,29 @@ describe("ai providers API", () => {
     assert.equal(listed.credentials[0]?.inUse, false)
     assert.ok(!("apiKey" in (listed.credentials[0] ?? {})))
 
+    const renamed = await fetch(`${baseUrl}/api/ai-providers/${google?.id}/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "production" }),
+    })
+    assert.equal(renamed.status, 200)
+    assert.deepEqual(await renamed.json(), { id: created.id, name: "production", apiKeyPreview: "****1234", inUse: false })
+
+    const replaced = await fetch(`${baseUrl}/api/ai-providers/${google?.id}/credentials/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "production", apiKey: "new-5678" }),
+    })
+    assert.equal(replaced.status, 200)
+    assert.deepEqual(await replaced.json(), { id: created.id, name: "production", apiKeyPreview: "****5678", inUse: false })
+
+    const refreshed = await (await fetch(`${baseUrl}/api/ai-providers/${google?.id}`)).json() as { credentials: Array<{ name: string, apiKeyPreview: string, apiKey?: string }> }
+    assert.deepEqual(refreshed.credentials, [{ id: created.id, name: "production", apiKeyPreview: "****5678", inUse: false }])
+
     const duplicate = await fetch(`${baseUrl}/api/ai-providers/${google?.id}/credentials`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "prod", apiKey: "other-5678" }),
+      body: JSON.stringify({ name: "production", apiKey: "other-5678" }),
     })
     assert.equal(duplicate.status, 409)
 

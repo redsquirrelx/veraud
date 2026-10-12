@@ -249,3 +249,12 @@ export function MinusIcon({ size = 14 }: IconProps) {
     </svg>
   )
 }
+
+export function PencilIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="m10.5 2.5 3 3-8 8-3.5.5.5-3.5 8-8Z" />
+      <path d="m9 4 3 3" />
+    </svg>
+  )
+}

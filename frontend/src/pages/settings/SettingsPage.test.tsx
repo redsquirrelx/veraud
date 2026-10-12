@@ -27,8 +27,8 @@ const providers = [{
 }]
 
 function stubRouted(responses: Array<{ status: number, body?: unknown }>) {
-  const calls: Array<{ url: string, method: string }> = []
-  globalThis.fetch = (async (url: string, init?: { method?: string }) => {
+  const calls: Array<{ url: string, method: string, body?: string }> = []
+  globalThis.fetch = (async (url: string, init?: { method?: string, body?: string }) => {
     if (String(url).includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
@@ -36,7 +36,7 @@ function stubRouted(responses: Array<{ status: number, body?: unknown }>) {
     if (next === undefined) {
       throw new Error(`unexpected fetch ${String(url)}`)
     }
-    calls.push({ url: String(url), method: init?.method ?? "GET" })
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body })
     if (next.body === undefined) {
       return new Response(null, { status: next.status })
     }
@@ -58,6 +58,68 @@ function renderSettings(responses: Array<{ status: number, body?: unknown }>) {
 }
 
 describe("SettingsPage", () => {
+  it("edits a model through its existing modal, keeping the provider fixed", async () => {
+    const updated = [{ ...providers[0], models: [{ id: 10, name: "gpt-4.1", inUse: true }] }]
+    const calls = renderSettings([
+      { status: 200, body: providers },
+      { status: 200, body: updated[0]?.models[0] },
+      { status: 200, body: updated },
+    ])
+
+    await screen.findByRole("option", { name: /gpt-4o/ })
+    await userEvent.click(screen.getByRole("button", { name: "Edit gpt-4o" }))
+    const dialog = screen.getByRole("dialog", { name: "Edit a model" })
+    expect(within(dialog).getByRole("button", { name: "OpenAI" })).toBeDisabled()
+    const name = within(dialog).getByPlaceholderText("Insert the model name...") as HTMLInputElement
+    expect(name.value).toBe("gpt-4o")
+    await userEvent.clear(name)
+    await userEvent.type(name, "gpt-4.1")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }))
+
+    expect(await screen.findByRole("button", { name: "Edit gpt-4.1" })).toBeDefined()
+    expect(calls[1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ name: "gpt-4.1" }) })
+    expect(calls[1]?.url).toContain("/api/ai-providers/1/models/10")
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("edits a credential with an empty API key and keeps add mode clean", async () => {
+    const updated = [{ ...providers[0], credentials: [{ id: 20, name: "production", apiKeyPreview: "****1234", inUse: false }] }]
+    const replaced = [{ ...providers[0], credentials: [{ id: 20, name: "production", apiKeyPreview: "****5678", inUse: false }] }]
+    const calls = renderSettings([
+      { status: 200, body: providers },
+      { status: 200, body: updated[0]?.credentials[0] },
+      { status: 200, body: updated },
+      { status: 200, body: replaced[0]?.credentials[0] },
+      { status: 200, body: replaced },
+    ])
+
+    await screen.findByRole("option", { name: /prod/ })
+    await userEvent.click(screen.getByRole("button", { name: "Edit prod" }))
+    const dialog = screen.getByRole("dialog", { name: "Edit a credential" })
+    expect(within(dialog).getByRole("button", { name: "OpenAI" })).toBeDisabled()
+    const key = within(dialog).getByLabelText("Api Key") as HTMLInputElement
+    expect(key.value).toBe("")
+    const name = within(dialog).getByPlaceholderText("Insert a name....") as HTMLInputElement
+    expect(name.value).toBe("prod")
+    await userEvent.clear(name)
+    await userEvent.type(name, "production")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Edit" }))
+
+    expect(await screen.findByRole("button", { name: "Edit production" })).toBeDefined()
+    expect(calls[1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ name: "production" }) })
+    expect(calls[1]?.url).toContain("/api/ai-providers/1/credentials/20")
+    await userEvent.click(screen.getByRole("button", { name: "Edit production" }))
+    const replacementDialog = screen.getByRole("dialog", { name: "Edit a credential" })
+    await userEvent.type(within(replacementDialog).getByLabelText("Api Key"), "new-5678")
+    await userEvent.click(within(replacementDialog).getByRole("button", { name: "Edit" }))
+    expect(await screen.findByText("****5678")).toBeDefined()
+    expect(calls[3]).toMatchObject({ method: "PATCH", body: JSON.stringify({ name: "production", apiKey: "new-5678" }) })
+    await userEvent.click(screen.getByRole("button", { name: "Add credential" }))
+    const addDialog = screen.getByRole("dialog", { name: "Add a credential" })
+    expect((within(addDialog).getByPlaceholderText("Insert a name....") as HTMLInputElement).value).toBe("")
+    expect((within(addDialog).getByLabelText("Api Key") as HTMLInputElement).value).toBe("")
+  })
+
   it("shows the title with task notification toggles", () => {
     renderSettings([{ status: 200, body: [] }])
 
