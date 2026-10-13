@@ -109,6 +109,34 @@ class InfrastructureFinding(AgentContract):
         return self
 
 
+class DiagramGroup(AgentContract):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    title: str = Field(min_length=1, max_length=120)
+    scope: str = Field(min_length=1, max_length=250)
+
+
+class DiagramNode(AgentContract):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    unit_ref: str = Field(pattern=r"^/organization/(0|[1-9][0-9]*)$")
+    group_id: str | None = None
+
+
+class DiagramEdge(AgentContract):
+    source: str
+    target: str
+    claim_ref: str = Field(min_length=1, max_length=200)
+    kind: Literal["calls", "depends_on", "implements", "relationship"]
+
+
+class ArchitectureDiagram(AgentContract):
+    title: str = Field(min_length=1, max_length=120)
+    scope: str = Field(min_length=1, max_length=250)
+    groups: tuple[DiagramGroup, ...] = Field(default=(), max_length=4)
+    nodes: tuple[DiagramNode, ...] = Field(min_length=1, max_length=12)
+    edges: tuple[DiagramEdge, ...] = Field(default=(), max_length=16)
+    limitations: tuple[str, ...] = Field(default=(), max_length=6)
+
+
 class ArchitectureReport(AgentContract):
     organization: tuple[OrganizationUnit, ...] = Field(default=(), max_length=8)
     connections: tuple[ArchitectureConnection, ...] = Field(default=(), max_length=10)
@@ -120,6 +148,14 @@ class ArchitectureReport(AgentContract):
     infrastructure: tuple[InfrastructureFinding, ...] = Field(default=(), max_length=6)
     explanation: ArchitecturalClaim | None = None
     uncertainties: tuple[str, ...] = Field(default=(), max_length=10)
+    diagram: ArchitectureDiagram | None = None
+
+    @model_validator(mode="after")
+    def diagram_references(self):
+        from .diagram import validate_diagram
+
+        validate_diagram(self)
+        return self
 
 
 class ArchitectureTurn(AgentContract):

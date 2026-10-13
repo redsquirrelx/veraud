@@ -72,7 +72,13 @@ def prepare_prompt(state, context, maximum):
     )
     if not isinstance(draft_units, list):
         draft_units = []
-    contract = contract_view(ArchitectureTurn.model_json_schema())
+    schema = ArchitectureTurn.model_json_schema()
+    # Diagram selection is a separate compact call; do not spend investigation
+    # context/output tokens asking the model to duplicate its report structure.
+    schema["$defs"]["ArchitectureReport"]["properties"].pop("diagram", None)
+    for name in ("ArchitectureDiagram", "DiagramNode", "DiagramEdge", "DiagramGroup"):
+        schema["$defs"].pop(name, None)
+    contract = contract_view(schema)
     if need_source:
         contract = {
             "response_fields": {"tool_calls": "[RepositoryToolCall]"},

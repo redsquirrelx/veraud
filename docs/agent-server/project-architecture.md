@@ -277,6 +277,10 @@ Use fresh snapshot-bound tools; the caller owns model resources. Passing orienta
 from another snapshot fails before a model call. Tools retain checkout isolation
 and narrative documentation exclusions, including indirect evidence retrieval.
 The installed CLI entrypoint is `project-architecture`.
+`--diagram` adds one compact model composition call after investigation, then prints
+the architect's selected component view as Mermaid (or exports it with `--json`).
+The structured view is source-linked and its relation types, groups, and scope are
+reviewed semantically. See [architecture diagrams](architecture-diagrams.md).
 `--validate-semantics` adds independent claim review and at most one evidence-return
 round; `--no-semantic-return` keeps review standalone within the pipeline. The original
 architecture remains the top-level result. See [semantic validation](project-semantic-validation.md)

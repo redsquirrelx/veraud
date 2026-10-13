@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from ..project_architecture.diagram import diagram_interpretations
 from ..project_architecture.schemas import ArchitecturalClaim, SourceCitation
 from ..repository_runtime.access import repository_relative_path
 from ..repository_runtime.context import walk_contracts
@@ -170,6 +171,13 @@ def review_targets(tools, original):
                 getattr(item, field),
                 {"name": item.name, "kind": item.kind},
             )
+    for interpretation in diagram_interpretations(report):
+        add(
+            interpretation.pointer,
+            interpretation.kind,
+            interpretation.claim,
+            interpretation.context,
+        )
     return tuple(targets)
 
 

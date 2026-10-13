@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field, model_validator
 
 from ..agents.project_architecture import ProjectArchitectureAgent
+from ..agents.project_architecture.diagram_composition import DiagramCompositionResult
 from ..agents.project_architecture.schemas import ArchitectureResult
 from ..agents.project_semantic_validation import ProjectSemanticValidationAgent
 from ..agents.project_semantic_validation.context import review_targets
@@ -18,9 +19,18 @@ class SemanticPipelineResult(BaseModel):
         min_length=1, max_length=2
     )
     return_count: int = Field(default=0, ge=0, le=1)
+    diagram_revision: DiagramCompositionResult | None = None
 
     @model_validator(mode="after")
     def bounded_history(self):
+        if self.diagram_revision is not None and (
+            not self.return_count
+            or self.diagram_revision.snapshot_hash
+            != self.original_architecture.snapshot_hash
+        ):
+            raise ValueError(
+                "A diagram revision requires an architectural return on the same snapshot."
+            )
         if bool(self.return_count) != (self.revised_architecture is not None):
             raise ValueError(
                 "A returned architecture must be preserved in revision history."
@@ -46,6 +56,7 @@ async def validate_architecture_pipeline(
     orientation=None,
     on_event=None,
     execute=None,
+    compose_revision=None,
 ):
     """fresh_tools must bind new ledgers to the same snapshot and remaining deadline."""
 
@@ -54,6 +65,17 @@ async def validate_architecture_pipeline(
 
     first = await run(validator.run(fresh_tools(), original, soft_token_budgets=True))
     requests = [finding for finding in first.findings if finding.missing_evidence]
+    if architect is not None and getattr(
+        getattr(architect, "generate", None), "stopped", False
+    ):
+        if on_event and requests:
+            on_event(
+                "architecture_revision_skipped",
+                {"reason": "Shared provider unavailable after a terminal failure."},
+            )
+        return SemanticPipelineResult(
+            original_architecture=original, validations=(first,)
+        )
     if not requests or architect is None:
         return SemanticPipelineResult(
             original_architecture=original, validations=(first,)
@@ -96,6 +118,15 @@ async def validate_architecture_pipeline(
             validations=(first,),
             return_count=1,
         )
+    diagram_revision = await compose_revision(revised) if compose_revision else None
+    if diagram_revision is not None:
+        revised = revised.model_copy(
+            update={
+                "architecture": revised.architecture.model_copy(
+                    update={"diagram": diagram_revision.diagram}
+                )
+            }
+        )
     second = await run(
         validator.run(fresh_tools(), revised, objective_id="semantic_revalidation")
     )
@@ -104,4 +135,5 @@ async def validate_architecture_pipeline(
         revised_architecture=revised,
         validations=(first, second),
         return_count=1,
+        diagram_revision=diagram_revision,
     )

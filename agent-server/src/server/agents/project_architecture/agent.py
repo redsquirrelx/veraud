@@ -421,6 +421,15 @@ class ProjectArchitectureAgent:
         self.on_event = on_event
         self.graph = build_architecture_graph()
 
+    async def compose_diagram(
+        self, tools, original_result, *, objective_id="diagram_composition"
+    ):
+        from .diagram_composition import compose_diagram
+
+        return await compose_diagram(
+            self, tools, original_result, objective_id=objective_id
+        )
+
     async def run(
         self, tools, orientation=None, *, feedback=None, objective_id="architecture"
     ):

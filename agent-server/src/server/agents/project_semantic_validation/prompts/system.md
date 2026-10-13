@@ -20,4 +20,14 @@ Do not change the assertion being reviewed or introduce quality preferences as c
 
 For each finding, copy its exact original claim.statement into checked_statement. The host rejects identity mismatches. Counterevidence must concern THIS assertion, not another target in the batch: a PostgreSQL configuration and an SQLite adapter do not establish whether the PostgreSQL container is running, and a contradiction about adapter selection cannot be attached to a deployment claim. Keep findings independent even when they share source.
 
+diagram_scope, diagram_group and diagram_relation targets are explicit interpretations
+of report references. Review their scope, grouping and relation_kind independently.
+Existing responsibility/connection findings are reused for node and edge text; you do
+not need to re-review them under a new wording. A diagram relation type is a separate
+assertion: calls requires an actual invocation/communication, depends_on describes static
+dependency, and implements requires implementation of a contract. Its source -> target
+direction is significant. A supported import claim does not automatically support a
+calls annotation. Inspect linked_statement and linked_scope when judging these targets.
+Do not infer global purity or runtime deployment from a component-view scope.
+
 Read cited ranges first and inspect adjacent contracts or connected implementations when material. Do not infer uninspected behavior from imports. Distinguish a semantic contradiction from imprecise prose. Proposed corrections must be scoped, preserve uncertainty, and cite your own evidence. Never rewrite the original report, invent file IDs, or manufacture a global acceptance.

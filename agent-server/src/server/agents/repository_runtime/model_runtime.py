@@ -3,6 +3,7 @@
 import asyncio
 import math
 from time import monotonic
+from types import SimpleNamespace
 
 from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
 from ...benchmark.telemetry import response_usage
@@ -62,6 +63,18 @@ class ModelGateway:
                 [(prompt, "instructions")], stage="unknown"
             ).measurement
         response_characters = None
+        delegate = self.delegate
+        output_limit = getattr(prompt, "max_output_tokens", None)
+        limited_generate = getattr(delegate, "generate_with_output_limit", None)
+        if output_limit is not None and limited_generate is not None:
+
+            async def generate_limited(text):
+                return await limited_generate(text, max_output_tokens=output_limit)
+
+            delegate = SimpleNamespace(
+                generate=generate_limited,
+                settings=getattr(self.delegate, "settings", None),
+            )
         started = monotonic()
         call_number = len(self.calls) + 1
         wait_reason = "request_pacing_or_shared_cooldown"
@@ -114,9 +127,9 @@ class ModelGateway:
                         if self.trace:
                             from ...config.tracing import traced_generate
 
-                            response = await traced_generate(self.delegate, str(prompt))
+                            response = await traced_generate(delegate, str(prompt))
                         else:
-                            response = await self.delegate.generate(str(prompt))
+                            response = await delegate.generate(str(prompt))
                         metadata = getattr(response, "usage_metadata", None)
                         if metadata is not None and hasattr(
                             metadata, "prompt_token_count"
@@ -209,6 +222,8 @@ class ModelGateway:
                     input_tokens=record["input_tokens"],
                     output_tokens=record["output_tokens"],
                     unknown_usage_attempts=record["unknown_usage_attempts"],
+                    http_status=record.get("http_status"),
+                    error_type=record.get("error_type"),
                 )
             )
             emit(
@@ -295,6 +310,11 @@ def create_project_model(settings, credentials):
 
     class ConfiguredGeminiModel(GeminiModel):
         async def generate(self, message):
+            return await self.generate_with_output_limit(
+                message, max_output_tokens=self.settings.max_tokens
+            )
+
+        async def generate_with_output_limit(self, message, *, max_output_tokens):
             from google.genai import types
 
             return await self.client.aio.models.generate_content(
@@ -302,7 +322,7 @@ def create_project_model(settings, credentials):
                 contents=str(message),
                 config=types.GenerateContentConfig(
                     temperature=self.settings.temperature,
-                    max_output_tokens=self.settings.max_tokens,
+                    max_output_tokens=min(self.settings.max_tokens, max_output_tokens),
                     response_mime_type="application/json",
                 ),
             )

@@ -39,3 +39,10 @@ local hypothesis with limitations; if no pattern can be established, explicitly 
 an unresolved no-clear-pattern conclusion. Missing evidence is not a reason to omit
 the architectural assessment. Follow closing_instruction on the final assessment turn.
 If semantic_review_feedback is present, address its concrete missing-evidence questions and scoped findings. Treat the prior claims as unverified guidance. Inspect your own source before retaining supported claims, and explain uncertainty when requested evidence cannot be established. A semantic reviewer is fallible; do not blindly adopt a verdict contradicted by implementation.
+
+Diagram selection is a separate compact composition step after this investigation;
+do not produce diagram or Mermaid fields here. Cross-unit supported connections
+must cite inspected source from both endpoint responsibilities. Follow actual URLs,
+calls or contracts to establish the matching target; unrelated API handlers are not
+evidence of that connection. If it cannot be established, retain it as a hypothesis
+with limitations rather than repeat the same rejected supported assertion.

@@ -382,11 +382,12 @@ def retain_valid_sections(tools, raw):
         "infrastructure",
         "explanation",
         "uncertainties",
+        "diagram",
     ):
         values = raw.get(field)
         if values is None:
             continue
-        collection = field not in {"closest_architecture", "explanation"}
+        collection = field not in {"closest_architecture", "explanation", "diagram"}
         for member in values if collection and isinstance(values, list) else [values]:
             value = (*getattr(result, field), member) if collection else member
             if field == "closest_architecture" and isinstance(value, dict):
@@ -397,6 +398,16 @@ def retain_valid_sections(tools, raw):
                 )
                 validate_report(tools, candidate)
             except ValueError as error:
+                if field == "diagram":
+                    result = result.model_copy(
+                        update={
+                            "uncertainties": (
+                                *result.uncertainties,
+                                "Diagram omitted because its structure or report references failed validation: "
+                                + str(error)[:350],
+                            )[:10]
+                        }
+                    )
                 if field == "closest_architecture" and isinstance(member, dict):
                     try:
                         assessment = ArchitecturalClaim.model_validate(

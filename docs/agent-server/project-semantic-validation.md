@@ -92,6 +92,11 @@ The host rejects findings whose copied statement differs from the target's origi
 text, preventing silent review of a different assertion under the same pointer.
 
 Review the literal statement, including exclusivity words such as ONLY and NEVER.
+Optional [architecture diagrams](architecture-diagrams.md) reuse existing claims and
+add derived review targets for authored view scope, grouping, and typed relations.
+The compact model composition runs before review; it does not load the main
+investigation turns with the diagram contract. Pending
+diagram interpretations prevent full review acceptance just like other pending claims.
 For example, depending on a repository port may support inversion while the assertion
 that a use case imports *only* that port is contradicted by other imports. Framework
 dependencies do not inherently invalidate a local hexagonal pattern. Configuration

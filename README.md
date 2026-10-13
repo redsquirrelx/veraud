@@ -48,3 +48,5 @@ See [semantic validation](docs/agent-server/project-semantic-validation.md) for
 independent claim review and the bounded architectural feedback cycle.
 The [project architecture pipeline](docs/agent-server/project-architecture-pipeline.md)
 exposes that composition for backend integration with typed results and stage hooks.
+It also exposes [source-linked component diagrams](docs/agent-server/architecture-diagrams.md)
+as structured data and deterministic Mermaid.

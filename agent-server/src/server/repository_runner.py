@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -11,7 +12,7 @@ from pathlib import Path
 from time import monotonic
 
 from .agents.project_architecture import ArchitectureLimits, ProjectArchitectureAgent
-from .agents.project_architecture.schemas import ArchitectureResult
+from .agents.project_architecture.diagram import render_diagram
 from .agents.project_architecture.smoke import ArchitectureSmokeModel
 from .agents.project_orientation import ProjectOrientationAgent
 from .agents.project_orientation.smoke import OrientationSmokeModel
@@ -36,9 +37,9 @@ from .agents.repository_runtime.model_runtime import (
     close_model_clients,
     create_project_model,
 )
-from .agents.repository_runtime.responses import parse_json_value
 from .pipelines import ProjectArchitecturePipeline
 from .repository_progress import ProgressReporter, with_progress
+from .repository_reports import ArchitectureCheckpoint, load_architecture_report
 from .services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -97,7 +98,37 @@ def build_parser(mode):
             action="store_true",
             help="Review architectural claims; first review uses advisory token budgets, revalidation uses strict budgets",
         )
+        parser.add_argument(
+            "--diagram",
+            action="store_true",
+            help="Ask the architect to compose a component view after investigation, then print Mermaid",
+        )
         parser.add_argument("--no-semantic-return", action="store_true")
+        parser.add_argument(
+            "--resume-report",
+            type=Path,
+            help="Resume composition from a saved report; skip orientation and investigation",
+        )
+        parser.add_argument(
+            "--checkpoint",
+            type=Path,
+            help="Report checkpoint path (default: .architecture-checkpoints/<repository>.json)",
+        )
+        parser.add_argument(
+            "--diagram-model", help="Model used only for diagram composition"
+        )
+        parser.add_argument(
+            "--diagram-provider", help="Provider used only for diagram composition"
+        )
+        parser.add_argument(
+            "--diagram-api-key", help="Credentials used only for diagram composition"
+        )
+        parser.add_argument(
+            "--diagram-retry-backoff",
+            type=float,
+            default=10,
+            help="Initial diagram retry wait in seconds (default: 10)",
+        )
     if validation:
         parser.add_argument(
             "--report",
@@ -177,34 +208,16 @@ def make_tools(snapshot, budget, workspace):
     )
 
 
-def load_architecture_report(path):
-    """Accept bounded UTF-8/UTF-16 exports, including PowerShell redirection."""
-    with path.open("rb") as stream:
-        raw = stream.read(2_000_001)
-    if len(raw) > 2_000_000:
-        raise ValueError("Architectural report exceeds the 2 MB input limit.")
-    encoding = "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
-    try:
-        exported = parse_json_value(raw.decode(encoding), 2_000_000)
-    except UnicodeError as error:
-        raise ValueError(
-            "Architectural report must be UTF-8 or BOM-marked UTF-16 JSON."
-        ) from error
-    if not isinstance(exported, dict):
-        raise ValueError("Expected an exported architectural result object.")  # noqa: TRY004 - invalid external JSON is a CLI value error
-    # Pre-runtime-extraction architecture exports carried an unused analyst counter.
-    if (
-        isinstance(exported.get("usage"), dict)
-        and exported["usage"].get("investigations_started") == 0
-    ):
-        exported["usage"].pop("investigations_started")
-    return ArchitectureResult.model_validate(
-        {
-            key: value
-            for key, value in exported.items()
-            if key in ArchitectureResult.model_fields
-        }
-    )
+def combined_gateway_usage(*gateways):
+    totals = [gateway.usage_totals() for gateway in gateways if gateway.calls]
+    if not totals:
+        return gateways[0].usage_totals()
+    return {
+        key: sum(total[key] for total in totals)
+        if all(total[key] is not None for total in totals)
+        else None
+        for key in totals[0]
+    }
 
 
 def run_metadata(arguments, tools, model):
@@ -212,6 +225,7 @@ def run_metadata(arguments, tools, model):
     files = [
         Path(__file__),
         server / "repository_progress.py",
+        server / "repository_reports.py",
         server / "semantic_validation_pipeline.py",
         server / "pipelines/project_architecture.py",
         server / "pipelines/semantic_validation.py",
@@ -253,6 +267,8 @@ def run_metadata(arguments, tools, model):
 
 
 async def run(arguments):
+    if arguments.mode == "architecture" and arguments.resume_report:
+        arguments.diagram = True
     for value in (arguments.request_interval, arguments.retry_backoff):
         if not math.isfinite(value) or value < 0:
             raise ValueError("Provider pacing must be finite and nonnegative.")
@@ -346,6 +362,7 @@ async def run(arguments):
     )
     emit("model_initializing", mode="protocol_smoke" if arguments.smoke else "model")
     model = create_model(arguments)
+    diagram_model = None
     settings = getattr(model, "settings", None)
     emit(
         "model_ready",
@@ -374,13 +391,82 @@ async def run(arguments):
             result = await execute(agent, tools, original)
             metadata["validation_limits"] = agent.limits.model_dump(mode="json")
             metadata["initial_review_soft_token_budgets"] = True
+            diagram = render_diagram(original, findings=result.findings)
             return result.model_dump(mode="json") | {
+                "architecture_diagram": diagram.model_dump(mode="json")
+                if diagram
+                else None,
                 "execution_mode": "protocol_smoke"
                 if arguments.smoke
                 else arguments.mode,
                 "run_metadata": metadata,
             }, result.completion_status != "failed"
         if architecture:
+            saved = (
+                load_architecture_report(arguments.resume_report)
+                if arguments.resume_report
+                else None
+            )
+            if saved is not None:
+                tools.context.require_snapshot(saved.snapshot_hash)
+            checkpoint_path = arguments.checkpoint or (
+                Path.cwd()
+                / ".architecture-checkpoints"
+                / (
+                    root.name
+                    + "-"
+                    + hashlib.sha256(str(root).encode()).hexdigest()[:10]
+                    + ".json"
+                )
+            )
+            checkpoint = ArchitectureCheckpoint(checkpoint_path)
+            diagram_arguments = copy.copy(arguments)
+            diagram_arguments.model = arguments.diagram_model or arguments.model
+            diagram_arguments.provider = (
+                arguments.diagram_provider or arguments.provider
+            )
+            diagram_arguments.api_key = arguments.diagram_api_key or arguments.api_key
+            diagram_model = (
+                create_model(diagram_arguments)
+                if any(
+                    (
+                        arguments.diagram_model,
+                        arguments.diagram_provider,
+                        arguments.diagram_api_key,
+                    )
+                )
+                else model
+            )
+            # Presentation failures must not stop the investigation/review gateway.
+            diagram_gateway = ModelGateway(
+                diagram_model,
+                interval=arguments.request_interval,
+                max_retries=arguments.max_retries,
+                backoff=arguments.diagram_retry_backoff,
+                on_event=reporter,
+                trace=arguments.trace,
+                remaining_seconds=lambda: max(0, deadline - monotonic()),
+            )
+            if diagram_model is model:
+
+                def provider_event(event, values):
+                    # Separate failure state, but retain pacing across shared-client stages.
+                    next_allowed = max(
+                        gateway.pacer.next_allowed, diagram_gateway.pacer.next_allowed
+                    )
+                    gateway.pacer.next_allowed = diagram_gateway.pacer.next_allowed = (
+                        next_allowed
+                    )
+                    if reporter:
+                        reporter(event, values)
+
+                gateway.on_event = diagram_gateway.on_event = provider_event
+            diagram_settings = getattr(diagram_model, "settings", None)
+            metadata["diagram_model"] = {
+                "provider": getattr(diagram_settings, "provider", "offline"),
+                "name": getattr(diagram_settings, "name", "protocol_smoke"),
+                "retry_backoff": arguments.diagram_retry_backoff,
+            }
             architect = ProjectArchitectureAgent(
                 model,
                 generate=gateway,
@@ -397,6 +483,13 @@ async def run(arguments):
             )
             pipeline = ProjectArchitecturePipeline(
                 architect,
+                diagram_architect=ProjectArchitectureAgent(
+                    diagram_model,
+                    generate=diagram_gateway,
+                    on_event=reporter,
+                    limits=architect.limits,
+                ),
+                hooks=checkpoint if arguments.diagram or arguments.checkpoint else None,
                 orientation=ProjectOrientationAgent(
                     model, generate=gateway, on_event=reporter
                 ),
@@ -410,6 +503,8 @@ async def run(arguments):
                 include_orientation=not arguments.skip_orientation,
                 validate_semantics=arguments.validate_semantics,
                 allow_return=not arguments.no_semantic_return,
+                include_diagram=arguments.diagram,
+                resume_architecture=saved,
                 deadline=deadline,
                 execute=execute_awaitable,
             )
@@ -425,9 +520,25 @@ async def run(arguments):
                 "orientation_result": outcome.orientation.model_dump(mode="json")
                 if outcome.orientation
                 else None,
-                "pipeline_usage": gateway.usage_totals()
+                "pipeline_status": outcome.completion_status,
+                "architecture_checkpoint": str(checkpoint_path.resolve())
+                if arguments.diagram or arguments.checkpoint
+                else None,
+                "diagram_composition": outcome.diagram_composition.model_dump(
+                    mode="json"
+                )
+                if outcome.diagram_composition
+                else None,
+                "pipeline_stages": [
+                    stage.model_dump(mode="json") for stage in outcome.stages
+                ],
+                "architecture_diagram": outcome.diagram.model_dump(mode="json")
+                if outcome.diagram
+                else None,
+                "pipeline_usage": combined_gateway_usage(gateway, diagram_gateway)
                 | {
-                    "model_calls": len(gateway.measurements),
+                    "model_calls": len(gateway.measurements)
+                    + len(diagram_gateway.measurements),
                     "tool_calls": outcome.tool_calls,
                 },
             }
@@ -455,11 +566,28 @@ async def run(arguments):
     finally:
         emit("cleanup_started")
         failures = await with_progress(close_model_clients(model), reporter)
+        if diagram_model is not None and diagram_model is not model:
+            failures += await with_progress(
+                close_model_clients(diagram_model), reporter
+            )
         emit("cleanup_finished", failure_types=list(failures))
 
 
 def print_summary(data):
     print(f"Mode: {data['execution_mode']}")
+    if data.get("architecture_checkpoint"):
+        print(f"Architecture checkpoint: {data['architecture_checkpoint']}")
+    if data.get("pipeline_stages"):
+        print(f"Pipeline status: {data['pipeline_status']}")
+        for stage in data["pipeline_stages"]:
+            if stage["status"] == "failed":
+                print(
+                    f"Failed stage: {stage['stage']} | Cause: {stage['reason'] or 'See stage issues.'}"
+                )
+            elif stage["status"] == "skipped":
+                print(f"{stage['stage']}: skipped — {stage['reason']}")
+            elif stage.get("reason"):
+                print(f"Stage issue: {stage['stage']} | {stage['reason']}")
     shown = data
     review = data if "verdict" in data else None
     pipeline = data.get("semantic_validation")
@@ -508,6 +636,11 @@ def print_summary(data):
         )
         if revised:
             print("Original report: preserved in revision history")
+            if pipeline.get("diagram_revision"):
+                for issue in pipeline["diagram_revision"]["execution_issues"]:
+                    print(
+                        f"Diagram revision issue: {issue['category']} | {issue['message']}"
+                    )
             for issue in revised["execution_issues"]:
                 print(f"Revision issue: {issue['category']} | {issue['message']}")
         if not review_matches:
@@ -581,6 +714,13 @@ def print_summary(data):
         print(f"Issue: {issue['stage']} | {issue['category']} | {issue['message']}")
     if "pipeline_usage" in data:
         print("\nPipeline usage: " + json.dumps(data["pipeline_usage"]))
+    if data.get("diagram_composition"):
+        print(
+            "Diagram composition usage: "
+            + json.dumps(data["diagram_composition"]["usage"])
+        )
+        for issue in data["diagram_composition"]["execution_issues"]:
+            print(f"Diagram issue: {issue['category']} | {issue['message']}")
     print(
         "\n"
         + ("Displayed report usage: " if pipeline else "Usage: ")
@@ -602,6 +742,20 @@ def main(argv=None, *, mode):
         print(
             json.dumps(data, indent=2, ensure_ascii=False)
         ) if arguments.json else print_summary(data)
+        if (
+            arguments.mode == "architecture"
+            and arguments.diagram
+            and not arguments.json
+        ):
+            diagram = data.get("architecture_diagram")
+            if diagram:
+                print(
+                    f"\nArchitecture diagram ({diagram['report_origin']} report):\n```mermaid\n{diagram['mermaid'].rstrip()}\n```"
+                )
+            else:
+                print(
+                    "\nArchitecture diagram: unavailable; no valid component view was produced."
+                )
         return 0 if valid else 1
     except FileNotFoundError as error:
         print(f"error: {error}", file=sys.stderr)

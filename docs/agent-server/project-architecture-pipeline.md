@@ -4,8 +4,8 @@
 in one LangGraph for backend and CLI callers:
 
 ```text
-orientation -> architecture -> semantic review
-                                 -> optional architect return -> revalidation
+orientation -> architecture -> diagram composition -> semantic review
+  -> optional architect return -> revised diagram composition -> revalidation
 ```
 
 The pipeline consumes one retained `RepositorySnapshot`. Every stage and feedback
@@ -64,8 +64,15 @@ boundaries. No HTTP routes or existing backend reporting contracts are replaced.
 
 - `include_orientation=False`: start directly with architecture; orientation agent
   may be omitted.
-- `validate_semantics=False`: stop after architecture; validator may be omitted.
+- `validate_semantics=False`: omit semantic review; optional diagram composition
+  still runs, and the validator may be omitted.
 - `allow_return=False`: review once without returning to the architect.
+- `include_diagram=False`: omit the dedicated model composition call (backend default
+  is true; the CLI enables it with `--diagram`). It selects from report references,
+  performs no repository reads, and precedes semantic review.
+- `resume_architecture=saved_result`: skip orientation and architecture investigation,
+  verify the result's snapshot hash, and continue composition/review according to the
+  requested flags. No source investigation is repeated.
 - `deadline`: optional absolute `time.monotonic()` deadline shared with a caller's
   provider gateway. Otherwise the pipeline starts one deadline using
   `budget.max_elapsed_seconds`. Snapshot collection happens before this deadline
@@ -87,6 +94,14 @@ a return. If no architectural report was produced, semantic review is skipped.
 - `orientation`: optional orientation result;
 - `architecture`: original architecture result;
 - `semantic_validation`: optional original/revised report history and evaluations.
+- `diagram`: optional rendered component view of the displayed report, including its
+  structure, Mermaid source, claim/evidence annotations, and matching semantic verdicts.
+  See [architecture diagrams](architecture-diagrams.md).
+- `stages`: typed stage outcomes (`complete`, `partial`, `failed`, or `skipped`), with
+  the original failure cause and provider HTTP status/attempt count when available.
+- `diagram_composition`: the optional model selection result, base report hash,
+  independent composition usage/telemetry, and any issues. A revised report's new
+  selection is preserved in `semantic_validation.diagram_revision` before revalidation.
 
 Convenience properties:
 - `displayed_architecture`: revised report when one exists, otherwise original;
@@ -110,12 +125,30 @@ async def on_stage_result(self, stage: str, result: BaseModel) -> None:
     ...  # Persist the typed result, including partial outcomes.
 ```
 
-Stage names are `orientation`, `architecture`, and `semantic_validation`.
-Skipped stages invoke no hooks. The semantic stage's result includes the entire
+Stage names are `orientation`, `architecture`, `diagram_composition`, and `semantic_validation`.
+An optional `on_architecture_revision(result)` hook receives a revised report before
+its diagram call, for persistence. Pass `diagram_architect=` to the constructor to
+inject a separate composition model/gateway and isolate its provider failure state.
+Without it, the library retains the supplied architect's gateway behavior.
+Skipped stages invoke no start/result hooks. The semantic stage's result includes the entire
 bounded feedback history. Detailed model/tool/retry and return events continue through
 agents' and pipeline's `on_event` callbacks. Hook exceptions, unexpected stage failures,
 timeouts, and external cancellation propagate to the caller; its service owns failed-row
 cleanup. Result hooks are only called for stages that returned a result.
+
+Adapters may additionally implement `on_stage_skip(stage: str, reason: str)` to close
+backend-owned rows for skipped stages. This optional hook receives disabled stages
+and downstream stages that cannot run after a terminal shared-provider failure;
+`on_stage_start` and `on_stage_result` are not called for them. The pipeline emits
+`{stage}_skipped` progress events with the reason. A different healthy stage gateway
+may continue even when orientation's provider failed.
+
+For compatibility, a skipped architecture stage has an empty failed `ArchitectureResult`
+with a `stage_skipped` issue and zero usage. Its stage outcome is explicitly `skipped`,
+and the original orientation result remains available. The CLI exports `pipeline_status`
+and `pipeline_stages` and highlights the root failed stage, rather than attributing
+the provider failure to an architect that never executed. Request telemetry preserves
+`http_status` and `error_type` alongside the attempt count.
 
 Graph state, deadlines, and ledgers are local to each invocation. Reusing a pipeline
 sequentially does not reuse investigation evidence. For concurrent backend requests,

@@ -158,6 +158,8 @@ class ModelCallMeasurement(PromptMeasurement):
     input_tokens: int | None = None
     output_tokens: int | None = None
     unknown_usage_attempts: int = 0
+    http_status: int | None = None
+    error_type: str | None = None
 
 
 class ToolMeasurement(Measurement):

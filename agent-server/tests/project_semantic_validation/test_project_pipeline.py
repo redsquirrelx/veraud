@@ -11,6 +11,7 @@ from server.agents.project_orientation.smoke import OrientationSmokeModel
 from server.agents.project_semantic_validation import ProjectSemanticValidationAgent
 from server.agents.project_semantic_validation.smoke import SemanticValidationSmokeModel
 from server.agents.repository_runtime import ExecutionBudget
+from server.agents.repository_runtime.model_runtime import ModelGateway
 from server.pipelines import ProjectArchitecturePipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
@@ -43,12 +44,16 @@ def setup_pipeline(tmp_path):
     class Hooks:
         def __init__(self):
             self.events = []
+            self.skips = []
 
         async def on_stage_start(self, stage):
             self.events.append((stage, "start"))
 
         async def on_stage_result(self, stage, result):
             self.events.append((stage, "result"))
+
+        async def on_stage_skip(self, stage, reason):
+            self.skips.append((stage, reason))
 
     hooks = Hooks()
     pipeline = ProjectArchitecturePipeline(
@@ -111,6 +116,154 @@ def test_pipeline_skip_stages_and_reuse_does_not_reuse_ledgers(tmp_path):
     assert hooks.events == [
         ("architecture", action) for _ in range(2) for action in ("start", "result")
     ]
+
+
+def test_terminal_503_keeps_orientation_cause_and_skips_downstream_stages(
+    tmp_path, capsys, monkeypatch
+):
+    from server.repository_runner import print_summary
+
+    pipeline, snapshot, workspace, seen, hooks = setup_pipeline(tmp_path)
+    events = []
+
+    class ServerError(Exception):
+        code = 503
+
+    class Provider(OrientationSmokeModel):
+        attempts = 0
+
+        async def generate(self, prompt):
+            self.attempts += 1
+            if self.attempts > 1:
+                raise ServerError("Unavailable")
+            return await super().generate(prompt)
+
+    provider = Provider()
+    gateway = ModelGateway(provider, max_retries=2, backoff=0)
+    for agent in (pipeline.orientation, pipeline.architect, pipeline.validator):
+        agent.generate = gateway
+    pipeline.on_event = lambda name, values: events.append(name)
+    result = asyncio.run(
+        pipeline.run(
+            snapshot,
+            budget=ExecutionBudget(
+                max_total_tokens=200000,
+                max_tokens_per_objective=100000,
+                max_input_tokens_per_call=12000,
+            ),
+            workspace_root=workspace,
+        )
+    )
+    assert provider.attempts == 4 and gateway.stopped
+    assert len(seen) == 1  # Only orientation invoked an agent.
+    assert [(stage.stage, stage.status) for stage in result.stages] == [
+        ("orientation", "failed"),
+        ("architecture", "skipped"),
+        ("diagram_composition", "skipped"),
+        ("semantic_validation", "skipped"),
+    ]
+    assert (
+        "HTTP 503" in result.stages[0].reason
+        and "3 attempt(s)" in result.stages[0].reason
+    )
+    assert result.orientation.telemetry.model_calls[-1].http_status == 503
+    assert result.orientation.telemetry.model_calls[-1].error_type == "ServerError"
+    assert "architecture_started" not in events and "architecture_skipped" in events
+    assert (
+        "semantic_validation_started" not in events
+        and "semantic_validation_skipped" in events
+    )
+    assert hooks.events == [("orientation", "start"), ("orientation", "result")]
+    assert [stage for stage, _ in hooks.skips] == [
+        "architecture",
+        "diagram_composition",
+        "semantic_validation",
+    ]
+    assert (
+        result.architecture.usage.model_calls
+        == result.architecture.usage.tool_calls
+        == 0
+    )
+    assert result.completion_status == "failed" and not result.usable
+    data = result.architecture.model_dump(mode="json") | {
+        "execution_mode": "architecture",
+        "pipeline_status": result.completion_status,
+        "pipeline_stages": [stage.model_dump(mode="json") for stage in result.stages],
+        "orientation_result": result.orientation.model_dump(mode="json"),
+    }
+    print_summary(data)
+    text = capsys.readouterr().out
+    assert "Failed stage: orientation | Cause: Provider HTTP 503" in text
+    assert "architecture: skipped" in text and "semantic_validation: skipped" in text
+    assert "provider_unavailable" not in text
+    import json
+
+    from server import repository_runner
+    from server.run_project_architecture import main
+
+    monkeypatch.setattr(repository_runner, "create_model", lambda arguments: Provider())
+    assert (
+        main(
+            [
+                snapshot.repository.root_path,
+                "--workspace-root",
+                str(workspace),
+                "--validate-semantics",
+                "--quiet",
+                "--json",
+                "--retry-backoff",
+                "0",
+                "--max-total-tokens",
+                "200000",
+                "--max-objective-tokens",
+                "100000",
+                "--max-input-tokens",
+                "12000",
+            ]
+        )
+        == 1
+    )
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["pipeline_status"] == "failed"
+    assert exported["pipeline_stages"][0]["stage"] == "orientation"
+    assert "HTTP 503" in exported["pipeline_stages"][0]["reason"]
+    assert exported["pipeline_stages"][1]["status"] == "skipped"
+    assert (
+        exported["orientation_result"]["telemetry"]["model_calls"][-1]["attempts"] == 3
+    )
+
+
+def test_orientation_provider_failure_does_not_stop_a_different_healthy_gateway(
+    tmp_path,
+):
+    pipeline, snapshot, workspace, seen, _ = setup_pipeline(tmp_path)
+
+    class ServerError(Exception):
+        code = 503
+
+    class Failing:
+        async def generate(self, prompt):
+            raise ServerError("Unavailable")
+
+    pipeline.orientation.generate = ModelGateway(Failing(), max_retries=0)
+    result = asyncio.run(
+        pipeline.run(
+            snapshot,
+            budget=ExecutionBudget(
+                max_total_tokens=200000,
+                max_tokens_per_objective=100000,
+                max_input_tokens_per_call=12000,
+            ),
+            workspace_root=workspace,
+            allow_return=False,
+        )
+    )
+    assert result.orientation.completion_status == "failed"
+    assert (
+        result.architecture.architecture is not None
+        and result.semantic_validation is not None
+    )
+    assert len(seen) == 3 and result.stages[1].status != "skipped"
 
 
 def test_pipeline_deadline_and_external_cancellation(tmp_path):
