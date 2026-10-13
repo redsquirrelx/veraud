@@ -105,6 +105,7 @@ def prepare_prompt(state, context, maximum):
             )
             - state["tool_calls"],
             "validation_errors": state["errors"],
+            "semantic_review_feedback": context.feedback,
             "required_action": "tool_calls: inspect implementation from different responsibilities"
             if need_source
             else "tool_calls OR architecture",
@@ -155,7 +156,7 @@ def prepare_prompt(state, context, maximum):
                 (text, sizes),
             ],
             stage="investigation",
-            objective_id="architecture",
+            objective_id=context.objective_id,
             correction=bool(state["errors"])
             and not state["evidence_recovery"]
             and not state["finalizing"],

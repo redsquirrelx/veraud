@@ -40,7 +40,11 @@ def assemble_result(state, context):
     )
     status = "complete" if complete else "partial" if report else "failed"
     usage, telemetry = execution_results(
-        context.tools, context.generate, state["calls"], state["issues"], "architecture"
+        context.tools,
+        context.generate,
+        state["calls"],
+        state["issues"],
+        context.objective_id,
     )
     limitations = (
         "Architecture describes inspected scope, not global compliance. Source-reference validation is not semantic validation.",

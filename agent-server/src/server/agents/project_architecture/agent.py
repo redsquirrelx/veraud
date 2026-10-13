@@ -72,6 +72,8 @@ class ArchitectureRuntime:
     limits: ArchitectureLimits
     orientation: OrientationResult | None = None
     on_event: object = None
+    feedback: dict | None = None
+    objective_id: str = "architecture"
 
 
 def build_architecture_graph():
@@ -129,7 +131,9 @@ def build_architecture_graph():
 
         def request_guard(text, attempts):
             try:
-                admit_request(context.generate, budget, text, "architecture", attempts)
+                admit_request(
+                    context.generate, budget, text, context.objective_id, attempts
+                )
             except TokenBudgetExceeded as error:
                 if not context.limits.soft_token_budgets:
                     raise
@@ -138,7 +142,9 @@ def build_architecture_graph():
                     "budget_advisory",
                     reason=str(error),
                     previous_attempts=attempts,
-                    **rejection_details(context.generate, budget, text, "architecture"),
+                    **rejection_details(
+                        context.generate, budget, text, context.objective_id
+                    ),
                 )
 
         submitted = False
@@ -153,7 +159,7 @@ def build_architecture_graph():
                     "budget_advisory",
                     reason="Prompt exceeds the target context character limit.",
                     **rejection_details(
-                        context.generate, budget, prompt, "architecture"
+                        context.generate, budget, prompt, context.objective_id
                     ),
                 )
             request_guard(prompt, 0)
@@ -173,7 +179,7 @@ def build_architecture_graph():
                     "context_rejected",
                     reason=str(error),
                     **rejection_details(
-                        context.generate, budget, prompt, "architecture"
+                        context.generate, budget, prompt, context.objective_id
                     ),
                 )
             return {
@@ -261,7 +267,7 @@ def build_architecture_graph():
                 call.name,
                 arguments,
                 tool_call_id=create_identifier(
-                    "tool_call", "architecture", state["calls"], index
+                    "tool_call", context.objective_id, state["calls"], index
                 ),
             )
             view = source_view(context.tools, response, requested_end)
@@ -415,7 +421,9 @@ class ProjectArchitectureAgent:
         self.on_event = on_event
         self.graph = build_architecture_graph()
 
-    async def run(self, tools, orientation=None):
+    async def run(
+        self, tools, orientation=None, *, feedback=None, objective_id="architecture"
+    ):
         generate = (
             self.generate
             if hasattr(self.generate, "telemetry")
@@ -438,7 +446,13 @@ class ProjectArchitectureAgent:
                 "reference_repairs": {},
             },
             context=ArchitectureRuntime(
-                tools, generate, self.limits, orientation, self.on_event
+                tools,
+                generate,
+                self.limits,
+                orientation,
+                self.on_event,
+                feedback,
+                objective_id,
             ),
             config={"recursion_limit": 40},
         )

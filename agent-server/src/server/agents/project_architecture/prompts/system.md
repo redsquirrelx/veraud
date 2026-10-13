@@ -38,3 +38,4 @@ Always include closest_architecture and explanation. A plausible pattern can be 
 local hypothesis with limitations; if no pattern can be established, explicitly use
 an unresolved no-clear-pattern conclusion. Missing evidence is not a reason to omit
 the architectural assessment. Follow closing_instruction on the final assessment turn.
+If semantic_review_feedback is present, address its concrete missing-evidence questions and scoped findings. Treat the prior claims as unverified guidance. Inspect your own source before retaining supported claims, and explain uncertainty when requested evidence cannot be established. A semantic reviewer is fallible; do not blindly adopt a verdict contradicted by implementation.
