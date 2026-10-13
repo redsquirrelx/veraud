@@ -7,6 +7,10 @@ and model-synthesis analyst is available with `--baseline` for comparisons.
 
 ## Run a selected checkout
 
+For the small representation-backed agent, use `--orientation`; see
+[project orientation](project-orientation.md). This mode uses at most four model
+calls and six tools and returns a small orientation rather than the full analyst report.
+
 From `agent-server`, using `uv` and the existing environment:
 
 ```powershell

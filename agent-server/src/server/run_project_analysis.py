@@ -46,6 +46,8 @@ from server.agents.project_analysis.schemas import (
 )
 from server.agents.project_analysis.smoke import ProtocolSmokeModel
 from server.agents.project_analysis.tools import ToolLimits
+from server.agents.project_orientation import ProjectOrientationAgent
+from server.agents.project_orientation.smoke import OrientationSmokeModel
 from server.services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -57,6 +59,11 @@ def build_parser():
         description="Investigate one repository checkout inside appdata/workspace using LangGraph."
     )
     parser.add_argument("root", nargs="?", help="Selected repository checkout")
+    parser.add_argument(
+        "--orientation",
+        action="store_true",
+        help="Run the small representation-backed LangGraph orientation agent (4 model calls, 6 tools maximum)",
+    )
     parser.add_argument(
         "--evaluate-workspace",
         action="store_true",
@@ -164,7 +171,9 @@ def build_parser():
 
 def create_model(arguments):
     if arguments.smoke or (arguments.plan_only and not arguments.baseline):
-        return ProtocolSmokeModel()
+        return (
+            OrientationSmokeModel() if arguments.orientation else ProtocolSmokeModel()
+        )
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
     from server.config.dev_agents_config import load_dev_agents_config
@@ -213,6 +222,8 @@ def run_metadata(arguments, tools, model):
         [
             *Path(__file__).parent.joinpath("agents/project_analysis").glob("*.py"),
             *server.joinpath("services/repository_analysis").glob("*.py"),
+            *server.joinpath("agents/project_orientation").rglob("*.py"),
+            *server.joinpath("agents/project_orientation/prompts").glob("*.md"),
             Path(__file__),
         ]
     )
@@ -237,7 +248,11 @@ def run_metadata(arguments, tools, model):
         "request_interval": arguments.request_interval,
         "max_retries": arguments.max_retries,
         "retry_backoff": arguments.retry_backoff,
-        "workflow": "baseline" if arguments.baseline else "simplified",
+        "workflow": "orientation"
+        if arguments.orientation
+        else "baseline"
+        if arguments.baseline
+        else "simplified",
     }
 
 
@@ -294,6 +309,16 @@ async def with_progress(awaitable, reporter):
 
 
 async def run(arguments, *, reference=None, shared_pacer=None):
+    if arguments.orientation and (
+        arguments.baseline
+        or arguments.plan_only
+        or arguments.handoff
+        or arguments.compact_handoff
+        or arguments.evaluate_workspace
+    ):
+        raise ValueError(
+            "--orientation requires a selected checkout and cannot be combined with baseline, planning, analyst handoff, or workspace evaluation modes."
+        )
     if not arguments.root:
         raise ValueError("A selected repository root is required.")
     if (
@@ -338,13 +363,17 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         raise ValueError("--handoff requires a full analysis, not --plan-only.")
     budget = InvestigationBudget(
         max_investigations=arguments.max_investigations,
-        max_model_calls=arguments.max_model_calls,
+        max_model_calls=min(4, arguments.max_model_calls)
+        if arguments.orientation
+        else arguments.max_model_calls,
         reserved_report_model_calls=arguments.report_call_reserve,
         max_total_tokens=arguments.max_total_tokens,
         max_input_tokens_per_call=arguments.max_input_tokens,
         max_tokens_per_investigation=arguments.max_objective_tokens,
         max_output_tokens_per_call=arguments.max_tokens,
-        max_tool_calls=arguments.max_tool_calls,
+        max_tool_calls=min(6, arguments.max_tool_calls)
+        if arguments.orientation
+        else arguments.max_tool_calls,
         max_retrieved_characters=arguments.max_retrieved_characters,
         max_elapsed_seconds=arguments.timeout,
     )
@@ -420,6 +449,38 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         gateway.pacer = shared_pacer
     try:
         metadata = run_metadata(arguments, tools, model)
+        if arguments.orientation:
+            agent = ProjectOrientationAgent(model, generate=gateway, on_event=reporter)
+            if arguments.trace:
+                from server.config.tracing import traced_agent_run
+
+                result = await with_progress(
+                    traced_agent_run(agent.run(tools), name="project_orientation"),
+                    reporter,
+                )
+            else:
+                result = await with_progress(agent.run(tools), reporter)
+            referenced = set(result.inspected_file_ids)
+            if result.orientation:
+                referenced.update(
+                    point.file_id for point in result.orientation.starting_points
+                )
+                referenced.update(
+                    identifier
+                    for component in result.orientation.components
+                    for identifier in component.file_ids
+                )
+            return result.model_dump(mode="json") | {
+                "execution_mode": "protocol_smoke"
+                if arguments.smoke
+                else "orientation",
+                "run_metadata": metadata,
+                "file_paths": {
+                    source.id: source.path
+                    for source in tools.accessible_snapshot.files
+                    if source.id in referenced
+                },
+            }, result.orientation is not None
         if arguments.plan_only:
             emit("planning")
             if arguments.baseline:
@@ -556,6 +617,28 @@ def print_summary(data):
     print(
         f"Status: {data.get('completion_status', data.get('planning_status', 'valid'))}"
     )
+    orientation = data.get("orientation")
+    if orientation:
+        print(f"Snapshot: {data['snapshot_hash']}")
+        paths = data.get("file_paths", {})
+        for field in ("project_type", "purpose"):
+            observation = orientation.get(field)
+            if observation:
+                print(
+                    f"\n{field.replace('_', ' ').title()} ({observation['status']}): {observation['statement']}"
+                )
+        for component in orientation["components"]:
+            print(
+                f"\nComponent: {component['name']} ({component['responsibility']['status']})\n  {component['responsibility']['statement']}"
+            )
+        for point in orientation["starting_points"]:
+            print(
+                f"\nStarting point: {paths.get(point['file_id'], point['file_id'])}\n  {point['reason']}"
+            )
+        for uncertainty in orientation["uncertainties"]:
+            print(f"\nUncertainty: {uncertainty}")
+        for limitation in data.get("limitations", []):
+            print(f"  limitation: {limitation}")
     report = data.get("report") or data.get("project_analysis_report")
     if report:
         print(f"Snapshot: {report['snapshot_hash']}")

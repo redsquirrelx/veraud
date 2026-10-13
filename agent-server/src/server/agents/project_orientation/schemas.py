@@ -1,0 +1,79 @@
+"""Small orientation contracts; no planning, flow, or architecture contracts."""
+
+from typing import Literal
+
+from pydantic import Field, model_validator
+
+from ..project_analysis.schemas import (
+    AnalysisContract,
+    BudgetUsage,
+    ExecutionIssue,
+    RepositoryToolCall,
+    RetrievedEvidence,
+)
+from ..project_analysis.telemetry import ExecutionTelemetry
+
+
+class Observation(AnalysisContract):
+    statement: str = Field(min_length=1, max_length=2500)
+    status: Literal["supported", "hypothesis", "unresolved"]
+    evidence_ids: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def support(self):
+        if self.status == "supported" and not self.evidence_ids:
+            raise ValueError(
+                "Supported observations require inspected source evidence."
+            )
+        if self.status != "supported" and not self.limitations:
+            raise ValueError("Uncertain observations require explicit limitations.")
+        return self
+
+
+class Component(AnalysisContract):
+    name: str = Field(min_length=1, max_length=150)
+    file_ids: tuple[str, ...] = Field(min_length=1)
+    responsibility: Observation
+
+
+class StartingPoint(AnalysisContract):
+    file_id: str
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class Orientation(AnalysisContract):
+    project_type: Observation | None = None
+    purpose: Observation | None = None
+    components: tuple[Component, ...] = Field(default=(), max_length=6)
+    starting_points: tuple[StartingPoint, ...] = Field(default=(), max_length=8)
+    uncertainties: tuple[str, ...] = Field(default=(), max_length=10)
+
+
+class OrientationTurn(AnalysisContract):
+    tool_calls: tuple[RepositoryToolCall, ...] = Field(default=(), max_length=3)
+    orientation: Orientation | None = None
+
+    @model_validator(mode="after")
+    def action(self):
+        if bool(self.tool_calls) == (self.orientation is not None):
+            raise ValueError("Return tool_calls OR orientation, never both.")
+        return self
+
+
+class OrientationLimits(AnalysisContract):
+    max_model_calls: int = Field(default=4, ge=1, le=4)
+    max_tool_calls: int = Field(default=6, ge=1, le=6)
+    max_prompt_characters: int = Field(default=20000, ge=4000)
+
+
+class OrientationResult(AnalysisContract):
+    snapshot_hash: str
+    completion_status: Literal["complete", "partial", "failed"]
+    orientation: Orientation | None = None
+    retrieved_evidence: tuple[RetrievedEvidence, ...] = ()
+    inspected_file_ids: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+    execution_issues: tuple[ExecutionIssue, ...] = ()
+    usage: BudgetUsage
+    telemetry: ExecutionTelemetry
