@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestAnalysis } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestAnalysis, requestProjectArchitecture } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -131,7 +131,33 @@ describe("requestAnalysis", () => {
   it("reports a missing checkout with the backend message", async () => {
     stubFetch(422, { message: "Project acme/Demo has no local checkout" })
 
-    await expect(requestAnalysis(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422, message: "Project acme/Demo has no local checkout" } as Partial<ApiError>)
+    await expect(requestAnalysis(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422, message: "Project acme/Demo has no local checkout" } as Partial<ApiError>)  })
+})
+
+describe("requestProjectArchitecture", () => {
+  it("posts the selected version and returns all three runs", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    const runs = {
+      orientation: { ...waitingExecution, id: 21, agentType: "orientation" },
+      architecture: { ...waitingExecution, id: 22, agentType: "architecture" },
+      semantic_validation: { ...waitingExecution, id: 23, agentType: "semantic_validation" },
+    }
+    globalThis.fetch = (async (url: string, init?: { body?: string }) => {
+      seen.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") as unknown })
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: runs }), { status: 201 })
+    }) as typeof fetch
+
+    const response = await requestProjectArchitecture(2, "main", "a".repeat(40))
+
+    expect(response).toEqual({ versionId: 3, evaluationId: 7, executions: runs })
+    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+  })
+
+  it("reports a missing stage configuration with the backend message", async () => {
+    stubFetch(422, { message: "Agents require attention: semantic_validation" })
+
+    await expect(requestProjectArchitecture(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422 } as Partial<ApiError>)
   })
 })
 

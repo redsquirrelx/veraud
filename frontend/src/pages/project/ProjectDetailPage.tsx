@@ -65,19 +65,18 @@ export function ProjectDetailPage() {
   const refreshFiles = files.refresh
   const clearPreview = preview.clear
   const refreshAnalyzed = analyzed.refresh
-  // The tracked run is the architect (it finishes last), so the analyzer row
-  // is picked up as its companion: live first, then the stored versions once
-  // they refresh. Old single-row versions only ever yield the analyzer.
+  // The tracked run is the one that finishes last for the running pipeline,
+  // so its companions are the other rows of the same evaluation: live first,
+  // then the stored versions once they refresh. Old single-row versions only
+  // ever yield the analyzer.
   const tracked = analysis.execution
   const liveExecutions = useAgentExecutions()
   const liveTasks = useTasks()
-  const companion = companionExecution(liveExecutions, analyzedVersions, tracked, analysis.initialExecutions)
-  const analyzerExec = tracked?.agentType === "analyzer"
-    ? tracked
-    : companion?.agentType === "analyzer" ? companion : null
-  const architectExec = tracked?.agentType === "architect"
-    ? tracked
-    : companion?.agentType === "architect" ? companion : null
+  const analyzerExec = stageExecution("analyzer", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
+  const architectExec = stageExecution("architect", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
+  const orientationExec = stageExecution("orientation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
+  const projectArchitectureExec = stageExecution("architecture", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
+  const semanticValidationExec = stageExecution("semantic_validation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const analysisSummary = analyzerExec === null ? null : parseAnalyzerResult(analyzerExec.result)
   const architectureSummary = architectExec === null ? null : parseArchitectureResult(architectExec.result)
   const summaryConfidence = architectureSummary?.confidence ?? analysisSummary?.confidence ?? null
@@ -186,11 +185,11 @@ export function ProjectDetailPage() {
     void refreshAnalyzed()
   }, [analysis.phase, analysis.execution, refreshAnalyzed])
 
-  function handleAnalyze() {
+  function handleAnalyze(pipelineId: string) {
     if (activeBranch === null || activeHash === null) {
       return
     }
-    void analysis.start(activeBranch, activeHash)
+    void analysis.start(activeBranch, activeHash, pipelineId)
   }
 
   /** Picks an analyzed version: checks out its commit, then shows its run. */
@@ -204,10 +203,11 @@ export function ProjectDetailPage() {
       return
     }
     setAnalyzedId(id)
-    // The architect carries the final verdict; fall back to the analyzer when
-    // an old version only has that row.
+    // The semantic_validation row carries the final verdict; fall back to the
+    // architect, then to the analyzer when an old version only has those rows.
     analysis.show(
-      target.executions.find((execution) => execution.agentType === "architect")
+      target.executions.find((execution) => execution.agentType === "semantic_validation")
+        ?? target.executions.find((execution) => execution.agentType === "architect")
         ?? target.executions.find((execution) => execution.agentType === "analyzer")
         ?? null,
     )
@@ -239,6 +239,9 @@ export function ProjectDetailPage() {
     <>
       {analyzerExec !== null && <PipelineRunStatus execution={analyzerExec} />}
       {architectExec !== null && <PipelineRunStatus execution={architectExec} />}
+      {orientationExec !== null && <PipelineRunStatus execution={orientationExec} />}
+      {projectArchitectureExec !== null && <PipelineRunStatus execution={projectArchitectureExec} />}
+      {semanticValidationExec !== null && <PipelineRunStatus execution={semanticValidationExec} />}
     </>
   )
 
@@ -379,6 +382,21 @@ export function ProjectDetailPage() {
                       : <PipelineRunStatus execution={architectExec} />}
                   </Card>
                 )}
+                {orientationExec !== null && (
+                  <Card>
+                    <PipelineRunStatus execution={orientationExec} />
+                  </Card>
+                )}
+                {projectArchitectureExec !== null && (
+                  <Card>
+                    <PipelineRunStatus execution={projectArchitectureExec} />
+                  </Card>
+                )}
+                {semanticValidationExec !== null && (
+                  <Card>
+                    <PipelineRunStatus execution={semanticValidationExec} />
+                  </Card>
+                )}
                 {architectureSummary !== null
                   && (architectureSummary.diagramContainers !== "" || architectureSummary.diagramComponents !== "") && (
                   <Card>
@@ -491,22 +509,27 @@ function summaryCounts(
   return parts.join(" · ")
 }
 
-/** The other pipeline row for the same evaluation, if it is known. */
-function companionExecution(
+/** One pipeline row of the tracked evaluation, if it is known. */
+function stageExecution(
+  stage: string,
+  tracked: AgentExecution | null,
   live: AgentExecution[],
   versions: VersionAnalysisSummary[],
-  tracked: AgentExecution | null,
   initial: AgentExecution[],
 ): AgentExecution | null {
+  if (tracked?.agentType === stage) {
+    return tracked
+  }
   if (tracked === null || tracked.evaluationId === null) {
-    return null
+    return initial.find((item) => item.agentType === stage) ?? null
   }
   const match = (rows: AgentExecution[]): AgentExecution | null => rows.find(
-    (item) => item.evaluationId === tracked.evaluationId
-      && item.id !== tracked.id
-      && (item.agentType === "analyzer" || item.agentType === "architect"),
+    (item) => item.evaluationId === tracked.evaluationId && item.agentType === stage,
   ) ?? null
   const current = match(live)
   const stored = match(versions.flatMap((version) => version.executions)) ?? match(initial)
-  return current === null ? stored : { ...current, configuration: current.configuration ?? stored?.configuration ?? null }
+  if (current === null) {
+    return stored
+  }
+  return { ...current, configuration: current.configuration ?? stored?.configuration ?? null }
 }

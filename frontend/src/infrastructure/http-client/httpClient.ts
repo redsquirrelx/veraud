@@ -231,6 +231,29 @@ export async function requestAnalysis(id: number, branch: string, commitHash: st
   return body as AnalysisRequest
 }
 
+export interface ProjectArchitectureRequest {
+  versionId: number
+  evaluationId: number
+  executions: { orientation: AgentExecution; architecture: AgentExecution; semantic_validation: AgentExecution }
+}
+
+export async function requestProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureRequest> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/architecture`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch, commitHash }),
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not analyze the project")
+  }
+
+  return body as ProjectArchitectureRequest
+}
+
 export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
   const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}`)
 

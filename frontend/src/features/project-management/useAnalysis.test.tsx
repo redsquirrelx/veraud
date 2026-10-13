@@ -111,6 +111,35 @@ describe("useAnalysis", () => {
     expect(result.current.execution?.configuration).toEqual(configuration)
   })
 
+  it("starts a project-architecture run against its endpoint tracking validation", async () => {
+    const seen: string[] = []
+    const validationWaiting = { ...waiting, id: 23, agentType: "semantic_validation" }
+    globalThis.fetch = (async (url: string) => {
+      seen.push(String(url))
+      return new Response(JSON.stringify({
+        versionId: 3,
+        evaluationId: 7,
+        executions: {
+          orientation: { ...waiting, id: 21, agentType: "orientation" },
+          architecture: { ...waiting, id: 22, agentType: "architecture" },
+          semantic_validation: validationWaiting,
+        },
+      }), { status: 201 })
+    }) as typeof fetch
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+
+    const { result } = renderHook(() => useAnalysis(2), { wrapper })
+
+    await act(async () => {
+      await result.current.start("main", "a".repeat(40), "project-architecture")
+    })
+
+    expect(seen.some((url) => url.includes("/api/projects/2/architecture"))).toBe(true)
+    expect(result.current.phase).toBe("tracking")
+    expect(result.current.execution?.id).toBe(23)
+    expect(result.current.execution?.agentType).toBe("semantic_validation")
+  })
+
   it("reports a failed start with the backend message", async () => {
     globalThis.fetch = (async () => {
       return new Response(JSON.stringify({ message: "No agent type analyzer is registered" }), { status: 422 })

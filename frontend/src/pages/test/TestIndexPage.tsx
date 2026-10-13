@@ -5,6 +5,7 @@ import "./TestIndexPage.css"
 const testPages = [
   { path: "/test/components", title: "Components", description: "Explore the UI kit and combined component examples." },
   { path: "/test/selector", title: "Selectors", description: "Review item selection and search controls." },
+  { path: "/test/dropdown", title: "Dropdowns", description: "Review action menus with selectable options." },
   { path: "/test/controls", title: "Controls", description: "Review interactive controls and their states." },
   { path: "/test/form-controls", title: "Form controls", description: "Explore checkboxes, comboboxes, radio buttons, and switches." },
   { path: "/test/directory", title: "Directory", description: "Explore directory trees and file navigation." },

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { ApiError, getAgentExecution, requestAnalysis, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, getAgentExecution, requestAnalysis, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
+import { DEFAULT_PIPELINE_ID, pipelineById } from "./pipelines.ts"
 
 export type AnalysisPhase = "idle" | "starting" | "tracking" | "done" | "error"
 
@@ -106,7 +107,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     return () => clearInterval(timer)
   })
 
-  async function start(branch: string, commitHash: string) {
+  async function start(branch: string, commitHash: string, pipelineId: string = DEFAULT_PIPELINE_ID) {
     if (projectId === null || starting) {
       return
     }
@@ -117,12 +118,17 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setInitialExecutions([])
     setTracked(true)
     try {
-      const response = await requestAnalysis(projectId, branch, commitHash)
-      setInitialExecutions(Object.values(response.executions))
-      // The architect finishes last, so its row is the one to track: while the
-      // analyzer works the architect row waits, then it runs to completion.
-      localStorage.set(lastExecutionKey(projectId), response.executions.architect.id)
-      setSeed(response.executions.architect)
+      // The tracked row is the one that finishes last for the chosen
+      // pipeline, so progress follows the run to completion.
+      const option = pipelineById(pipelineId)
+      const response = option.endpoint === "architecture"
+        ? await requestProjectArchitecture(projectId, branch, commitHash)
+        : await requestAnalysis(projectId, branch, commitHash)
+      const rows = Object.values(response.executions)
+      setInitialExecutions(rows)
+      const trackedRow = (response.executions as Record<string, AgentExecution>)[option.trackedStage] ?? rows[0]!
+      localStorage.set(lastExecutionKey(projectId), trackedRow.id)
+      setSeed(trackedRow)
     } catch (error) {
       setFailure(describeFailure(error, "Could not analyze the project"))
     } finally {

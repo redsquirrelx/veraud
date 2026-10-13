@@ -2,6 +2,7 @@ import type { ComponentProps } from "react"
 import { Badge, Button } from "../../shared/ui-kit/index.ts"
 import { statusTone } from "../../features/project-management/projectStatus.ts"
 import { VersionLocation, VersionSelector, type AnalysisAction } from "../../features/project-management/VersionSelector.tsx"
+import { AnalyzeMenu } from "../../features/project-management/AnalyzeMenu.tsx"
 import type { ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectHeader.css"
 
@@ -25,8 +26,7 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
       </div>
       <div className="project-context-actions" role="group" aria-label="Project actions">
         <Button onClick={onSync} disabled={syncing || analysis.analyzing} loading={syncing} loadingText="Syncing">Sync</Button>
-        <Button onClick={analysis.onAnalyze} disabled={!analysis.canAnalyze || analysis.analyzing}
-          loading={analysis.analyzing} loadingText="Analyzing">Analyze</Button>
+        <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
       </div>
     </div>
     <div className="project-context-controls">
