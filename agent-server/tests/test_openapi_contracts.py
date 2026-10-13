@@ -105,7 +105,9 @@ def test_portal_and_exact_operation_coverage(api):
         ("GET", "/api/agents/{agent_type}/schema"),
         ("POST", "/api/agents/run"),
         ("POST", "/api/agents/verify-access"),
+        ("GET", "/api/pipelines"),
         ("POST", "/api/pipelines/architecture-audit/run"),
+        ("POST", "/api/pipelines/{name}/run"),
     }
 
     def application_routes(routes):
@@ -121,7 +123,7 @@ def test_portal_and_exact_operation_coverage(api):
         for route in application_routes(app.routes)
         for method in route.methods
     }
-    assert len(expected) == 6
+    assert len(expected) == 8
     assert operations == registered == expected
     ids = []
     for method, path in operations:
@@ -131,7 +133,7 @@ def test_portal_and_exact_operation_coverage(api):
             ["Status"]
             if path == "/api/status"
             else ["Pipelines"]
-            if path.startswith("/api/pipelines/")
+            if path.startswith("/api/pipelines")
             else ["Agents"]
         )
         assert operation["responses"]["200"]["description"]
