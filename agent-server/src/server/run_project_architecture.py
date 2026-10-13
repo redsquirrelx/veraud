@@ -1,4 +1,10 @@
-"""Dedicated runner for the focused architecture agent and orientation handoff."""
+"""Run orientation and architecture, with optional semantic review.
+
+With --validate-semantics, the first semantic review uses advisory token budgets
+throughout its investigation and provider retries. Revalidation after the single
+architectural return retains strict token admission. The shared runner owns this
+policy and the CLI lifecycle.
+"""
 
 import sys
 from pathlib import Path

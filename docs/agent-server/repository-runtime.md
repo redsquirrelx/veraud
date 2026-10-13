@@ -1,7 +1,7 @@
 # Shared Repository Runtime
 
 `server.agents.repository_runtime` provides only the execution primitives used by
-project orientation and project architecture. It has no dependency on either role.
+project orientation, project architecture, and semantic validation. It has no dependency on any role.
 The deterministic snapshot/query service remains in `services/repository_analysis`.
 
 ## Code map
@@ -22,6 +22,8 @@ The deterministic snapshot/query service remains in `services/repository_analysi
 Each role keeps its own prompts, report contracts, graph, projection, validation,
 and partial recovery. `prompting.py` builds context; `results.py` assembles the final
 report. No generic agent framework or model-driven planner is involved.
+The [semantic validator](project-semantic-validation.md) additionally uses role-local
+usage accounting for initial review and revalidation, with independent source ledgers.
 
 ## Library use
 

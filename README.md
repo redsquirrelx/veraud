@@ -44,3 +44,7 @@ See [project orientation](docs/agent-server/project-orientation.md) and
 LangGraph agents, dedicated runners, evidence contracts, and offline protocol checks.
 Their snapshot-bound execution primitives are described in
 [the shared runtime guide](docs/agent-server/repository-runtime.md).
+See [semantic validation](docs/agent-server/project-semantic-validation.md) for
+independent claim review and the bounded architectural feedback cycle.
+The [project architecture pipeline](docs/agent-server/project-architecture-pipeline.md)
+exposes that composition for backend integration with typed results and stage hooks.

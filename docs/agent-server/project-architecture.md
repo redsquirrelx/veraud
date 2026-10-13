@@ -84,8 +84,9 @@ to enforce token/context admission. Orientation retains strict admission.
 Orientation has at most four calls/six tools. Lower runner limits are respected by
 each stage. Provider retries are separate, bounded attempts. The pipeline shares
 the total token admission limit and elapsed-time limit; per-objective token limits
-apply independently to orientation and architecture. No model planner, synthesis
-stage, follow-up queue, persistence, or validator model is added.
+apply independently to orientation and architecture. The basic flow has no model
+planner, synthesis stage, follow-up queue, or persistence. Semantic review is opt-in
+through `--validate-semantics` and adds its own bounded investigation and optional return.
 
 Orientation-only defaults are 60,000 total, 6,000 input per call, and 20,000 per
 objective. Both runners default to 3,000 output tokens per call. Adjust the
@@ -234,7 +235,7 @@ counterexample check, and configuration/initialization/use distinctions for infr
 The host assembles `citations` from accepted source evidence: evidence ID, file ID,
 repository-relative path, actual line range, and content hash. The result includes
 snapshot identity, retrieved evidence, inspected files, limitations, execution
-issues, usage, and telemetry. These allow a future validator to inspect material
+issues, usage, and telemetry. These allow an independent validator to inspect material
 claims directly against the same snapshot without inheriting the conversation.
 
 Mixed/partial styles and no clear pattern are valid interpretations. Names alone
@@ -276,6 +277,10 @@ Use fresh snapshot-bound tools; the caller owns model resources. Passing orienta
 from another snapshot fails before a model call. Tools retain checkout isolation
 and narrative documentation exclusions, including indirect evidence retrieval.
 The installed CLI entrypoint is `project-architecture`.
+`--validate-semantics` adds independent claim review and at most one evidence-return
+round; `--no-semantic-return` keeps review standalone within the pipeline. The original
+architecture remains the top-level result. See [semantic validation](project-semantic-validation.md)
+for verdicts, correction proposals, pending coverage, and revision history.
 See [the shared runtime guide](repository-runtime.md) for tool construction and runner options.
 
 ## Verification and Initial Calibration

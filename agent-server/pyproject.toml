@@ -33,6 +33,7 @@ pipeline = "server.cli:pipeline"
 benchmark = "server.cli:benchmark"
 project-orientation = "server.run_project_orientation:main"
 project-architecture = "server.run_project_architecture:main"
+project-semantic-validation = "server.run_project_semantic_validation:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]

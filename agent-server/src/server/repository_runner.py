@@ -11,9 +11,15 @@ from pathlib import Path
 from time import monotonic
 
 from .agents.project_architecture import ArchitectureLimits, ProjectArchitectureAgent
+from .agents.project_architecture.schemas import ArchitectureResult
 from .agents.project_architecture.smoke import ArchitectureSmokeModel
 from .agents.project_orientation import ProjectOrientationAgent
 from .agents.project_orientation.smoke import OrientationSmokeModel
+from .agents.project_semantic_validation import (
+    ProjectSemanticValidationAgent,
+    ValidationLimits,
+)
+from .agents.project_semantic_validation.smoke import SemanticValidationSmokeModel
 from .agents.repository_runtime import (
     ExecutionBudget,
     RepositoryContext,
@@ -30,6 +36,8 @@ from .agents.repository_runtime.model_runtime import (
     close_model_clients,
     create_project_model,
 )
+from .agents.repository_runtime.responses import parse_json_value
+from .pipelines import ProjectArchitecturePipeline
 from .repository_progress import ProgressReporter, with_progress
 from .services.repository_analysis import (
     RepositoryAnalysisInput,
@@ -39,6 +47,8 @@ from .services.repository_analysis import (
 
 def build_parser(mode):
     architecture = mode == "architecture"
+    validation = mode == "semantic_validation"
+    investigation = architecture or validation
     parser = argparse.ArgumentParser(
         description=f"Run project {mode} over one retained workspace snapshot."
     )
@@ -58,16 +68,20 @@ def build_parser(mode):
         "--max-tokens", type=int, default=3000, help="Provider output limit per call"
     )
     parser.add_argument(
-        "--max-total-tokens", type=int, default=80000 if architecture else 60000
+        "--max-total-tokens", type=int, default=80000 if investigation else 60000
     )
     parser.add_argument(
-        "--max-input-tokens", type=int, default=10000 if architecture else 6000
+        "--max-input-tokens", type=int, default=10000 if investigation else 6000
     )
     parser.add_argument(
-        "--max-objective-tokens", type=int, default=40000 if architecture else 20000
+        "--max-objective-tokens", type=int, default=40000 if investigation else 20000
     )
-    parser.add_argument("--max-model-calls", type=int, default=8 if architecture else 4)
-    parser.add_argument("--max-tool-calls", type=int, default=20 if architecture else 6)
+    parser.add_argument(
+        "--max-model-calls", type=int, default=8 if investigation else 4
+    )
+    parser.add_argument(
+        "--max-tool-calls", type=int, default=20 if investigation else 6
+    )
     parser.add_argument("--max-retrieved-characters", type=int, default=150000)
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--request-interval", type=float, default=0)
@@ -78,11 +92,37 @@ def build_parser(mode):
     if architecture:
         parser.add_argument("--skip-orientation", action="store_true")
         parser.add_argument("--strict-architecture-budgets", action="store_true")
+        parser.add_argument(
+            "--validate-semantics",
+            action="store_true",
+            help="Review architectural claims; first review uses advisory token budgets, revalidation uses strict budgets",
+        )
+        parser.add_argument("--no-semantic-return", action="store_true")
+    if validation:
+        parser.add_argument(
+            "--report",
+            type=Path,
+            required=True,
+            help="Exported ArchitectureResult JSON",
+        )
+    if investigation:
+        parser.add_argument("--max-review-claims", type=int, default=18)
     return parser
 
 
 def create_model(arguments):
     if arguments.smoke:
+        if arguments.mode == "semantic_validation":
+            return SemanticValidationSmokeModel()
+        if arguments.mode == "architecture" and arguments.validate_semantics:
+
+            class PipelineSmokeModel(ArchitectureSmokeModel):
+                async def generate(self, prompt):
+                    if "\nVALIDATION_DATA\n" in prompt:
+                        return await SemanticValidationSmokeModel().generate(prompt)
+                    return await super().generate(prompt)
+
+            return PipelineSmokeModel()
         return (
             ArchitectureSmokeModel()
             if arguments.mode == "architecture"
@@ -137,13 +177,50 @@ def make_tools(snapshot, budget, workspace):
     )
 
 
+def load_architecture_report(path):
+    """Accept bounded UTF-8/UTF-16 exports, including PowerShell redirection."""
+    with path.open("rb") as stream:
+        raw = stream.read(2_000_001)
+    if len(raw) > 2_000_000:
+        raise ValueError("Architectural report exceeds the 2 MB input limit.")
+    encoding = "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+    try:
+        exported = parse_json_value(raw.decode(encoding), 2_000_000)
+    except UnicodeError as error:
+        raise ValueError(
+            "Architectural report must be UTF-8 or BOM-marked UTF-16 JSON."
+        ) from error
+    if not isinstance(exported, dict):
+        raise ValueError("Expected an exported architectural result object.")  # noqa: TRY004 - invalid external JSON is a CLI value error
+    # Pre-runtime-extraction architecture exports carried an unused analyst counter.
+    if (
+        isinstance(exported.get("usage"), dict)
+        and exported["usage"].get("investigations_started") == 0
+    ):
+        exported["usage"].pop("investigations_started")
+    return ArchitectureResult.model_validate(
+        {
+            key: value
+            for key, value in exported.items()
+            if key in ArchitectureResult.model_fields
+        }
+    )
+
+
 def run_metadata(arguments, tools, model):
     server = Path(__file__).resolve().parent
-    files = [Path(__file__), server / "repository_progress.py"]
+    files = [
+        Path(__file__),
+        server / "repository_progress.py",
+        server / "semantic_validation_pipeline.py",
+        server / "pipelines/project_architecture.py",
+        server / "pipelines/semantic_validation.py",
+    ]
     for relative in (
         "agents/repository_runtime",
         "agents/project_orientation",
         "agents/project_architecture",
+        "agents/project_semantic_validation",
         "services/repository_analysis",
     ):
         files.extend(
@@ -195,8 +272,12 @@ async def run(arguments):
         )
     architecture = arguments.mode == "architecture"
     budget = ExecutionBudget(
-        max_model_calls=min(8 if architecture else 4, arguments.max_model_calls),
-        max_tool_calls=min(20 if architecture else 6, arguments.max_tool_calls),
+        max_model_calls=min(
+            8 if arguments.mode != "orientation" else 4, arguments.max_model_calls
+        ),
+        max_tool_calls=min(
+            20 if arguments.mode != "orientation" else 6, arguments.max_tool_calls
+        ),
         max_total_tokens=arguments.max_total_tokens,
         max_input_tokens_per_call=arguments.max_input_tokens,
         max_tokens_per_objective=arguments.max_objective_tokens,
@@ -213,11 +294,18 @@ async def run(arguments):
             reporter(event, values)
 
     async def execute(agent, tools, orientation=None):
+        if isinstance(agent, ProjectSemanticValidationAgent):
+            return await execute_awaitable(
+                agent.run(tools, orientation, soft_token_budgets=True)
+            )
         awaitable = (
             agent.run(tools, orientation)
             if isinstance(agent, ProjectArchitectureAgent)
             else agent.run(tools)
         )
+        return await execute_awaitable(awaitable)
+
+    async def execute_awaitable(awaitable):
         if arguments.trace:
             from .config.tracing import traced_agent_run
 
@@ -275,23 +363,25 @@ async def run(arguments):
             remaining_seconds=lambda: max(0, deadline - monotonic()),
         )
         metadata = run_metadata(arguments, tools, model)
-        orientation = None
-        if architecture and not arguments.skip_orientation:
-            emit("orientation_started")
-            orientation = await execute(
-                ProjectOrientationAgent(model, generate=gateway, on_event=reporter),
-                tools,
+        if arguments.mode == "semantic_validation":
+            original = load_architecture_report(arguments.report)
+            agent = ProjectSemanticValidationAgent(
+                model,
+                generate=gateway,
+                on_event=reporter,
+                limits=ValidationLimits(max_claims=arguments.max_review_claims),
             )
-            emit("orientation_finished", status=orientation.completion_status)
-            tools = make_tools(
-                snapshot,
-                budget.model_copy(
-                    update={"max_elapsed_seconds": max(0.001, deadline - monotonic())}
-                ),
-                workspace,
-            )
-        agent = (
-            ProjectArchitectureAgent(
+            result = await execute(agent, tools, original)
+            metadata["validation_limits"] = agent.limits.model_dump(mode="json")
+            metadata["initial_review_soft_token_budgets"] = True
+            return result.model_dump(mode="json") | {
+                "execution_mode": "protocol_smoke"
+                if arguments.smoke
+                else arguments.mode,
+                "run_metadata": metadata,
+            }, result.completion_status != "failed"
+        if architecture:
+            architect = ProjectArchitectureAgent(
                 model,
                 generate=gateway,
                 on_event=reporter,
@@ -299,34 +389,68 @@ async def run(arguments):
                     soft_token_budgets=not arguments.strict_architecture_budgets
                 ),
             )
-            if architecture
-            else ProjectOrientationAgent(model, generate=gateway, on_event=reporter)
+            validator = ProjectSemanticValidationAgent(
+                model,
+                generate=gateway,
+                on_event=reporter,
+                limits=ValidationLimits(max_claims=arguments.max_review_claims),
+            )
+            pipeline = ProjectArchitecturePipeline(
+                architect,
+                orientation=ProjectOrientationAgent(
+                    model, generate=gateway, on_event=reporter
+                ),
+                validator=validator,
+                on_event=reporter,
+            )
+            outcome = await pipeline.run(
+                snapshot,
+                budget=budget,
+                workspace_root=workspace,
+                include_orientation=not arguments.skip_orientation,
+                validate_semantics=arguments.validate_semantics,
+                allow_return=not arguments.no_semantic_return,
+                deadline=deadline,
+                execute=execute_awaitable,
+            )
+            metadata.update(
+                architecture_limits=architect.limits.model_dump(mode="json"),
+                orientation_included=outcome.orientation is not None,
+            )
+            data = outcome.architecture.model_dump(mode="json") | {
+                "execution_mode": "protocol_smoke"
+                if arguments.smoke
+                else arguments.mode,
+                "run_metadata": metadata,
+                "orientation_result": outcome.orientation.model_dump(mode="json")
+                if outcome.orientation
+                else None,
+                "pipeline_usage": gateway.usage_totals()
+                | {
+                    "model_calls": len(gateway.measurements),
+                    "tool_calls": outcome.tool_calls,
+                },
+            }
+            if outcome.semantic_validation:
+                data["semantic_validation"] = outcome.semantic_validation.model_dump(
+                    mode="json"
+                )
+                metadata.update(
+                    validation_limits=validator.limits.model_dump(mode="json"),
+                    initial_review_soft_token_budgets=True,
+                    semantic_return_enabled=not arguments.no_semantic_return,
+                )
+            return data, outcome.usable
+        result = await execute(
+            ProjectOrientationAgent(model, generate=gateway, on_event=reporter), tools
         )
-        result = await execute(agent, tools, orientation)
         data = result.model_dump(mode="json") | {
             "execution_mode": "protocol_smoke" if arguments.smoke else arguments.mode,
             "run_metadata": metadata,
-        }
-        if architecture:
-            metadata.update(
-                architecture_limits=agent.limits.model_dump(mode="json"),
-                orientation_included=orientation is not None,
-            )
-            data.update(
-                orientation_result=orientation.model_dump(mode="json")
-                if orientation
-                else None,
-                pipeline_usage=gateway.usage_totals()
-                | {
-                    "model_calls": len(gateway.measurements),
-                    "tool_calls": result.usage.tool_calls
-                    + (orientation.usage.tool_calls if orientation else 0),
-                },
-            )
-        else:
-            data["file_paths"] = {
+            "file_paths": {
                 source.id: source.path for source in tools.accessible_snapshot.files
-            }
+            },
+        }
         return data, result.completion_status != "failed"
     finally:
         emit("cleanup_started")
@@ -335,35 +459,136 @@ async def run(arguments):
 
 
 def print_summary(data):
-    print(f"Mode: {data['execution_mode']}\nStatus: {data['completion_status']}")
-    report = data.get("architecture") or data.get("orientation")
-    if report:
-        for unit in report.get("organization", report.get("components", [])):
+    print(f"Mode: {data['execution_mode']}")
+    shown = data
+    review = data if "verdict" in data else None
+    pipeline = data.get("semantic_validation")
+    if pipeline:
+        revised = pipeline.get("revised_architecture")
+        shown = (
+            revised
+            if revised and revised.get("architecture")
+            else pipeline["original_architecture"]
+        )
+        print(
+            "Report shown: "
+            + (
+                "REVISED ARCHITECTURE REPORT"
+                if shown is revised
+                else "ORIGINAL ARCHITECTURE REPORT"
+            )
+        )
+        print(f"Architecture generation: {shown['completion_status']}")
+        print(
+            f"Architect revision: {pipeline['return_count']} of 1"
+            if pipeline["return_count"]
+            else "Architect revision: not performed"
+        )
+        if revised and not revised.get("architecture"):
             print(
-                f"\n{unit['name']}: {unit['responsibility']['statement']} ({unit['responsibility']['status']})"
+                f"Revision generation: {revised['completion_status']}; produced no report, showing the original report."
+            )
+        review = pipeline["validations"][-1]
+        review_matches = review["original_result"] == shown
+        if revised and shown is revised and not review_matches:
+            print("Semantic revalidation: not performed")
+        else:
+            print(
+                f"Semantic {'revalidation' if shown is revised else 'review'}: {review['completion_status']} / {review['verdict']}"
+            )
+        accepted = (
+            review_matches
+            and review["verdict"] == "accepted"
+            and review["completion_status"] == "complete"
+            and (not revised or shown is revised)
+        )
+        print(
+            "Final acceptance: "
+            + ("established for reviewed claims" if accepted else "not established")
+        )
+        if revised:
+            print("Original report: preserved in revision history")
+            for issue in revised["execution_issues"]:
+                print(f"Revision issue: {issue['category']} | {issue['message']}")
+        if not review_matches:
+            print(
+                "Review details below concern the original report, not the displayed revision."
+            )
+    else:
+        print(f"Status: {data['completion_status']}")
+    report = shown.get("architecture") or shown.get("orientation")
+    findings = (
+        {item["target_id"]: item for item in review["findings"]}
+        if review and (not pipeline or review_matches)
+        else {}
+    )
+
+    def claim_status(claim, pointer):
+        if not review:
+            return claim["status"]
+        semantic = findings.get(pointer)
+        return f"architect certainty: {claim['status']} | semantic: {semantic['verdict'] if semantic else 'not reviewed'}"
+
+    if review:
+        print(
+            f"Semantic review coverage: {len(review['findings'])} of {len(review['findings']) + len(review['pending_target_ids'])} claims"
+        )
+        for pointer in review["pending_target_ids"]:
+            print(f"  Pending claim: {pointer}")
+        for issue in review["execution_issues"]:
+            print(f"Review issue: {issue['category']} | {issue['message']}")
+        if not pipeline:
+            print(
+                f"Semantic verdict: {review['verdict']} | status={review['completion_status']}"
+            )
+        for finding in review["findings"]:
+            print(
+                f"  Semantic finding {finding['target_id']}: {finding['verdict']} | {finding['reason']}"
+            )
+            if finding.get("correction"):
+                correction = finding["correction"]
+                print(
+                    f"    Proposed correction (not automatically applied): {correction['statement']} | scope={correction['scope']} | certainty={correction['status']}"
+                )
+            for request in finding.get("missing_evidence", []):
+                print(
+                    f"    Missing evidence: {request['question']} | paths={', '.join(request['paths']) or 'unspecified'}"
+                )
+    if report:
+        for index, unit in enumerate(
+            report.get("organization", report.get("components", []))
+        ):
+            print(
+                f"\n{unit['name']}: {unit['responsibility']['statement']} ({claim_status(unit['responsibility'], f'/organization/{index}/responsibility')})"
             )
         classification = report.get("closest_architecture")
         if classification:
             print(
-                f"\nClosest architecture: {classification['pattern']} ({classification['assessment']['status']})\n  {classification['assessment']['statement']}\n  Scope: {classification['assessment']['scope']}"
+                f"\nClosest architecture: {classification['pattern']} ({claim_status(classification['assessment'], '/closest_architecture/assessment')})\n  {classification['assessment']['statement']}\n  Scope: {classification['assessment']['scope']}"
             )
         for name in ("project_type", "purpose", "explanation"):
             if report.get(name):
                 print(
-                    f"\n{name}: {report[name]['statement']} ({report[name]['status']})"
+                    f"\n{name}: {report[name]['statement']} ({claim_status(report[name], '/' + name)})"
                 )
         for item in report.get("uncertainties", []):
             print(f"  Uncertainty: {item}")
-    for citation in data.get("citations", []):
+    for citation in shown.get("citations", []):
         print(
             f"  {citation['evidence_id']}: {citation['path']}:{citation['start_line']}-{citation['end_line']}"
         )
-    for issue in data["execution_issues"]:
+    for issue in shown["execution_issues"]:
         print(f"Issue: {issue['stage']} | {issue['category']} | {issue['message']}")
     if "pipeline_usage" in data:
         print("\nPipeline usage: " + json.dumps(data["pipeline_usage"]))
-    print("\nUsage: " + json.dumps(data["usage"]))
-    for stage in data["telemetry"]["stages"]:
+    print(
+        "\n"
+        + ("Displayed report usage: " if pipeline else "Usage: ")
+        + json.dumps(shown["usage"])
+    )
+    if pipeline:
+        print("Semantic review usage: " + json.dumps(review["usage"]))
+    for stage in shown["telemetry"]["stages"]:
         print(
             f"  {stage['stage']}: calls={stage['calls']} input_tokens={stage['input_tokens']} output_tokens={stage['output_tokens']} unknown_usage_attempts={stage['unknown_usage_attempts']}"
         )
