@@ -9,6 +9,16 @@ files, and important uncertainties. It does not reconstruct complete flows.
 From `agent-server`:
 
 ```powershell
+uv run python -m server.run_project_orientation ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria
+uv run python -m server.run_project_orientation ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --json
+uv run python -m server.run_project_orientation ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --smoke
+```
+
+`run_project_orientation.py` selects orientation mode automatically and reuses
+provider configuration, progress, limits, telemetry, and cleanup. The installed
+console entrypoint is `project-orientation`. The shared runner also supports it:
+
+```powershell
 uv run python -m server.run_project_analysis ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --orientation
 uv run python -m server.run_project_analysis ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --orientation --json
 uv run python -m server.run_project_analysis ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --orientation --smoke
