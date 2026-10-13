@@ -19,6 +19,11 @@ export interface AgentInvoker {
    *  double. `openPipeline` fails both rows when the invoker has no pipeline
    *  support instead of hanging them in Waiting. */
   runPipeline?(input: PipelineInput, executionIds: PipelineExecutionIds, configs: PipelineConfigs): Promise<PipelineResult>
+  /** Runs any registered pipeline by name with per-stage ids and configs.
+   *
+   *  Stage keys must match the agent-server's registered stage names; the
+   *  result is keyed by stage artifact name and stays opaque here. */
+  runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>): Promise<Record<string, AgentInput>>
 }
 
 /** What the architecture-audit pipeline needs: only the repository root. The
@@ -27,12 +32,12 @@ export interface PipelineInput {
   root_path: string
 }
 
-export interface PipelineExecutionIds {
+export type PipelineExecutionIds = {
   analyzer: number
   architect: number
 }
 
-export interface PipelineConfigs {
+export type PipelineConfigs = {
   analyzer: AgentRunConfig
   architect: AgentRunConfig
 }
@@ -138,10 +143,30 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
     configs: PipelineConfigs,
     timeoutMs: number = PIPELINE_INVOKE_TIMEOUT_MS,
   ): Promise<PipelineResult> {
-    const url = `${this.baseUrl}/api/pipelines/architecture-audit/run`
+    const result = await this.runPipelineByName("architecture-audit", input, executionIds, configs, timeoutMs)
+
+    this.log.info(`Pipeline returned`)
+
+    if (result.analysis === undefined || result.description === undefined) {
+      throw new AgentInvocationError(`Pipeline returned no result`)
+    }
+
+    return { analysis: result.analysis, description: result.description }
+  }
+
+  /** Generic pipeline dispatch: stage keys travel untouched so any registered
+   *  pipeline (present or future) runs without a client change. */
+  async runPipelineByName(
+    pipeline: string,
+    input: PipelineInput,
+    executionIds: Record<string, number>,
+    configs: Record<string, AgentRunConfig>,
+    timeoutMs: number = PIPELINE_INVOKE_TIMEOUT_MS,
+  ): Promise<Record<string, AgentInput>> {
+    const url = `${this.baseUrl}/api/pipelines/${encodeURIComponent(pipeline)}/run`
 
     this.log.info(
-      `Invoking architecture-audit pipeline for executions ${executionIds.analyzer}/${executionIds.architect} at ${url}`,
+      `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")} at ${url}`,
     )
 
     let response: Response
@@ -151,11 +176,11 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
         method: "POST",
         headers: { "content-type": "application/json" },
         // execution_ids are what the pipeline reports each stage against, so
-        // both rows are closed by the pipeline rather than by the response.
+        // rows are closed by the pipeline rather than by the response.
         body: JSON.stringify({
           input,
           stage_configs: configs,
-          execution_ids: { analyzer: executionIds.analyzer, architect: executionIds.architect },
+          execution_ids: executionIds,
         }),
         signal: AbortSignal.timeout(timeoutMs),
       })
@@ -168,24 +193,20 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
 
     if (!response.ok) {
       const detail = "Agent-server rejected the pipeline; check model access and agent input"
-      this.log.error(`Pipeline failed with ${response.status}`)
+      this.log.error(`Pipeline ${pipeline} failed with ${response.status}`)
 
       throw new AgentInvocationError(
-        `Pipeline failed with ${response.status}: ${detail}`,
+        `Pipeline ${pipeline} failed with ${response.status}: ${detail}`,
         response.status,
       )
     }
 
-    let payload: Partial<PipelineResult>
-    try { payload = await response.json() as Partial<PipelineResult> }
+    let payload: Record<string, AgentInput>
+    try { payload = await response.json() as Record<string, AgentInput> }
     catch { throw new AgentInvocationError("Agent-server returned an invalid pipeline response") }
 
-    this.log.info(`Pipeline returned`)
+    this.log.info(`Pipeline ${pipeline} returned`)
 
-    if (payload.analysis === undefined || payload.description === undefined) {
-      throw new AgentInvocationError(`Pipeline returned no result`)
-    }
-
-    return { analysis: payload.analysis, description: payload.description }
+    return payload
   }
 }

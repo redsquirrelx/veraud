@@ -4,7 +4,7 @@ import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infr
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import type { PipelineExecutions } from "../agent-execution/agent-execution.service.js"
+import type { PipelineExecutions, ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
 export { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
@@ -37,6 +37,7 @@ export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 /** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
   openPipelineForProject(projectId: number, branch: string, commitHash: string): Promise<AnalysisRequest>
+  openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest>
 }
 
 export interface AnalysisRequest {
@@ -44,6 +45,12 @@ export interface AnalysisRequest {
   evaluationId: number
   execution: StoredAgentExecution
   executions: PipelineExecutions
+}
+
+export interface ProjectArchitectureAnalysisRequest {
+  versionId: number
+  evaluationId: number
+  executions: ProjectArchitectureExecutions
 }
 
 export interface VersionAnalysis {
@@ -416,6 +423,41 @@ export class ProjectService {
     }
 
     return this.analyses.openPipelineForProject(project.id, cleanBranch, cleanHash)
+  }
+
+  /**
+   * Runs the project-architecture pipeline on the selected version: same
+   * guards and version handling as analyzeProject, but three stage rows
+   * (orientation, architecture, semantic_validation) under one evaluation.
+   * The executions come back Waiting; the pipeline reports each stage
+   * afterwards.
+   */
+  async analyzeProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
+    const cleanBranch = assertValidBranch(branch)
+    const cleanHash = assertValidHash(commitHash).toLowerCase()
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    if (project.status === "SYNCING") {
+      throw new SyncInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
+      )
+    }
+
+    this.requireWorkspace(project)
+
+    const running = await this.projects.findOpenExecution(project.id, cleanHash)
+
+    if (running !== null) {
+      throw new AnalysisAlreadyRunningError(
+        `Version ${cleanBranch} at ${cleanHash.slice(0, 7)} is already being analyzed (execution ${running.id})`
+      )
+    }
+
+    return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {

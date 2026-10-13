@@ -60,3 +60,37 @@ test("HTTP dispatch sends captured config and access checks do not expose provid
     await app.close()
   }
 })
+
+test("generic pipeline dispatch posts stage maps to the named pipeline", async () => {
+  const app = Fastify({ logger: false })
+  logger.configure(app.log)
+  const requests: Array<{ path: string, body: Record<string, unknown> }> = []
+  const server = createServer(async (request, response) => {
+    let body = ""
+    for await (const chunk of request) body += chunk
+    requests.push({ path: request.url!, body: JSON.parse(body) as Record<string, unknown> })
+    response.setHeader("content-type", "application/json")
+    response.statusCode = 200
+    response.end(JSON.stringify({ orientation: { summary: "cli" }, architecture: { style: "layered" }, semantic_validation: { verdict: "accepted" } }))
+  })
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== "string")
+    const client = new AgentServerClient(`http://127.0.0.1:${address.port}`)
+    const config = { model: { provider: "OpenAI", name: "selected-model", temperature: 0.8, max_tokens: 4096 }, api_key: "secret-provider-key" }
+    const ids = { orientation: 21, architecture: 22, semantic_validation: 23 }
+    const configs = { orientation: config, architecture: config, semantic_validation: config }
+    assert.deepEqual(
+      await client.runPipelineByName("project-architecture", { root_path: "checkout" }, ids, configs),
+      { orientation: { summary: "cli" }, architecture: { style: "layered" }, semantic_validation: { verdict: "accepted" } },
+    )
+    assert.deepEqual(requests, [{
+      path: "/api/pipelines/project-architecture/run",
+      body: { input: { root_path: "checkout" }, execution_ids: ids, stage_configs: configs },
+    }])
+  } finally {
+    await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()))
+    await app.close()
+  }
+})

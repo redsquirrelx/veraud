@@ -323,6 +323,51 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     }
   })
 
+  app.post("/api/projects/:id/architecture", {
+    schema: {
+      tags: ["Projects"], summary: "Start project-architecture analysis of a project version",
+      description: "Verifies the orientation, architecture and semantic_validation saved configurations before transactionally selecting the version and creating one evaluation with one execution per stage. Invalid access returns 422 with affected agents and creates no partial analysis. Starts the project-architecture pipeline in the background with explicit per-stage configuration. Does not check out the commit. Completion arrives through callbacks/WebSocket; executions is keyed by stage name.",
+      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, executions: objectResponse({ orientation: { $ref: "AgentExecution#" }, architecture: { $ref: "AgentExecution#" }, semantic_validation: { $ref: "AgentExecution#" } }) }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
+      params: idParams,
+      body: {
+        type: "object",
+        required: ["branch", "commitHash"],
+        properties: {
+          branch: branchInput,
+          commitHash: commitHashInput,
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const params = request.params as { id: string }
+    const body = request.body as { branch: string; commitHash: string }
+
+    try {
+      const result = await service.analyzeProjectArchitecture(Number(params.id), body.branch, body.commitHash)
+      return reply.code(201).send({
+        versionId: result.versionId,
+        evaluationId: result.evaluationId,
+        executions: {
+          orientation: toExecution(result.executions.orientation),
+          architecture: toExecution(result.executions.architecture),
+          semantic_validation: toExecution(result.executions.semantic_validation),
+        },
+      })
+    } catch (error) {
+      if (error instanceof ProjectNotFoundError) {
+        return reply.code(404).send({ message: error.message })
+      }
+      if (error instanceof InvalidGitRequestError) {
+        return reply.code(400).send({ message: error.message })
+      }
+      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
+        return reply.code(422).send({ message: error.message })
+      }
+      if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
+      throw error
+    }
+  })
+
   app.get("/api/projects/:id/versions", {
     schema: { params: idParams, tags: ["Projects"], summary: "List analyzed project versions",
       description: "Returns versions newest first, with their latest evaluation/execution and derived status. An empty list is valid.",

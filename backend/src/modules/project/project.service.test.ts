@@ -128,6 +128,7 @@ function makeFakes(options: {
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
     openPipelineForProject: async () => { throw new Error("not used here") },
+    openProjectArchitecturePipelineForProject: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
@@ -260,7 +261,10 @@ describe("ProjectService.registerProject", () => {
       ),
       failing,
       join(tmpdir(), "veraud-unused"),
-      { openPipelineForProject: async () => { throw new Error("must not open executions") } }
+      {
+        openPipelineForProject: async () => { throw new Error("must not open executions") },
+        openProjectArchitecturePipelineForProject: async () => { throw new Error("must not open executions") },
+      }
     )
 
     await assert.rejects(

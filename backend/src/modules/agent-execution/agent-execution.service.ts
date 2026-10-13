@@ -5,7 +5,8 @@ import type { AgentTargetResolver } from "../../infrastructure/agent-target/agen
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
-import { ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE } from "../agent-settings/agent-types.js"
+import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
+import { ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -23,6 +24,13 @@ export class AgentExecutionNotFoundError extends Error {
 }
 
 export { ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE } from "../agent-settings/agent-types.js"
+
+/** The rows one project-architecture pipeline drives, keyed by stage name. */
+export interface ProjectArchitectureExecutions {
+  orientation: StoredAgentExecution
+  architecture: StoredAgentExecution
+  semantic_validation: StoredAgentExecution
+}
 
 /** The two rows one architecture-audit pipeline drives, analyzer first. */
 export interface PipelineExecutions {
@@ -161,6 +169,32 @@ export class AgentExecutionService {
     return result
   }
 
+  /**
+   * Registers a project-architecture pipeline run: three Waiting rows
+   * (orientation, architecture, semantic_validation) under one evaluation,
+   * dispatched in the background with per-stage configuration.
+   *
+   * Only a failure to start at all is written here, to every row, since
+   * nothing else would ever report it. Anything after the hand-off is
+   * reported stage by stage by the pipeline.
+   */
+  async openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
+    const configurations = await this.settings.prepareExecution([...PROJECT_ARCHITECTURE_PIPELINE_STAGES])
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations)
+    const executions = {
+      orientation: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[0]]!,
+      architecture: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[1]]!,
+      semantic_validation: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[2]]!,
+    }
+    for (const execution of Object.values(executions)) {
+      this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    }
+    const configs: Record<string, AgentRunConfig> = {}
+    for (const configuration of configurations) configs[configuration.agentType] = configuration.transport
+    void this.dispatchPipelineByName(PROJECT_ARCHITECTURE_PIPELINE_NAME, executions, configs)
+    return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
+  }
+
   /** Starts the agent and then gets out of the way. Never throws: a failure here
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
@@ -191,10 +225,10 @@ export class AgentExecutionService {
     }
   }
 
-  /** Starts the pipeline and then gets out of the way. Never throws: a failure
-   *  here fails both rows, because neither stage got far enough to report for
-   *  itself. Anything after the hand-off is reported stage by stage by the
-   *  pipeline, including the architect-skipped case. */
+  /** Starts the analyzer+architect pipeline and then gets out of the way.
+   *  Never throws: a failure here fails both rows, because neither stage got
+   *  far enough to report for itself. Anything after the hand-off is reported
+   *  stage by stage by the pipeline, including the architect-skipped case. */
   private async dispatchPipeline(analyzer: StoredAgentExecution, architect: StoredAgentExecution, configs: PipelineConfigs): Promise<void> {
     try {
       if (analyzer.evaluationId === null) {
@@ -213,6 +247,32 @@ export class AgentExecutionService {
       const message = error instanceof Error ? error.message : String(error)
       await this.fail(analyzer.id, message)
       await this.fail(architect.id, message)
+    }
+  }
+
+  /** Starts any registered pipeline by name and then gets out of the way.
+   *  Never throws: a failure here fails every row, because no stage got far
+   *  enough to report for itself. */
+  private async dispatchPipelineByName(pipeline: string, executions: Record<string, StoredAgentExecution>, configs: Record<string, AgentRunConfig>): Promise<void> {
+    const ids = Object.keys(executions)
+    try {
+      const first = executions[ids[0]!]!
+      if (first.evaluationId === null) {
+        throw new Error(`Execution ${first.id} has no evaluation to resolve`)
+      }
+
+      if (this.agents.runPipelineByName === undefined) {
+        throw new Error("The agent invoker does not support pipelines")
+      }
+
+      const input = await this.targets.resolve(first.evaluationId)
+      const executionIds: Record<string, number> = {}
+      for (const [stage, execution] of Object.entries(executions)) executionIds[stage] = execution.id
+
+      await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path) }, executionIds, configs)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      for (const execution of Object.values(executions)) await this.fail(execution.id, message)
     }
   }
 

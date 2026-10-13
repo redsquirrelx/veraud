@@ -80,7 +80,10 @@ function makeService(options: {
     ),
     new GithubClient(),
     workspaceDir,
-    { openPipelineForProject: async () => { throw new Error("not used") } }
+    {
+      openPipelineForProject: async () => { throw new Error("not used") },
+      openProjectArchitecturePipelineForProject: async () => { throw new Error("not used") },
+    }
   )
 
   return { service, enqueued, created, workspaceDir }

@@ -49,7 +49,7 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 30)
+      assert.equal(operations.length, 31)
       const expectedOperations = [
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
@@ -72,6 +72,7 @@ describe("OpenAPI portal", () => {
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
         "POST /api/projects/{id}/analyze",
+        "POST /api/projects/{id}/architecture",
         "POST /api/projects/{id}/file",
         "POST /api/projects/{id}/git/branches",
         "POST /api/projects/{id}/git/checkout",
@@ -116,6 +117,10 @@ describe("OpenAPI portal", () => {
       assert.ok(analysisResponse.properties.execution)
       assert.ok(analysisResponse.properties.executions.properties.analyzer)
       assert.ok(analysisResponse.properties.executions.properties.architect)
+      const architectureResponse = specification.paths["/api/projects/{id}/architecture"].post.responses["201"].content["application/json"].schema
+      assert.ok(architectureResponse.properties.executions.properties.orientation)
+      assert.ok(architectureResponse.properties.executions.properties.architecture)
+      assert.ok(architectureResponse.properties.executions.properties.semantic_validation)
       const dereferenced = await SwaggerParser.dereference(structuredClone(specification)) as typeof specification
       assert.ok(dereferenced.paths["/api/projects/{id}/versions"].get.responses["200"].content["application/json"].schema.items.properties.executions)
     } finally {

@@ -32,7 +32,7 @@ export const versionAnalysisSchema = {
     analyzedAt: { type: ["string", "null"], format: "date-time" },
     evaluationId: { type: ["integer", "null"] },
     execution: { anyOf: [{ $ref: "AgentExecution#" }, { type: "null" }] },
-    executions: { type: "array", items: { $ref: "AgentExecution#" }, description: "All stages of the latest evaluation, including analyzer and architect for pipeline runs." },
+    executions: { type: "array", items: { $ref: "AgentExecution#" }, description: "All stages of the latest evaluation, one row per pipeline stage." },
     derivedStatus: { type: "string", description: "Execution status, or NeverAnalyzed/Pending when there is no execution." },
   },
 } as const

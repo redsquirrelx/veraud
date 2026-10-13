@@ -58,6 +58,9 @@ export interface AgentExecutionStore {
   createForProject(projectId: number, branch: string, commitHash: string, configuration: PreparedAgentConfiguration): Promise<{ versionId: number, evaluationId: number, execution: StoredAgentExecution }>
   createPipelineForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, execution: StoredAgentExecution, executions: { analyzer: StoredAgentExecution, architect: StoredAgentExecution } }>
   createPipeline(evaluationId: number, configurations: PreparedAgentConfiguration[]): Promise<{ analyzer: StoredAgentExecution, architect: StoredAgentExecution }>
+  /** One row per configuration, keyed by agent type, under a fresh evaluation.
+   *  Works for any present or future pipeline; empty lists are rejected. */
+  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
@@ -134,19 +137,38 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async createPipelineForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]) {
+    const { versionId, evaluationId, executions } = await this.createExecutionsForProject(projectId, branch, commitHash, configurations)
+    const analyzer = executions["analyzer"]
+    const architect = executions["architect"]
+    if (!analyzer || !architect) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "Analyzer and architect configurations are required" }])
+    return { versionId, evaluationId, execution: analyzer, executions: { analyzer, architect } }
+  }
+
+  /** Generic row creation shared by every pipeline: version row is saved (or
+   *  reused), it becomes the selected one, a fresh evaluation is created, and
+   *  one Waiting execution per configuration is stored with its snapshot. */
+  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]) {
+    if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
       const running = await tx.agentExecution.findFirst({ where: {
         status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
       } })
       if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      for (const configuration of configurations) await this.assertCurrent(tx, configuration)
       const version = await tx.projectVersion.upsert({
         where: { projectId_commitHash: { projectId, commitHash } },
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
       })
       await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
       const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
-      const executions = await this.createPipelineRows(tx, evaluation.id, configurations)
-      return { versionId: version.id, evaluationId: evaluation.id, execution: executions.analyzer, executions }
+      const executions: Record<string, StoredAgentExecution> = {}
+      for (const configuration of configurations) {
+        executions[configuration.agentType] = this.toStored(await tx.agentExecution.create({ data: {
+          evaluationId: evaluation.id, agentType: configuration.agentType, status: INITIAL_STATUS,
+          configurationSnapshot: JSON.stringify(configuration.snapshot),
+        } }))
+      }
+      return { versionId: version.id, evaluationId: evaluation.id, executions }
     })
   }
 
