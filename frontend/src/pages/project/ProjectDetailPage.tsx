@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Navigate, useNavigate, useParams } from "react-router-dom"
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
 import { ApiError, listProjects, syncProject, type AgentExecution, type ProjectSummary, type VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { useTasks } from "../../shared/task-manager/useTasks.ts"
@@ -15,15 +15,17 @@ import {
   parseAnalyzerResult,
   parseArchitectureResult,
 } from "../../features/project-management/pipelineResult.ts"
-import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, MermaidDiagram, Sidebar, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
-import { statusTone } from "../../features/project-management/projectStatus.ts"
+import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, MermaidDiagram, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
+import { ProjectSidebar } from "./ProjectSidebar.tsx"
+import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
-import { VersionSelector, type VersionMode } from "../../features/project-management/VersionSelector.tsx"
+import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
 import "./ProjectDetailPage.css"
 
@@ -42,6 +44,7 @@ export function ProjectDetailPage() {
   const activeSection = section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState("")
   const [syncing, setSyncing] = useState(false)
   const { pushToast } = useToasts()
   const version = useVersionSelector(project?.id ?? null, {
@@ -68,7 +71,7 @@ export function ProjectDetailPage() {
   const tracked = analysis.execution
   const liveExecutions = useAgentExecutions()
   const liveTasks = useTasks()
-  const companion = companionExecution(liveExecutions, analyzedVersions, tracked)
+  const companion = companionExecution(liveExecutions, analyzedVersions, tracked, analysis.initialExecutions)
   const analyzerExec = tracked?.agentType === "analyzer"
     ? tracked
     : companion?.agentType === "analyzer" ? companion : null
@@ -123,12 +126,14 @@ export function ProjectDetailPage() {
       (rows) => {
         if (alive) {
           setProject(rows.find((row) => row.id === Number(id)) ?? null)
+          setLoadError("")
           setLoading(false)
         }
       },
       () => {
         if (alive) {
           setProject(null)
+          setLoadError("Could not load the project")
           setLoading(false)
         }
       }
@@ -243,95 +248,77 @@ export function ProjectDetailPage() {
 
   return (
     <section className="project-page">
-      <Sidebar
-        title="Project"
-        items={sectionItems}
-        activeId={activeSection}
-        storageKey="sidebar.expanded"
-        onSelect={(next) => void navigate(`/projects/${id}/${next}`)}
-      />
+      <ProjectSidebar items={sectionItems} activeId={activeSection} onSelect={(next) => void navigate(`/projects/${id}/${next}`)} />
       <div className="project-content">
         {loading ? (
-          <p className="label">Loading project</p>
+          <p className="label" role="status">Loading project</p>
+        ) : loadError !== "" ? (
+          <p role="alert">{loadError}</p>
         ) : project === null ? (
           <p>Project not found</p>
         ) : (
           <>
-            <Card>
-              <VersionSelector
-                selection={gitSelection}
-                analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
-                mode={versionMode}
-                onModeChange={handleModeChange}
-                analyzed={{
+            <ProjectHeader
+              project={project}
+              analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
+              syncing={syncActive}
+              onSync={() => void handleSync()}
+              versionSelector={{
+                selection: gitSelection,
+                mode: versionMode,
+                onModeChange: handleModeChange,
+                analyzed: {
                   versions: analyzedVersions,
                   loading: analyzed.loading,
                   error: analyzed.error,
                   selectedId: analyzedId,
                   onSelect: (id) => void selectAnalyzed(id),
                   onRefresh: () => void analyzed.refresh(),
-                }}
-              />
-            </Card>
-            <Card>
-              <div className="project-header">
-                <div className="project-header-info">
-                  <span className="project-name-row">
-                    <span className="mono">
-                      {project.repositoryOwner}/{project.repositoryName}
-                    </span>
-                    <Badge tone={statusTone(project.status)}>{project.status}</Badge>
-                    {analysisSummary !== null && (
-                      <>
-                        <span className="label">Type</span>
-                        <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
-                        <span className="label">Confidence</span>
-                        <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
-                      </>
-                    )}
-                    {architectureSummary !== null && (
-                      <>
-                        <span className="label">Style</span>
-                        <Badge tone={kindTone(architectureSummary.style)}>{architectureSummary.style}</Badge>
-                      </>
-                    )}
-                    {analysisSummary === null && analysis.analyzing && (
-                      <Badge tone="info">Analyzing</Badge>
-                    )}
-                    <a
-                      className="project-link"
-                      href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open on GitHub<ExternalIcon size={12} />
-                    </a>
+                },
+              }}
+            />
+            <div className="project-body">
+            {activeSection === "overview" && <Card>
+              <section className="project-overview" aria-label="Project overview">
+                <h2>Overview</h2>
+                <div className="project-dates-row">
+                  <span className="project-date">
+                    Registered {new Date(project.registeredAt).toLocaleDateString()}
                   </span>
-                  <span className="project-dates-row">
-                    <span className="project-date">
-                      Registered {new Date(project.registeredAt).toLocaleDateString()}
-                    </span>
-                    <span className="project-date">
-                      {project.lastSyncedAt === null
-                        ? "Never synced"
-                        : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
-                    </span>
+                  <span className="project-date">
+                    {project.lastSyncedAt === null
+                      ? "Never synced"
+                      : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
                   </span>
-                  {analysisSummary !== null && analysisSummary.summary !== "" && (
-                    <span className="project-summary">{analysisSummary.summary}</span>
-                  )}
                 </div>
-                <Button loading={syncing} loadingText="Syncing" disabled={syncing || analysis.analyzing} onClick={() => void handleSync()}>
-                  Sync
-                </Button>
-              </div>
+                <a
+                  className="project-link"
+                  href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open on GitHub<ExternalIcon size={12} />
+                </a>
+                {analysisSummary !== null && <div className="project-overview-analysis">
+                  <h3>Analysis summary</h3>
+                  <div className="project-name-row">
+                    <span className="label">Type</span>
+                    <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
+                    <span className="label">Confidence</span>
+                    <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
+                  </div>
+                  {analysisSummary.summary !== "" && (
+                    <p className="project-summary">{analysisSummary.summary}</p>
+                  )}
+                </div>}
               {analysis.analyzing && (
                 <div className="files-loading" role="status" aria-label="Loading">
                   <Spinner />
                   <span className="label">Analyzing the project</span>
                 </div>
               )}
-            </Card>
+              </section>
+            </Card>}
             {activeSection === "overview" && analysis.execution !== null
               && (analysisSummary !== null || architectureSummary !== null) && (
               <Card>
@@ -455,9 +442,26 @@ export function ProjectDetailPage() {
               ) : (
                 <Card>
                   {runStatuses}
+                  {[analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
+                    <h3>Configuration used</h3>
+                    <p className="label">Captured for {execution.agentType} #{execution.id}</p>
+                    <dl>
+                      <dt>Model</dt><dd>{execution.configuration!.model.name}</dd>
+                      <dt>Provider</dt><dd>{execution.configuration!.model.providerName}</dd>
+                      <dt>Credential</dt><dd>{execution.configuration!.credential.name} (#{execution.configuration!.credential.id})</dd>
+                      <dt>Temperature</dt><dd>{execution.configuration!.temperature}</dd>
+                      <dt>Maximum tokens</dt><dd>{execution.configuration!.maxTokens}</dd>
+                    </dl>
+                    <p className="label">Captured when this execution started. Later Settings changes apply to new executions.</p>
+                  </div>)}
                 </Card>
               )
             )}
+            {analysis.phase === "error" && <Card>
+              <p role="alert">{analysis.message}</p>
+             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>Review agent configuration</Link>
+            </Card>}
+            </div>
           </>
         )}
       </div>
@@ -492,6 +496,7 @@ function companionExecution(
   live: AgentExecution[],
   versions: VersionAnalysisSummary[],
   tracked: AgentExecution | null,
+  initial: AgentExecution[],
 ): AgentExecution | null {
   if (tracked === null || tracked.evaluationId === null) {
     return null
@@ -501,7 +506,7 @@ function companionExecution(
       && item.id !== tracked.id
       && (item.agentType === "analyzer" || item.agentType === "architect"),
   ) ?? null
-  return match(live)
-    ?? match(versions.flatMap((version) => version.executions))
-    ?? null
+  const current = match(live)
+  const stored = match(versions.flatMap((version) => version.executions)) ?? match(initial)
+  return current === null ? stored : { ...current, configuration: current.configuration ?? stored?.configuration ?? null }
 }

@@ -1,0 +1,75 @@
+.project-sidebar-navigation,
+.project-sidebar-footer,
+.project-sidebar-services {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.project-sidebar-navigation .app-nav {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.project-sidebar-navigation .app-nav a { min-height: 32px; }
+
+.project-sidebar-section-title {
+  border-top: 1px solid #e2e8f0;
+  padding: 1rem 10px 0.25rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.project-sidebar-footer {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.75rem;
+}
+
+.project-sidebar-footer .ui-dropdown-links,
+.project-sidebar-footer .ui-dropdown-links-trigger { width: 100%; }
+.project-sidebar-footer .ui-dropdown-links-chevron { margin-left: auto; }
+.project-page .ui-sidebar-collapsed .project-sidebar-footer .ui-dropdown-links { justify-content: center; }
+.project-page .ui-sidebar-collapsed .project-sidebar-footer .ui-dropdown-links-trigger {
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.project-sidebar-footer .ui-dropdown-links-panel {
+  top: auto;
+  bottom: 0;
+  left: calc(100% + 8px);
+}
+
+.project-page .ui-sidebar-collapsed .ui-sidebar-top { flex-direction: column; }
+.project-page .ui-sidebar-collapsed .app-brand { padding: 5px; }
+.project-page .ui-sidebar-collapsed .app-nav a { justify-content: center; padding: 4px; }
+.project-page .ui-sidebar-collapsed .project-sidebar-services { align-items: center; }
+.project-page .ui-sidebar-collapsed .app-status { padding: 6px; }
+
+@media (max-width: 760px) {
+  .project-page { flex-direction: column; }
+  .project-page .ui-sidebar,
+  .project-page .ui-sidebar-collapsed {
+    width: auto;
+    min-height: 0;
+    align-items: stretch;
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .project-page .ui-sidebar-collapsed .ui-sidebar-top { flex-direction: row; justify-content: space-between; }
+  .project-page .ui-sidebar-nav,
+  .project-sidebar-navigation .app-nav { flex-direction: row; flex-wrap: wrap; }
+  .project-sidebar-section-title { padding: 0.5rem 0 0; }
+  .project-page .ui-sidebar-footer { padding-top: 0.25rem; }
+  .project-sidebar-footer { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .project-sidebar-services,
+  .project-page .ui-sidebar-collapsed .project-sidebar-services { flex-direction: row; flex-wrap: wrap; width: auto; }
+  .project-sidebar-footer .ui-dropdown-links-panel { top: calc(100% + 4px); bottom: auto; left: 0; }
+  .project-page .project-body { padding: 0.75rem; }
+}

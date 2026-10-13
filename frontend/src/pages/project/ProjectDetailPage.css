@@ -15,11 +15,22 @@
 .project-content {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0;
   flex: 1;
   min-width: 0;
-  padding: 1.0rem;
+  padding: 0;
 }
+
+.project-body {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0.75rem;
+  padding: 1rem;
+  min-width: 0;
+}
+
+.project-content > p { margin: 0; padding: 1rem; }
 
 .project-content .ui-card {
   display: flex;
@@ -28,42 +39,38 @@
   align-items: flex-start;
 }
 
-.project-header {
+.project-overview {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.75rem;
   width: 100%;
 }
 
-.project-header-info {
+.project-overview-analysis {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   align-items: flex-start;
-  overflow: hidden;
+  min-width: 0;
+  width: 100%;
 }
+
+.project-overview h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.project-overview h3 { margin: 0.5rem 0 0.25rem; font-size: 13px; font-weight: 600; }
 
 .project-name-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
 .project-dates-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-}
-
-.project-header .ui-button {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-/* only the project title is oversized; shared components keep their own sizes */
-.project-header .mono {
-  font-size: 15px;
-  font-weight: 600;
 }
 
 .files-loading {
@@ -100,6 +107,8 @@
 }
 
 .project-summary {
+  margin: 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
   color: #334155;
 }
@@ -186,3 +195,7 @@
   width: 100%;
   margin-top: 0.25rem;
 }
+.audit-configuration h3 { font-size: 14px; margin: 1rem 0 0.75rem; }
+.audit-configuration dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1.25rem; font-size: 13px; }
+.audit-configuration dt { color: #64748b; }
+.audit-configuration dd { margin: 0; overflow-wrap: anywhere; }

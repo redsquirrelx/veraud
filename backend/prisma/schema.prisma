@@ -18,7 +18,9 @@ model Project {
   createdAt          DateTime       @default(now()) @map("created_at")
   lastSyncedAt       DateTime?      @map("last_synced_at")
   status             String
-  githubRepositoryId BigInt         @unique @map("github_repository_id")
+  githubRepositoryId BigInt?        @unique @map("github_repository_id")
+  cloneProtocol      String         @default("https") @map("clone_protocol")
+  shallowClone       Boolean        @default(false) @map("shallow_clone")
   repositoryOwner    String         @map("repository_owner")
   repositoryName     String         @map("repository_name")
   selectedVersionId  Int?           @unique @map("selected_version_id")
@@ -27,6 +29,7 @@ model Project {
   versions        ProjectVersion[] @relation("ProjectVersions")
   tasks           Task[]
 
+  @@unique([repositoryOwner, repositoryName])
   @@map("project")
 }
 
@@ -72,6 +75,7 @@ model AgentExecution {
   outputTokens Int?      @map("output_tokens")
   error        String?
   result       String?
+  configurationSnapshot String? @map("configuration_snapshot")
 
   evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
@@ -94,6 +98,7 @@ model AiCredential {
   aiProviderId Int    @map("ai_provider_id")
   name         String
   apiKey       String @map("api_key")
+  revision     Int    @default(1)
 
   aiProvider     AiProvider     @relation(fields: [aiProviderId], references: [id])
   agentSettings AgentSettings[]
@@ -105,6 +110,7 @@ model AiModel {
   id           Int    @id @default(autoincrement())
   aiProviderId Int    @map("ai_provider_id")
   name         String
+  revision     Int    @default(1)
 
   aiProvider    AiProvider     @relation(fields: [aiProviderId], references: [id])
   agentSettings AgentSettings[]
@@ -114,13 +120,16 @@ model AiModel {
 
 model AgentSettings {
   agentType      String @id @map("agent_type")
-  aiModelId      Int    @map("ai_model_id")
-  aiCredentialId Int    @map("ai_credential_id")
+  aiModelId      Int?   @map("ai_model_id")
+  aiCredentialId Int?   @map("ai_credential_id")
   temperature    Decimal?
   maxTokens      Int?    @map("max_tokens")
+  verificationFingerprint String? @map("verification_fingerprint")
+  verificationCheckedAt DateTime? @map("verification_checked_at")
+  verificationError String? @map("verification_error")
 
-  aiModel         AiModel          @relation(fields: [aiModelId], references: [id])
-  aiCredential    AiCredential     @relation(fields: [aiCredentialId], references: [id])
+  aiModel         AiModel?         @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
+  aiCredential    AiCredential?    @relation(fields: [aiCredentialId], references: [id], onDelete: Restrict)
   agentExecutions AgentExecution[]
 
   @@map("agent_settings")
@@ -130,6 +139,7 @@ model Task {
   id          Int    @id @default(autoincrement())
   projectId   Int    @map("project_id")
   description String?
+  command     String?
   status      String
   kind        String @default("unknown")
   exitCode    Int?   @map("exit_code")

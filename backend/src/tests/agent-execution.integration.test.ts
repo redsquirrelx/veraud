@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, AgentInvoker } from "../infrastructure/agent-server-client/agent-server.client.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
@@ -64,8 +65,10 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
       silent: true,
       makeRunner: () => noopRunner,
       makeAgentInvoker: () => options.invoker ?? stallingInvoker,
+      makeModelAccessVerifier: () => ({ verify: async () => {} }),
     })
 
+    auditResponseSerialization(app)
     closers.push(async () => {
       await app.close()
       await db.$disconnect()
@@ -126,8 +129,10 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
       data: { name: "test-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
 
-    await db.agentSettings.create({
-      data: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+    await db.agentSettings.upsert({
+      where: { agentType },
+      create: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+      update: { aiModelId: model.id, aiCredentialId: credential.id },
     })
   }
 

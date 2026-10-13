@@ -7,35 +7,41 @@ export interface RepoMetadata {
 
 export class RepoNotAccessibleError extends Error {}
 
-export function parseGithubUrl(url: string): { owner: string; repo: string } | null {
+export function parseGithubUrl(url: string): { owner: string; repo: string; protocol: "https" | "ssh" } | null {
   const cleaned = url.trim().replace(/\/+$/, "").replace(/\.git$/, "")
+  const scp = /^git@github\.com:([^/]+\/[^/]+)$/.exec(cleaned)
+  let path: string
+  let protocol: "https" | "ssh"
 
-  let parsed: URL
-  
-  try {
-    parsed = new URL(cleaned)
-  } catch {
-    return null
+  if (scp !== null) {
+    path = scp[1] ?? ""
+    protocol = "ssh"
+  } else {
+    let parsed: URL
+    try {
+      parsed = new URL(cleaned)
+    } catch {
+      return null
+    }
+    if ((parsed.protocol === "https:" && (parsed.hostname === "github.com" || parsed.hostname === "www.github.com") && parsed.username === "" && parsed.password === "" && parsed.port === "") ||
+        (parsed.protocol === "ssh:" && parsed.hostname === "github.com" && parsed.username === "git" && parsed.password === "" && parsed.port === "")) {
+      path = parsed.pathname.replace(/^\//, "")
+      protocol = parsed.protocol === "ssh:" ? "ssh" : "https"
+    } else {
+      return null
+    }
+    if (parsed.search !== "" || parsed.hash !== "") {
+      return null
+    }
   }
 
-  if (parsed.hostname !== "github.com" && parsed.hostname !== "www.github.com") {
-    return null
-  }
-
-  const parts = parsed.pathname.split("/").filter((part) => part.length > 0)
-
-  if (parts.length !== 2) {
-    return null
-  }
-
+  const parts = path.split("/")
   const owner = parts[0] ?? ""
   const repo = parts[1] ?? ""
-
-  if (owner === "" || repo === "") {
+  if (parts.length !== 2 || !/^[A-Za-z0-9-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) || repo === "." || repo === "..") {
     return null
   }
-
-  return { owner, repo }
+  return { owner, repo, protocol }
 }
 
 export class GithubClient {

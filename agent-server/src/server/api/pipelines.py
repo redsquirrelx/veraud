@@ -8,15 +8,16 @@ from ..app.pipeline_service import (
     ArchitectureAuditService,
     PipelineExecutionIds,
     PipelineInput,
+    PipelineStageConfigs,
     get_pipeline_service,
 )
 from ..config.logs import get_logger
-from .schemas import ExecutionConfig
+from .schemas import DomainError, ExecutionConfig, RequestValidationErrorResponse
 
 logger = get_logger("api.pipelines")
 
 
-router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
+router = APIRouter(prefix="/api/pipelines", tags=["Pipelines"])
 
 ServiceDep = Annotated[ArchitectureAuditService, Depends(get_pipeline_service)]
 
@@ -37,6 +38,10 @@ class PipelineRequest(BaseModel):
 
     input: PipelineInput
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    stage_configs: PipelineStageConfigs | None = Field(
+        default=None,
+        description="Per-stage model and credential overrides supplied by the backend. When present, these replace the shared config for each stage.",
+    )
     execution_ids: PipelineExecutionIds | None = Field(default=None)
     timeout_seconds: int = Field(
         default=600,
@@ -50,7 +55,25 @@ class PipelineResponse(BaseModel):
     description: dict[str, Any] = Field(description="Architect output")
 
 
-@router.post("/architecture-audit/run", response_model=PipelineResponse)
+@router.post(
+    "/architecture-audit/run",
+    response_model=PipelineResponse,
+    summary="Run an analyzer and architect audit",
+    description="Runs analyzer then architect over the repository root under a shared deadline. The architect input is derived from analysis. stage_configs supplies independent backend model, credential and generation parameters; config is the shared fallback for callers that omit stage_configs. Optional execution_ids receive per-stage lifecycle callbacks. Returns both opaque agent outputs.",
+    responses={
+        200: {
+            "description": "Analyzer and architect results, preserving each agent's output fields."
+        },
+        422: {
+            "model": DomainError | RequestValidationErrorResponse,
+            "description": "Invalid input/configuration or unreadable repository root.",
+        },
+        504: {
+            "model": DomainError,
+            "description": "The shared pipeline deadline expired.",
+        },
+    },
+)
 async def run_architecture_audit(
     body: PipelineRequest, service: ServiceDep
 ) -> PipelineResponse:
@@ -67,6 +90,7 @@ async def run_architecture_audit(
             body.config,
             body.execution_ids,
             timeout_seconds=body.timeout_seconds,
+            stage_configs=body.stage_configs,
         )
     except InvalidConfigError as error:
         raise _http_error(UNPROCESSABLE, str(error)) from None

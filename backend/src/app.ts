@@ -4,6 +4,9 @@ import cors from "@fastify/cors"
 import websocket from "@fastify/websocket"
 import pretty from "pino-pretty"
 import { logger } from "./config/logger.js"
+import { registerOpenApi } from "./infrastructure/openapi/registerOpenApi.js"
+import { registerApiSchemas } from "./infrastructure/openapi/registerApiSchemas.js"
+import { registerAsyncApi } from "./infrastructure/asyncapi/registerAsyncApi.js"
 
 import { PrismaClient } from "./generated/prisma/client.js"
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
@@ -25,6 +28,11 @@ import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-ex
 import { AiProviderRepository } from "./modules/ai-provider/ai-provider.repository.js"
 import { AiProviderService, SEEDED_AI_PROVIDERS } from "./modules/ai-provider/ai-provider.service.js"
 import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.controller.js"
+import { AgentSettingsRepository } from "./modules/agent-settings/agent-settings.repository.js"
+import { AgentSettingsService } from "./modules/agent-settings/agent-settings.service.js"
+import { registerAgentSettingsRoutes } from "./modules/agent-settings/agent-settings.controller.js"
+import { BACKEND_AGENT_TYPES } from "./modules/agent-settings/agent-types.js"
+import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configuration.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
@@ -39,6 +47,7 @@ export interface BuildAppOptions {
    *  to keep a run from leaving the machine; production leaves them unset. */
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
   makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
+  makeModelAccessVerifier?: () => ModelAccessVerifier
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -60,7 +69,13 @@ export async function buildApp(options: BuildAppOptions) {
     ? options.makeRunner(taskRepository, projectRepository, gateway)
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const taskService = new TaskService(taskRepository, runner)
-  const agentExecutionRepository = new AgentExecutionRepository(db)
+  const agentSettingsRepository = new AgentSettingsRepository(db)
+  await agentSettingsRepository.ensureSeeded(BACKEND_AGENT_TYPES)
+  const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
+    ? new AgentServerClient(options.agentServerUrl)
+    : { verify: async () => { throw new Error("No agent-server URL configured; model access cannot be verified") } })
+  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier)
+  const agentExecutionRepository = new AgentExecutionRepository(db, agentSettingsRepository)
   const agentInvoker = options.makeAgentInvoker
     ? options.makeAgentInvoker(options.agentServerUrl)
     : buildAgentInvoker(options.agentServerUrl)
@@ -73,12 +88,16 @@ export async function buildApp(options: BuildAppOptions) {
     agentTargets,
     gateway,
     options.workspaceDir,
+    agentSettingsService,
   )
   const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir, agentExecutionService)
   const aiProviderRepository = new AiProviderRepository(db)
   await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
   const aiProviderService = new AiProviderService(aiProviderRepository)
 
+  await registerOpenApi(app)
+  await registerAsyncApi(app)
+  registerApiSchemas(app)
   await app.register(websocket)
   await app.register(cors, {
     origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
@@ -88,11 +107,23 @@ export async function buildApp(options: BuildAppOptions) {
   gateway.register(app)
   registerProjectRoutes(app, projectService)
   registerAiProviderRoutes(app, aiProviderService)
+  registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
 
-  app.get("/status", { logLevel: "silent" }, async () => {
+  app.get("/status", { logLevel: "silent", schema: {
+    tags: ["Status"], summary: "Get backend and agent-server availability",
+    description: "Always returns 200 while the backend handles requests. agentServer is unknown without a configured URL, online on a successful probe, or offline on failure/timeout (2000 ms).",
+    response: { 200: {
+      type: "object", required: ["status", "service", "agentServer"],
+      properties: {
+        status: { type: "string", enum: ["ok"] },
+        service: { type: "string", enum: ["backend"] },
+        agentServer: { type: "string", enum: ["online", "offline", "unknown"] },
+      },
+    } },
+  } }, async () => {
     return { status: "ok", service: "backend", agentServer: await checkAgentServer(options.agentServerUrl) }
   })
 

@@ -1,7 +1,10 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
+import type { AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
 
 export interface NewProject {
-  githubRepositoryId: bigint
+  githubRepositoryId: bigint | null
+  cloneProtocol: string
+  shallowClone: boolean
   repositoryOwner: string
   repositoryName: string
   status: string
@@ -16,7 +19,9 @@ export interface StoredProject {
 
 export interface StoredProjectDetails {
   id: number
-  githubRepositoryId: bigint
+  githubRepositoryId: bigint | null
+  cloneProtocol: string
+  shallowClone: boolean
   repositoryOwner: string
   repositoryName: string
   status: string
@@ -57,6 +62,7 @@ export interface StoredAgentExecutionSummary {
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
+  configuration?: AgentConfiguration | null
 }
 
 export interface StoredVersionAnalysis {
@@ -73,6 +79,7 @@ export interface StoredVersionAnalysis {
 export interface ProjectStore {
   create(data: NewProject): Promise<StoredProject>
   findByGithubId(githubRepositoryId: bigint): Promise<StoredProject | null>
+  findByRepo(owner: string, name: string): Promise<StoredProject | null>
   findById(id: number): Promise<StoredProjectDetails | null>
   delete(id: number): Promise<void>
   setStatus(id: number, status: string): Promise<void>
@@ -112,6 +119,11 @@ export class ProjectRepository implements ProjectStore {
       repositoryName: project.repositoryName,
       status: project.status,
     }
+  }
+
+  async findByRepo(owner: string, name: string): Promise<StoredProject | null> {
+    const project = await this.db.project.findUnique({ where: { repositoryOwner_repositoryName: { repositoryOwner: owner, repositoryName: name } } })
+    return project === null ? null : { id: project.id, repositoryOwner: project.repositoryOwner, repositoryName: project.repositoryName, status: project.status }
   }
 
   async delete(id: number): Promise<void> {
@@ -190,7 +202,7 @@ export class ProjectRepository implements ProjectStore {
         evaluations: {
           orderBy: { id: "desc" },
           take: 1,
-          include: { agentExecutions: { orderBy: { id: "asc" }, take: 2 } },
+          include: { agentExecutions: { orderBy: { id: "asc" } } },
         },
       },
     })
@@ -220,6 +232,7 @@ export class ProjectRepository implements ProjectStore {
           createdAt: run.createdAt,
           startedAt: run.startedAt,
           finishedAt: run.finishedAt,
+          configuration: run.configurationSnapshot ? JSON.parse(run.configurationSnapshot) as AgentConfiguration : null,
         })),
       }
     })
@@ -250,7 +263,9 @@ export class ProjectRepository implements ProjectStore {
 
   private toDetails(project: {
     id: number
-    githubRepositoryId: bigint
+    githubRepositoryId: bigint | null
+    cloneProtocol: string
+    shallowClone: boolean
     repositoryOwner: string
     repositoryName: string
     status: string
@@ -261,6 +276,8 @@ export class ProjectRepository implements ProjectStore {
     return {
       id: project.id,
       githubRepositoryId: project.githubRepositoryId,
+      cloneProtocol: project.cloneProtocol,
+      shallowClone: project.shallowClone,
       repositoryOwner: project.repositoryOwner,
       repositoryName: project.repositoryName,
       status: project.status,

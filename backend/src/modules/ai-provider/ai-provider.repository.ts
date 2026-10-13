@@ -25,11 +25,13 @@ export interface AiProviderStore {
   findModelById(id: number): Promise<StoredAiModel | null>
   findModelByName(aiProviderId: number, name: string): Promise<StoredAiModel | null>
   createModel(aiProviderId: number, name: string): Promise<StoredAiModel>
+  updateModel(id: number, name: string): Promise<StoredAiModel>
   deleteModel(id: number): Promise<void>
   listCredentials(aiProviderId: number): Promise<StoredAiCredential[]>
   findCredentialById(id: number): Promise<StoredAiCredential | null>
   findCredentialByName(aiProviderId: number, name: string): Promise<StoredAiCredential | null>
   createCredential(aiProviderId: number, name: string, apiKey: string): Promise<StoredAiCredential>
+  updateCredential(id: number, name: string, apiKey?: string): Promise<StoredAiCredential>
   deleteCredential(id: number): Promise<void>
   countSettingsForModel(modelId: number): Promise<number>
   countSettingsForCredential(credentialId: number): Promise<number>
@@ -79,6 +81,11 @@ export class AiProviderRepository implements AiProviderStore {
     return { id: model.id, aiProviderId: model.aiProviderId, name: model.name }
   }
 
+  async updateModel(id: number, name: string): Promise<StoredAiModel> {
+    const model = await this.db.aiModel.update({ where: { id }, data: { name, revision: { increment: 1 } } })
+    return { id: model.id, aiProviderId: model.aiProviderId, name: model.name }
+  }
+
   async deleteModel(id: number): Promise<void> {
     await this.db.aiModel.delete({ where: { id } })
   }
@@ -105,6 +112,11 @@ export class AiProviderRepository implements AiProviderStore {
 
   async createCredential(aiProviderId: number, name: string, apiKey: string): Promise<StoredAiCredential> {
     const credential = await this.db.aiCredential.create({ data: { aiProviderId, name, apiKey } })
+    return { id: credential.id, aiProviderId: credential.aiProviderId, name: credential.name, apiKey: credential.apiKey }
+  }
+
+  async updateCredential(id: number, name: string, apiKey?: string): Promise<StoredAiCredential> {
+    const credential = await this.db.aiCredential.update({ where: { id }, data: { name, ...(apiKey === undefined ? {} : { apiKey, revision: { increment: 1 } }) } })
     return { id: credential.id, aiProviderId: credential.aiProviderId, name: credential.name, apiKey: credential.apiKey }
   }
 

@@ -1,8 +1,11 @@
 import { logger } from "../../config/logger.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
-import type { AgentInput, AgentInvoker, PipelineExecutionIds } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import type { AgentInput, AgentInvoker, PipelineExecutionIds, PipelineConfigs } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
+import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
+import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
+import { ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -19,8 +22,7 @@ export class AgentExecutionNotFoundError extends Error {
   }
 }
 
-export const ANALYZER_AGENT_TYPE = "analyzer"
-export const ARCHITECT_AGENT_TYPE = "architect"
+export { ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE } from "../agent-settings/agent-types.js"
 
 /** The two rows one architecture-audit pipeline drives, analyzer first. */
 export interface PipelineExecutions {
@@ -49,6 +51,7 @@ export class AgentExecutionService {
     private targets: AgentTargetResolver,
     private events: AgentExecutionEvents,
     private workspaceDir: string,
+    private settings: AgentSettingsService,
   ) {}
 
   /**
@@ -65,16 +68,18 @@ export class AgentExecutionService {
    * at all, since nothing else would ever report that.
    */
   async open(agentType: string, evaluationId: number): Promise<StoredAgentExecution> {
+    const [configuration] = await this.settings.prepareExecution([agentType])
     const execution = await this.executions.create({
       agentType,
       evaluationId,
+      configuration: configuration!,
     } satisfies NewAgentExecution)
 
     this.log.info(`Opened execution ${execution.id} agentType=${agentType}`)
 
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
 
-    void this.dispatch(execution)
+    void this.dispatch(execution, configuration!.transport)
 
     return execution
   }
@@ -90,15 +95,10 @@ export class AgentExecutionService {
    * written here, to both rows, since nothing else would ever report it.
    */
   async openPipeline(evaluationId: number): Promise<PipelineExecutions> {
-    const analyzer = await this.executions.create({
-      agentType: ANALYZER_AGENT_TYPE,
-      evaluationId,
-    } satisfies NewAgentExecution)
-
-    const architect = await this.executions.create({
-      agentType: ARCHITECT_AGENT_TYPE,
-      evaluationId,
-    } satisfies NewAgentExecution)
+    const configurations = await this.settings.prepareExecution([ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE])
+    const analyzerConfig = configurations.find((configuration) => configuration.agentType === ANALYZER_AGENT_TYPE)!
+    const architectConfig = configurations.find((configuration) => configuration.agentType === ARCHITECT_AGENT_TYPE)!
+    const { analyzer, architect } = await this.executions.createPipeline(evaluationId, configurations)
 
     this.log.info(
       `Opened pipeline executions ${analyzer.id} (analyzer) + ${architect.id} (architect)`,
@@ -107,7 +107,7 @@ export class AgentExecutionService {
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(analyzer) })
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(architect) })
 
-    void this.dispatchPipeline(analyzer, architect)
+    void this.dispatchPipeline(analyzer, architect, { analyzer: analyzerConfig.transport, architect: architectConfig.transport })
 
     return { analyzer, architect }
   }
@@ -122,25 +122,49 @@ export class AgentExecutionService {
    */
   async openDirect(agentType: string, input: AgentInput): Promise<StoredAgentExecution> {
     const sanitized = sanitizeDirectInput(input, this.workspaceDir)
+    const [configuration] = await this.settings.prepareExecution([agentType])
 
     const execution = await this.executions.create({
       agentType,
       evaluationId: null,
+      configuration: configuration!,
     } satisfies NewAgentExecution)
 
     this.log.info(`Opened direct execution ${execution.id} agentType=${agentType}`)
 
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
 
-    void this.dispatchDirect(execution, sanitized)
+    void this.dispatchDirect(execution, sanitized, configuration!.transport)
 
     return execution
+  }
+
+  async openForProject(projectId: number, branch: string, commitHash: string, agentType: string) {
+    const [configuration] = await this.settings.prepareExecution([agentType])
+    const result = await this.executions.createForProject(projectId, branch, commitHash, configuration!)
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(result.execution) })
+    void this.dispatch(result.execution, configuration!.transport)
+    return result
+  }
+
+  async openPipelineForProject(projectId: number, branch: string, commitHash: string) {
+    const configurations = await this.settings.prepareExecution([ANALYZER_AGENT_TYPE, ARCHITECT_AGENT_TYPE])
+    const result = await this.executions.createPipelineForProject(projectId, branch, commitHash, configurations)
+    for (const execution of Object.values(result.executions)) {
+      this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    }
+    const configs = {
+      analyzer: configurations.find((configuration) => configuration.agentType === ANALYZER_AGENT_TYPE)!.transport,
+      architect: configurations.find((configuration) => configuration.agentType === ARCHITECT_AGENT_TYPE)!.transport,
+    }
+    void this.dispatchPipeline(result.executions.analyzer, result.executions.architect, configs)
+    return result
   }
 
   /** Starts the agent and then gets out of the way. Never throws: a failure here
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
-  private async dispatch(execution: StoredAgentExecution): Promise<void> {
+  private async dispatch(execution: StoredAgentExecution, config: AgentRunConfig): Promise<void> {
     try {
       if (execution.evaluationId === null) {
         throw new Error(`Execution ${execution.id} has no evaluation to resolve`)
@@ -148,7 +172,7 @@ export class AgentExecutionService {
 
       const input = await this.targets.resolve(execution.evaluationId)
 
-      await this.agents.run(execution.agentType, input, execution.id)
+      await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       // The agent never got far enough to report for itself.
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
@@ -157,11 +181,11 @@ export class AgentExecutionService {
 
   /** Direct twin of dispatch: the input is already known, only the checkout is
    *  verified before handing it to the agent. Never throws. */
-  private async dispatchDirect(execution: StoredAgentExecution, input: AgentInput): Promise<void> {
+  private async dispatchDirect(execution: StoredAgentExecution, input: AgentInput, config: AgentRunConfig): Promise<void> {
     try {
       assertDirectCheckout(input)
 
-      await this.agents.run(execution.agentType, input, execution.id)
+      await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
     }
@@ -171,7 +195,7 @@ export class AgentExecutionService {
    *  here fails both rows, because neither stage got far enough to report for
    *  itself. Anything after the hand-off is reported stage by stage by the
    *  pipeline, including the architect-skipped case. */
-  private async dispatchPipeline(analyzer: StoredAgentExecution, architect: StoredAgentExecution): Promise<void> {
+  private async dispatchPipeline(analyzer: StoredAgentExecution, architect: StoredAgentExecution, configs: PipelineConfigs): Promise<void> {
     try {
       if (analyzer.evaluationId === null) {
         throw new Error(`Execution ${analyzer.id} has no evaluation to resolve`)
@@ -184,7 +208,7 @@ export class AgentExecutionService {
       const input = await this.targets.resolve(analyzer.evaluationId)
       const executionIds: PipelineExecutionIds = { analyzer: analyzer.id, architect: architect.id }
 
-      await this.agents.runPipeline({ root_path: String(input.root_path) }, executionIds)
+      await this.agents.runPipeline({ root_path: String(input.root_path) }, executionIds, configs)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       await this.fail(analyzer.id, message)
@@ -225,7 +249,7 @@ export class AgentExecutionService {
   }
 
   private async close(id: number, completion: AgentExecutionCompletion): Promise<void> {
-    const execution = await this.executions.complete(id, completion)
+    const execution = await this.complete(id, completion)
 
     this.log.info(`Execution ${id} closed as ${execution.status}`)
 

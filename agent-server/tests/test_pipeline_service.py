@@ -18,11 +18,16 @@ from server.app.pipeline_service import (
     ArchitectureAuditService,
     PipelineExecutionIds,
     PipelineInput,
+    PipelineStageConfigs,
 )
 
 
 def _analysis(**overrides):
-    values = {"kind": "library", "summary": "A widget library.", "primary_language": "python"}
+    values = {
+        "kind": "library",
+        "summary": "A widget library.",
+        "primary_language": "python",
+    }
     values.update(overrides)
     return ProjectDescription(**values)
 
@@ -53,7 +58,9 @@ class StubCallbacks:
         self.calls.append(("running", execution_id))
 
     async def complete(self, execution_id, outcome):
-        self.calls.append(("complete", execution_id, outcome.status, outcome.result, outcome.error))
+        self.calls.append(
+            ("complete", execution_id, outcome.status, outcome.result, outcome.error)
+        )
 
     async def aclose(self):
         self.calls.append(("close",))
@@ -80,6 +87,56 @@ def _input():
 
 
 class TestHappyPath:
+    def test_builds_each_stage_with_its_explicit_backend_configuration(self):
+        analyzer = StubAgent(result=_analysis())
+        architect = StubAgent(result=_description())
+        built = []
+
+        def build(agent_type, config):
+            built.append((agent_type, config))
+            return (analyzer if agent_type == "analyzer" else architect), 60
+
+        service = ArchitectureAuditService(
+            execution_service=SimpleNamespace(build_agent=build),
+            callbacks_factory=lambda: None,
+        )
+        configurations = PipelineStageConfigs(
+            analyzer=ExecutionConfig.model_validate(
+                {
+                    "model": {
+                        "provider": "google",
+                        "name": "analysis-model",
+                        "temperature": 0.2,
+                        "max_tokens": 2000,
+                    },
+                    "api_key": "analysis-key",
+                }
+            ),
+            architect=ExecutionConfig.model_validate(
+                {
+                    "model": {
+                        "provider": "anthropic",
+                        "name": "architecture-model",
+                        "temperature": 0.5,
+                        "max_tokens": 4000,
+                    },
+                    "api_key": "architecture-key",
+                }
+            ),
+        )
+        asyncio.run(
+            service.run(
+                _input(),
+                ExecutionConfig(api_key="unused-fallback"),
+                None,
+                stage_configs=configurations,
+            )
+        )
+        assert built == [
+            ("analyzer", configurations.analyzer),
+            ("architect", configurations.architect),
+        ]
+
     def test_reports_both_rows_in_order(self):
         analyzer = StubAgent(result=_analysis())
         architect = StubAgent(result=_description())
@@ -92,7 +149,10 @@ class TestHappyPath:
         assert result["description"]["style"] == "layered"
         kinds = [(call[0], call[1]) for call in callbacks.calls if call[0] != "close"]
         assert kinds == [
-            ("running", 11), ("complete", 11), ("running", 12), ("complete", 12),
+            ("running", 11),
+            ("complete", 11),
+            ("running", 12),
+            ("complete", 12),
         ]
         assert callbacks.calls[-1] == ("close",)
         statuses = [call[2] for call in callbacks.calls if call[0] == "complete"]
@@ -130,7 +190,11 @@ class TestAnalyzerFailure:
             asyncio.run(service.run(_input(), ExecutionConfig(), _ids()))
 
         assert architect.seen == []
-        completes = {call[1]: (call[2], call[4]) for call in callbacks.calls if call[0] == "complete"}
+        completes = {
+            call[1]: (call[2], call[4])
+            for call in callbacks.calls
+            if call[0] == "complete"
+        }
         assert completes[11][0] == "Failed"
         assert "boom" in (completes[11][1] or "")
         assert completes[12][0] == "Failed"
@@ -145,7 +209,9 @@ class TestAnalyzerFailure:
         with pytest.raises(FileNotFoundError):
             asyncio.run(service.run(_input(), ExecutionConfig(), _ids()))
 
-        statuses = {call[1]: call[2] for call in callbacks.calls if call[0] == "complete"}
+        statuses = {
+            call[1]: call[2] for call in callbacks.calls if call[0] == "complete"
+        }
         assert statuses == {11: "Failed", 12: "Failed"}
 
 
@@ -159,7 +225,9 @@ class TestArchitectFailure:
         with pytest.raises(RuntimeError):
             asyncio.run(service.run(_input(), ExecutionConfig(), _ids()))
 
-        completes = {call[1]: call[2] for call in callbacks.calls if call[0] == "complete"}
+        completes = {
+            call[1]: call[2] for call in callbacks.calls if call[0] == "complete"
+        }
         assert completes == {11: "Completed", 12: "Failed"}
 
 
@@ -176,9 +244,15 @@ class TestTimeout:
         service = _service(analyzer, architect, callbacks)
 
         with pytest.raises(TimeoutError):
-            asyncio.run(service.run(_input(), ExecutionConfig(), _ids(), timeout_seconds=1))
+            asyncio.run(
+                service.run(_input(), ExecutionConfig(), _ids(), timeout_seconds=1)
+            )
 
-        completes = {call[1]: (call[2], call[4]) for call in callbacks.calls if call[0] == "complete"}
+        completes = {
+            call[1]: (call[2], call[4])
+            for call in callbacks.calls
+            if call[0] == "complete"
+        }
         assert completes[11][0] == "Failed"
         assert "timed out" in (completes[11][1] or "")
         # The architect never started: nothing was marked, nothing to close.
@@ -187,11 +261,16 @@ class TestTimeout:
 
 class StubPipelineService:
     def __init__(self, result=None, error=None):
-        self._result = result or {"analysis": {"kind": "library"}, "description": {"style": "layered"}}
+        self._result = result or {
+            "analysis": {"kind": "library"},
+            "description": {"style": "layered"},
+        }
         self._error = error
         self.seen = []
 
-    async def run(self, input_data, config, execution_ids, timeout_seconds=600):
+    async def run(
+        self, input_data, config, execution_ids, timeout_seconds=600, stage_configs=None
+    ):
         self.seen.append((input_data, execution_ids, timeout_seconds))
         if self._error is not None:
             raise self._error
@@ -221,7 +300,10 @@ class TestPipelineRoute:
         with _client(service) as client:
             response = client.post(
                 "/api/pipelines/architecture-audit/run",
-                json={"input": {"root_path": "/repo"}, "execution_ids": {"analyzer": 1, "architect": 2}},
+                json={
+                    "input": {"root_path": "/repo"},
+                    "execution_ids": {"analyzer": 1, "architect": 2},
+                },
             )
 
         assert response.status_code == 200

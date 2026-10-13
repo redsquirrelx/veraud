@@ -10,6 +10,8 @@ Source of truth: `backend/src/modules/project/project.service.ts`
 
 ## `POST /api/projects/:id/file`
 
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
 Request: `path` (string, required) ΓÇö workspace-relative file path with
 forward slashes, resolved against the checked-out folder, so it always
 follows the selected version.
@@ -18,8 +20,8 @@ follows the selected version.
 { "path": "src/modules/engine.ts" }
 ```
 
-Response `200`: `path` (normalized with duplicate separators and
-backslashes collapsed), `content` (UTF-8 text) and `size` (bytes).
+Response `200`: `path` (trimmed, backslashes normalized to forward slashes;
+duplicate separators are rejected), `content` (UTF-8 text) and `size` (bytes).
 
 Validation: empty, absolute, `.`/`..`/empty segments, null bytes and
 anything under `.git/` return `400` without touching the disk beyond

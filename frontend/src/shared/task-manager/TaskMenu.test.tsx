@@ -10,6 +10,7 @@ const running: ActiveTask = {
   repositoryOwner: "acme",
   repositoryName: "Demo",
   description: "cloning acme/Demo",
+  command: "git clone --depth 1 https://github.com/acme/Demo.git /workspace/Demo",
   status: "Running",
   kind: "clone",
   exitCode: null,
@@ -27,6 +28,36 @@ const queued: ActiveTask = {
 }
 
 describe("TaskMenu", () => {
+  it("opens a task with the keyboard and keeps it open after status updates", async () => {
+    const { rerender } = render(<TaskMenu tasks={[running]} />)
+    const toggle = screen.getByRole("button", { name: "Show command for cloning acme/Demo" })
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    toggle.focus()
+    await userEvent.keyboard("{Enter}")
+    expect(toggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText(running.command!)).toBeVisible()
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toHaveAttribute("aria-hidden", "false")
+    rerender(<TaskMenu tasks={[{ ...running, status: "Succeded" }]} />)
+    expect(screen.getByRole("button", { name: "Hide command for cloning acme/Demo" })).toHaveAttribute("aria-expanded", "true")
+    await userEvent.click(screen.getByText(running.command!))
+    expect(screen.getByRole("button", { name: "Hide command for cloning acme/Demo" })).toHaveAttribute("aria-expanded", "true")
+    await userEvent.click(screen.getByRole("button", { name: "Hide command for cloning acme/Demo" }))
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toHaveAttribute("aria-hidden", "true")
+  })
+
+  it("expands tasks independently and preserves them when toggling the whole menu", async () => {
+    render(<TaskMenu tasks={[queued, running]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Expand tasks" }))
+    await userEvent.click(screen.getByRole("button", { name: "Show command for cloning acme/Demo" }))
+    await userEvent.click(screen.getByRole("button", { name: "Show command for cloning acme/Other" }))
+    expect(screen.getByText("Command unavailable")).toBeVisible()
+    await userEvent.click(screen.getByRole("button", { name: "Hide command for cloning acme/Other" }))
+    expect(screen.getByRole("button", { name: "Hide command for cloning acme/Demo" })).toHaveAttribute("aria-expanded", "true")
+    await userEvent.click(screen.getByRole("button", { name: "Collapse tasks" }))
+    await userEvent.click(screen.getByRole("button", { name: "Expand tasks" }))
+    expect(screen.getByRole("button", { name: "Hide command for cloning acme/Demo" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Show command for cloning acme/Other" })).toHaveAttribute("aria-expanded", "false")
+  })
   it("renders nothing before any task", () => {
     const { container } = render(<TaskMenu tasks={[]} />)
 

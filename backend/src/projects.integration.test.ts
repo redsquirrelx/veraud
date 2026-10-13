@@ -7,6 +7,8 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "./app.js"
+import { auditResponseSerialization } from "./tests/helpers/responseSerializationAudit.js"
+import type { GitCommand } from "./infrastructure/task-runner/git.executor.js"
 
 const realFetch = globalThis.fetch
 const backendRoot = fileURLToPath(new URL("../", import.meta.url))
@@ -42,15 +44,20 @@ const noopRunner = {
 describe("projects API with mocked github", () => {
   let baseUrl = ""
   let close = async () => {}
+  const commands: GitCommand[] = []
 
   before(async () => {
     const { app, db } = await buildApp({
       databaseUrl: freshDatabase(),
       workspaceDir: mkdtempSync(join(tmpdir(), "veraud-ws-")),
       silent: true,
-      makeRunner: () => noopRunner,
+      makeRunner: () => ({ enqueue: async (task) => {
+        commands.push(task.command)
+        return noopRunner.enqueue()
+      } }),
     })
 
+    auditResponseSerialization(app)
     await app.listen({ port: 0, host: "127.0.0.1" })
 
     const address = app.server.address() as AddressInfo
@@ -129,6 +136,32 @@ describe("projects API with mocked github", () => {
 
     assert.equal(response.status, 422)
   })
+
+  it("registers a private SSH URL without GitHub API metadata and reclones with SSH", async () => {
+    mockGithubApi(404, { message: "Not Found" })
+    const response = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "ssh://git@github.com/private-org/Secret.git", shallowClone: true }),
+    })
+    assert.equal(response.status, 201)
+    const project = await response.json() as { id: number }
+    assert.deepEqual(commands.at(-1), { kind: "clone", cloneUrl: "git@github.com:private-org/Secret.git", folder: `project-${project.id}-private-org-Secret`, shallowClone: true })
+
+    const listed = await (await fetch(`${baseUrl}/api/projects`)).json() as Array<{ id: number, cloneProtocol: string }>
+    assert.equal(listed.find((row) => row.id === project.id)?.cloneProtocol, "ssh")
+
+    const retry = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "git@github.com:private-org/Secret.git" }),
+    })
+    assert.equal(retry.status, 409)
+
+    const sync = await fetch(`${baseUrl}/api/projects/${project.id}/sync`, { method: "POST" })
+    assert.equal(sync.status, 200)
+    assert.equal(((await sync.json()) as { cloneProtocol: string }).cloneProtocol, "ssh")
+    assert.deepEqual(commands.at(-1), { kind: "clone", cloneUrl: "git@github.com:private-org/Secret.git", folder: `project-${project.id}-private-org-Secret`, shallowClone: true })
+  })
 })
 
 describe("projects API with the real github api", () => {
@@ -138,18 +171,19 @@ describe("projects API with the real github api", () => {
     const workspaceDir = mkdtempSync(join(tmpdir(), "veraud-ws-"))
     const { app, db } = await buildApp({ databaseUrl: freshDatabase(), workspaceDir, silent: true })
 
+    auditResponseSerialization(app)
     await app.listen({ port: 0, host: "127.0.0.1" })
 
     const address = app.server.address() as AddressInfo
     const baseUrl = `http://127.0.0.1:${address.port}`
 
-    const events: Array<{ task: { status: string } }> = []
+    const events: Array<{ task: { status: string; command: string | null } }> = []
     const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`)
 
     await new Promise<void>((resolve) => socket.addEventListener("open", () => resolve(), { once: true }))
     
     socket.addEventListener("message", (event) => {
-      events.push(JSON.parse(String(event.data)) as { task: { status: string } })
+      events.push(JSON.parse(String(event.data)) as { task: { status: string; command: string | null } })
     })
 
     try {
@@ -182,6 +216,8 @@ describe("projects API with the real github api", () => {
       assert.ok(finished, "expected a finished task row")
       assert.equal(finished?.description, "cloning octocat/Hello-World")
       assert.ok((finished?.logTrail ?? "").length > 0, "expected the clone log to be saved")
+      assert.ok(finished.command?.startsWith("git clone https://github.com/octocat/Hello-World.git "))
+      assert.ok(events.every((event) => event.task.command === finished.command))
 
       const synced = await db.project.findFirst({ where: { repositoryName: "Hello-World" } })
       assert.ok(synced?.lastSyncedAt instanceof Date, "expected lastSyncedAt to be saved")

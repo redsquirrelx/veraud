@@ -38,6 +38,13 @@ class PipelineExecutionIds(BaseModel):
     architect: int = Field(ge=1)
 
 
+class PipelineStageConfigs(BaseModel):
+    """Explicit backend configuration for each independently configured stage."""
+
+    analyzer: ExecutionConfig
+    architect: ExecutionConfig
+
+
 class PipelineInput(BaseModel):
     """Where to look. The architect's input is derived from the analyzer's
     output mid-run, so the caller only ever sends the repository root."""
@@ -142,10 +149,15 @@ class ArchitectureAuditService:
         config: ExecutionConfig,
         execution_ids: PipelineExecutionIds | None,
         timeout_seconds: int = DEFAULT_PIPELINE_TIMEOUT_SECONDS,
+        stage_configs: PipelineStageConfigs | None = None,
     ) -> dict:
         """Run the graph and return both agents' outputs as plain dicts."""
-        analyzer, _ = self._exec.build_agent("analyzer", config)
-        architect, _ = self._exec.build_agent("architect", config)
+        analyzer, _ = self._exec.build_agent(
+            "analyzer", stage_configs.analyzer if stage_configs else config
+        )
+        architect, _ = self._exec.build_agent(
+            "architect", stage_configs.architect if stage_configs else config
+        )
         callbacks = self._callbacks_factory() if execution_ids is not None else None
 
         if execution_ids is not None and callbacks is None:

@@ -6,7 +6,7 @@
 
 Source of truth: `backend/src/modules/project/` (service, repository,
 controller), `backend/src/modules/agent-execution/agent-execution.service.ts`
-(`openPipeline`). Pipeline lifecycle: `agent-execution.md`.
+(`openPipelineForProject`). Pipeline lifecycle: `agent-execution.md`.
 
 ## `POST /api/projects/:id/analyze`
 
@@ -23,6 +23,7 @@ Response `201`:
 {
   "versionId": 9,
   "evaluationId": 7,
+  "execution": { "id": 11, "agentType": "analyzer", "status": "Waiting", "...": "..." },
   "executions": {
     "analyzer": { "id": 11, "agentType": "analyzer", "status": "Waiting", "...": "..." },
     "architect": { "id": 12, "agentType": "architect", "status": "Waiting", "...": "..." }
@@ -33,13 +34,19 @@ Response `201`:
 Flow: validate branch/hash (`400` if malformed) → find project (`404` if
 missing) → require a workspace checkout (`422` if none) → reject when the
 same version already has an open run (`422`, names the blocking execution) →
-upsert the version row (reused when the commit was analyzed before) → mark it
-the selected version → create a fresh `Analysis` evaluation → `openPipeline`:
+verify both saved agent configurations → transactionally upsert the version row
+(reused when the commit was analyzed before), mark it selected, create a fresh
+`Analysis` evaluation and both executions through `openPipelineForProject`:
 one `analyzer` row plus one `architect` row, both `Waiting`, each broadcasting
 `agent-execution.opened` → dispatch the pipeline in the background (the `201`
 returns while both agents are still working).
 
 Each execution has the same shape as `GET /api/agent-executions/:id`.
+Each carries its own immutable public `configuration`, without API keys. The
+`execution` field remains the analyzer compatibility field from the single-agent
+contract; `executions` contains both stages. Invalid configuration or access creates
+no partial version/evaluation/execution records. Each stage receives its captured
+transport configuration explicitly, including its credential, on the agent-server.
 The UI tracks the **architect** row: it finishes last, so its completion is
 the pipeline's completion. The analyzer row is visible in the Dock alongside.
 
@@ -67,6 +74,8 @@ newest first:
 ```
 
 `executions` holds the latest evaluation's runs, analyzer first (id order).
+`execution` is also returned for single-agent contract compatibility: the analyzer
+when present, otherwise the first run, or null for an evaluation without runs.
 Versions analyzed before the pipeline change may carry a single row; showing a
 stored run prefers the architect row and falls back to the analyzer.
 

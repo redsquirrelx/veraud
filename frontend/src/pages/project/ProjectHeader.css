@@ -1,0 +1,70 @@
+.project-context-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04);
+}
+
+.project-context-top-row { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+
+.project-context-identity {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.project-context-identity h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.project-context-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.project-context-controls .version-selector { flex: 1 1 420px; min-width: 0; }
+.project-context-actions { display: flex; flex-shrink: 0; gap: 0.5rem; margin-left: auto; }
+.project-context-identity .version-state { font-size: 11px; color: #64748b; }
+.project-context-controls .version-selector { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.5rem; }
+.project-context-controls .version-row:not(.version-state-row) { grid-column: 2; grid-row: 1; }
+.project-context-controls .version-state-row,
+.project-context-controls .version-error { grid-column: 1 / -1; }
+.project-context-header .ui-item-selector,
+.project-context-header .ui-item-searcher { margin-top: 6px; }
+.project-context-header .ui-item-button,
+.project-context-header .ui-item-search-input,
+.project-context-header .ui-item-search-toggle { height: 32px; }
+
+.project-context-header .version-state,
+.project-context-header .version-error,
+.project-context-header .ui-item { overflow-wrap: anywhere; min-width: 0; }
+.project-context-header .ui-item-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-context-header .ui-item-button > svg { flex-shrink: 0; }
+.project-context-header .ui-item:focus-visible,
+.project-context-header .ui-item-search-toggle:focus-visible,
+.project-context-header .ui-item-clear:focus-visible { outline: 2px solid #006194; outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .project-context-header { padding: 0.5rem 0.75rem; }
+  .project-context-controls .version-selector { flex-basis: 100%; }
+  .project-context-controls .version-selector { grid-template-columns: minmax(0, 1fr); }
+  .project-context-controls .version-row:not(.version-state-row) { grid-column: 1; grid-row: auto; }
+  .project-context-header .version-row .ui-item-selector,
+  .project-context-header .version-row .ui-item-searcher { flex-basis: 100%; }
+}

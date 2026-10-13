@@ -39,6 +39,11 @@ function makeStore(options: {
       state.models.push(created)
       return created
     },
+    async updateModel(id: number, name: string): Promise<StoredAiModel> {
+      const model = state.models.find((entry) => entry.id === id)!
+      model.name = name
+      return model
+    },
     async deleteModel(id: number): Promise<void> {
       state.deletedModels.push(id)
     },
@@ -55,6 +60,12 @@ function makeStore(options: {
       const created = { id: state.credentials.length + 20, aiProviderId, name, apiKey }
       state.credentials.push(created)
       return created
+    },
+    async updateCredential(id: number, name: string, apiKey?: string): Promise<StoredAiCredential> {
+      const credential = state.credentials.find((entry) => entry.id === id)!
+      credential.name = name
+      if (apiKey !== undefined) credential.apiKey = apiKey
+      return credential
     },
     async deleteCredential(id: number): Promise<void> {
       state.deletedCredentials.push(id)
@@ -125,6 +136,22 @@ describe("AiProviderService providers", () => {
 })
 
 describe("AiProviderService models", () => {
+  it("renames in-use models but rejects duplicates and foreign ids", async () => {
+    const { service, state } = makeStore({
+      providers: [{ id: 1, name: "OpenAI" }, { id: 2, name: "Google" }],
+      models: [{ id: 10, aiProviderId: 1, name: "gpt-4o" }, { id: 11, aiProviderId: 1, name: "o1" }, { id: 12, aiProviderId: 2, name: "gemini" }],
+      settingsForModel: 1,
+    })
+
+    assert.deepEqual(await service.updateModel(1, 10, " gpt-4.1 "), { id: 10, name: "gpt-4.1", inUse: true })
+    assert.deepEqual(await service.updateModel(1, 10, "gpt-4.1"), { id: 10, name: "gpt-4.1", inUse: true })
+    await assert.rejects(service.updateModel(1, 10, "o1"), DuplicateAiError)
+    await assert.rejects(service.updateModel(1, 10, "bad name"), InvalidAiRequestError)
+    await assert.rejects(service.updateModel(1, 12, "other"), AiModelNotFoundError)
+    await assert.rejects(service.updateModel(1, 99, "other"), AiModelNotFoundError)
+    assert.equal(state.models[0]?.name, "gpt-4.1")
+  })
+
   it("creates a model trimming its name", async () => {
     const { service } = makeStore()
 
@@ -169,6 +196,23 @@ describe("AiProviderService models", () => {
 })
 
 describe("AiProviderService credentials", () => {
+  it("renames credentials without changing the key unless a replacement is supplied", async () => {
+    const { service, state } = makeStore({
+      providers: [{ id: 1, name: "OpenAI" }, { id: 2, name: "Google" }],
+      credentials: [{ id: 20, aiProviderId: 1, name: "prod", apiKey: "secret-1234" }, { id: 21, aiProviderId: 1, name: "dev", apiKey: "secret-9999" }, { id: 22, aiProviderId: 2, name: "other", apiKey: "secret-1111" }],
+      settingsForCredential: 1,
+    })
+
+    assert.deepEqual(await service.updateCredential(1, 20, "production"), { id: 20, name: "production", apiKeyPreview: "****1234", inUse: true })
+    assert.equal(state.credentials[0]?.apiKey, "secret-1234")
+    assert.deepEqual(await service.updateCredential(1, 20, "production", "new-5678"), { id: 20, name: "production", apiKeyPreview: "****5678", inUse: true })
+    await assert.rejects(service.updateCredential(1, 20, "dev"), DuplicateAiError)
+    await assert.rejects(service.updateCredential(1, 20, "production", ""), InvalidAiRequestError)
+    await assert.rejects(service.updateCredential(1, 22, "wrong"), AiCredentialNotFoundError)
+    await assert.rejects(service.updateCredential(1, 99, "missing"), AiCredentialNotFoundError)
+    assert.equal(state.credentials[0]?.apiKey, "new-5678")
+  })
+
   it("creates a credential returning only its preview", async () => {
     const { service } = makeStore()
 

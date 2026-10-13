@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ApiError, getAgentExecution, requestAnalysis, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
@@ -28,6 +28,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   const [trackedProject, setTrackedProject] = useState<number | null>(projectId)
   const [seed, setSeed] = useState<AgentExecution | null>(null)
   const [polled, setPolled] = useState<AgentExecution | null>(null)
+  const [initialExecutions, setInitialExecutions] = useState<AgentExecution[]>([])
   const [starting, setStarting] = useState(false)
   const [failure, setFailure] = useState("")
   const [tracked, setTracked] = useState(false)
@@ -37,6 +38,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setTrackedProject(projectId)
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setStarting(false)
     setFailure("")
     setTracked(false)
@@ -44,7 +46,11 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
 
   const wantedId = seed?.id ?? polled?.id ?? null
   // Live events win; otherwise the poll beats the stale start snapshot.
-  const execution = wantedId === null ? null : (live.find((item) => item.id === wantedId) ?? polled ?? seed)
+  const latest = wantedId === null ? null : (live.find((item) => item.id === wantedId) ?? polled ?? seed)
+  // Lifecycle events intentionally contain no configuration; retain the HTTP snapshot.
+  const execution = useMemo(() => latest === null ? null : {
+    ...latest, configuration: latest.configuration ?? polled?.configuration ?? seed?.configuration ?? null,
+  }, [latest, polled, seed])
 
   let phase: AnalysisPhase = "idle"
   if (failure !== "") {
@@ -108,9 +114,11 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setTracked(true)
     try {
       const response = await requestAnalysis(projectId, branch, commitHash)
+      setInitialExecutions(Object.values(response.executions))
       // The architect finishes last, so its row is the one to track: while the
       // analyzer works the architect row waits, then it runs to completion.
       localStorage.set(lastExecutionKey(projectId), response.executions.architect.id)
@@ -128,6 +136,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     }
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setStarting(false)
     setFailure("")
     setTracked(false)
@@ -139,6 +148,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(execution)
+    setInitialExecutions([])
     setTracked(false)
     if (projectId !== null && execution !== null) {
       localStorage.set(lastExecutionKey(projectId), execution.id)
@@ -148,6 +158,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   return {
     phase,
     execution,
+    initialExecutions,
     message: failure,
     analyzing: phase === "starting" || phase === "tracking",
     tracked,

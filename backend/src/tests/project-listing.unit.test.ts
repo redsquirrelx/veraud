@@ -7,6 +7,8 @@ import { ProjectService } from "../modules/project/project.service.js"
 const withVersion: StoredProjectDetails = {
   id: 1,
   githubRepositoryId: BigInt(111),
+  cloneProtocol: "https",
+  shallowClone: false,
   repositoryOwner: "acme",
   repositoryName: "Demo",
   status: "QUEUED",
@@ -19,6 +21,8 @@ const withVersion: StoredProjectDetails = {
 const withoutVersion: StoredProjectDetails = {
   id: 2,
   githubRepositoryId: BigInt(222),
+  cloneProtocol: "https",
+  shallowClone: false,
   repositoryOwner: "acme",
   repositoryName: "Other",
   status: "QUEUED",
@@ -32,6 +36,7 @@ function serviceWith(rows: StoredProjectDetails[]) {
   const projects: ProjectStore = {
     create: async () => { throw new Error("not used here") },
     findByGithubId: async () => null,
+    findByRepo: async () => null,
     findById: async () => null,
     delete: async () => {},
     setStatus: async () => {},
@@ -45,7 +50,7 @@ function serviceWith(rows: StoredProjectDetails[]) {
     findAnyOpenExecution: async () => { throw new Error("not used here") },
   }
   return new ProjectService(projects, null as never, new GithubClient(), "", {
-    openPipeline: async () => { throw new Error("not used here") },
+    openPipelineForProject: async () => { throw new Error("not used here") },
   })
 }
 

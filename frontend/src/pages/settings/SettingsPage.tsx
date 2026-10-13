@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useId, useState, type FormEvent, type KeyboardEvent } from "react"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { Button, Card, ItemList, ItemSelector, Modal, PlusIcon, TextInput, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
 import { useToasts } from "../../app/use-toasts.ts"
@@ -6,15 +6,36 @@ import { useAiProviders } from "../../features/llm-management/useAiProviders.ts"
 import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../shared/task-manager/index.ts"
 import { ModelListItem } from "./ModelListItem.tsx"
 import { CredentialListItem } from "./CredentialListItem.tsx"
+import { AgentsSettings } from "./AgentsSettings.tsx"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./SettingsPage.css"
 
+const settingsTabs = [
+  { id: "agents", label: "Agents" },
+  { id: "models", label: "Models & credentials" },
+  { id: "preferences", label: "Preferences" },
+] as const
+type SettingsTab = typeof settingsTabs[number]["id"]
+const settingsTabStorageKey = "settings.activeTab"
+
 export function SettingsPage() {
+  const tabsId = useId()
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    const saved = localStorage.get<unknown>(settingsTabStorageKey, "models")
+    return settingsTabs.find((tab) => tab.id === saved)?.id ?? "models"
+  })
+  function selectTab(tab: SettingsTab) {
+    setActiveTab(tab)
+    localStorage.set(settingsTabStorageKey, tab)
+  }
   const [visibility, update] = useTaskVisibility()
-  const { providers, loading, loadError, addModel, removeModel, addCredential, removeCredential } = useAiProviders()
+  const { providers, loading, loadError, refresh, addModel, editModel, removeModel, addCredential, editCredential, removeCredential } = useAiProviders()
   const { pushToast } = useToasts()
   const [modelId, setModelId] = useState<string[]>([])
   const [credentialId, setCredentialId] = useState<string[]>([])
   const [modal, setModal] = useState<"model" | "credential" | null>(null)
+  const [editingModelId, setEditingModelId] = useState<number | null>(null)
+  const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null)
   const [modelProvider, setModelProvider] = useState<string | null>(null)
   const [modelName, setModelName] = useState("")
   const [modelError, setModelError] = useState("")
@@ -28,14 +49,38 @@ export function SettingsPage() {
   const providerOptions: ItemSelectorItem[] = providers.map((provider) => ({ id: String(provider.id), label: provider.name }))
 
   const canSubmitModel = modelProvider !== null && modelName.trim() !== ""
-  const canSubmitCredential = credentialProvider !== null && credentialName.trim() !== "" && credentialKey.trim() !== ""
+  const canSubmitCredential = credentialProvider !== null && credentialName.trim() !== "" && (editingCredentialId !== null || credentialKey.trim() !== "")
 
   function openModelModal() {
+    setEditingModelId(null)
+    setModelProvider(null)
+    setModelName("")
     setModelError("")
     setModal("model")
   }
 
   function openCredentialModal() {
+    setEditingCredentialId(null)
+    setCredentialProvider(null)
+    setCredentialName("")
+    setCredentialKey("")
+    setCredentialError("")
+    setModal("credential")
+  }
+
+  function openEditModel(providerId: number, id: number, name: string) {
+    setEditingModelId(id)
+    setModelProvider(String(providerId))
+    setModelName(name)
+    setModelError("")
+    setModal("model")
+  }
+
+  function openEditCredential(providerId: number, id: number, name: string) {
+    setEditingCredentialId(id)
+    setCredentialProvider(String(providerId))
+    setCredentialName(name)
+    setCredentialKey("")
     setCredentialError("")
     setModal("credential")
   }
@@ -46,13 +91,18 @@ export function SettingsPage() {
       return
     }
     try {
-      await addModel(Number(modelProvider), modelName.trim())
-      pushToast("success", `Model ${modelName.trim()} registered`)
+      if (editingModelId === null) {
+        await addModel(Number(modelProvider), modelName.trim())
+        pushToast("success", `Model ${modelName.trim()} registered`)
+      } else {
+        await editModel(Number(modelProvider), editingModelId, modelName.trim())
+        pushToast("success", `Model ${modelName.trim()} updated`)
+      }
       setModelName("")
       setModelError("")
       setModal(null)
     } catch (failure) {
-      const message = failure instanceof ApiError ? failure.message : "Could not register the model"
+      const message = failure instanceof ApiError ? failure.message : editingModelId === null ? "Could not register the model" : "Could not update the model"
       setModelError(message)
       pushToast("error", message)
     }
@@ -64,14 +114,19 @@ export function SettingsPage() {
       return
     }
     try {
-      await addCredential(Number(credentialProvider), credentialName.trim(), credentialKey.trim())
-      pushToast("success", `Credential ${credentialName.trim()} registered`)
+      if (editingCredentialId === null) {
+        await addCredential(Number(credentialProvider), credentialName.trim(), credentialKey.trim())
+        pushToast("success", `Credential ${credentialName.trim()} registered`)
+      } else {
+        await editCredential(Number(credentialProvider), editingCredentialId, credentialName.trim(), credentialKey.trim() || undefined)
+        pushToast("success", `Credential ${credentialName.trim()} updated`)
+      }
       setCredentialName("")
       setCredentialKey("")
       setCredentialError("")
       setModal(null)
     } catch (failure) {
-      const message = failure instanceof ApiError ? failure.message : "Could not register the credential"
+      const message = failure instanceof ApiError ? failure.message : editingCredentialId === null ? "Could not register the credential" : "Could not update the credential"
       setCredentialError(message)
       pushToast("error", message)
     }
@@ -97,15 +152,51 @@ export function SettingsPage() {
     }
   }
 
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+    event.preventDefault()
+    const nextIndex = event.key === "Home" ? 0
+      : event.key === "End" ? settingsTabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + settingsTabs.length) % settingsTabs.length
+    const nextTab = settingsTabs[nextIndex]!
+    selectTab(nextTab.id)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+  }
+
   return (
     <section className="settings-page">
       <div className="home-heading">
         <div>
-          <h1>General settings</h1>
+          <h1>Settings</h1>
         </div>
       </div>
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {settingsTabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            id={`${tabsId}-tab-${tab.id}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`${tabsId}-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-agents`} aria-labelledby={`${tabsId}-tab-agents`} hidden={activeTab !== "agents"} tabIndex={0}>
+        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError} onAssignmentsSaved={(agent) => {
+          pushToast("success", `Configuration for ${agent.agentType} saved successfully`)
+          void refresh()
+        }} />}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
       <Card>
         <span className="label">Models & credentials</span>
+        <p className="settings-hint">When editing a credential, leave the API key blank to keep the current key.</p>
         {loadError !== "" ? (
           <p className="settings-error">{loadError}</p>
         ) : (
@@ -135,6 +226,7 @@ export function SettingsPage() {
                         name={model.name}
                         provider={model.provider}
                         inUse={model.inUse}
+                        onEdit={() => openEditModel(model.providerId, model.id, model.name)}
                         onRemove={() => void deleteModel(model.providerId, model.id, model.name)}
                       />
                     )
@@ -166,6 +258,7 @@ export function SettingsPage() {
                         provider={credential.provider}
                         apiKeyPreview={credential.apiKeyPreview}
                         inUse={credential.inUse}
+                        onEdit={() => openEditCredential(credential.providerId, credential.id, credential.name)}
                         onRemove={() => void deleteCredential(credential.providerId, credential.id, credential.name)}
                       />
                     )
@@ -176,7 +269,8 @@ export function SettingsPage() {
           </>
         )}
       </Card>
-
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={activeTab !== "preferences"} tabIndex={0}>
       <Card>
         <span className="label">Task notifications</span>
         <p className="settings-hint">Read-only tasks stay silent unless they fail. Failed tasks always show.</p>
@@ -194,12 +288,14 @@ export function SettingsPage() {
           ))}
         </div>
       </Card>
-      <Modal open={modal === "model"} label="Add a model" title="Add a model" size="narrow" onClose={() => setModal(null)}>
+      </div>
+      <Modal open={modal === "model"} label={editingModelId === null ? "Add a model" : "Edit a model"} title={editingModelId === null ? "Add a model" : "Edit a model"} size="narrow" onClose={() => setModal(null)}>
         <form className="settings-modal-form" onSubmit={(event) => void submitModel(event)}>
           <ItemSelector
             items={providerOptions}
             selectedId={modelProvider}
             onSelect={setModelProvider}
+            disabled={editingModelId !== null}
             hasMore={false}
             onLoadMore={() => {}}
             label="Provider"
@@ -208,16 +304,17 @@ export function SettingsPage() {
           <TextInput value={modelName} label="Model name" placeholder="Insert the model name..." onChange={setModelName} />
           {modelError !== "" && <p className="settings-error">{modelError}</p>}
           <Button type="submit" disabled={!canSubmitModel}>
-            Submit
+            {editingModelId === null ? "Submit" : "Edit"}
           </Button>
         </form>
       </Modal>
-      <Modal open={modal === "credential"} label="Add a credential" title="Add a credential" size="narrow" onClose={() => setModal(null)}>
+      <Modal open={modal === "credential"} label={editingCredentialId === null ? "Add a credential" : "Edit a credential"} title={editingCredentialId === null ? "Add a credential" : "Edit a credential"} size="narrow" onClose={() => setModal(null)}>
         <form className="settings-modal-form" onSubmit={(event) => void submitCredential(event)}>
           <ItemSelector
             items={providerOptions}
             selectedId={credentialProvider}
             onSelect={setCredentialProvider}
+            disabled={editingCredentialId !== null}
             hasMore={false}
             onLoadMore={() => {}}
             label="Provider"
@@ -227,7 +324,7 @@ export function SettingsPage() {
           <TextInput value={credentialKey} label="Api Key" type="password" onChange={setCredentialKey} />
           {credentialError !== "" && <p className="settings-error">{credentialError}</p>}
           <Button type="submit" disabled={!canSubmitCredential}>
-            Submit
+            {editingCredentialId === null ? "Submit" : "Edit"}
           </Button>
         </form>
       </Modal>

@@ -8,106 +8,51 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  height: 48px;
-  padding: 0 1.5rem;
+  min-height: 48px;
+  flex-wrap: wrap;
+  padding: 0.5rem 1.5rem;
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.app-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  font-size: 15px;
-  color: #0f172a;
-  text-decoration: none;
-  transition: color 0.15s ease, opacity 0.15s ease;
-}
-
-.app-brand:hover {
-  color: #006194;
-  opacity: 0.85;
-}
-
-.app-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  color: #065f46;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  border-radius: 0.25rem;
-  padding: 2px 8px;
-}
-
-.app-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: #10b981;
-}
-
-.app-status-offline {
-  color: #9f1239;
-  background: #fff1f2;
-  border-color: #fecdd3;
-}
-
-.app-status-dot-offline {
-  background: #e11d48;
-}
-
-.app-status-unknown {
-  color: #3f4850;
-  background: #f2f3ff;
-  border-color: #bfc7d2;
-}
-
-.app-status-dot-unknown {
-  background: #707881;
-}
-
-.app-nav {
+.app-header-links {
   margin-left: auto;
   display: flex;
-  gap: 0.25rem;
   align-items: center;
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
-.app-nav a {
-  display: inline-flex;
+.app-docs-nav {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 4px 10px;
-  border-radius: 0.25rem;
-  color: #334155;
-  font-weight: 500;
-  text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+  justify-content: flex-end;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 0.75rem;
 }
 
-.app-nav a:hover {
-  background: #f8fafc;
-  color: #0f172a;
-}
+@media (max-width: 760px) {
+  .app-header {
+    padding: 0.75rem;
+  }
 
-.app-nav a:active {
-  transform: scale(0.96);
-}
+  .app-header-links {
+    width: 100%;
+    margin-left: 0;
+  }
 
-.app-nav a.app-nav-active {
-  background: #f2f3ff;
-  color: #006194;
-}
-
-.app-nav a.app-nav-active:hover {
-  color: #006194;
+  .app-docs-nav {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid #e2e8f0;
+    padding: 0.75rem 0 0;
+  }
 }
 
 .app-main {
   padding: 0;
 }
+
+.app-project-layout { height: 100dvh; min-height: 0; overflow: hidden; }
+.app-project-layout .project-page { height: 100%; min-height: 0; }
+.app-project-layout .project-content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }

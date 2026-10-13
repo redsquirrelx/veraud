@@ -3,7 +3,7 @@ import { promisify } from "node:util"
 import type { TaskStore } from "../../modules/task/task.repository.js"
 import type { TaskEvent } from "../realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
-import { describeGitCommand, isGitCommand } from "./git.executor.js"
+import { describeGitCommand, formatCommand, isGitCommand } from "./git.executor.js"
 import type { GitCommand } from "./git.executor.js"
 
 const runFile = promisify(execFile)
@@ -43,6 +43,7 @@ export interface TaskQueue {
 }
 
 interface RunnerJob extends QueuedTask {
+  execution: ReturnType<typeof describeGitCommand>
   done: (result: TaskResult) => void
 }
 
@@ -59,11 +60,21 @@ export class TaskRunner implements TaskQueue {
   ) {}
 
   async enqueue(task: QueuedTask): Promise<TaskResult> {
-    const joined = new Promise<TaskResult>((done) => {
-      this.queue.push({ ...task, done })
+    if (!isGitCommand(task.command)) {
+      throw new Error(`Unsupported command kind ${(task.command as { kind: string }).kind}`)
+    }
+    const execution = describeGitCommand(task.command, this.workspaceDir)
+    await this.tasks.update(task.taskId, {
+      status: "Queued",
+      exitCode: null,
+      logTrail: null,
+      command: formatCommand(execution.binary, execution.argv),
     })
     this.log.info(`Task ${task.taskId} queued`)
     await this.announce(task.taskId)
+    const joined = new Promise<TaskResult>((done) => {
+      this.queue.push({ ...task, execution, done })
+    })
     void this.drain()
     return joined
   }
@@ -81,6 +92,7 @@ export class TaskRunner implements TaskQueue {
         id: task.id,
         projectId: task.projectId,
         description: task.description,
+        command: task.command ?? null,
         status: task.status,
         kind: task.kind,
         exitCode: task.exitCode,
@@ -103,12 +115,7 @@ export class TaskRunner implements TaskQueue {
   }
 
   private async runJob(job: RunnerJob): Promise<void> {
-    if (isGitCommand(job.command)) {
-      await this.runDescribed(job, describeGitCommand(job.command, this.workspaceDir))
-      return
-    }
-
-    throw new Error(`Unsupported command kind ${(job.command as { kind: string }).kind}`)
+    await this.runDescribed(job, job.execution)
   }
 
   private async runDescribed(
@@ -148,6 +155,7 @@ export class TaskRunner implements TaskQueue {
         id: task.id,
         projectId: task.projectId,
         description: task.description,
+        command: task.command ?? null,
         status: task.status,
         kind: task.kind,
         exitCode: task.exitCode,
@@ -179,6 +187,7 @@ export class TaskRunner implements TaskQueue {
         id: task.id,
         projectId: task.projectId,
         description: task.description,
+        command: task.command ?? null,
         status: task.status,
         kind: task.kind,
         exitCode: task.exitCode,

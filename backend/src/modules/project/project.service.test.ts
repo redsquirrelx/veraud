@@ -37,6 +37,7 @@ function makeFakes(options: {
   details?: StoredProjectDetails | null
   githubId?: number
   clone?: TaskResult
+  failGithubLookup?: boolean
 } = {}) {
   const calls = { enqueued: 0, commands: [] as Array<GitCommand>, deletedTasks: [] as Array<number>, deletedProjects: [] as Array<number>, statuses: [] as Array<{ id: number; status: string }> }
 
@@ -48,6 +49,9 @@ function makeFakes(options: {
       return { id: 7, repositoryOwner: "octocat", repositoryName: "Hello-World", status: "QUEUED" }
     },
     async findByGithubId(): Promise<StoredProject | null> {
+      return options.existing ?? null
+    },
+    async findByRepo(): Promise<StoredProject | null> {
       return options.existing ?? null
     },
     async findById(): Promise<StoredProjectDetails | null> {
@@ -104,12 +108,15 @@ function makeFakes(options: {
   }
 
   const github = new GithubClient()
-  github.checkAccess = async () => ({
+  github.checkAccess = async () => {
+    if (options.failGithubLookup === true) throw new Error("Public API must not be consulted for SSH")
+    return ({
     id: options.githubId ?? 1296269,
     owner: "octocat",
     name: "Hello-World",
     cloneUrl: "https://github.com/octocat/Hello-World.git",
-  })
+    })
+  }
 
   const runner: TaskQueue = {
     async enqueue(task: QueuedTask): Promise<TaskResult> {
@@ -120,12 +127,43 @@ function makeFakes(options: {
   }
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
-    openPipeline: async () => { throw new Error("not used here") },
+    openPipelineForProject: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
 
 describe("ProjectService.registerProject", () => {
+  for (const url of ["https://github.com/octocat/Hello-World", "git@github.com:octocat/Hello-World.git"]) {
+    it(`persists and requests a shallow clone for ${url}`, async () => {
+      const { service, projects, calls } = makeFakes()
+      await service.registerProject(url, true)
+      assert.equal(projects.created[0]?.shallowClone, true)
+      assert.equal(calls.commands[0]?.kind, "clone")
+      assert.equal(calls.commands[0]?.kind === "clone" && calls.commands[0].shallowClone, true)
+    })
+  }
+  it("clones private SSH repositories without requesting public GitHub metadata", async () => {
+    const { service, projects, calls } = makeFakes({ failGithubLookup: true })
+    await service.registerProject("git@github.com:octocat/Hello-World.git")
+
+    assert.deepEqual(projects.created, [{
+      githubRepositoryId: null,
+      cloneProtocol: "ssh",
+      shallowClone: false,
+      repositoryOwner: "octocat",
+      repositoryName: "Hello-World",
+      status: "QUEUED",
+    }])
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World", shallowClone: false }])
+  })
+
+  it("rolls back a failed SSH clone", async () => {
+    const { service, calls } = makeFakes({ failGithubLookup: true, clone: { status: "Failed", exitCode: 1, logTrail: "Permission denied (publickey)" } })
+    await assert.rejects(service.registerProject("ssh://git@github.com/octocat/Hello-World.git"), RepoNotAccessibleError)
+    assert.deepEqual(calls.deletedTasks, [9])
+    assert.deepEqual(calls.deletedProjects, [7])
+  })
+
   it("creates a QUEUED project once its clone succeeds", async () => {
     const { service, projects, tasks, calls } = makeFakes()
 
@@ -134,6 +172,8 @@ describe("ProjectService.registerProject", () => {
     assert.equal(project.id, 7)
     assert.deepEqual(projects.created, [{
       githubRepositoryId: BigInt(1296269),
+      cloneProtocol: "https",
+      shallowClone: false,
       repositoryOwner: "octocat",
       repositoryName: "Hello-World",
       status: "QUEUED",
@@ -143,6 +183,7 @@ describe("ProjectService.registerProject", () => {
       kind: "clone",
       cloneUrl: "https://github.com/octocat/Hello-World.git",
       folder: "1296269-octocat-Hello-World",
+      shallowClone: false,
     }])
     assert.deepEqual(tasks.created, [{
       projectId: 7,
@@ -194,6 +235,7 @@ describe("ProjectService.registerProject", () => {
       {
         create: async () => { throw new Error("must not persist") },
         findByGithubId: async () => null,
+        findByRepo: async () => null,
         findById: async () => null,
         delete: async () => { throw new Error("must not delete") },
         setStatus: async () => { throw new Error("must not set status") },
@@ -218,7 +260,7 @@ describe("ProjectService.registerProject", () => {
       ),
       failing,
       join(tmpdir(), "veraud-unused"),
-      { openPipeline: async () => { throw new Error("must not open executions") } }
+      { openPipelineForProject: async () => { throw new Error("must not open executions") } }
     )
 
     await assert.rejects(
@@ -232,6 +274,8 @@ describe("ProjectService.syncProject", () => {
   const details: StoredProjectDetails = {
     id: 7,
     githubRepositoryId: BigInt(1296269),
+    cloneProtocol: "https",
+    shallowClone: false,
     repositoryOwner: "octocat",
     repositoryName: "Hello-World",
     status: "READY",
@@ -279,7 +323,14 @@ describe("ProjectService.syncProject", () => {
       kind: "clone",
       cloneUrl: "https://github.com/octocat/Hello-World.git",
       folder: "1296269-octocat-Hello-World",
+      shallowClone: false,
     }])
+  })
+
+  it("reclones over SSH when an SSH project's workspace is empty", async () => {
+    const { service, calls } = makeFakes({ details: { ...details, githubRepositoryId: null, cloneProtocol: "ssh" } })
+    await service.syncProject(7)
+    assert.deepEqual(calls.commands, [{ kind: "clone", cloneUrl: "git@github.com:octocat/Hello-World.git", folder: "project-7-octocat-Hello-World", shallowClone: false }])
   })
 
   it("rejects unknown projects", async () => {
@@ -287,6 +338,14 @@ describe("ProjectService.syncProject", () => {
 
     await assert.rejects(service.syncProject(99), ProjectNotFoundError)
   })
+
+  for (const cloneProtocol of ["https", "ssh"]) {
+    it(`preserves shallow mode when recloning over ${cloneProtocol}`, async () => {
+      const { service, calls } = makeFakes({ details: { ...details, cloneProtocol, shallowClone: true } })
+      await service.syncProject(7)
+      assert.equal(calls.commands[0]?.kind === "clone" && calls.commands[0].shallowClone, true)
+    })
+  }
 
   it("restores the previous status when sync fails", async () => {
     const { service, calls, workspaceDir } = makeFakes({

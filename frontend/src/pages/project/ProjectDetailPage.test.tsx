@@ -26,7 +26,7 @@ afterEach(() => {
 })
 
 const rows = [
-  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
+  { id: 2, repositoryOwner: "acme", repositoryName: "Demo", cloneProtocol: "https", status: "READY", registeredAt: "2026-01-01", lastSyncedAt: "2026-01-02", branch: null, commitHash: null },
 ]
 
 const gitBranches = { branches: ["main"], currentBranch: "main", detachedHash: null, taskId: 1 }
@@ -109,12 +109,40 @@ function renderDetail(entry: string) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("keeps the contextual header and version selection mounted across project sections", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+    await screen.findByRole("heading", { name: "acme/Demo" })
+    const header = screen.getByLabelText("Project context")
+    const controls = within(header)
+    expect(controls.getByText("READY")).toBeDefined()
+    expect(controls.getByText("HTTPS")).toBeDefined()
+    await waitFor(() => expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled())
+    const branch = controls.getByRole("button", { name: "main" })
+    for (const section of ["Audits", "Files", "Overview"]) {
+      await userEvent.click(screen.getByRole("button", { name: section }))
+      expect(screen.getByLabelText("Project context")).toBe(header)
+      expect(controls.getByRole("button", { name: "main" })).toBe(branch)
+      expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled()
+      expect(controls.getByRole("button", { name: "Sync" })).toBeEnabled()
+      if (section === "Overview") {
+        expect(screen.getByRole("region", { name: "Project overview" })).toBeDefined()
+        expect(screen.getByRole("link", { name: "Open on GitHub" })).toBeDefined()
+      } else {
+        expect(screen.queryByRole("region", { name: "Project overview" })).toBeNull()
+        expect(screen.queryByRole("link", { name: "Open on GitHub" })).toBeNull()
+        expect(screen.queryByText(/Last synced/)).toBeNull()
+      }
+    }
+  })
+
   it("shows the project header with sidebar", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
     expect(await screen.findByText("acme/Demo")).toBeDefined()
     expect(screen.getByText("READY")).toBeDefined()
+    expect(screen.getByText("HTTPS")).toBeDefined()
     expect(screen.getByText("Project")).toBeDefined()
     expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
@@ -123,6 +151,19 @@ describe("ProjectDetailPage", () => {
     expect(link.getAttribute("href")).toBe("https://github.com/acme/Demo")
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noreferrer")
+  })
+
+  it("shows SSH for a repository registered over SSH", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify([{ ...rows[0], cloneProtocol: "ssh" }]), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    expect(await screen.findByText("SSH")).toBeDefined()
+    expect(screen.queryByText("HTTPS")).toBeNull()
   })
 
   it("shows not found for unknown projects", async () => {
@@ -348,9 +389,12 @@ describe("ProjectDetailPage", () => {
     await screen.findByText("acme/Demo")
     expect(await screen.findByText("Branch")).toBeDefined()
     expect(screen.getByText("Commit")).toBeDefined()
-    expect(screen.getByLabelText("Search items")).toBeDefined()
     expect(screen.queryByRole("button", { name: "Apply version" })).toBeNull()
 
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search items")).toHaveValue("aaaaaaa")
+      expect(screen.getByLabelText("Search items")).not.toBeDisabled()
+    })
     await userEvent.clear(screen.getByLabelText("Search items"))
     await userEvent.type(screen.getByLabelText("Search items"), `${"b".repeat(40)}{enter}`)
 
@@ -386,6 +430,11 @@ describe("ProjectDetailPage", () => {
               id: 12,
               evaluationId: 7,
               agentType: "architect",
+              configuration: {
+                model: { id: 1, name: "captured-model", providerId: 1, providerName: "OpenAI" },
+                credential: { id: 2, name: "captured-credential", providerId: 1, providerName: "OpenAI" },
+                temperature: 0.2, maxTokens: 2048,
+              },
               status: "Waiting",
               result: null,
               error: null,
@@ -421,7 +470,10 @@ describe("ProjectDetailPage", () => {
 
     // The architect finishes last, so it is the tracked run.
     expect(await screen.findByText("architect run #12")).toBeDefined()
-    expect(screen.getByText("Waiting")).toBeDefined()
+    expect(screen.getAllByText("Waiting")).toHaveLength(2)
+    expect(screen.getByRole("heading", { name: "Configuration used" })).toBeDefined()
+    expect(screen.getByText("captured-model")).toBeDefined()
+    expect(screen.getByText("captured-credential (#2)")).toBeDefined()
   })
 
   it("disables Analyze while a sync is running", async () => {
@@ -558,7 +610,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.queryByText("Analysis completed")).toBeNull()
   })
 
-  it("shows the analysis verdict in the header card", async () => {
+  it("shows the analysis verdict in Overview", async () => {
     const completed = {
       id: 21,
       evaluationId: 7,
@@ -594,7 +646,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
 
     expect(await screen.findByText("acme/Demo")).toBeDefined()
-    const headerRow = screen.getByText("acme/Demo").closest(".project-name-row")
+    const headerRow = screen.getByRole("region", { name: "Project overview" })
     if (headerRow === null) {
       throw new Error("project header row not found")
     }
@@ -602,7 +654,7 @@ describe("ProjectDetailPage", () => {
     expect(within(headerRow as HTMLElement).getByText("library")).toBeDefined()
     expect(within(headerRow as HTMLElement).getByText("Confidence")).toBeDefined()
     expect(within(headerRow as HTMLElement).getByText("high")).toBeDefined()
-    // The summary shows in the header and again in the Overview result.
+    // The summary shows in the Overview metadata and detailed summary card.
     expect(screen.getAllByText("A widget library for tests.").length).toBe(2)
     expect(screen.queryByText("Analyzing")).toBeNull()
 
@@ -662,7 +714,7 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
 
-    const headerRow = screen.getByText("acme/Demo").closest(".project-name-row")
+    const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {
       throw new Error("project header row not found")
     }
@@ -720,7 +772,7 @@ describe("ProjectDetailPage", () => {
 
     // Header carries both verdicts (and the Overview summary repeats them).
     expect(screen.getAllByText("library").length).toBe(2)
-    expect(screen.getAllByText("layered").length).toBe(2)
+    expect(screen.getAllByText("layered").length).toBe(1)
 
     // The Overview summary shows key details without the full listing.
     expect(await screen.findByText("Summary")).toBeDefined()
@@ -800,8 +852,8 @@ describe("ProjectDetailPage", () => {
     expect(analysisCard).not.toBeNull()
     expect(architectureCard).not.toBeNull()
     expect(analysisCard).not.toBe(architectureCard)
-    // Analyzer sections (summary also shows in the header).
-    expect(screen.getAllByText("A widget library.").length).toBe(2)
+    // Analyzer sections are shown once in the analysis view.
+    expect(screen.getAllByText("A widget library.").length).toBe(1)
     expect(screen.getByText("main.py")).toBeDefined()
     // Key component, architecture component and ranged quality-note evidence.
     expect(screen.getAllByText("pkg/core.py").length).toBe(2)

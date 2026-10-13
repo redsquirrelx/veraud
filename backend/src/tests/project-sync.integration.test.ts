@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AddressInfo } from "node:net"
 import { buildApp } from "../app.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 
@@ -36,6 +37,7 @@ describe("project sync API", () => {
     })
     sharedDb = db
 
+    auditResponseSerialization(app)
     const project = await db.project.create({
       data: {
         githubRepositoryId: BigInt(777),
@@ -107,8 +109,9 @@ describe("project sync API", () => {
     const credential = await db.aiCredential.create({
       data: { name: "sync-guard-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
-    await db.agentSettings.create({
-      data: { agentType: "analyzer", aiModelId: model.id, aiCredentialId: credential.id },
+    await db.agentSettings.update({
+      where: { agentType: "analyzer" },
+      data: { aiModelId: model.id, aiCredentialId: credential.id },
     })
     const version = await db.projectVersion.create({
       data: { projectId: 1, branch: "main", commitHash: "a".repeat(40), analysisStatus: "Pending" },

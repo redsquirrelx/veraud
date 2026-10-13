@@ -49,7 +49,7 @@ describe("useTasks", () => {
   it("loads initial tasks and follows ws updates", async () => {
     globalThis.fetch = (async () => {
       return new Response(JSON.stringify([
-        { id: 1, projectId: 2, repositoryOwner: "acme", repositoryName: "Demo", description: "cloning acme/Demo", status: "Queued", exitCode: null },
+        { id: 1, projectId: 2, repositoryOwner: "acme", repositoryName: "Demo", description: "cloning acme/Demo", command: "git clone --depth 1 url /workspace/Demo", status: "Queued", exitCode: null },
       ]), { status: 200 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
@@ -58,6 +58,7 @@ describe("useTasks", () => {
 
     await waitFor(() => {
       expect(result.current.length).toBe(1)
+      expect(result.current[0]?.command).toBe("git clone --depth 1 url /workspace/Demo")
     })
 
     const socket = FakeSocket.instances[0]
@@ -67,13 +68,14 @@ describe("useTasks", () => {
       expect(result.current.length).toBe(2)
     })
 
-    socket?.push({ type: "task.updated", task: { id: 1, projectId: 2, repositoryOwner: "acme", repositoryName: "Demo", description: "cloning acme/Demo", status: "Succeded", exitCode: 0 } })
+    socket?.push({ type: "task.updated", task: { id: 1, projectId: 2, repositoryOwner: "acme", repositoryName: "Demo", description: "cloning acme/Demo", command: "git clone --depth 1 url /workspace/Demo", status: "Succeded", exitCode: 0 } })
 
     await waitFor(() => {
       expect(result.current.map((task) => task.id)).toEqual([1, 2])
     })
     await waitFor(() => {
       expect(result.current.find((task) => task.id === 1)?.status).toBe("Succeded")
+      expect(result.current.find((task) => task.id === 1)?.command).toBe("git clone --depth 1 url /workspace/Demo")
     })
   })
 

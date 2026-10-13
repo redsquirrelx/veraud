@@ -82,6 +82,27 @@ export class AiProviderService {
     return { id: created.id, name: created.name, inUse: false }
   }
 
+  async updateModel(aiProviderId: number, modelId: number, name: string): Promise<AiModelView> {
+    const provider = await this.providers.findProviderById(aiProviderId)
+    if (provider === null) {
+      throw new AiProviderNotFoundError(`AI provider ${aiProviderId} does not exist`)
+    }
+
+    const model = await this.providers.findModelById(modelId)
+    if (model === null || model.aiProviderId !== aiProviderId) {
+      throw new AiModelNotFoundError(`Model ${modelId} does not exist for provider ${aiProviderId}`)
+    }
+
+    const cleanName = assertValidModelName(name)
+    const existing = await this.providers.findModelByName(aiProviderId, cleanName)
+    if (existing !== null && existing.id !== modelId) {
+      throw new DuplicateAiError(`Model ${cleanName} is already registered for ${provider.name}`)
+    }
+
+    const updated = await this.providers.updateModel(modelId, cleanName)
+    return { id: updated.id, name: updated.name, inUse: await this.providers.countSettingsForModel(modelId) > 0 }
+  }
+
   async deleteModel(aiProviderId: number, modelId: number): Promise<void> {
     const provider = await this.providers.findProviderById(aiProviderId)
 
@@ -121,6 +142,28 @@ export class AiProviderService {
 
     const created = await this.providers.createCredential(aiProviderId, cleanName, cleanKey)
     return { id: created.id, name: created.name, apiKeyPreview: maskApiKey(created.apiKey), inUse: false }
+  }
+
+  async updateCredential(aiProviderId: number, credentialId: number, name: string, apiKey?: string): Promise<AiCredentialView> {
+    const provider = await this.providers.findProviderById(aiProviderId)
+    if (provider === null) {
+      throw new AiProviderNotFoundError(`AI provider ${aiProviderId} does not exist`)
+    }
+
+    const credential = await this.providers.findCredentialById(credentialId)
+    if (credential === null || credential.aiProviderId !== aiProviderId) {
+      throw new AiCredentialNotFoundError(`Credential ${credentialId} does not exist for provider ${aiProviderId}`)
+    }
+
+    const cleanName = assertValidCredentialName(name)
+    const cleanKey = apiKey === undefined ? undefined : assertValidApiKey(apiKey)
+    const existing = await this.providers.findCredentialByName(aiProviderId, cleanName)
+    if (existing !== null && existing.id !== credentialId) {
+      throw new DuplicateAiError(`Credential ${cleanName} is already registered for ${provider.name}`)
+    }
+
+    const updated = await this.providers.updateCredential(credentialId, cleanName, cleanKey)
+    return { id: updated.id, name: updated.name, apiKeyPreview: maskApiKey(updated.apiKey), inUse: await this.providers.countSettingsForCredential(credentialId) > 0 }
   }
 
   async deleteCredential(aiProviderId: number, credentialId: number): Promise<void> {

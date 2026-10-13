@@ -8,6 +8,7 @@ from ..agents.architect.agent import ArchitectureAgent
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
 from ..agents.judge.agent import JudgeAgent
+from ..agents.models.anthropic import AnthropicModel
 from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
 from ..agents.models.groq import GroqModel
@@ -66,6 +67,9 @@ def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model
     if provider == "groq":
         return GroqModel(settings=settings, credentials=credentials)
     
+    if provider == "anthropic":
+        return AnthropicModel(settings=settings, credentials=credentials)
+
     raise InvalidConfigError(f"Unsupported model provider: {settings.provider!r}")
 
 
@@ -234,9 +238,10 @@ class AgentExecutionService:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
             await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s")
             raise
-        except Exception as error:
-            await self._report_failure(callbacks, execution_id, str(error))
-            raise
+        except Exception as error:  # noqa: BLE001 - Report failures without leaking provider credentials.
+            message = f"Agent execution failed ({type(error).__name__}); check model access and agent input"
+            await self._report_failure(callbacks, execution_id, message)
+            raise InvalidConfigError(message) from None
         finally:
             if callbacks is not None:
                 await callbacks.aclose()

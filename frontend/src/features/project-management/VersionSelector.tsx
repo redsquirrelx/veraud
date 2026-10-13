@@ -23,12 +23,22 @@ export interface AnalyzedSelection {
   onRefresh: () => void
 }
 
-export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed }: {
+export function VersionLocation({ selection }: { selection: Selection }) {
+  if (selection.detached !== null) {
+    return <span className="label version-state">(HEAD detached at {selection.detached}) - select a branch to re-attach</span>
+  }
+  return selection.applied === null ? null : <span className="label version-state">
+    On {selection.applied.branch} at {selection.applied.commitHash.slice(0, 7)}
+  </span>
+}
+
+export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed, showLocation = true }: {
   selection: Selection
   analysis?: AnalysisAction
   mode?: VersionMode
   onModeChange?: (mode: VersionMode) => void
   analyzed?: AnalyzedSelection
+  showLocation?: boolean
 }) {
   const current = mode ?? "git"
   const analyzeButton = analysis === undefined ? null : (
@@ -48,6 +58,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
     <div className="version-selector">
       {analyzed !== undefined && (
         <FilterTabs
+          label="Version source"
           options={[
             { id: "git", label: "Git", count: 0 },
             { id: "analyzed", label: "Analyzed", count: analyzed.versions.length },
@@ -56,21 +67,13 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           onChange={(id) => onModeChange?.(id as VersionMode)}
         />
       )}
-      <div className="version-row version-state-row">
+      {(selection.loadingBranches || selection.applying || selection.error !== "" || (showLocation && (selection.detached !== null || selection.applied !== null))) && <div className="version-row version-state-row">
       {selection.loadingBranches && <span className="label version-state">Loading branches</span>}
       {selection.applying && <span className="label version-state">Applying version</span>}
       {selection.error !== "" && <span className="label version-state">{selection.error}</span>}
 
-        {selection.detached !== null ? (
-          <span className="label version-state">(HEAD detached at {selection.detached}) - select a branch to re-attach</span>
-        ) : (
-          selection.applied !== null && (
-            <span className="label version-state">
-              On {selection.applied.branch} at {selection.applied.commitHash.slice(0, 7)}
-            </span>
-          )
-        )}
-      </div>
+        {showLocation && <VersionLocation selection={selection} />}
+      </div>}
 
       {current === "analyzed" && analyzed !== undefined ? (
         <div className="version-row">

@@ -21,6 +21,7 @@ export function backendWsUrl(): string {
 }
 
 export interface ActiveTask {
+  command?: string | null
   id: number
   projectId: number
   repositoryOwner: string
@@ -35,6 +36,7 @@ export interface ProjectSummary {
   id: number
   repositoryOwner: string
   repositoryName: string
+  cloneProtocol: "ssh" | "https"
   status: string
   registeredAt: string
   lastSyncedAt: string | null
@@ -77,11 +79,11 @@ export async function syncProject(id: number): Promise<ProjectSummary> {
   return body as ProjectSummary
 }
 
-export async function registerProject(repositoryUrl: string): Promise<RegisteredProject> {
+export async function registerProject(repositoryUrl: string, shallowClone = false): Promise<RegisteredProject> {
   const response = await fetch(`${baseUrl}/api/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repositoryUrl }),
+    body: JSON.stringify({ repositoryUrl, shallowClone }),
     signal: AbortSignal.timeout(600000),
   })
 
@@ -190,6 +192,7 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
 }
 
 export interface AgentExecution {
+  configuration?: AgentConfiguration | null
   id: number
   evaluationId: number | null
   agentType: string
@@ -207,6 +210,8 @@ export interface AnalysisRequest {
   versionId: number
   evaluationId: number
   executions: { analyzer: AgentExecution; architect: AgentExecution }
+  /** Analyzer compatibility field supplied by the backend. */
+  execution?: AgentExecution
 }
 
 export async function requestAnalysis(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
@@ -244,6 +249,8 @@ export interface VersionAnalysisSummary {
   analyzedAt: string | null
   evaluationId: number | null
   executions: AgentExecution[]
+  /** Analyzer (or first historical run), null when the evaluation has no runs. */
+  execution?: AgentExecution | null
   derivedStatus: string
 }
 
@@ -303,6 +310,62 @@ async function postAi<T>(aiProviderId: number, resource: string, body: unknown):
   return payload as T
 }
 
+export interface AgentConfiguration {
+  model: { id: number, name: string, providerId: number, providerName: string }
+  credential: { id: number, name: string, providerId: number, providerName: string }
+  temperature: number | null
+  maxTokens: number | null
+}
+
+export interface AgentSettings {
+  agentType: string
+  configured: boolean
+  configuration: AgentConfiguration | null
+  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null }
+}
+
+export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings`, { signal })
+  if (!response.ok) {
+    const body = await response.json() as { message?: string }
+    throw new ApiError(response.status, body.message ?? "Could not load agent settings")
+  }
+  return await response.json() as AgentSettings[]
+}
+
+export async function saveAgentSettings(agentType: string, modelId: number, credentialId: number, options: { temperature?: number | null, maxTokens?: number | null } = {}): Promise<AgentSettings> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ modelId, credentialId, ...options }),
+  })
+  const body = await response.json() as AgentSettings & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save agent settings")
+  return body
+}
+
+export async function verifyAgentSettings(agentType: string): Promise<AgentSettings> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}/verify`, { method: "POST" })
+  const body = await response.json() as AgentSettings & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not verify model access")
+  return body
+}
+
+async function patchAi<T>(aiProviderId: number, resource: string, id: number, body: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  const payload = (await response.json()) as { message?: string }
+  if (!response.ok) {
+    throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+  }
+
+  return payload as T
+}
+
 async function deleteAi(aiProviderId: number, resource: string, id: number): Promise<void> {
   const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
     method: "DELETE",
@@ -321,12 +384,20 @@ export async function createAiModel(aiProviderId: number, name: string): Promise
   return postAi<AiModelSummary>(aiProviderId, "models", { name })
 }
 
+export async function updateAiModel(aiProviderId: number, modelId: number, name: string): Promise<AiModelSummary> {
+  return patchAi<AiModelSummary>(aiProviderId, "models", modelId, { name })
+}
+
 export async function deleteAiModel(aiProviderId: number, modelId: number): Promise<void> {
   return deleteAi(aiProviderId, "models", modelId)
 }
 
 export async function createAiCredential(aiProviderId: number, name: string, apiKey: string): Promise<AiCredentialSummary> {
   return postAi<AiCredentialSummary>(aiProviderId, "credentials", { name, apiKey })
+}
+
+export async function updateAiCredential(aiProviderId: number, credentialId: number, name: string, apiKey?: string): Promise<AiCredentialSummary> {
+  return patchAi<AiCredentialSummary>(aiProviderId, "credentials", credentialId, { name, ...(apiKey === undefined ? {} : { apiKey }) })
 }
 
 export async function deleteAiCredential(aiProviderId: number, credentialId: number): Promise<void> {

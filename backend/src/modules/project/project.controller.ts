@@ -1,23 +1,31 @@
 import type { FastifyInstance } from "fastify"
+import { branchInput, commitHashInput, errorResponses, objectResponse } from "../../infrastructure/openapi/routeSchemas.js"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import { DuplicateProjectError, AnalysisAlreadyRunningError, AnalysisInProgressError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, SyncInProgressError, WorkspaceMissingError } from "./project.service.js"
+import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
+import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 
 const idParams = {
   type: "object",
   required: ["id"],
   properties: {
-    id: { type: "string", pattern: "^[0-9]+$" },
+    id: { type: "string", pattern: "^[0-9]+$", description: "Project ID.", examples: ["1"] },
   },
 } as const
 
 export function registerProjectRoutes(app: FastifyInstance, service: ProjectService): void {
-  app.get("/api/projects", async () => {
+  app.get("/api/projects", { schema: {
+    tags: ["Projects"], summary: "List projects",
+    description: "Returns all registered projects ordered by ID, with their selected version. Filtering and paging are client-side.",
+    response: { 200: { type: "array", items: { $ref: "ProjectSummary#" } } },
+  } }, async () => {
     const projects = await service.listProjects()
     return projects.map((project) => ({
       id: project.id,
       repositoryOwner: project.repositoryOwner,
       repositoryName: project.repositoryName,
+      cloneProtocol: project.cloneProtocol,
       status: project.status,
       registeredAt: project.registeredAt,
       lastSyncedAt: project.lastSyncedAt,
@@ -28,6 +36,9 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/sync", {
     schema: {
+      tags: ["Projects"], summary: "Synchronize a project",
+      description: "Waits for clone if the workspace is empty, pull for an attached checkout, or fetch for detached HEAD. Recloning preserves HTTPS/SSH and shallowClone; fetch does not move HEAD or automatically unshallow the repository.",
+      response: { 200: { $ref: "ProjectSummary#" }, ...errorResponses([400, 404, 422], "MessageError", false) },
       params: {
         type: "object",
         required: ["id"],
@@ -45,6 +56,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         id: project.id,
         repositoryOwner: project.repositoryOwner,
         repositoryName: project.repositoryName,
+        cloneProtocol: project.cloneProtocol,
         status: project.status,
         registeredAt: project.registeredAt,
         lastSyncedAt: project.lastSyncedAt,
@@ -64,19 +76,23 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects", {
     schema: {
+      tags: ["Projects"], summary: "Register and clone a repository",
+      description: "Waits for cloning to succeed. HTTPS checks GitHub metadata; SSH uses the backend user's SSH configuration without a public metadata lookup. Failure rolls back the new project and task. Returns the initial QUEUED snapshot, although the stored status may already be READY.",
+      response: { 201: { $ref: "RegisteredProject#" }, ...errorResponses([400, 409, 422]) },
       body: {
         type: "object",
         required: ["repositoryUrl"],
         properties: {
-          repositoryUrl: { type: "string" },
+          repositoryUrl: { type: "string", description: "GitHub HTTPS, git@github.com:owner/repo.git, or ssh://git@github.com/owner/repo.git URL.", examples: ["https://github.com/octocat/Hello-World", "git@github.com:owner/repo.git"] },
+          shallowClone: { type: "boolean", description: "true adds --depth 1 (latest commit of the default branch); omitted means false (full clone).", examples: [true] },
         },
       },
     },
   }, async (request, reply) => {
-    const body = request.body as { repositoryUrl: string }
+    const body = request.body as { repositoryUrl: string; shallowClone?: boolean }
 
     try {
-      const project = await service.registerProject(body.repositoryUrl)
+      const project = await service.registerProject(body.repositoryUrl, body.shallowClone ?? false)
       return reply.code(201).send({
         id: project.id,
         repositoryOwner: project.repositoryOwner,
@@ -98,7 +114,9 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
   })
 
   app.post("/api/projects/:id/git/branches", {
-    schema: { params: idParams },
+    schema: { params: idParams, tags: ["Project Git"], summary: "List local and remote branches",
+      description: "Waits for a read-only Git task. Deduplicates branch names and reports attached or detached HEAD. Only locally available refs are returned, including for shallow clones. No body is required.",
+      response: { 200: objectResponse({ branches: { type: "array", items: { type: "string" } }, currentBranch: { type: ["string", "null"] }, detachedHash: { type: ["string", "null"] }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) } },
   }, async (request, reply) => {
     const params = request.params as { id: string }
 
@@ -111,7 +129,9 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
   })
 
   app.post("/api/projects/:id/git/tree", {
-    schema: { params: idParams },
+    schema: { params: idParams, tags: ["Project Git"], summary: "List tracked files at HEAD",
+      description: "Waits for git ls-tree; returns slash-separated repository-relative file paths for the current checkout. No body is required.",
+      response: { 200: objectResponse({ files: { type: "array", items: { type: "string" } }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) } },
   }, async (request, reply) => {
     const params = request.params as { id: string }
 
@@ -125,12 +145,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/file", {
     schema: {
+      tags: ["Projects"], summary: "Read a checkout text file",
+      description: "Reads UTF-8 content without creating a task. Rejects missing files, directories, files larger than 512 KiB and content with null bytes.",
+      response: { 200: objectResponse({ path: { type: "string" }, content: { type: "string" }, size: { type: "integer", description: "File size in bytes." } }), ...errorResponses([400, 404, 422]) },
       params: idParams,
       body: {
         type: "object",
         required: ["path"],
         properties: {
-          path: { type: "string" },
+          path: { type: "string", description: "Relative path, trimmed, up to 1024 characters; backslashes normalized. Empty segments, . and .., null bytes and .git paths are rejected.", examples: ["src/index.ts"] },
         },
       },
     },
@@ -151,12 +174,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/git/rev-parse", {
     schema: {
+      tags: ["Project Git"], summary: "Resolve a branch commit hash",
+      description: "Waits for a read-only Git task and returns the full 40-character lowercase commit hash.",
+      response: { 200: objectResponse({ branch: { type: "string" }, commitHash: { type: "string" }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) },
       params: idParams,
       body: {
         type: "object",
         required: ["branch"],
         properties: {
-          branch: { type: "string" },
+          branch: branchInput,
         },
       },
     },
@@ -174,14 +200,17 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/git/log", {
     schema: {
+      tags: ["Project Git"], summary: "List branch commits",
+      description: "Waits for a read-only Git task. History reflects commits available in the local checkout; shallow clones initially contain only the branch tip.",
+      response: { 200: objectResponse({ branch: { type: "string" }, commits: { type: "array", items: objectResponse({ commitHash: { type: "string" }, subject: { type: "string" } }) }, limit: { type: "integer" }, offset: { type: "integer" }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) },
       params: idParams,
       body: {
         type: "object",
         required: ["branch"],
         properties: {
-          branch: { type: "string" },
-          limit: { type: "integer" },
-          offset: { type: "integer" },
+          branch: branchInput,
+          limit: { type: "integer", description: "Service default: 30. Valid range: 1ΓÇô100.", examples: [30] },
+          offset: { type: "integer", description: "Service default: 0. Must be non-negative.", examples: [0] },
         },
       },
     },
@@ -199,12 +228,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/git/checkout", {
     schema: {
+      tags: ["Project Git"], summary: "Check out a commit with detached HEAD",
+      description: "Waits for git checkout --force --detach. Discards checkout changes; the task is retained, including on failure.",
+      response: { 200: objectResponse({ commitHash: { type: "string" }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) },
       params: idParams,
       body: {
         type: "object",
         required: ["commitHash"],
         properties: {
-          commitHash: { type: "string" },
+          commitHash: commitHashInput,
         },
       },
     },
@@ -222,12 +254,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/git/checkout-branch", {
     schema: {
+      tags: ["Project Git"], summary: "Check out a branch",
+      description: "Waits for git checkout --force, attaching HEAD. Remote-only branches can materialize as local tracking branches.",
+      response: { 200: objectResponse({ branch: { type: "string" }, taskId: { type: "integer" } }), ...errorResponses([400, 404, 422]) },
       params: idParams,
       body: {
         type: "object",
         required: ["branch"],
         properties: {
-          branch: { type: "string" },
+          branch: branchInput,
         },
       },
     },
@@ -245,13 +280,16 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
 
   app.post("/api/projects/:id/analyze", {
     schema: {
+      tags: ["Projects"], summary: "Start analysis of a project version",
+      description: "Verifies both agents' saved configurations before transactionally selecting the version and creating one evaluation with analyzer and architect executions. Invalid access returns 422 with affected agents and creates no partial analysis. Starts the pipeline in the background with explicit per-stage configuration. Does not check out the commit. Completion arrives through callbacks/WebSocket. execution is the analyzer compatibility field; executions contains both stages.",
+      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, execution: { $ref: "AgentExecution#" }, executions: objectResponse({ analyzer: { $ref: "AgentExecution#" }, architect: { $ref: "AgentExecution#" } }) }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
       params: idParams,
       body: {
         type: "object",
         required: ["branch", "commitHash"],
         properties: {
-          branch: { type: "string" },
-          commitHash: { type: "string" },
+          branch: branchInput,
+          commitHash: commitHashInput,
         },
       },
     },
@@ -264,6 +302,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       return reply.code(201).send({
         versionId: result.versionId,
         evaluationId: result.evaluationId,
+        execution: toExecution(result.execution),
         executions: {
           analyzer: toExecution(result.executions.analyzer),
           architect: toExecution(result.executions.architect),
@@ -279,12 +318,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
         return reply.code(422).send({ message: error.message })
       }
+      if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
       throw error
     }
   })
 
   app.get("/api/projects/:id/versions", {
-    schema: { params: idParams },
+    schema: { params: idParams, tags: ["Projects"], summary: "List analyzed project versions",
+      description: "Returns versions newest first, with their latest evaluation/execution and derived status. An empty list is valid.",
+      response: { 200: { type: "array", items: { $ref: "VersionAnalysis#" } }, ...errorResponses([400, 404], "MessageError", false) } },
   }, async (request, reply) => {
     const params = request.params as { id: string }
 
@@ -297,6 +339,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         analysisStatus: version.analysisStatus,
         analyzedAt: version.analyzedAt,
         evaluationId: version.evaluationId,
+        execution: version.execution === null ? null : toExecution(version.execution),
         executions: version.executions.map((execution) => toExecution(execution)),
         derivedStatus: version.derivedStatus,
       })))
@@ -309,7 +352,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
   })
 }
 
-function gitErrorCode(error: unknown): number {
+function gitErrorCode(error: unknown): 400 | 404 | 422 {
   if (error instanceof ProjectNotFoundError) {
     return 404
   }
@@ -342,5 +385,6 @@ function toExecution(execution: StoredAgentExecution) {
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
+    configuration: execution.configuration ?? null,
   }
 }

@@ -10,6 +10,35 @@ const items = [
 ]
 
 describe("Sidebar", () => {
+  it("animates resizing and reverses from the visible width on a rapid toggle", async () => {
+    const user = userEvent.setup()
+    const { container } = render(<Sidebar title="Menu" items={items} />)
+    const sidebar = screen.getByRole("complementary", { name: "Menu" })
+    const cancel = vi.fn()
+    const animate = vi.fn<HTMLElement["animate"]>(() => ({ cancel }) as unknown as Animation)
+    sidebar.animate = animate
+    const rectangle = (width: number) => ({ width, height: 600 }) as DOMRect
+    vi.spyOn(sidebar, "getBoundingClientRect")
+      .mockReturnValueOnce(rectangle(220))
+      .mockReturnValueOnce(rectangle(48))
+      .mockReturnValueOnce(rectangle(140))
+      .mockReturnValueOnce(rectangle(220))
+    const contentAnimate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation)
+    container.querySelectorAll<HTMLElement>(".ui-sidebar-top, .ui-sidebar-nav").forEach((element) => { element.animate = contentAnimate })
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    expect(animate.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ width: "220px" }),
+      expect.objectContaining({ width: "48px" }),
+    ])
+    await user.click(screen.getByRole("button", { name: "Expand sidebar" }))
+    expect(cancel).toHaveBeenCalled()
+    expect(animate.mock.calls[1][0]).toEqual([
+      expect.objectContaining({ width: "140px" }),
+      expect.objectContaining({ width: "220px" }),
+    ])
+    expect(contentAnimate).toHaveBeenCalledTimes(2)
+  })
+
   it("shows details while expanded", () => {
     render(<Sidebar title="Menu" items={items} activeId="home" />)
 

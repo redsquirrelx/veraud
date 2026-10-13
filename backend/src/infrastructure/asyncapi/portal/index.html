@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Veraud Backend WebSocket API</title>
+    <link rel="stylesheet" href="/docs/ws/assets/asyncapi.css" />
+    <link rel="stylesheet" href="/docs/ws/assets/portal.css" />
+  </head>
+  <body>
+    <header class="portal-header">
+      <div>
+        <h1>Veraud Backend WebSocket API</h1>
+        <p>Current backend connection: <code id="ws-address"></code></p>
+        <p class="portal-note">Development server defaults in the specification are editable examples.</p>
+      </div>
+      <nav aria-label="API documentation">
+        <a href="/docs">HTTP Swagger</a>
+        <a href="/docs/ws/spec" download="asyncapi.yaml">Download AsyncAPI YAML</a>
+      </nav>
+    </header>
+    <p id="portal-status" role="status">Loading WebSocket documentationΓÇª</p>
+    <main id="asyncapi" aria-label="AsyncAPI documentation"></main>
+    <noscript>Enable JavaScript to view the interactive documentation. You can still download the YAML specification.</noscript>
+    <script src="/docs/ws/assets/asyncapi.js" defer></script>
+    <script src="/docs/ws/assets/portal.js" defer></script>
+  </body>
+</html>

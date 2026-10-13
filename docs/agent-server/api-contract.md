@@ -48,8 +48,11 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 
 - `agent_type` (string, required): registered agent id.
 - `config` (object, optional): all fields optional.
-  - `model.provider`: `"gemini"`/`"google"`, `"openrouter"`/`"openai"`, or `"groq"`.
+  - `model.provider`: `"gemini"`/`"google"`, `"openrouter"`/`"openai"`, `"groq"`, or `"anthropic"`.
   - Groq uses `https://api.groq.com/openai/v1`. Set `model.name` to a model available in your Groq account and provide a Groq key through `config.api_key` or the server's `LLM_API_KEY`. When switching from another provider to Groq, `model.name` is required so a Gemini/OpenRouter model name is not inherited accidentally.
+    OpenAI uses `https://api.openai.com/v1`; OpenRouter uses
+    `https://openrouter.ai/api/v1`. Google applies temperature and maximum output tokens.
+    Anthropic uses its native client with the saved model, key and generation parameters.
   - `model.name` / `model.temperature` / `model.max_tokens`.
   - `timeout_seconds` (int > 0): execution timeout.
   - `api_key`: credential override; server key when omitted.
@@ -118,6 +121,12 @@ Source of truth: `agent-server/src/server/api/pipelines.py`,
 - `input.root_path` (string, required): repository root to audit.
 - `input.max_files` / `max_depth` / `max_read_rounds` / `max_files_per_round`: collection and reading budgets. `max_read_rounds` (default `3`) bounds both agents' re-read loops: the analyzer's confirm loop and the architect's coverage loop.
 - `config` (object, optional): same per-request model overrides as `/api/agents/run`; missing fields fall back to `agent-server/config/dev-agents.yaml`.
+- `stage_configs` (object, optional): `{ "analyzer": ExecutionConfig, "architect": ExecutionConfig }`.
+  The backend supplies both saved configurations explicitly, including credentials
+  and generation parameters. Each stage uses its own entry instead of `config`.
+  Both entries are required when the object is present. The shared `config` remains
+  available to existing callers that omit it. Swagger publishes this contract under
+  **Pipelines**, including the domain/request-validation union for `422` and `504`.
 - `execution_ids` (object, optional): rows the backend created for this run. When present each stage reports its own progress back to its row (`running`, then `Completed`/`Failed`); absent means nobody is listening and nothing is reported, like the dev runners.
 - `timeout_seconds` (int > 0, default `600`): deadline for the whole pipeline, enforced around the graph. There are no per-stage timeouts: a slow stage consumes the shared budget.
 
@@ -155,7 +164,7 @@ Both outputs opaque here, matching each agent's own output schema.
 | `422` | Bad config, bad input, or an unreadable `root_path` |
 | `504` | Pipeline timed out |
 
-## Judge agent (CLI-only)
+## Judge agent
 
 Grades a past architecture description against its cited source: whether
 each responsibility and quality note is `supported`, `contradicted`, or
@@ -163,6 +172,10 @@ each responsibility and quality note is `supported`, `contradicted`, or
 
 Source of truth: `agent-server/src/server/agents/judge/`,
 `agent-server/src/server/run_judge.py`.
+
+The judge is also registered for individual HTTP execution. Inspect
+`GET /api/agents/judge/schema`; its input requires a repository root and an existing
+architecture description. It is not automatically part of the audit pipeline.
 
 ```bash
 uv run --no-sync python -m server.run_judge <root> <description.json> --json
@@ -180,3 +193,16 @@ are `unverifiable` without spending a model call; unparseable grader answers
 fail toward `unverifiable`, never toward trust. The headline metric is the
 contradiction rate: shared-model agreement may be self-agreement, but a
 contradiction is evidence.
+## `POST /api/agents/verify-access`
+
+Accepts `{ "model": { "provider": "OpenAI", "name": "MODEL_NAME" }, "api_key": "PROVIDER_KEY" }`.
+Provider, model and key must be explicit; no server credential fallback is used.
+Performs a minimal generation request with a 25-second deadline and returns
+`{ "verified": true }`. The request may incur provider usage. Denied access or
+unsupported configuration returns `422`; timeout returns `504`. Error messages
+do not contain provider response bodies or API keys. Request validation errors
+omit input values to avoid echoing credentials.
+
+Backend-started executions provide their saved configuration explicitly. See
+[backend agent settings](../backend/agent-settings.md) for access gates and
+immutable execution snapshots.

@@ -9,6 +9,8 @@ Source of truth: `backend/src/modules/agent-execution/`
 
 ## Lifecycle
 
+Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
+
 The backend starts the agent over HTTP and then gets out of the way. The agent
 reports its own progress back over HTTP, because it is the only side that knows
 how the run went.
@@ -22,7 +24,7 @@ backend                        agent-server                  row
    |-- resolve evaluation -> workspace path
    |-- POST /api/agents/run ------>  |
    |    { agent_type, input,          |-- POST /:id/running      -> "Running"
-   |      execution_id }              |   or
+   |      execution_id, config }      |   or
    |                                   +-- POST /:id/completion  -> "Completed" | "Failed"
    |
    |<- websocket agent-execution.updated (each transition)
@@ -59,16 +61,19 @@ progress against. Without it the agent still runs, it just reports nowhere.
 
 ## Starting a pipeline
 
-`openPipeline(evaluationId)` creates two rows, `analyzer` + `architect`, on the
-same evaluation, broadcasts one `opened` per row, and dispatches the
-architecture-audit pipeline in the background:
+Project analysis calls `openPipelineForProject()`: both configurations are verified
+before a transaction creates the version/evaluation and two rows, `analyzer` +
+`architect`. Each row captures its own immutable public configuration. The service
+broadcasts one `opened` per row and dispatches the architecture-audit pipeline in
+the background with both captured transport configurations:
 
 ```
 backend                        agent-server                  rows
    |
    |-- POST /api/pipelines/architecture-audit/run -------->  |
    |    { input: { root_path },                                |-- POST analyzer/running      -> "Running"
-   |      execution_ids: { analyzer, architect } }             |-- analyze -> POST analyzer/completion
+   |      execution_ids: { analyzer, architect },              |-- analyze -> POST analyzer/completion
+   |      stage_configs: { analyzer, architect } }             |
    |                                                          |-- POST architect/running     -> "Running"
    |                                                          |-- describe -> POST architect/completion
    |
@@ -111,7 +116,20 @@ Response `201`: `id`, `evaluationId`, `agentType`, `status` (`Waiting`), `result
 
 Keep the returned `id`: every later call addresses the run by it.
 
-## `POST /api/agent-executions/:id/running`
+## Direct invocation: `POST /api/agent-executions/direct`
+
+Body: `agentType` (non-empty string) and `input` (object with at least one
+property), both required. Returns `201` with the execution shape above and
+`evaluationId: null`; no project version or evaluation is created.
+If `root_path` is present, it must resolve inside the backend workspace:
+escaping it returns `422` before creation. A missing checkout fails the created
+execution in the background. Other input fields pass through to the agent.
+
+```json
+{ "agentType": "analyzer", "input": { "root_path": "project-1-owner-repo" } }
+```
+
+## Running callback: `POST /api/agent-executions/:id/running`
 
 Marks the run as in flight. Called by the agent-server. Returns the same shape as
 above with `status: "Running"`.
@@ -151,6 +169,9 @@ is known, and the current status can be polled or awaited over the websocket.
 | `400` | Malformed body, or non-numeric `:id` |
 | `404` | Unknown agent execution |
 | `422` | `Failed` without an error message, or an `agentType`/`evaluationId` that does not exist |
+
+Domain errors use `{ "error": "..." }`. Schema validation `400` errors use
+Fastify's `{ statusCode, code, error, message }` shape.
 
 ## Websocket events
 

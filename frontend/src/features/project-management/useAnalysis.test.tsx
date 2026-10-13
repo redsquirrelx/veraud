@@ -73,8 +73,14 @@ beforeEach(() => {
 
 describe("useAnalysis", () => {
   it("starts tracking and completes when the socket reports back", async () => {
+    const configuration = {
+      model: { id: 1, name: "saved-model", providerId: 1, providerName: "OpenAI" },
+      credential: { id: 2, name: "saved-credential", providerId: 1, providerName: "OpenAI" },
+      temperature: 0.2, maxTokens: 2048,
+    }
     globalThis.fetch = (async () => {
-      return new Response(JSON.stringify(analyzeResponse()), { status: 201 })
+      const response = analyzeResponse()
+      return new Response(JSON.stringify({ ...response, executions: { ...response.executions, architect: { ...response.executions.architect, configuration } } }), { status: 201 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
@@ -102,6 +108,7 @@ describe("useAnalysis", () => {
     })
     expect(result.current.execution?.result).toBe("{\"style\":\"layered\"}")
     expect(result.current.analyzing).toBe(false)
+    expect(result.current.execution?.configuration).toEqual(configuration)
   })
 
   it("reports a failed start with the backend message", async () => {

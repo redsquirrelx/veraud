@@ -13,6 +13,8 @@ import { GitOperationError, InvalidGitRequestError, ProjectFileError, ProjectNot
 const details: StoredProjectDetails = {
   id: 7,
   githubRepositoryId: BigInt(1296269),
+  cloneProtocol: "https",
+  shallowClone: false,
   repositoryOwner: "octocat",
   repositoryName: "Hello-World",
   status: "READY",
@@ -44,6 +46,7 @@ function makeService(options: {
     {
       create: async () => { throw new Error("not used") },
       findByGithubId: async () => null,
+      findByRepo: async () => null,
       findById: async () => options.details === undefined ? details : options.details,
       delete: async () => {},
       setStatus: async () => { throw new Error("must not touch project status") },
@@ -77,7 +80,7 @@ function makeService(options: {
     ),
     new GithubClient(),
     workspaceDir,
-    { openPipeline: async () => { throw new Error("not used") } }
+    { openPipelineForProject: async () => { throw new Error("not used") } }
   )
 
   return { service, enqueued, created, workspaceDir }

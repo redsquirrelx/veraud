@@ -16,6 +16,23 @@ function StatefulTabs() {
 }
 
 describe("FilterTabs", () => {
+  it("moves focus and selection with arrows, Home and End", async () => {
+    const user = userEvent.setup()
+    render(<StatefulTabs />)
+    const all = screen.getByRole("tab", { name: "All (18)" })
+    const running = screen.getByRole("tab", { name: "Running (2)" })
+    all.focus()
+    await user.keyboard("{ArrowRight}")
+    expect(running).toHaveFocus()
+    expect(running).toHaveAttribute("aria-selected", "true")
+    expect(all).toHaveAttribute("tabindex", "-1")
+    await user.keyboard("{Home}")
+    expect(all).toHaveFocus()
+    await user.keyboard("{End}{ArrowRight}")
+    expect(all).toHaveFocus()
+    expect(all).toHaveAttribute("aria-selected", "true")
+  })
+
   it("marks the active tab", () => {
     render(<StatefulTabs />)
 

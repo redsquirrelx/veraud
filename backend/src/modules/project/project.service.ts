@@ -6,6 +6,8 @@ import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/t
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import type { PipelineExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
+import { projectWorkspaceFolder } from "./project-workspace.js"
+export { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
 
 export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
@@ -34,12 +36,13 @@ export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
 /** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
-  openPipeline(evaluationId: number): Promise<PipelineExecutions>
+  openPipelineForProject(projectId: number, branch: string, commitHash: string): Promise<AnalysisRequest>
 }
 
 export interface AnalysisRequest {
   versionId: number
   evaluationId: number
+  execution: StoredAgentExecution
   executions: PipelineExecutions
 }
 
@@ -50,6 +53,7 @@ export interface VersionAnalysis {
   analysisStatus: string
   analyzedAt: Date | null
   evaluationId: number | null
+  execution: StoredAgentExecution | null
   executions: StoredAgentExecution[]
   derivedStatus: string
 }
@@ -63,46 +67,54 @@ export class ProjectService {
     private analyses: AnalysisRunner
   ) {}
 
-  async registerProject(repositoryUrl: string) {
+  async registerProject(repositoryUrl: string, shallowClone = false) {
     const parsed = parseGithubUrl(repositoryUrl)
 
     if (parsed === null) {
-      throw new InvalidUrlError("URL must look like https://github.com/{owner}/{repo}")
+      throw new InvalidUrlError("URL must look like https://github.com/{owner}/{repo} or git@github.com:{owner}/{repo}.git")
     }
 
-    let metadata
-    try {
-      metadata = await this.github.checkAccess(parsed.owner, parsed.repo)
-    } catch (error) {
-      if (error instanceof RepoNotAccessibleError) {
-        throw error
+    let metadata: { id: number; owner: string; name: string; cloneUrl: string } | null = null
+    if (parsed.protocol === "https") {
+      try {
+        metadata = await this.github.checkAccess(parsed.owner, parsed.repo)
+      } catch (error) {
+        if (error instanceof RepoNotAccessibleError) {
+          throw error
+        }
+        throw new RepoNotAccessibleError(`Could not reach repository ${parsed.owner}/${parsed.repo}`)
       }
-      throw new RepoNotAccessibleError(`Could not reach repository ${parsed.owner}/${parsed.repo}`)
     }
 
-    const existing = await this.projects.findByGithubId(BigInt(metadata.id))
+    const owner = metadata?.owner ?? parsed.owner
+    const name = metadata?.name ?? parsed.repo
+    const githubRepositoryId = metadata === null ? null : BigInt(metadata.id)
+    const existing = await this.projects.findByRepo(owner, name) ?? (githubRepositoryId === null ? null : await this.projects.findByGithubId(githubRepositoryId))
 
     if (existing !== null) {
-      throw new DuplicateProjectError(`Repository ${metadata.owner}/${metadata.name} is already registered`)
+      throw new DuplicateProjectError(`Repository ${owner}/${name} is already registered`)
     }
 
     const project = await this.projects.create({
-      githubRepositoryId: BigInt(metadata.id),
-      repositoryOwner: metadata.owner,
-      repositoryName: metadata.name,
+      githubRepositoryId,
+      cloneProtocol: parsed.protocol,
+      shallowClone,
+      repositoryOwner: owner,
+      repositoryName: name,
       status: "QUEUED",
     })
 
-    const { task, result } = await this.tasks.launch(project.id, `cloning ${metadata.owner}/${metadata.name}`, {
+    const { task, result } = await this.tasks.launch(project.id, `cloning ${owner}/${name}`, {
       kind: "clone",
-      cloneUrl: metadata.cloneUrl,
-      folder: `${metadata.id}-${metadata.owner}-${metadata.name}`,
+      cloneUrl: parsed.protocol === "ssh" ? `git@github.com:${owner}/${name}.git` : `https://github.com/${owner}/${name}.git`,
+      folder: projectWorkspaceFolder({ ...project, githubRepositoryId }),
+      shallowClone,
     })
 
     if (result.status !== "Succeded") {
       await this.tasks.remove(task.id)
       await this.projects.delete(project.id)
-      throw new RepoNotAccessibleError(`Repository ${metadata.owner}/${metadata.name} could not be cloned`)
+      throw new RepoNotAccessibleError(`Repository ${owner}/${name} could not be cloned`)
     }
 
     return project
@@ -112,7 +124,8 @@ export class ProjectService {
     return this.projects.list()
   }
 
-  async syncProject(id: number): Promise<StoredProjectDetails> {    const project = await this.projects.findById(id)
+  async syncProject(id: number): Promise<StoredProjectDetails> {
+    const project = await this.projects.findById(id)
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
@@ -127,7 +140,7 @@ export class ProjectService {
       )
     }
 
-    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
     const hasFiles = existsSync(targetDir) && readdirSync(targetDir).length > 0
     const previousStatus = project.status
@@ -139,8 +152,11 @@ export class ProjectService {
       description = `cloning ${project.repositoryOwner}/${project.repositoryName}`
       command = {
         kind: "clone",
-        cloneUrl: `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
+        cloneUrl: project.cloneProtocol === "ssh"
+          ? `git@github.com:${project.repositoryOwner}/${project.repositoryName}.git`
+          : `https://github.com/${project.repositoryOwner}/${project.repositoryName}.git`,
         folder,
+        shallowClone: project.shallowClone,
       }
     } else if (isDetachedHead(targetDir)) {
       description = `fetching ${project.repositoryOwner}/${project.repositoryName}`
@@ -399,12 +415,7 @@ export class ProjectService {
       )
     }
 
-    const version = await this.projects.upsertVersion(project.id, { branch: cleanBranch, commitHash: cleanHash })
-    await this.projects.setSelectedVersion(project.id, version.id)
-    const evaluation = await this.projects.createEvaluation(version.id, ANALYSIS_EVALUATION_TYPE)
-    const executions = await this.analyses.openPipeline(evaluation.id)
-
-    return { versionId: version.id, evaluationId: evaluation.id, executions }
+    return this.analyses.openPipelineForProject(project.id, cleanBranch, cleanHash)
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {
@@ -416,19 +427,25 @@ export class ProjectService {
 
     const versions = await this.projects.listVersions(project.id)
 
-    return versions.map((version) => ({
-      id: version.id,
-      branch: version.branch,
-      commitHash: version.commitHash,
-      analysisStatus: version.analysisStatus,
-      analyzedAt: version.analyzedAt,
-      evaluationId: version.evaluation?.id ?? null,
-      executions: version.executions.map((execution) => ({ ...execution, status: execution.status as StoredAgentExecution["status"] })),
-      derivedStatus: deriveStatus(version.evaluation, version.executions),
-    }))
+    return versions.map((version) => {
+      const executions = version.executions.map((execution) => ({ ...execution, status: execution.status as StoredAgentExecution["status"] }))
+      const execution = executions.find((execution) => execution.agentType === "analyzer") ?? executions[0] ?? null
+      return {
+        id: version.id,
+        branch: version.branch,
+        commitHash: version.commitHash,
+        analysisStatus: version.analysisStatus,
+        analyzedAt: version.analyzedAt,
+        evaluationId: version.evaluation?.id ?? null,
+        execution,
+        executions,
+        derivedStatus: deriveStatus(version.evaluation, version.executions),
+      }
+    })
   }
 
-  private requireWorkspace(project: StoredProjectDetails): string {    const folder = `${project.githubRepositoryId}-${project.repositoryOwner}-${project.repositoryName}`
+  private requireWorkspace(project: StoredProjectDetails): string {
+    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
 
     if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {
@@ -463,7 +480,8 @@ function deriveStatus(
   return evaluation === null ? "NeverAnalyzed" : "Pending"
 }
 
-function isDetachedHead(targetDir: string): boolean {  try {
+function isDetachedHead(targetDir: string): boolean {
+  try {
     const head = readFileSync(join(targetDir, ".git", "HEAD"), "utf8").trim()
     return head.startsWith("ref: ") === false
   } catch {
@@ -491,7 +509,8 @@ function assertValidFilePath(requestPath: string): string {
   return segments.join("/")
 }
 
-function assertValidBranch(branch: string): string {  const trimmed = branch.trim()
+function assertValidBranch(branch: string): string {
+  const trimmed = branch.trim()
 
   if (trimmed.length === 0 || trimmed.length > 255 || BRANCH_PATTERN.test(trimmed) === false) {
     throw new InvalidGitRequestError("Branch must use letters, numbers, dot, underscore, slash or dash")

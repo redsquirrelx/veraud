@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
 import type { AgentInput, AgentInvoker, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
+import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 
@@ -62,8 +63,10 @@ describe("project analyze endpoint", () => {
         run: async () => ({ kind: "library" }),
         ...quietPipeline,
       },
+      makeModelAccessVerifier: () => ({ verify: async () => {} }),
     })
 
+    auditResponseSerialization(app)
     closers.push(async () => {
       await app.close()
       await db.$disconnect()
@@ -88,8 +91,10 @@ describe("project analyze endpoint", () => {
       data: { name: "test-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
     for (const agentType of ["analyzer", "architect"]) {
-      await db.agentSettings.create({
-        data: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+      await db.agentSettings.upsert({
+        where: { agentType },
+        create: { agentType, aiModelId: model.id, aiCredentialId: credential.id },
+        update: { aiModelId: model.id, aiCredentialId: credential.id },
       })
     }
   }
@@ -244,7 +249,7 @@ describe("project analyze endpoint", () => {
     assert.equal(response.statusCode, 422)
   })
 
-  it("422s when the analyzer is not registered", async () => {
+  it("422s when the analyzer has no model and credential configured", async () => {
     const { app, project } = await start()
 
     const response = await app.inject({
@@ -264,8 +269,9 @@ describe("project analyze endpoint", () => {
     const credential = await db.aiCredential.create({
       data: { name: "test-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
-    await db.agentSettings.create({
-      data: { agentType: "analyzer", aiModelId: model.id, aiCredentialId: credential.id },
+    await db.agentSettings.update({
+      where: { agentType: "analyzer" },
+      data: { aiModelId: model.id, aiCredentialId: credential.id },
     })
 
     const response = await app.inject({
