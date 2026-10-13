@@ -164,10 +164,18 @@ class ProjectAnalysisContext:
             self._validate_retrieval(retrieval)
         if result.report is not None:
             self.validate_report(result.report)
-            local = self._local_indexes((result.report, result.retrieved_evidence, *(
-                getattr(finding, name) for finding in result.validated_findings
-                for name in type(finding).model_fields if name != "id"
-            )))
+            local = self._local_indexes(
+                (
+                    result.report,
+                    result.retrieved_evidence,
+                    *(
+                        getattr(finding, name)
+                        for finding in result.validated_findings
+                        for name in type(finding).model_fields
+                        if name != "id"
+                    ),
+                )
+            )
             self._validate_references(result, local)
         else:
             self._validate_references(result, self._local_indexes(result))
@@ -178,6 +186,12 @@ class ProjectAnalysisContext:
         self._validate_references(
             handoff, self._local_indexes(handoff.project_analysis_report)
         )
+
+    def validate_architecture_brief(self, brief) -> None:
+        self.require_snapshot(brief.snapshot_hash)
+        self._validate_references(brief, self._local_indexes(brief))
+        for retrieval in brief.retrieved_evidence:
+            self._validate_retrieval(retrieval)
 
     def _snapshot_entity(self, identifier: str) -> BaseModel:
         for kind, index in self.reference_indexes.items():

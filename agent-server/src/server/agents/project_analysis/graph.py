@@ -19,6 +19,7 @@ from .planning import (
 from .prompts import render_planning_prompt
 from .schemas import ExecutionIssue, InvestigationProposal
 from .state import ProjectAnalysisState
+from .telemetry import TextCallObserver
 from .tools import RepositoryToolset
 
 
@@ -129,6 +130,7 @@ async def propose_plan_node(state, runtime):
         # External cancellation propagates; the caller owns provider cleanup.
         category = "model_timeout" if isinstance(error, TimeoutError) else "model_error"
         from ...benchmark.pacing import http_status
+
         status = http_status(error)
         return update | {
             "planning_status": "failed",
@@ -136,7 +138,8 @@ async def propose_plan_node(state, runtime):
                 planning_issue(
                     state,
                     category,
-                    f"Planning provider failed: {type(error).__name__}" + (f" (HTTP {status})." if status else "."),
+                    f"Planning provider failed: {type(error).__name__}"
+                    + (f" (HTTP {status})." if status else "."),
                 ),
             ),
             "budget_usage": usage.model_copy(
@@ -303,11 +306,18 @@ class InvestigationPlanner:
         initial = state if state is not None else tools.initial_state()
         if initial["input"] != tools.context.input:
             raise ValueError("Planning state must use the bound execution input.")
-        return await self.graph.ainvoke(
+        generate = (
+            self.generate
+            if hasattr(self.generate, "telemetry")
+            else TextCallObserver(self.generate)
+        )
+        result = await self.graph.ainvoke(
             initial,
-            context=PlanningRuntime(tools, self.generate, self.limits),
+            context=PlanningRuntime(tools, generate, self.limits),
             config={
                 "recursion_limit": 6
                 + 2 * tools.context.input.budget.max_plan_corrections
             },
         )
+        result["telemetry"] = generate.telemetry(tools.tool_measurements)
+        return result

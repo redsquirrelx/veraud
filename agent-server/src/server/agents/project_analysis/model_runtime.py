@@ -7,6 +7,7 @@ from time import monotonic
 from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
 from ...benchmark.telemetry import response_usage
 from ..analyzer.parsing import extract_text
+from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
 
 
 class ModelGateway:
@@ -38,6 +39,7 @@ class ModelGateway:
             interval=interval, max_retries=max_retries, backoff=backoff
         )
         self.calls = []
+        self.measurements = []
         self.on_event = on_event
         self.trace = trace
         self.stopped = False
@@ -52,7 +54,14 @@ class ModelGateway:
             "status": "failed",
             "input_tokens": None,
             "output_tokens": None,
+            "unknown_usage_attempts": 0,
         }
+        measurement = getattr(prompt, "measurement", None)
+        if measurement is None:
+            measurement = measured_prompt(
+                [(prompt, "instructions")], stage="unknown"
+            ).measurement
+        response_characters = None
         started = monotonic()
         call_number = len(self.calls) + 1
         wait_reason = "request_pacing_or_shared_cooldown"
@@ -62,10 +71,23 @@ class ModelGateway:
             if self.on_event is not None:
                 self.on_event(event, {"call": call_number, **values})
 
-        emit("model_call_started", prompt_characters=len(prompt))
+        emit(
+            "model_call_started",
+            stage=measurement.stage,
+            correction=measurement.correction,
+            prompt_characters=len(prompt),
+            estimated_input_tokens=measurement.estimated_input_tokens,
+            estimate_method=measurement.estimate_method,
+            context_characters={
+                part.category: part.characters for part in measurement.context
+            },
+        )
         try:
             async with self.pacer.lock:
                 for index in range(self.pacer.max_retries + 1):
+                    guard = getattr(self, "request_guard", None)
+                    if guard is not None:
+                        guard(prompt, record["attempts"])
                     delay = max(0, self.pacer.next_allowed - monotonic())
                     if delay:
                         emit(
@@ -82,6 +104,7 @@ class ModelGateway:
                     finally:
                         record["wait_seconds"] += monotonic() - waiting
                     record["attempts"] += 1
+                    attempt_has_usage = False
                     emit(
                         "provider_request",
                         attempt=index + 1,
@@ -91,9 +114,9 @@ class ModelGateway:
                         if self.trace:
                             from ...config.tracing import traced_generate
 
-                            response = await traced_generate(self.delegate, prompt)
+                            response = await traced_generate(self.delegate, str(prompt))
                         else:
-                            response = await self.delegate.generate(prompt)
+                            response = await self.delegate.generate(str(prompt))
                         metadata = getattr(response, "usage_metadata", None)
                         if metadata is not None and hasattr(
                             metadata, "prompt_token_count"
@@ -105,11 +128,16 @@ class ModelGateway:
                             )
                         else:
                             record.update(response_usage(response), status="completed")
+                        attempt_has_usage = (
+                            record["input_tokens"] is not None
+                            and record["output_tokens"] is not None
+                        )
                         text = extract_text(response)
                         if text.strip().startswith("```json") and text.strip().endswith(
                             "```"
                         ):
                             text = text.strip()[7:-3].strip()
+                        response_characters = len(text)
                         return text
                     except Exception as error:
                         record["http_status"] = http_status(error)
@@ -160,6 +188,8 @@ class ModelGateway:
                             http_status=last_http_status,
                         )
                     finally:
+                        if not attempt_has_usage:
+                            record["unknown_usage_attempts"] += 1
                         self.pacer.completed_attempt()
         except asyncio.CancelledError:
             record["status"] = "cancelled"
@@ -167,8 +197,23 @@ class ModelGateway:
         finally:
             record["seconds"] = monotonic() - started
             self.calls.append(record)
+            self.measurements.append(
+                ModelCallMeasurement(
+                    **measurement.model_dump(),
+                    call=call_number,
+                    status=record["status"],
+                    attempts=record["attempts"],
+                    seconds=record["seconds"],
+                    wait_seconds=record["wait_seconds"],
+                    response_characters=response_characters,
+                    input_tokens=record["input_tokens"],
+                    output_tokens=record["output_tokens"],
+                    unknown_usage_attempts=record["unknown_usage_attempts"],
+                )
+            )
             emit(
                 "model_call_finished",
+                stage=measurement.stage,
                 status=record["status"],
                 seconds=round(record["seconds"], 1),
                 attempts=record["attempts"],
@@ -180,7 +225,11 @@ class ModelGateway:
         def token_total(name):
             return (
                 sum(record[name] for record in self.calls)
-                if self.calls and all(record[name] is not None for record in self.calls)
+                if self.calls
+                and all(
+                    record[name] is not None and not record["unknown_usage_attempts"]
+                    for record in self.calls
+                )
                 else None
             )
 
@@ -195,6 +244,9 @@ class ModelGateway:
             "input_tokens": token_total("input_tokens"),
             "output_tokens": token_total("output_tokens"),
         }
+
+    def telemetry(self, tool_requests=()):
+        return execution_telemetry(self.measurements, tool_requests)
 
 
 async def close_model_clients(model):
@@ -238,7 +290,7 @@ def create_project_model(settings, credentials):
 
             return await self.client.aio.models.generate_content(
                 model=self.settings.name,
-                contents=message,
+                contents=str(message),
                 config=types.GenerateContentConfig(
                     temperature=self.settings.temperature,
                     max_output_tokens=self.settings.max_tokens,

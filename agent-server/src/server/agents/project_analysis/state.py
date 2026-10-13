@@ -26,6 +26,7 @@ from .schemas import (
     RepositoryToolCall,
     RetrievedEvidence,
 )
+from .telemetry import ExecutionTelemetry
 
 
 def merge_records_by_id[Record: AnalysisContract](
@@ -54,6 +55,10 @@ class ProjectAnalysisState(TypedDict, total=False):
     the scheduler must explicitly remove old messages when switching targets.
     The snapshot/query service belong to runtime context, not serializable state.
     """
+
+    telemetry: ExecutionTelemetry
+    query_ledger: tuple[dict, ...]
+    investigation_raw_result: dict | None
 
     input: ProjectAnalysisInput
     snapshot_hash: str

@@ -261,6 +261,10 @@ def validate_report(tools, plan, findings, report):
 
 
 def parse_json_contract(text, schema: type[BaseModel], max_characters):
+    return schema.model_validate(parse_json_value(text, max_characters))
+
+
+def parse_json_value(text, max_characters):
     import json
 
     if not isinstance(text, str) or len(text) > max_characters:
@@ -277,8 +281,105 @@ def parse_json_contract(text, schema: type[BaseModel], max_characters):
     def reject_constant(_value):
         raise ValueError("Nonstandard JSON numeric constants are not permitted.")
 
-    return schema.model_validate(
-        json.loads(
-            text, object_pairs_hook=unique_object, parse_constant=reject_constant
-        )
+    return json.loads(
+        text, object_pairs_hook=unique_object, parse_constant=reject_constant
     )
+
+
+def validation_feedback(error):
+    from pydantic import ValidationError
+
+    if isinstance(error, ValidationError):
+        return tuple(
+            f"{'.'.join(map(str, item['loc'])) or 'response'}: {item['type']}: {item['msg'][:240]}"
+            for item in error.errors(include_input=False, include_url=False)[:6]
+        )
+    return (str(error)[:500],)
+
+
+def normalize_record_arrays(value, schema):
+    """Recover singleton object arrays without modifying facts or primitive fields."""
+    definitions = schema.get("$defs", {})
+
+    def visit(item, contract):
+        if "$ref" in contract:
+            contract = definitions[contract["$ref"].rsplit("/", 1)[1]]
+        if "anyOf" in contract:
+            contract = next(
+                (child for child in contract["anyOf"] if child.get("type") != "null"),
+                contract,
+            )
+            return visit(item, contract) if "anyOf" not in contract else item
+        if contract.get("type") == "array":
+            child = contract.get("items", {})
+            resolved = definitions.get(child.get("$ref", "").rsplit("/", 1)[-1], child)
+            if isinstance(item, dict) and resolved.get("type") == "object":
+                item = [item]
+            return (
+                [visit(member, child) for member in item]
+                if isinstance(item, list)
+                else item
+            )
+        if isinstance(item, dict):
+            properties = contract.get("properties", {})
+            return {
+                key: visit(member, properties[key]) if key in properties else member
+                for key, member in item.items()
+            }
+        return item
+
+    return visit(value, schema)
+
+
+def salvage_finding(tools, plan, previous, raw, objective, evidence_ids, reason):
+    """Retain independently valid records; rejected records never become claims."""
+    from pydantic import TypeAdapter
+
+    from ...services.repository_analysis.context import create_identifier
+    from .schemas import OpenQuestion
+
+    base = InvestigationResult(
+        id=create_identifier("finding", objective.id),
+        investigation_id=objective.id,
+        status="incomplete",
+        limitations=(reason,),
+        open_questions=(
+            OpenQuestion(
+                id=create_identifier("question", objective.id, "rejected_records"),
+                investigation_id=objective.id,
+                question=objective.objective,
+                reason=reason,
+                entity_ids=objective.seed_entity_ids,
+            ),
+        ),
+    )
+    if not isinstance(raw, dict):
+        return base
+    for field in (
+        "project_identification",
+        "components",
+        "integrations",
+        "flows",
+        "component_relationships",
+        "testing",
+        "claims",
+        "open_questions",
+    ):
+        values = raw.get(field, [])
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            try:
+                record = TypeAdapter(
+                    InvestigationResult.model_fields[field].annotation
+                ).validate_python([value])[0]
+                candidate = InvestigationResult.model_validate(
+                    base.model_dump() | {field: (*getattr(base, field), record)}
+                )
+                validate_finding(
+                    tools, plan, previous, candidate, objective, evidence_ids
+                )
+            except ValueError:
+                continue
+            base = candidate
+    return base

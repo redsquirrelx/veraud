@@ -1,5 +1,9 @@
 # Project Analysis Verification and Evaluation
 
+For the subsequent reduced workflow and real-model measurements, see
+[simplification results](project-analysis-simplification-results.md). The findings
+below describe the earlier baseline verification and its provider failures.
+
 ## Verification recorded on 2026-10-12
 
 The end-to-end scripted graph checks cover source/tool routing, complete/partial/failed

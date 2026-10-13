@@ -1,7 +1,11 @@
 """Bounded, snapshot-only tools for a single workspace checkout."""
 
+import hashlib
+import json
+from copy import deepcopy
 from pathlib import Path
 from threading import RLock
+from time import monotonic
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -19,6 +23,7 @@ from .access import (
 )
 from .context import ProjectAnalysisContext, walk_contracts
 from .schemas import BudgetUsage, ProjectAnalysisReport, RetrievedEvidence
+from .telemetry import ToolMeasurement
 
 
 class ToolLimits(BaseModel):
@@ -28,6 +33,7 @@ class ToolLimits(BaseModel):
     max_source_lines: int = Field(default=120, ge=1)
     max_source_characters: int = Field(default=12_000, ge=1)
     max_metadata_items: int = Field(default=20, ge=1)
+    compact: bool = False
 
 
 class ToolError(BaseModel):
@@ -206,6 +212,20 @@ class RepositoryToolset:
         self._tool_calls = 0
         self._retrieved_characters = 0
         self._lock = RLock()
+        self._tool_measurements: list[ToolMeasurement] = []
+        self._request_signatures: set[str] = set()
+        self._query_cache = {}
+        self._last_cache_hit = False
+
+    @property
+    def tool_measurements(self) -> tuple[ToolMeasurement, ...]:
+        with self._lock:
+            return tuple(self._tool_measurements)
+
+    @property
+    def last_cache_hit(self):
+        with self._lock:
+            return self._last_cache_hit
 
     @property
     def budget_usage(self) -> BudgetUsage:
@@ -267,6 +287,49 @@ class RepositoryToolset:
     def execute(
         self, name: str, arguments: dict[str, Any], *, tool_call_id: str
     ) -> RepositoryToolResponse:
+        """Measure charged requests without storing argument or response content."""
+        with self._lock:
+            before = self._tool_calls
+            started = monotonic()
+            self._last_cache_hit = False
+            response = self._execute(name, arguments, tool_call_id=tool_call_id)
+            if self._tool_calls > before:
+                schema = TOOL_SCHEMAS.get(name)
+                try:
+                    normalized = (
+                        schema.model_validate(arguments).model_dump()
+                        if schema
+                        else arguments
+                    )
+                except ValidationError:
+                    normalized = arguments
+                try:
+                    encoded = json.dumps(
+                        [name, normalized], sort_keys=True, default=str
+                    ).encode()
+                except (TypeError, ValueError):
+                    # Measurement must not change controlled rejection behavior.
+                    encoded = json.dumps(
+                        [name, "unserializable_arguments", tool_call_id]
+                    ).encode()
+                signature = hashlib.sha256(encoded).hexdigest()
+                self._tool_measurements.append(
+                    ToolMeasurement(
+                        call_id=tool_call_id,
+                        tool=name,
+                        request_sha256=signature,
+                        repeated=signature in self._request_signatures,
+                        status=response.status,
+                        cache_hit=self._last_cache_hit,
+                        seconds=monotonic() - started,
+                    )
+                )
+                self._request_signatures.add(signature)
+            return response
+
+    def _execute(
+        self, name: str, arguments: dict[str, Any], *, tool_call_id: str
+    ) -> RepositoryToolResponse:
         """Return controlled failures; register only evidence actually delivered."""
         with self._lock:
             if not isinstance(name, str):
@@ -308,6 +371,7 @@ class RepositoryToolset:
                 )
             self._call_ids.add(tool_call_id)
             self._tool_calls += 1
+            self._last_cache_hit = False
             try:
                 schema = TOOL_SCHEMAS.get(name)
                 if schema is None:
@@ -316,7 +380,14 @@ class RepositoryToolset:
                     )
                 values = schema.model_validate(arguments).model_dump()
                 self._validate_arguments(values)
-                result = self._query(name, values)
+                cache_key = json.dumps([name, values], sort_keys=True)
+                if self.limits.compact and cache_key in self._query_cache:
+                    result = deepcopy(self._query_cache[cache_key])
+                    self._last_cache_hit = True
+                else:
+                    result = self._query(name, values)
+                    if self.limits.compact:
+                        self._query_cache[cache_key] = deepcopy(result)
                 response = self._bounded_response(name, tool_call_id, result)
                 if self.context.elapsed_seconds >= budget.max_elapsed_seconds:
                     raise ToolRequestError(
@@ -328,12 +399,16 @@ class RepositoryToolset:
                 for record in response.evidence:
                     self._retrieved[record.id] = record
                 return response
-            except ValidationError:
+            except ValidationError as error:
                 return self._error(
                     name,
                     tool_call_id,
                     "invalid_arguments",
-                    "Arguments do not match the tool schema.",
+                    "Arguments do not match the tool schema: "
+                    + "; ".join(
+                        f"{'.'.join(map(str, item['loc']))}: {item['type']}"
+                        for item in error.errors(include_input=False)[:4]
+                    ),
                 )
             except RepositoryAccessError:
                 return self._error(
@@ -442,6 +517,13 @@ class RepositoryToolset:
                 )
             end = min(requested_end, start + self.limits.max_source_lines - 1)
             source = self._queries.get_source_excerpt(path, start, end)
+            if self.limits.compact:
+                while (
+                    len(source.content) > self.limits.max_source_characters
+                    and end > start
+                ):
+                    end -= 1
+                    source = self._queries.get_source_excerpt(path, start, end)
             if len(source.content) > self.limits.max_source_characters:
                 raise ToolRequestError(
                     "source_limit_exceeded", "Use a smaller source line range."
@@ -469,6 +551,8 @@ class RepositoryToolset:
                 else None
             )
             data["truncated"] = False
+        if self.limits.compact:
+            data = self.compact_data(name, data)
         self._compact_metadata(data)
         remaining = (
             self.context.input.budget.max_retrieved_characters
@@ -520,6 +604,81 @@ class RepositoryToolset:
         elif isinstance(value, list):
             for child in value:
                 self._compact_metadata(child)
+
+    @staticmethod
+    def compact_data(name, data):
+        """Small query projection; full snapshot and retained source stay internal."""
+        data = deepcopy(data)
+        if "items" in data:
+            fields = {
+                "id",
+                "name",
+                "path",
+                "file_id",
+                "project_id",
+                "language",
+                "status",
+                "line_count",
+                "kind",
+                "qualified_name",
+                "start_line",
+                "end_line",
+                "source_id",
+                "target_id",
+                "http_method",
+                "route",
+                "target",
+                "version",
+                "constraint",
+                "resolved_version",
+                "version_constraint",
+                "resolved_versions",
+                "environment_marker",
+                "scope",
+                "usage",
+                "detection",
+                "image",
+                "command",
+                "text",
+                "line",
+                "evidence_ids",
+            }
+            rows = []
+            for item in data["items"]:
+                rows.append(
+                    {
+                        key: value[:2]
+                        if key == "evidence_ids" and isinstance(value, list)
+                        else value
+                        for key, value in item.items()
+                        if key in fields and value is not None and value != []
+                    }
+                )
+            data["items"] = rows
+        elif name == "get_repository_overview":
+            data = {
+                key: data[key]
+                for key in ("repository", "projects", "technologies", "access_policy")
+                if key in data
+            }
+        return data
+
+    def model_view(self, response):
+        """Compact model envelope while keeping the full provenance ledger internal."""
+        value = {"status": response.status, "tool_name": response.tool_name}
+        if response.error:
+            value["error"] = response.error.model_dump()
+        else:
+            value["data"] = self.compact_data(response.tool_name, response.data or {})
+            value["evidence"] = [
+                {
+                    key: getattr(record, key)
+                    for key in ("id", "kind", "file_id", "start_line", "end_line")
+                    if getattr(record, key) is not None
+                }
+                for record in response.evidence
+            ]
+        return value
 
     def _provenance(self, data: dict, call_id: str) -> tuple[RetrievedEvidence, ...]:
         records: dict[tuple, RetrievedEvidence] = {}

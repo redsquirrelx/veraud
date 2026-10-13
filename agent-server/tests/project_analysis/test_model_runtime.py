@@ -12,6 +12,44 @@ from server.agents.project_analysis.model_runtime import (
 )
 
 
+def test_retry_requires_token_admission_and_counts_only_submitted_attempts():
+    from server.agents.project_analysis.schemas import InvestigationBudget
+    from server.agents.project_analysis.telemetry import measured_prompt
+    from server.agents.project_analysis.token_budget import (
+        TokenBudgetExceeded,
+        account_tokens,
+        admit_request,
+    )
+
+    class ProviderError(Exception):
+        status_code = 503
+
+    class Model:
+        calls = 0
+
+        async def generate(self, prompt):
+            self.calls += 1
+            raise ProviderError()
+
+    model = Model()
+    gateway = ModelGateway(model, max_retries=2, backoff=0)
+    budget = InvestigationBudget(max_total_tokens=5000)
+    prompt = measured_prompt(
+        [("Inspect main", "instructions")],
+        stage="investigation",
+        objective_id="objective:main",
+    )
+    gateway.request_guard = lambda text, attempts: admit_request(
+        gateway, budget, text, "objective:main", attempts
+    )
+    with pytest.raises(TokenBudgetExceeded):
+        asyncio.run(gateway(prompt))
+    assert model.calls == gateway.usage_totals()["provider_attempts"] == 1
+    assert gateway.measurements[0].unknown_usage_attempts == 1
+    accounted, estimated = account_tokens(gateway, budget)
+    assert accounted == estimated < budget.max_total_tokens
+
+
 def test_gateway_retry_text_normalization_usage_and_terminal_stop():
     class ProviderError(Exception):
         status_code = 503
@@ -32,7 +70,10 @@ def test_gateway_retry_text_normalization_usage_and_terminal_stop():
     assert asyncio.run(gateway("input")) == '{"ok": true}'
     assert gateway.usage_totals()["provider_retries"] == 1
     assert gateway.usage_totals()["provider_attempts"] == 2
-    assert gateway.usage_totals()["input_tokens"] == 11
+    assert gateway.usage_totals()["input_tokens"] is None
+    stage = gateway.telemetry().stages[0]
+    assert stage.reported_input_tokens == 11 and stage.reported_output_tokens == 4
+    assert stage.input_tokens is None and stage.unknown_usage_attempts == 1
 
     class Broken:
         async def generate(self, prompt):

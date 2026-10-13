@@ -8,12 +8,14 @@ import pytest
 from server.agents.project_analysis import (
     ArchitectureAnalysisInput,
     InvestigationBudget,
-    ProjectAnalysisAgent,
     ProjectAnalysisContext,
     ProjectAnalysisInput,
     RepositoryToolset,
 )
-from server.agents.project_analysis.agent import AnalysisLimits
+from server.agents.project_analysis.baseline_agent import AnalysisLimits
+from server.agents.project_analysis.baseline_agent import (
+    BaselineProjectAnalysisAgent as ProjectAnalysisAgent,
+)
 from server.agents.project_analysis.smoke import ProtocolSmokeModel
 from server.services.repository_analysis import RepositoryAnalysisService
 
@@ -106,6 +108,13 @@ def test_complete_graph_reads_source_validates_report_and_hands_off_same_snapsho
     )
     assert result.usage.model_calls == 5
     assert result.usage.tool_calls == 2
+    assert len(result.telemetry.model_calls) == result.usage.model_calls
+    assert {stage.stage for stage in result.telemetry.stages} == {
+        "planning",
+        "investigation",
+        "synthesis",
+    }
+    assert all(stage.input_tokens is None for stage in result.telemetry.stages)
     assert result.report.investigation_coverage.completed_investigation_ids
     tools.validate_report_access(result.report)
     tools.context.validate_architecture_input(
@@ -146,6 +155,12 @@ def test_synthesis_cannot_invent_facts_and_failed_repairs_preserve_execution_sco
     assert result.completion_status == "failed" and result.report is None
     assert any(issue.category == "invalid_report" for issue in result.execution_issues)
     assert result.usage.model_calls == 7
+    assert (
+        next(
+            stage for stage in result.telemetry.stages if stage.stage == "repair"
+        ).correction_calls
+        == 2
+    )
     assert result.investigation_coverage.completed_investigation_ids
     assert result.validated_findings and result.retrieved_evidence
 

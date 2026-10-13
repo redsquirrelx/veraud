@@ -1,8 +1,9 @@
 # Project Analysis Agent and Runner
 
 The new analyst is an independent, in-memory LangGraph workflow. It runs deterministic
-planning candidates, model planning, restricted investigation/tool rounds, finding
-validation, adaptive follow-ups, synthesis, bounded repair, and finalization.
+target selection, restricted model/tool investigation, finding validation, bounded
+adaptive follow-ups, and deterministic report assembly. The retained model-planning
+and model-synthesis analyst is available with `--baseline` for comparisons.
 
 ## Run a selected checkout
 
@@ -34,9 +35,14 @@ Importing the runner and using offline mode do not require server settings.
 uv run --no-sync python -m server.run_project_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --provider google --model gemini-3.5-flash-lite --max-investigations 4 --max-model-calls 24 --max-tool-calls 60 --timeout 600 --request-interval 12
 ```
 
-`--plan-only` runs the planning subgraph. `--json` emits the structured result to
+`--plan-only` selects scope without provider calls; `--baseline --plan-only` runs
+the retained standalone model planning subgraph. `--json` emits the structured result to
 stdout. Progress uses stderr; `--quiet` suppresses it. `--handoff` emits a validated
-`ArchitectureAnalysisInput` for the same snapshot. `--trace` uses configured
+`ArchitectureAnalysisInput` for the same snapshot. `--compact-handoff` emits an
+`ArchitectureBrief` with immutable functional facts, cited provenance, outcomes,
+coverage, and unresolved questions, without candidate audits or model history.
+The future architect must verify material claims through the same snapshot tools.
+`--trace` uses configured
 LangSmith tracing. Nothing writes snapshots, source, reports, or evaluation files
 automatically; redirect stdout explicitly if an export is wanted.
 
@@ -81,6 +87,10 @@ project analysis. It needs no credentials and makes no provider calls.
 
 ## Runtime and validation
 
+See [context and usage telemetry](project-analysis-telemetry.md) for per-call
+composition, stage-level token usage, correction/repeated-query measurements,
+and reproducibility metadata. Local token estimates are separate from provider usage.
+
 - `ProjectAnalysisAgent(model).run(tools)` accepts a caller-owned asynchronous
   text model and a fresh `RepositoryToolset` for each execution. No checkpointer
   or automatic persistence is configured.
@@ -99,12 +109,16 @@ project analysis. It needs no credentials and makes no provider calls.
   orientation questions. Scope completion is distinct from resolving every question.
 - Follow-ups enter the plan only after origin/reference validation, priority,
   duplicate, and budget checks. Repeated proposals do not create unbounded loops.
-- Accepted records are immutable. Synthesis returns `ReportSelection`, an ordered
-  list of accepted IDs per section. Exact repeated IDs are deduplicated; different
-  records and conflicting claims remain visible. Synthesis cannot merge facts by
-  rewriting responsibilities, invent evidence, silently resolve contradictions,
-  or discard unanswered questions. Semantic consolidation would require another
-  evidence-preserving contract and is not performed by this implementation.
+- Accepted records are immutable. Deterministic assembly deduplicates exact IDs;
+  distinct records and conflicting claims remain visible. No model copies, selects,
+  or rewrites accepted IDs in the default workflow. Independently valid records
+  can survive rejected fields or a token stop; their investigation remains incomplete.
+  A singleton object where an object-array is required is wrapped deterministically;
+  no facts, IDs, primitive values, or evidence are invented to repair a response.
+- The investigator receives objective-specific type contracts and bounded recent
+  unique tool results, a query ledger, relevant components, and field-level errors.
+  Omitted history is explicit. Equivalent compact queries reuse in-memory results;
+  provenance is registered separately for each delivered response.
 - Coverage, snapshot identity, outcomes, and evidence are assembled deterministically.
   Failed results retain the accepted plan, validated findings, and retrieval ledger
   even if no final report can be produced.
@@ -113,11 +127,28 @@ project analysis. It needs no credentials and makes no provider calls.
 
 ### Limits and operational behavior
 
-Default limits are 12 investigations, 40 logical model calls, 100 tool calls,
+Runner default limits are 6 investigations, 24 logical model calls, 100 tool calls,
 150,000 retrieved characters, and 600 seconds after snapshot/context preparation.
-Three model calls are reserved for report synthesis/repair. Each target permits
-eight model turns; each turn permits four tools. Finding corrections and report
-repairs are independently bounded. Source/page/response limits still apply.
+No model calls are reserved for reporting. Each target permits six model turns;
+each turn permits four tools. One finding correction is allowed by default.
+Compact source responses have at most 80 lines/2,200 characters with actual ranges
+and truncation, and pages at most 25 items. Full retained source remains queryable.
+Library callers can supply independent investigation/tool limits.
+
+Token defaults: `--max-total-tokens 60000`, `--max-input-tokens 6000`,
+`--max-objective-tokens 20000`, `--max-tokens 3000` (provider output ceiling).
+Request admission uses a conservative input estimate (at least 0.45 tokens per
+serialized character, calibrated upward from reported usage) plus the output
+ceiling. Retries also require admission. `accounted_tokens` combines reported
+usage and conservative reserves for attempts without usage; `estimated_tokens`
+identifies the estimated portion. This operational estimate is separate from
+telemetry's `ceil(characters / 4)` diagnostic estimate. Unknown actual usage stays
+null. These are admission limits, not guaranteed exact provider billing ceilings.
+Budget exhaustion preserves valid facts and finalizes deterministically.
+
+```powershell
+uv run python -m server.run_project_analysis ../appdata/workspace/1373928788-Cesar-Sanchez-sof-Polleria --max-investigations 4 --max-total-tokens 60000 --max-objective-tokens 25000
+```
 
 Provider attempts and retries are accounted separately from logical model calls.
 Transient transport/408/429/5xx failures use bounded shared pacing/backoff; terminal

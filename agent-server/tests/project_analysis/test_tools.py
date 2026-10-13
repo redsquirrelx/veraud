@@ -76,6 +76,24 @@ def call(tools, name, /, **arguments):
     )
 
 
+def test_tool_telemetry_detects_repeats_with_defaults_without_retaining_content(
+    checkout,
+):
+    tools = toolset(checkout)
+    first = call(tools, "list_files")
+    second = call(tools, "list_files", offset=0, limit=20)
+    assert first.status == second.status == "ok"
+    records = tools.tool_measurements
+    assert len(records) == 2 and not records[0].repeated and records[1].repeated
+    assert records[0].request_sha256 == records[1].request_sha256
+    assert "src/main.py" not in records[0].model_dump_json()
+    call(tools, "get_source_excerpt", path="src/main.py")
+    assert "SOURCE_ONLY" not in tools.tool_measurements[-1].model_dump_json()
+    before = len(tools.tool_measurements)
+    tools.execute("list_files", {}, tool_call_id=first.tool_call_id)
+    assert len(tools.tool_measurements) == before
+
+
 def report_with_claim(tools, claim, retrievals=()):
     snapshot = tools.context.snapshot
     source = next(source for source in snapshot.files if source.path == "src/main.py")

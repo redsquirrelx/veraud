@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -27,6 +28,10 @@ from server.agents.project_analysis.access import (
     RepositoryAccessError,
 )
 from server.agents.project_analysis.agent import AnalysisLimits
+from server.agents.project_analysis.baseline_agent import (
+    AnalysisLimits as BaselineLimits,
+)
+from server.agents.project_analysis.baseline_agent import BaselineProjectAnalysisAgent
 from server.agents.project_analysis.evaluation import evaluate_run, summarize_evaluation
 from server.agents.project_analysis.graph import InvestigationPlanner
 from server.agents.project_analysis.model_runtime import (
@@ -34,8 +39,13 @@ from server.agents.project_analysis.model_runtime import (
     close_model_clients,
     create_project_model,
 )
-from server.agents.project_analysis.schemas import ArchitectureAnalysisInput
+from server.agents.project_analysis.planning import select_deterministic_plan
+from server.agents.project_analysis.schemas import (
+    ArchitectureAnalysisInput,
+    ArchitectureBrief,
+)
 from server.agents.project_analysis.smoke import ProtocolSmokeModel
+from server.agents.project_analysis.tools import ToolLimits
 from server.services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -93,12 +103,22 @@ def build_parser():
         "--plan-only", action="store_true", help="Run only the planning subgraph"
     )
     parser.add_argument(
+        "--baseline",
+        action="store_true",
+        help="Run the retained model-planning/model-synthesis analyst for comparison",
+    )
+    parser.add_argument(
         "--json", action="store_true", help="Emit structured execution result to stdout"
     )
     parser.add_argument(
         "--handoff",
         action="store_true",
         help="Emit architecture input instead of the run result",
+    )
+    parser.add_argument(
+        "--compact-handoff",
+        action="store_true",
+        help="Emit functional facts and citations without full planning audits",
     )
     parser.add_argument(
         "--quiet", action="store_true", help="Suppress progress on stderr"
@@ -116,14 +136,24 @@ def build_parser():
     parser.add_argument("--model", default=None)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--max-tokens", type=int, default=8000)
-    parser.add_argument("--max-investigations", type=int, default=12)
-    parser.add_argument("--max-model-calls", type=int, default=40)
-    parser.add_argument("--report-call-reserve", type=int, default=3)
+    parser.add_argument(
+        "--max-tokens", type=int, default=3000, help="Per-call output token limit"
+    )
+    parser.add_argument("--max-total-tokens", type=int, default=60000)
+    parser.add_argument("--max-input-tokens", type=int, default=6000)
+    parser.add_argument("--max-objective-tokens", type=int, default=20000)
+    parser.add_argument("--max-investigations", type=int, default=6)
+    parser.add_argument("--max-model-calls", type=int, default=24)
+    parser.add_argument(
+        "--report-call-reserve",
+        type=int,
+        default=0,
+        help="Legacy baseline report reserve; simplified finalization needs no model calls",
+    )
     parser.add_argument("--max-tool-calls", type=int, default=100)
     parser.add_argument("--max-retrieved-characters", type=int, default=150000)
     parser.add_argument("--timeout", type=float, default=600)
-    parser.add_argument("--max-turns", type=int, default=8)
+    parser.add_argument("--max-turns", type=int, default=6)
     parser.add_argument("--request-interval", type=float, default=0)
     parser.add_argument("--max-retries", type=int, default=2)
     parser.add_argument("--retry-backoff", type=float, default=2)
@@ -133,7 +163,7 @@ def build_parser():
 
 
 def create_model(arguments):
-    if arguments.smoke:
+    if arguments.smoke or (arguments.plan_only and not arguments.baseline):
         return ProtocolSmokeModel()
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -174,6 +204,41 @@ def progress(event, values):
         for name, value in values.items()
     )
     print(f"[{event}] {details}", file=sys.stderr, flush=True)
+
+
+def run_metadata(arguments, tools, model):
+    """Reproducibility metadata with explicit settings and no credentials/source."""
+    server = Path(__file__).resolve().parent
+    files = sorted(
+        [
+            *Path(__file__).parent.joinpath("agents/project_analysis").glob("*.py"),
+            *server.joinpath("services/repository_analysis").glob("*.py"),
+            Path(__file__),
+        ]
+    )
+    fingerprint = hashlib.sha256()
+    for source in files:
+        fingerprint.update(source.relative_to(server).as_posix().encode() + b"\0")
+        fingerprint.update(hashlib.sha256(source.read_bytes()).digest())
+    settings = getattr(model, "settings", None)
+    return {
+        "snapshot_hash": tools.context.input.snapshot_hash,
+        "repository_name": tools.context.snapshot.repository.name,
+        "repository_commit": tools.context.snapshot.repository.commit,
+        "implementation_sha256": fingerprint.hexdigest(),
+        "provider": getattr(settings, "provider", "offline"),
+        "model": getattr(settings, "name", "protocol_smoke"),
+        "temperature": getattr(settings, "temperature", None),
+        "max_output_tokens": getattr(settings, "max_tokens", None),
+        "budget": tools.context.input.budget.model_dump(mode="json"),
+        "max_turns": arguments.max_turns,
+        "max_files": arguments.max_files,
+        "max_depth": arguments.max_depth,
+        "request_interval": arguments.request_interval,
+        "max_retries": arguments.max_retries,
+        "retry_backoff": arguments.retry_backoff,
+        "workflow": "baseline" if arguments.baseline else "simplified",
+    }
 
 
 class ProgressReporter:
@@ -269,17 +334,23 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         raise ValueError(
             "Provider limits must be nonnegative and max-tokens must be positive."
         )
-    if arguments.handoff and arguments.plan_only:
+    if (arguments.handoff or arguments.compact_handoff) and arguments.plan_only:
         raise ValueError("--handoff requires a full analysis, not --plan-only.")
     budget = InvestigationBudget(
         max_investigations=arguments.max_investigations,
         max_model_calls=arguments.max_model_calls,
         reserved_report_model_calls=arguments.report_call_reserve,
+        max_total_tokens=arguments.max_total_tokens,
+        max_input_tokens_per_call=arguments.max_input_tokens,
+        max_tokens_per_investigation=arguments.max_objective_tokens,
+        max_output_tokens_per_call=arguments.max_tokens,
         max_tool_calls=arguments.max_tool_calls,
         max_retrieved_characters=arguments.max_retrieved_characters,
         max_elapsed_seconds=arguments.timeout,
     )
-    limits = AnalysisLimits(max_model_calls_per_investigation=arguments.max_turns)
+    limits = (BaselineLimits if arguments.baseline else AnalysisLimits)(
+        max_model_calls_per_investigation=arguments.max_turns
+    )
     emit(
         "snapshot_started",
         repository=str(root),
@@ -311,6 +382,12 @@ async def run(arguments, *, reference=None, shared_pacer=None):
             ),
         ),
         workspace_root=workspace,
+        limits=ToolLimits(
+            compact=not arguments.baseline,
+            max_page_size=25 if not arguments.baseline else 50,
+            max_source_lines=80 if not arguments.baseline else 120,
+            max_source_characters=2200 if not arguments.baseline else 12000,
+        ),
     )
     emit(
         "tools_ready",
@@ -342,11 +419,17 @@ async def run(arguments, *, reference=None, shared_pacer=None):
     if shared_pacer is not None:
         gateway.pacer = shared_pacer
     try:
+        metadata = run_metadata(arguments, tools, model)
         if arguments.plan_only:
             emit("planning")
-            state = await with_progress(
-                InvestigationPlanner(model, generate=gateway).plan(tools), reporter
-            )
+            if arguments.baseline:
+                state = await with_progress(
+                    InvestigationPlanner(model, generate=gateway).plan(tools), reporter
+                )
+            else:
+                state = tools.initial_state()
+                state["investigation_plan"] = select_deterministic_plan(tools)
+                state["planning_status"] = "ready"
             emit(
                 "planning_finished",
                 status=state["planning_status"],
@@ -358,12 +441,18 @@ async def run(arguments, *, reference=None, shared_pacer=None):
                 "planning_status": state["planning_status"],
                 "plan": state["investigation_plan"].model_dump(mode="json"),
                 "usage": usage.model_dump(mode="json"),
+                "telemetry": gateway.telemetry(tools.tool_measurements).model_dump(
+                    mode="json"
+                ),
+                "run_metadata": metadata,
                 "execution_issues": [
                     record.model_dump(mode="json")
                     for record in state["execution_issues"]
                 ],
             }, state["planning_status"] == "ready"
-        agent = ProjectAnalysisAgent(
+        agent = (
+            BaselineProjectAnalysisAgent if arguments.baseline else ProjectAnalysisAgent
+        )(
             model,
             generate=gateway,
             limits=limits,
@@ -385,20 +474,27 @@ async def run(arguments, *, reference=None, shared_pacer=None):
                 message=execution_issue.message,
             )
         if reference is not None:
-            return evaluate_run(
+            evaluated = evaluate_run(
                 result,
                 snapshot,
                 reference,
                 protocol_smoke=arguments.smoke,
                 input_price=arguments.input_price,
                 output_price=arguments.output_price,
-            ), result.report is not None
+            )
+            evaluated["run_metadata"] = metadata
+            return evaluated, result.report is not None
         if arguments.handoff:
             handoff = ArchitectureAnalysisInput.from_result(result)
             tools.context.validate_architecture_input(handoff)
             return handoff.model_dump(mode="json"), True
+        if arguments.compact_handoff:
+            brief = ArchitectureBrief.from_result(result)
+            tools.context.validate_architecture_brief(brief)
+            return brief.model_dump(mode="json"), True
         return result.model_dump(mode="json") | {
-            "execution_mode": "protocol_smoke" if arguments.smoke else "model"
+            "execution_mode": "protocol_smoke" if arguments.smoke else "model",
+            "run_metadata": metadata,
         }, result.report is not None
     finally:
         emit("cleanup_started")
@@ -414,6 +510,7 @@ async def evaluate_workspace(arguments):
     if (
         arguments.root
         or arguments.handoff
+        or arguments.compact_handoff
         or arguments.plan_only
         or arguments.repeat < 1
     ):
@@ -498,6 +595,28 @@ def print_summary(data):
         print(f"Issue: {issue['stage']} | {issue['category']} | {issue['message']}")
     if "usage" in data:
         print("\nUsage: " + json.dumps(data["usage"]))
+    print_telemetry(data.get("telemetry"))
+
+
+def print_telemetry(telemetry):
+    if not telemetry:
+        return
+    print("\nContext telemetry (serialized characters; token estimates are heuristic):")
+    for stage in telemetry["stages"]:
+        print(
+            f"  {stage['stage']}: calls={stage['calls']} corrections={stage['correction_calls']} "
+            f"input_tokens={stage['input_tokens']} output_tokens={stage['output_tokens']} "
+            f"estimated_input_tokens={stage['estimated_input_tokens']} unknown_usage_attempts={stage['unknown_usage_attempts']}"
+        )
+        print(
+            "    characters: "
+            + ", ".join(
+                f"{part['category']}={part['characters']}" for part in stage["context"]
+            )
+        )
+    print(
+        f"  Repeated tool requests: {telemetry['repeated_tool_requests']} / {len(telemetry['tool_requests'])}"
+    )
 
 
 def main(argv=None):
@@ -509,7 +628,7 @@ def main(argv=None):
             if arguments.evaluate_workspace
             else run(arguments)
         )
-        if arguments.json or arguments.handoff:
+        if arguments.json or arguments.handoff or arguments.compact_handoff:
             print(json.dumps(data, indent=2, ensure_ascii=False))
         elif arguments.evaluate_workspace:
             print(json.dumps(data["summary"], indent=2))
@@ -517,6 +636,7 @@ def main(argv=None):
                 print(
                     f"{record['case_id']} repeat={record['repeat']}: {record['completion_status']} | issues={record['execution_issue_categories']} | {json.dumps(record['metrics'])}"
                 )
+                print_telemetry(record["result"].get("telemetry"))
         else:
             print_summary(data)
         return 0 if valid else 1

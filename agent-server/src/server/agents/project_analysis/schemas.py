@@ -4,6 +4,8 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .telemetry import ExecutionTelemetry
+
 Identifier = Annotated[str, Field(min_length=1)]
 Text = Annotated[str, Field(min_length=1)]
 SnapshotHash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -44,7 +46,11 @@ class AnalysisContract(BaseModel):
 class InvestigationBudget(AnalysisContract):
     max_investigations: int = Field(default=12, ge=1)
     max_model_calls: int = Field(default=40, ge=1)
-    reserved_report_model_calls: int = Field(default=3, ge=1)
+    reserved_report_model_calls: int = Field(default=0, ge=0)
+    max_total_tokens: int = Field(default=60_000, ge=1000)
+    max_input_tokens_per_call: int = Field(default=6000, ge=500)
+    max_tokens_per_investigation: int = Field(default=20_000, ge=1000)
+    max_output_tokens_per_call: int = Field(default=3000, ge=256)
     max_tool_calls: int = Field(default=100, ge=1)
     max_retrieved_characters: int = Field(default=150_000, ge=1)
     max_elapsed_seconds: float = Field(default=600, gt=0, allow_inf_nan=False)
@@ -72,6 +78,9 @@ class BudgetUsage(AnalysisContract):
     provider_attempts: int = Field(default=0, ge=0)
     provider_retries: int = Field(default=0, ge=0)
     provider_wait_seconds: float = Field(default=0, ge=0)
+    accounted_tokens: int = Field(default=0, ge=0)
+    estimated_tokens: int = Field(default=0, ge=0)
+    token_budget_exhausted: bool = False
 
 
 class ProjectAnalysisInput(AnalysisContract):
@@ -318,12 +327,21 @@ class RepositoryToolCall(AnalysisContract):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class FollowupRequest(AnalysisContract):
+    question: Text
+    seed_entity_ids: tuple[Identifier, ...] = Field(min_length=1)
+    blocked_investigation_ids: tuple[Identifier, ...] = ()
+
+
 class InvestigationTurn(AnalysisContract):
     tool_calls: tuple[RepositoryToolCall, ...] = ()
     result: InvestigationResult | None = None
+    followups: tuple[FollowupRequest, ...] = ()
 
     @model_validator(mode="after")
     def validate_action(self) -> Self:
+        if self.followups and self.result is None:
+            raise ValueError("Followups must accompany an investigation result.")
         if bool(self.tool_calls) == (self.result is not None):
             raise ValueError("Return either tool calls or an investigation result.")
         return self
@@ -433,6 +451,7 @@ class ProjectAnalysisReport(AnalysisContract):
 
 class ProjectAnalysisRunResult(AnalysisContract):
     completion_status: CompletionStatus
+    telemetry: ExecutionTelemetry = Field(default_factory=ExecutionTelemetry)
     investigation_plan: InvestigationPlan | None = None
     validated_findings: tuple[InvestigationResult, ...] = ()
     retrieved_evidence: tuple[RetrievedEvidence, ...] = ()
@@ -452,14 +471,19 @@ class ProjectAnalysisRunResult(AnalysisContract):
         elif self.report is None:
             raise ValueError("Complete and partial runs require a report.")
         if self.report is not None:
-            if self.investigation_plan is not None and self.investigation_plan != self.report.investigation_plan:
+            if (
+                self.investigation_plan is not None
+                and self.investigation_plan != self.report.investigation_plan
+            ):
                 raise ValueError("Run and report investigation plans must match.")
             if self.report.investigation_coverage != self.investigation_coverage:
                 raise ValueError("Run and report coverage must match.")
             if self.report.open_questions != self.unresolved_questions:
                 raise ValueError("Run and report unresolved questions must match.")
         coverage = self.investigation_coverage
-        if self.investigation_plan is not None and {objective.id for objective in self.investigation_plan.objectives} != set(coverage.planned_investigation_ids):
+        if self.investigation_plan is not None and {
+            objective.id for objective in self.investigation_plan.objectives
+        } != set(coverage.planned_investigation_ids):
             raise ValueError("Run plan and investigation coverage must match.")
         if self.completion_status == "complete" and (
             not coverage.planned_investigation_ids
@@ -479,6 +503,92 @@ class ProjectAnalysisRunResult(AnalysisContract):
                 "Partial runs require an explicit incomplete scope or execution reason."
             )
         return self
+
+
+class ArchitectureBrief(AnalysisContract):
+    """Functional facts and cited provenance, without candidate audits or history."""
+
+    snapshot_hash: SnapshotHash
+    investigation_objectives: tuple[InvestigationObjective, ...] = ()
+    deferred_candidate_counts: tuple[tuple[str, int], ...] = ()
+    project_identification: tuple[ProjectIdentification, ...] = ()
+    functional_components: tuple[FunctionalComponent, ...] = ()
+    main_flows: tuple[FunctionalFlow, ...] = ()
+    component_relationships: tuple[ComponentRelationship, ...] = ()
+    integrations_and_state: tuple[IntegrationFinding, ...] = ()
+    testing: tuple[TestingFinding, ...] = ()
+    claims: tuple[AnalysisClaim, ...] = ()
+    open_questions: tuple[OpenQuestion, ...] = ()
+    retrieved_evidence: tuple[RetrievedEvidence, ...] = ()
+    investigation_outcomes: tuple[InvestigationOutcome, ...] = ()
+    investigation_coverage: InvestigationCoverage
+    completion_status: Literal["complete", "partial"]
+    execution_issues: tuple[ExecutionIssue, ...] = ()
+
+    @classmethod
+    def from_result(cls, result):
+        if result.report is None:
+            raise ValueError("A failed run cannot supply an architecture brief.")
+        from collections import Counter
+
+        from .context import walk_contracts
+
+        report = result.report
+        fields = {
+            name: getattr(report, name)
+            for name in (
+                "project_identification",
+                "functional_components",
+                "main_flows",
+                "component_relationships",
+                "integrations_and_state",
+                "testing",
+                "claims",
+                "open_questions",
+            )
+        }
+        citations = {
+            identifier
+            for record in walk_contracts(tuple(fields.values()))
+            for identifier in getattr(record, "evidence_ids", ())
+        }
+        cited_files = {
+            record.file_id
+            for record in report.retrieved_evidence
+            if record.id in citations or set(record.snapshot_evidence_ids) & citations
+        }
+        selected = tuple(
+            record
+            for record in report.retrieved_evidence
+            if record.id in citations
+            or set(record.snapshot_evidence_ids) & citations
+            or (record.kind == "source" and record.file_id in cited_files)
+        )
+        return cls(
+            snapshot_hash=report.snapshot_hash,
+            investigation_objectives=report.investigation_plan.objectives,
+            deferred_candidate_counts=tuple(
+                sorted(
+                    Counter(
+                        candidate.category
+                        for candidate in report.investigation_plan.candidates
+                        if candidate.id
+                        in {
+                            decision.candidate_id
+                            for decision in report.investigation_coverage.deferred_decisions
+                        }
+                    ).items()
+                )
+            ),
+            completion_status=result.completion_status,
+            retrieved_evidence=selected,
+            investigation_coverage=report.investigation_coverage.model_copy(
+                update={"deferred_decisions": ()}
+            ),
+            investigation_outcomes=report.investigation_outcomes,
+            execution_issues=result.execution_issues,
+            **fields,
+        )
 
 
 class ArchitectureAnalysisInput(AnalysisContract):

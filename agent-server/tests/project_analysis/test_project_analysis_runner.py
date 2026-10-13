@@ -79,6 +79,19 @@ def test_verbose_progress_keeps_json_stdout_clean_and_quiet_suppresses_it(
     assert main(args) == 0
     captured = capsys.readouterr()
     assert json.loads(captured.out)["completion_status"] == "partial"
+    data = json.loads(captured.out)
+    stages = {stage["stage"]: stage for stage in data["telemetry"]["stages"]}
+    assert set(stages) == {"investigation"}
+    assert stages["investigation"]["unknown_usage_attempts"] > 0
+    assert stages["investigation"]["input_tokens"] is None
+    assert any(
+        part["category"] == "source" and part["characters"] > 0
+        for part in stages["investigation"]["context"]
+    )
+    assert len(data["telemetry"]["model_calls"]) == data["usage"]["model_calls"]
+    assert data["run_metadata"]["snapshot_hash"] == data["report"]["snapshot_hash"]
+    assert len(data["run_metadata"]["implementation_sha256"]) == 64
+    assert "api_key" not in json.dumps(data["run_metadata"])
     for event in (
         "snapshot_started",
         "snapshot_ready",
@@ -150,7 +163,7 @@ def test_runner_scope_budget_errors_and_readable_summary(workspace, capsys):
     assert "Status: partial" in capsys.readouterr().out
     assert main([str(parent), "--workspace-root", str(parent), "--smoke"]) == 2
     assert "directly inside" in capsys.readouterr().err
-    assert main([*args, "--max-model-calls", "2"]) == 2
+    assert main([*args, "--max-model-calls", "2", "--report-call-reserve", "3"]) == 2
     assert "Report reserve" in capsys.readouterr().err
     assert main([*args, "--plan-only", "--handoff"]) == 2
 

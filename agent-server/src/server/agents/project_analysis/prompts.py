@@ -4,6 +4,7 @@ import json
 
 from .planning import CandidateCatalog, PlanningLimits
 from .schemas import InvestigationProposal
+from .telemetry import measure_json, measured_prompt
 from .tools import RepositoryToolset
 
 PLANNING_INSTRUCTIONS = """You plan functional project investigation, not architectural compliance.
@@ -35,17 +36,34 @@ def render_planning_prompt(
     index = {candidate.id: candidate for candidate in catalog.candidates}
     offered = list(catalog.offered_candidate_ids)
     projects = {project.id: project for project in tools.accessible_snapshot.projects}
-    seed_records = {record.id: (kind, record) for kind, records in (
-        ("project", tools.accessible_snapshot.projects), ("file", tools.accessible_snapshot.files),
-        ("symbol", tools.accessible_snapshot.symbols), ("entrypoint", tools.accessible_snapshot.entrypoints),
-        ("infrastructure", tools.accessible_snapshot.infrastructure),
-    ) for record in records}
+    seed_records = {
+        record.id: (kind, record)
+        for kind, records in (
+            ("project", tools.accessible_snapshot.projects),
+            ("file", tools.accessible_snapshot.files),
+            ("symbol", tools.accessible_snapshot.symbols),
+            ("entrypoint", tools.accessible_snapshot.entrypoints),
+            ("infrastructure", tools.accessible_snapshot.infrastructure),
+        )
+        for record in records
+    }
 
     def seed_metadata(identifier):
         kind, record = seed_records[identifier]
         metadata = {"id": identifier, "entity_type": kind}
         truncated = []
-        for name in ("name", "path", "language", "kind", "qualified_name", "ecosystem", "http_method", "route", "target", "image"):
+        for name in (
+            "name",
+            "path",
+            "language",
+            "kind",
+            "qualified_name",
+            "ecosystem",
+            "http_method",
+            "route",
+            "target",
+            "image",
+        ):
             value = getattr(record, name, None)
             if value is not None:
                 metadata[name] = value[:300]
@@ -54,6 +72,7 @@ def render_planning_prompt(
         if truncated:
             metadata["truncated_fields"] = truncated
         return metadata
+
     schema = InvestigationProposal.model_json_schema()
     while True:
         orientations = [
@@ -76,22 +95,42 @@ def render_planning_prompt(
             "candidates": [
                 index[identifier].model_dump(mode="json") for identifier in offered
             ],
-            "seed_entities": [seed_metadata(identifier) for identifier in sorted({seed for identifier in offered for seed in index[identifier].seed_entity_ids})],
+            "seed_entities": [
+                seed_metadata(identifier)
+                for identifier in sorted(
+                    {
+                        seed
+                        for identifier in offered
+                        for seed in index[identifier].seed_entity_ids
+                    }
+                )
+            ],
             "repository_summary": {
                 "name": tools.accessible_snapshot.repository.name,
-                "technology_names": sorted({record.name for record in tools.accessible_snapshot.technologies})[:20],
+                "technology_names": sorted(
+                    {record.name for record in tools.accessible_snapshot.technologies}
+                )[:20],
                 "accessible_file_count": len(tools.accessible_snapshot.files),
                 "extraction_issue_count": len(tools.context.snapshot.coverage.issues),
-                "unsupported_source_languages": list(tools.accessible_snapshot.coverage.unsupported_source_languages),
+                "unsupported_source_languages": list(
+                    tools.accessible_snapshot.coverage.unsupported_source_languages
+                ),
             },
             "correction_errors": list(errors)[:10],
         }
-        prompt = (
-            PLANNING_INSTRUCTIONS
-            + "\nOUTPUT_SCHEMA\n"
-            + json.dumps(schema)
-            + "\nREPOSITORY_DATA\n"
-            + json.dumps(payload)
+        data_text, sizes = measure_json(
+            payload, fields={"correction_errors": "feedback"}
+        )
+        prompt = measured_prompt(
+            [
+                (PLANNING_INSTRUCTIONS, "instructions"),
+                ("\nOUTPUT_SCHEMA\n", "framing"),
+                (json.dumps(schema), "contracts"),
+                ("\nREPOSITORY_DATA\n", "framing"),
+                (data_text, sizes),
+            ],
+            stage="planning",
+            correction=bool(errors),
         )
         if len(prompt) <= limits.max_prompt_characters:
             return prompt, CandidateCatalog(catalog.candidates, tuple(offered))

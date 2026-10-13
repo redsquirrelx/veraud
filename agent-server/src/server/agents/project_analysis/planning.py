@@ -3,6 +3,7 @@
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from pydantic import Field
 
@@ -439,6 +440,236 @@ def validate_and_prioritize_plan(
     return plan
 
 
+def select_deterministic_plan(
+    tools: RepositoryToolset, limits=None
+) -> InvestigationPlan:
+    """Choose a bounded functional scope; every heuristic and omission is auditable."""
+    catalog = build_investigation_candidates(tools, limits)
+    snapshot = tools.accessible_snapshot
+    paths = entity_source_paths(snapshot)
+    project_paths = {project.id: project.path for project in snapshot.projects}
+    files = {source.id: source for source in snapshot.files}
+    incoming = Counter(
+        rel.target_id for rel in snapshot.relationships if rel.target_id in files
+    )
+    projects_with_files = {source.project_id for source in snapshot.files}
+    candidates = [
+        candidate
+        for candidate in catalog.candidates
+        if candidate.project_id in projects_with_files
+    ]
+
+    def rank(candidate):
+        locations = {paths[seed] for seed in candidate.seed_entity_ids if seed in paths}
+        sample = any(
+            part in {"tests", "test", "examples", "example", "docs_src", "fixtures"}
+            for path in locations
+            for part in path.split("/")
+        )
+        core_names = {
+            "main",
+            "app",
+            "application",
+            "applications",
+            "views",
+            "routes",
+            "router",
+            "routers",
+            "index",
+            "page",
+            "core",
+            "__init__",
+            "wsgi",
+            "asgi",
+        }
+        core = any(
+            PurePosixPath(path).stem.casefold() in core_names for path in locations
+        )
+        scaffold = any(
+            PurePosixPath(path).stem.casefold()
+            in {"layout", "_app", "_document", "loading", "error", "not-found"}
+            for path in locations
+        )
+        fan_in = max(
+            (
+                incoming[file_id]
+                for file_id, source in files.items()
+                if source.path in locations
+            ),
+            default=0,
+        )
+        return (
+            sample,
+            scaffold,
+            not core,
+            -fan_in,
+            min(locations, default=""),
+            candidate.id,
+        )
+
+    selected = []
+    max_targets = tools.context.input.budget.max_investigations
+    oriented = set()
+    for candidate in sorted(
+        (item for item in candidates if item.category == "project_orientation"),
+        key=lambda item: project_paths[item.project_id],
+    ):
+        if len(selected) < max_targets:
+            selected.append(candidate)
+            oriented.add(candidate.project_id)
+    # Round-robin projects; at most one startup, then two diverse representative
+    # flows, then one integration/shared unit before admitting further targets.
+    used_paths = set()
+    used_areas = set()
+
+    def area(path):
+        parts = list(PurePosixPath(path).parts)
+        while parts and parts[0] in {"src", "app", "pages", "lib", "source"}:
+            parts.pop(0)
+        return parts[0] if len(parts) > 1 else path
+
+    for category, rounds in (
+        ("startup", 1),
+        ("representative_flow", 2),
+        ("shared_component_or_integration", 1),
+    ):
+        for _ in range(rounds):
+            for project_id in sorted(oriented, key=project_paths.get):
+                eligible = [
+                    item
+                    for item in candidates
+                    if item.project_id == project_id
+                    and item.category == category
+                    and item not in selected
+                    and not (
+                        {paths[seed] for seed in item.seed_entity_ids if seed in paths}
+                        & used_paths
+                    )
+                ]
+                if eligible and len(selected) < max_targets:
+                    candidate = min(
+                        eligible,
+                        key=lambda item: (
+                            bool(
+                                {
+                                    area(paths[seed])
+                                    for seed in item.seed_entity_ids
+                                    if seed in paths
+                                }
+                                & used_areas
+                            ),
+                            rank(item),
+                        ),
+                    )
+                    selected.append(candidate)
+                    used_paths.update(
+                        paths[seed]
+                        for seed in candidate.seed_entity_ids
+                        if seed in paths
+                    )
+                    if category == "representative_flow":
+                        used_areas.update(
+                            area(paths[seed])
+                            for seed in candidate.seed_entity_ids
+                            if seed in paths
+                        )
+    if not selected:
+        raise ValueError("No accessible technical project can be investigated.")
+    objectives = []
+    section_map = {
+        "project_orientation": ("project_identification", "functional_components"),
+        "startup": ("functional_components", "main_flows"),
+        "representative_flow": (
+            "functional_components",
+            "main_flows",
+            "component_relationships",
+            "integrations_and_state",
+            "testing",
+        ),
+        "shared_component_or_integration": (
+            "functional_components",
+            "integrations_and_state",
+        ),
+    }
+    for candidate in selected:
+        seeds = list(candidate.seed_entity_ids)
+        if candidate.category == "project_orientation":
+            members = [
+                source
+                for source in snapshot.files
+                if source.project_id == candidate.project_id
+            ]
+            manifests = [
+                source
+                for source in members
+                if PurePosixPath(source.path).name
+                in {"package.json", "pyproject.toml", "setup.py", "requirements.txt"}
+            ]
+            seeds.extend(
+                source.id
+                for source in sorted(manifests, key=lambda item: item.path)[:2]
+            )
+            lead = min(
+                (
+                    item
+                    for item in candidates
+                    if item.project_id == candidate.project_id
+                    and item.category in {"startup", "representative_flow"}
+                ),
+                key=rank,
+                default=None,
+            )
+            if lead:
+                seeds.extend(lead.seed_entity_ids[:2])
+                for seed in lead.seed_entity_ids[:2]:
+                    source_path = paths.get(seed)
+                    seeds.extend(
+                        file_id
+                        for file_id, source in files.items()
+                        if source.path == source_path
+                    )
+        objectives.append(
+            InvestigationObjective(
+                id=create_identifier("investigation", "deterministic", candidate.id),
+                project_id=candidate.project_id,
+                objective=candidate.description,
+                seed_entity_ids=tuple(dict.fromkeys(seeds)),
+                questions=(
+                    "What responsibility and behavior can inspected implementation establish?",
+                    "Which calls, state, integrations, or runtime selections remain unresolved?",
+                ),
+                report_sections=section_map[candidate.category],
+                selection_reason="Deterministic project coverage, role/path heuristic, source diversity, and import fan-in; functional importance remains unverified.",
+                priority_tier=candidate.category,
+                expected_deliverable="Source-backed responsibilities and scoped flows, or explicit unanswered questions.",
+                completion_criteria=(
+                    "Inspect relevant implementation and follow material calls; preserve unresolved wiring and omissions.",
+                ),
+            )
+        )
+    by_candidate = {
+        candidate.id: objective.id
+        for candidate, objective in zip(selected, objectives, strict=True)
+    }
+    decisions = tuple(
+        PlanningDecision(
+            id=create_identifier("planning_decision", "deterministic", candidate.id),
+            candidate_id=candidate.id,
+            disposition="accepted" if candidate.id in by_candidate else "deferred",
+            investigation_id=by_candidate.get(candidate.id),
+            reason="Selected by deterministic coverage/diversity policy."
+            if candidate.id in by_candidate
+            else "Outside the bounded deterministic scope; no functional conclusion was drawn.",
+        )
+        for candidate in catalog.candidates
+    )
+    plan = InvestigationPlan(
+        candidates=catalog.candidates, objectives=tuple(objectives), decisions=decisions
+    )
+    tools.context.validate_plan(plan)
+    return plan
+
+
 def admit_followups(
     tools: RepositoryToolset,
     plan: InvestigationPlan,
@@ -531,7 +762,16 @@ def admit_followups(
         if proposal.id in objectives or signature in signatures:
             disposition, reason = "rejected", "Duplicate follow-up objective."
         elif (
-            tools.context.elapsed_seconds
+            (
+                usage is not None
+                and (
+                    usage.token_budget_exhausted
+                    or usage.accounted_tokens
+                    + tools.context.input.budget.max_output_tokens_per_call
+                    >= tools.context.input.budget.max_total_tokens
+                )
+            )
+            or tools.context.elapsed_seconds
             >= tools.context.input.budget.max_elapsed_seconds
             or (
                 usage is not None
