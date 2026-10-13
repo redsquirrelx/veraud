@@ -144,6 +144,10 @@ usage and conservative reserves for attempts without usage; `estimated_tokens`
 identifies the estimated portion. This operational estimate is separate from
 telemetry's `ceil(characters / 4)` diagnostic estimate. Unknown actual usage stays
 null. These are admission limits, not guaranteed exact provider billing ceilings.
+`usage.reported_input_tokens` and `usage.reported_output_tokens` always expose the
+available provider counts; `usage.unknown_usage_attempts` explains incomplete
+totals. Reported counts exclude unmeasured consumption and are not full-run totals
+when any attempt is unknown. The readable output shows these counts as well.
 Budget exhaustion preserves valid facts and finalizes deterministically.
 
 ```powershell

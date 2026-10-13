@@ -71,6 +71,9 @@ def test_gateway_retry_text_normalization_usage_and_terminal_stop():
     assert gateway.usage_totals()["provider_retries"] == 1
     assert gateway.usage_totals()["provider_attempts"] == 2
     assert gateway.usage_totals()["input_tokens"] is None
+    assert gateway.usage_totals()["reported_input_tokens"] == 11
+    assert gateway.usage_totals()["reported_output_tokens"] == 4
+    assert gateway.usage_totals()["unknown_usage_attempts"] == 1
     stage = gateway.telemetry().stages[0]
     assert stage.reported_input_tokens == 11 and stage.reported_output_tokens == 4
     assert stage.input_tokens is None and stage.unknown_usage_attempts == 1

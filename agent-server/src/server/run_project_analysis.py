@@ -595,6 +595,13 @@ def print_summary(data):
         print(f"Issue: {issue['stage']} | {issue['category']} | {issue['message']}")
     if "usage" in data:
         print("\nUsage: " + json.dumps(data["usage"]))
+        usage = data["usage"]
+        if usage.get("unknown_usage_attempts", 0):
+            print(
+                f"  Incomplete provider usage: {usage['unknown_usage_attempts']} attempt(s) did not report usage. "
+                f"Known reported tokens: input={usage['reported_input_tokens']}, output={usage['reported_output_tokens']}. "
+                "Complete totals remain unknown; reported counts exclude unmeasured usage."
+            )
     print_telemetry(data.get("telemetry"))
 
 
@@ -606,6 +613,7 @@ def print_telemetry(telemetry):
         print(
             f"  {stage['stage']}: calls={stage['calls']} corrections={stage['correction_calls']} "
             f"input_tokens={stage['input_tokens']} output_tokens={stage['output_tokens']} "
+            f"reported_input_tokens={stage['reported_input_tokens']} reported_output_tokens={stage['reported_output_tokens']} "
             f"estimated_input_tokens={stage['estimated_input_tokens']} unknown_usage_attempts={stage['unknown_usage_attempts']}"
         )
         print(

@@ -243,6 +243,15 @@ class ModelGateway:
             ),
             "input_tokens": token_total("input_tokens"),
             "output_tokens": token_total("output_tokens"),
+            "reported_input_tokens": sum(
+                record["input_tokens"] or 0 for record in self.calls
+            ),
+            "reported_output_tokens": sum(
+                record["output_tokens"] or 0 for record in self.calls
+            ),
+            "unknown_usage_attempts": sum(
+                record["unknown_usage_attempts"] for record in self.calls
+            ),
         }
 
     def telemetry(self, tool_requests=()):

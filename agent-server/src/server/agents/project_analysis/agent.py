@@ -77,6 +77,19 @@ def usage(state, runtime, **updates):
     }
     if hasattr(runtime.generate, "usage_totals"):
         values.update(runtime.generate.usage_totals())
+    else:
+        measurements = getattr(runtime.generate, "measurements", ())
+        values.update(
+            reported_input_tokens=sum(
+                record.input_tokens or 0 for record in measurements
+            ),
+            reported_output_tokens=sum(
+                record.output_tokens or 0 for record in measurements
+            ),
+            unknown_usage_attempts=sum(
+                record.unknown_usage_attempts for record in measurements
+            ),
+        )
     return state["budget_usage"].model_copy(update=values | updates)
 
 
