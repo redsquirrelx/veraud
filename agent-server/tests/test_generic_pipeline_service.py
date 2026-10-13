@@ -81,7 +81,7 @@ def _ids():
 class TestRegistry:
     def test_lists_registered_pipelines(self):
         service = _service(StubAgent(_analysis()), StubAgent(_description()))
-        assert service.list_pipelines() == ["architecture-audit"]
+        assert service.list_pipelines() == ["architecture-audit", "project-architecture"]
 
     def test_unknown_pipeline_raises(self):
         service = _service(StubAgent(_analysis()), StubAgent(_description()))
@@ -212,7 +212,7 @@ class TestGenericRoute:
         with self._client(service) as client:
             response = client.get("/api/pipelines")
         assert response.status_code == 200
-        assert response.json() == ["architecture-audit"]
+        assert response.json() == ["architecture-audit", "project-architecture"]
 
     def test_runs_by_name(self):
         seen = []

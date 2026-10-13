@@ -123,12 +123,15 @@ class AgentExecutionService:
             "output_schema": agent_cls.output_schema.model_json_schema(),
         }
 
-    def build_agent(
+    def resolve_model_settings(
         self, agent_type: str, config: ExecutionConfig
-    ) -> tuple[BaseAgent, int]:
-        logger.info("Instantiating agent %r", agent_type)
-        agent_cls = self._registry.get(agent_type)
+    ) -> tuple[ModelSettings, ModelCredentials, int]:
+        """Merge request overrides over server defaults for one stage.
 
+        Shared by `build_agent` and pipeline definitions whose agents are not
+        `BaseAgent`s (e.g. project-architecture stages): the merge, the groq
+        name guard and the dev-key fallback live here exactly once.
+        """
         base_settings, base_model = self._base_config.get(agent_type, (None, None))
 
         provider = config.model.provider or (
@@ -145,10 +148,10 @@ class AgentExecutionService:
             )
 
         name = config.model.name or (base_model.name if base_model else None)
-        
+
         if not name:
             raise InvalidConfigError("model.name is required for this agent_type")
-        
+
         temperature = config.model.temperature
         if temperature is None:
             temperature = base_model.temperature if base_model else 0.2
@@ -170,7 +173,7 @@ class AgentExecutionService:
         except ValidationError:
             api_key = "dev-dummy-key"
 
-        model = build_model(
+        return (
             ModelSettings(
                 provider=provider,
                 name=name,
@@ -178,7 +181,18 @@ class AgentExecutionService:
                 max_tokens=max_tokens,
             ),
             ModelCredentials(api_key=api_key),
+            timeout,
         )
+
+    def build_agent(
+        self, agent_type: str, config: ExecutionConfig
+    ) -> tuple[BaseAgent, int]:
+        logger.info("Instantiating agent %r", agent_type)
+        agent_cls = self._registry.get(agent_type)
+
+        settings, credentials, timeout = self.resolve_model_settings(agent_type, config)
+
+        model = build_model(settings, credentials)
 
         agent = agent_cls(
             settings=AgentSettings(agent_id=agent_type, timeout_seconds=timeout),
@@ -187,7 +201,7 @@ class AgentExecutionService:
 
         logger.info(
             "Instantiated agent %r model=%r timeout=%ss",
-            agent_type, name, timeout,
+            agent_type, settings.name, timeout,
         )
 
         return agent, timeout

@@ -136,16 +136,19 @@ class PipelineDefinition:
     """How to run one registered pipeline. New pipelines add an entry here.
 
     The generic service only touches `name`, `stages`, and these callables:
-    stage/agent names and graph hook shapes live in the definition, never in
-    the service.
+    stage/agent names, graph hook shapes and run lifecycles live in the
+    definition, never in the service. `ctx` is the definition's private
+    per-run state (e.g. snapshot, budget, models) threaded from
+    `build_agents` through `create_pipeline` into `run_pipeline`.
     """
 
     name: str
     stages: list[str]
-    parse_input: Callable[[dict], PipelineInput]
+    parse_input: Callable[[dict], Any]
+    build_agents: Callable[..., Any] = field(repr=False)
     adapt_hooks: Callable[[GenericReportingHooks], Any] = field(repr=False)
-    create_pipeline: Callable[[dict[str, Any], Any], Any] = field(repr=False)
-    run_graph: Callable[..., Any] = field(repr=False)
+    create_pipeline: Callable[[dict[str, Any], Any, dict[str, Any]], Any] = field(repr=False)
+    run_pipeline: Callable[..., Any] = field(repr=False)
     agent_types: dict[str, str] | None = None
 
     def agent_type_for(self, stage: str) -> str:
@@ -235,7 +238,32 @@ def _parse_audit_input(raw: dict) -> PipelineInput:
         raise InvalidConfigError(f"Invalid pipeline input: {error}") from None
 
 
-async def _run_audit_graph(pipeline: ArchitectureAuditPipeline, parsed: PipelineInput) -> dict:
+async def _build_audit_agents(
+    exec_service: AgentExecutionService,
+    config: ExecutionConfig,
+    stage_configs: dict[str, ExecutionConfig] | None,
+    parsed: PipelineInput,
+    timeout_seconds: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    agents: dict[str, Any] = {}
+    for stage in ("analyzer", "architect"):
+        stage_config = (stage_configs or {}).get(stage) or config
+        agent, _ = exec_service.build_agent(stage, stage_config)
+        agents[stage] = agent
+    return agents, {}
+
+
+def _create_audit_pipeline(
+    agents: dict[str, Any], graph_hooks: Any, ctx: dict[str, Any]
+) -> ArchitectureAuditPipeline:
+    return ArchitectureAuditPipeline(
+        agents["analyzer"], agents["architect"], hooks=graph_hooks
+    )
+
+
+async def _run_audit_graph(
+    pipeline: ArchitectureAuditPipeline, parsed: PipelineInput, ctx: dict[str, Any]
+) -> dict:
     return await pipeline.run(
         parsed.root_path,
         max_files=parsed.max_files,
@@ -245,22 +273,20 @@ async def _run_audit_graph(pipeline: ArchitectureAuditPipeline, parsed: Pipeline
     )
 
 
-def _create_audit_pipeline(agents: dict[str, Any], graph_hooks: Any) -> ArchitectureAuditPipeline:
-    return ArchitectureAuditPipeline(
-        agents["analyzer"], agents["architect"], hooks=graph_hooks
-    )
-
-
 def default_pipeline_registry() -> dict[str, PipelineDefinition]:
+    from .project_architecture_definition import project_architecture_definition
+
     return {
         "architecture-audit": PipelineDefinition(
             name="architecture-audit",
             stages=["analyzer", "architect"],
             parse_input=_parse_audit_input,
+            build_agents=_build_audit_agents,
             adapt_hooks=_ArchitectureAuditHooksAdapter,
             create_pipeline=_create_audit_pipeline,
-            run_graph=_run_audit_graph,
+            run_pipeline=_run_audit_graph,
         ),
+        "project-architecture": project_architecture_definition(),
     }
 
 
@@ -297,24 +323,24 @@ class GenericPipelineService:
             raise UnknownPipelineError(f"Unknown pipeline: {pipeline_name!r}")
 
         parsed = definition.parse_input(input_data)
-        agents: dict[str, Any] = {}
-        for stage in definition.stages:
-            stage_config = (stage_configs or {}).get(stage) or config
-            agent, _ = self._exec.build_agent(definition.agent_type_for(stage), stage_config)
-            agents[stage] = agent
 
-        callbacks = self._callbacks_factory() if execution_ids is not None else None
         if execution_ids is not None:
             missing = [stage for stage in definition.stages if stage not in execution_ids]
             if missing:
                 raise InvalidConfigError(
                     f"Missing execution ids for stages: {', '.join(missing)}"
                 )
-            if callbacks is None:
-                logger.warning(
-                    "execution_ids given but no backend url is configured, "
-                    "so progress cannot be reported"
-                )
+
+        agents, ctx = await definition.build_agents(
+            self._exec, config, stage_configs, parsed, timeout_seconds
+        )
+
+        callbacks = self._callbacks_factory() if execution_ids is not None else None
+        if execution_ids is not None and callbacks is None:
+            logger.warning(
+                "execution_ids given but no backend url is configured, "
+                "so progress cannot be reported"
+            )
 
         hooks: GenericReportingHooks | None = None
         graph_hooks: Any = None
@@ -322,12 +348,12 @@ class GenericPipelineService:
             hooks = GenericReportingHooks(callbacks, execution_ids, definition.stages)
             graph_hooks = definition.adapt_hooks(hooks)
 
-        pipeline = definition.create_pipeline(agents, graph_hooks)
+        pipeline = definition.create_pipeline(agents, graph_hooks, ctx)
 
         try:
             return await self._tracing.wrap_pipeline(
                 asyncio.wait_for(
-                    definition.run_graph(pipeline, parsed),
+                    definition.run_pipeline(pipeline, parsed, ctx),
                     timeout_seconds,
                 ),
                 name=pipeline_name,
