@@ -11,6 +11,10 @@ For the small representation-backed agent, use `--orientation`; see
 [project orientation](project-orientation.md). This mode uses at most four model
 calls and six tools and returns a small orientation rather than the full analyst report.
 
+For architectural interpretation and deviations, use the dedicated
+`server.run_project_architecture` runner; see [focused architecture](project-architecture.md).
+It can run orientation and architecture over one snapshot with separate evidence ledgers.
+
 From `agent-server`, using `uv` and the existing environment:
 
 ```powershell

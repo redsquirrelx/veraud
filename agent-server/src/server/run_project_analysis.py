@@ -46,6 +46,8 @@ from server.agents.project_analysis.schemas import (
 )
 from server.agents.project_analysis.smoke import ProtocolSmokeModel
 from server.agents.project_analysis.tools import ToolLimits
+from server.agents.project_architecture import ProjectArchitectureAgent
+from server.agents.project_architecture.smoke import ArchitectureSmokeModel
 from server.agents.project_orientation import ProjectOrientationAgent
 from server.agents.project_orientation.smoke import OrientationSmokeModel
 from server.services.repository_analysis import (
@@ -59,6 +61,16 @@ def build_parser():
         description="Investigate one repository checkout inside appdata/workspace using LangGraph."
     )
     parser.add_argument("root", nargs="?", help="Selected repository checkout")
+    parser.add_argument(
+        "--architecture",
+        action="store_true",
+        help="Run the focused architecture LangGraph over the same snapshot as orientation",
+    )
+    parser.add_argument(
+        "--skip-orientation",
+        action="store_true",
+        help="Architecture mode: inspect the representation directly without an orientation stage",
+    )
     parser.add_argument(
         "--orientation",
         action="store_true",
@@ -171,6 +183,8 @@ def build_parser():
 
 def create_model(arguments):
     if arguments.smoke or (arguments.plan_only and not arguments.baseline):
+        if arguments.architecture:
+            return ArchitectureSmokeModel()
         return (
             OrientationSmokeModel() if arguments.orientation else ProtocolSmokeModel()
         )
@@ -224,6 +238,8 @@ def run_metadata(arguments, tools, model):
             *server.joinpath("services/repository_analysis").glob("*.py"),
             *server.joinpath("agents/project_orientation").rglob("*.py"),
             *server.joinpath("agents/project_orientation/prompts").glob("*.md"),
+            *server.joinpath("agents/project_architecture").rglob("*.py"),
+            *server.joinpath("agents/project_architecture/prompts").glob("*.md"),
             Path(__file__),
         ]
     )
@@ -248,7 +264,9 @@ def run_metadata(arguments, tools, model):
         "request_interval": arguments.request_interval,
         "max_retries": arguments.max_retries,
         "retry_backoff": arguments.retry_backoff,
-        "workflow": "orientation"
+        "workflow": "architecture"
+        if arguments.architecture
+        else "orientation"
         if arguments.orientation
         else "baseline"
         if arguments.baseline
@@ -309,6 +327,19 @@ async def with_progress(awaitable, reporter):
 
 
 async def run(arguments, *, reference=None, shared_pacer=None):
+    if arguments.architecture and (
+        arguments.orientation
+        or arguments.baseline
+        or arguments.plan_only
+        or arguments.handoff
+        or arguments.compact_handoff
+        or arguments.evaluate_workspace
+    ):
+        raise ValueError(
+            "Architecture requires a selected checkout and cannot be combined with other analyst modes."
+        )
+    if arguments.skip_orientation and not arguments.architecture:
+        raise ValueError("--skip-orientation requires architecture mode.")
     if arguments.orientation and (
         arguments.baseline
         or arguments.plan_only
@@ -365,6 +396,8 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         max_investigations=arguments.max_investigations,
         max_model_calls=min(4, arguments.max_model_calls)
         if arguments.orientation
+        else min(6, arguments.max_model_calls)
+        if arguments.architecture
         else arguments.max_model_calls,
         reserved_report_model_calls=arguments.report_call_reserve,
         max_total_tokens=arguments.max_total_tokens,
@@ -373,6 +406,8 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         max_output_tokens_per_call=arguments.max_tokens,
         max_tool_calls=min(6, arguments.max_tool_calls)
         if arguments.orientation
+        else min(10, arguments.max_tool_calls)
+        if arguments.architecture
         else arguments.max_tool_calls,
         max_retrieved_characters=arguments.max_retrieved_characters,
         max_elapsed_seconds=arguments.timeout,
@@ -449,6 +484,66 @@ async def run(arguments, *, reference=None, shared_pacer=None):
         gateway.pacer = shared_pacer
     try:
         metadata = run_metadata(arguments, tools, model)
+        if arguments.architecture:
+            orientation = None
+            if not arguments.skip_orientation:
+                emit("orientation_started")
+                orientation = await with_progress(
+                    ProjectOrientationAgent(
+                        model, generate=gateway, on_event=reporter
+                    ).run(tools),
+                    reporter,
+                )
+                emit("orientation_finished", status=orientation.completion_status)
+                remaining = max(
+                    0.001, budget.max_elapsed_seconds - tools.context.elapsed_seconds
+                )
+                budget = budget.model_copy(update={"max_elapsed_seconds": remaining})
+                tools = RepositoryToolset(
+                    ProjectAnalysisContext(
+                        snapshot=snapshot,
+                        input=ProjectAnalysisInput(
+                            snapshot_hash=snapshot.repository.snapshot_hash,
+                            budget=budget,
+                        ),
+                    ),
+                    workspace_root=workspace,
+                    limits=ToolLimits(
+                        compact=True,
+                        max_page_size=25,
+                        max_source_lines=80,
+                        max_source_characters=2200,
+                    ),
+                )
+            agent = ProjectArchitectureAgent(model, generate=gateway, on_event=reporter)
+            if arguments.trace:
+                from server.config.tracing import traced_agent_run
+
+                result = await with_progress(
+                    traced_agent_run(
+                        agent.run(tools, orientation), name="project_architecture"
+                    ),
+                    reporter,
+                )
+            else:
+                result = await with_progress(agent.run(tools, orientation), reporter)
+            metadata["architecture_limits"] = agent.limits.model_dump(mode="json")
+            metadata["orientation_included"] = orientation is not None
+            return result.model_dump(mode="json") | {
+                "execution_mode": "protocol_smoke"
+                if arguments.smoke
+                else "architecture",
+                "orientation_result": orientation.model_dump(mode="json")
+                if orientation
+                else None,
+                "pipeline_usage": gateway.usage_totals()
+                | {
+                    "model_calls": len(gateway.measurements),
+                    "tool_calls": result.usage.tool_calls
+                    + (orientation.usage.tool_calls if orientation else 0),
+                },
+                "run_metadata": metadata,
+            }, result.architecture is not None
         if arguments.orientation:
             agent = ProjectOrientationAgent(model, generate=gateway, on_event=reporter)
             if arguments.trace:
@@ -617,6 +712,55 @@ def print_summary(data):
     print(
         f"Status: {data.get('completion_status', data.get('planning_status', 'valid'))}"
     )
+    architecture = data.get("architecture")
+    if architecture:
+        print(f"Snapshot: {data['snapshot_hash']}")
+        print("\nOrganization:")
+        for unit in architecture["organization"]:
+            print(
+                f"  {unit['name']}: {unit['responsibility']['statement']} ({unit['responsibility']['status']})"
+            )
+        for connection in architecture["connections"]:
+            print(
+                f"  {connection['source_unit']} -> {connection['target_unit']}: {connection['description']['statement']}"
+            )
+        classification = architecture["closest_architecture"]
+        if classification:
+            print(
+                f"\nClosest architecture: {classification['pattern']} ({classification['assessment']['status']})\n  {classification['assessment']['statement']}\n  Scope: {classification['assessment']['scope']}"
+            )
+        print("\nSupporting evidence:")
+        for claim in architecture["supporting_evidence"]:
+            print(f"  {claim['statement']} ({claim['status']})")
+        print("\nDeviations/tensions:")
+        for item in architecture["deviations"]:
+            print(
+                f"  Observed: {item['observed_decision']['statement']}\n  Expectation: {item['pattern_expectation']}\n  Reason: {item['explanation']}"
+            )
+        print("\nRelevant infrastructure:")
+        for item in architecture["infrastructure"]:
+            print(f"  {item['name']} ({item['kind']})")
+            for field in ("configured", "inspected_use"):
+                if item[field]:
+                    print(
+                        f"    {field}: {item[field]['statement']} ({item[field]['status']})"
+                    )
+        if architecture["explanation"]:
+            print(f"\nExplanation: {architecture['explanation']['statement']}")
+        for question in architecture["uncertainties"]:
+            print(f"  Uncertainty: {question}")
+        print("\nSource citations:")
+        for citation in data["citations"]:
+            print(
+                f"  {citation['evidence_id']}: {citation['path']}:{citation['start_line']}-{citation['end_line']}"
+            )
+        for limitation in data["limitations"]:
+            print(f"  limitation: {limitation}")
+    if data.get("pipeline_usage"):
+        print(
+            "\nPipeline usage (orientation + architecture): "
+            + json.dumps(data["pipeline_usage"])
+        )
     orientation = data.get("orientation")
     if orientation:
         print(f"Snapshot: {data['snapshot_hash']}")
