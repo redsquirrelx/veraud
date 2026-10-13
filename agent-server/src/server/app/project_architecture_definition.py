@@ -90,6 +90,8 @@ async def build_project_agents(
     timeout_seconds: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Snapshot the repo, then build one model+gateway+agent per stage."""
+    import os
+
     root = Path(parsed.root_path).expanduser().resolve()
     workspace = resolve_workspace_root()
     if root.parent != workspace:
@@ -115,6 +117,56 @@ async def build_project_agents(
         max_elapsed_seconds=timeout_seconds,
     )
     deadline = monotonic() + timeout_seconds
+
+    if os.environ.get("AGENT_SERVER_SMOKE_MODELS") == "1":
+        # Test-only offline protocol check (mirrors the CLI --smoke models):
+        # no provider credentials or network, same graphs and snapshots.
+        from ..agents.project_architecture.smoke import ArchitectureSmokeModel
+        from ..agents.project_semantic_validation.smoke import (
+            SemanticValidationSmokeModel,
+        )
+
+        shared: dict[str, Any] = {}
+
+        class PipelineSmokeModel(ArchitectureSmokeModel):
+            async def generate(self, prompt):
+                if "\nVALIDATION_DATA\n" in prompt:
+                    return await SemanticValidationSmokeModel().generate(prompt)
+                return await super().generate(prompt)
+
+        smoke_model = PipelineSmokeModel() if parsed.validate_semantics else ArchitectureSmokeModel()
+        smoke_gateway = ModelGateway(
+            smoke_model,
+            interval=_GATEWAY_INTERVAL,
+            max_retries=_GATEWAY_MAX_RETRIES,
+            backoff=_GATEWAY_BACKOFF,
+            trace=True,
+            remaining_seconds=lambda _deadline=deadline: max(0.0, _deadline - monotonic()),
+        )
+        agents = {
+            "orientation": ProjectOrientationAgent(
+                smoke_model, generate=smoke_gateway
+            ),
+            "architecture": ProjectArchitectureAgent(
+                smoke_model, generate=smoke_gateway
+            ),
+            "semantic_validation": ProjectSemanticValidationAgent(
+                smoke_model,
+                generate=smoke_gateway,
+                limits=ValidationLimits(max_claims=parsed.max_review_claims),
+            ),
+        }
+        logger.info(
+            "project-architecture prepared snapshot=%s files=%d (smoke models)",
+            snapshot.repository.snapshot_hash[:12], len(snapshot.files),
+        )
+        return agents, {
+            "snapshot": snapshot,
+            "budget": budget,
+            "workspace_root": workspace,
+            "deadline": deadline,
+            "models": shared,
+        }
 
     models: dict[str, Any] = {}
     agents: dict[str, Any] = {}
