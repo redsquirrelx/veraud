@@ -20,10 +20,11 @@ from ..agents.analyzer.schemas import ProjectDescription
 from ..agents.architect.schemas import ArchitectureDescription
 from ..api.schemas import ExecutionConfig
 from ..config.logs import get_logger
-from ..infrastructure.callback.client import CallbackClient
-from ..infrastructure.callback.schemas import CallbackConfig, ExecutionOutcome
+from ..infrastructure.callback.schemas import ExecutionOutcome
 from ..pipelines.architecture_audit import ArchitectureAuditPipeline
-from .execution_service import AgentExecutionService, _backend_url
+from .callback_port import CallbackSink, default_callback_sink
+from .execution_service import AgentExecutionService
+from .tracing_port import LangSmithTracingBackend, TracingBackend
 
 logger = get_logger("pipeline-service")
 
@@ -68,7 +69,7 @@ class _ReportingHooks:
 
     def __init__(
         self,
-        callbacks: CallbackClient | None,
+        callbacks: CallbackSink | None,
         execution_ids: PipelineExecutionIds,
     ) -> None:
         self._callbacks = callbacks
@@ -133,15 +134,22 @@ class _ReportingHooks:
 
 
 class ArchitectureAuditService:
-    """Drives the audit graph, reporting each stage to its own row."""
+    """Drives the audit graph, reporting each stage to its own row.
+
+    `tracing` and `callbacks_factory` are injectable ports (Phase 1): production
+    uses the LangSmith backend and the HTTP backend sink; tests inject
+    recorders or no-ops. Defaults preserve the previous behaviour.
+    """
 
     def __init__(
         self,
         execution_service: AgentExecutionService | None = None,
-        callbacks_factory: Callable[[], CallbackClient | None] | None = None,
+        callbacks_factory: Callable[[], CallbackSink | None] | None = None,
+        tracing_backend: TracingBackend | None = None,
     ) -> None:
         self._exec = execution_service or AgentExecutionService()
         self._callbacks_factory = callbacks_factory or _default_callbacks
+        self._tracing = tracing_backend or LangSmithTracingBackend()
 
     async def run(
         self,
@@ -174,15 +182,19 @@ class ArchitectureAuditService:
         pipeline = ArchitectureAuditPipeline(analyzer, architect, hooks=hooks)
 
         try:
-            return await asyncio.wait_for(
-                pipeline.run(
-                    input_data.root_path,
-                    max_files=input_data.max_files,
-                    max_depth=input_data.max_depth,
-                    max_read_rounds=input_data.max_read_rounds,
-                    max_files_per_round=input_data.max_files_per_round,
+            return await self._tracing.wrap_pipeline(
+                asyncio.wait_for(
+                    pipeline.run(
+                        input_data.root_path,
+                        max_files=input_data.max_files,
+                        max_depth=input_data.max_depth,
+                        max_read_rounds=input_data.max_read_rounds,
+                        max_files_per_round=input_data.max_files_per_round,
+                    ),
+                    timeout_seconds,
                 ),
-                timeout_seconds,
+                name="architecture-audit",
+                timeout_seconds=timeout_seconds,
             )
         except TimeoutError:
             logger.error("Pipeline timed out after %ss", timeout_seconds)
@@ -198,11 +210,8 @@ class ArchitectureAuditService:
                 await callbacks.aclose()
 
 
-def _default_callbacks() -> CallbackClient | None:
-    backend_url = _backend_url()
-    if backend_url is None:
-        return None
-    return CallbackClient(CallbackConfig(backend_url=backend_url))
+def _default_callbacks() -> CallbackSink | None:
+    return default_callback_sink()
 
 
 @lru_cache(maxsize=1)

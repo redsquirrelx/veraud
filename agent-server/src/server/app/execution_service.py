@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from functools import lru_cache
 
 from pydantic import BaseModel, ValidationError
@@ -22,9 +23,14 @@ from ..config.schemas import (
     ModelCredentials,
     ModelSettings,
 )
-from ..infrastructure.callback.client import CallbackClient
-from ..infrastructure.callback.schemas import CallbackConfig, ExecutionOutcome
+from ..infrastructure.callback.schemas import ExecutionOutcome
 from .agent_registry import AgentRegistry
+from .callback_port import (
+    CallbackSink,
+    backend_url,
+    default_callback_sink,
+)
+from .tracing_port import LangSmithTracingBackend, TracingBackend
 
 logger = get_logger("execution-service")
 
@@ -40,17 +46,10 @@ class InvalidInputError(ValueError):
 def _backend_url() -> str | None:
     """Where to report progress, from PORT_BACKEND, or None if unavailable.
 
-    Imported here rather than at module level so that everything in this package
-    still imports when there is no .env, which the dev runners rely on.
+    Kept here for backwards compatibility; new code should import
+    `backend_url` from `.callback_port`.
     """
-    try:
-        from ..config.settings import get_server_settings
-
-        settings = get_server_settings()
-    except ValidationError:
-        return None
-
-    return f"http://localhost:{settings.port_backend}"
+    return backend_url()
 
 
 def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model:
@@ -87,11 +86,23 @@ def build_default_registry() -> AgentRegistry:
 class AgentExecutionService:
     """Stateless manager: instantiates the agent matching agent_type,
     assigns it the base config from dev_agents_config (overridden by the
-    request), and runs it."""
+    request), and runs it.
 
-    def __init__(self, registry: AgentRegistry | None = None) -> None:
+    `tracing` and `callbacks_factory` are injectable ports (Phase 1): production
+    uses the LangSmith backend and the HTTP backend sink; tests inject
+    recorders or no-ops. Defaults preserve the previous behaviour.
+    """
+
+    def __init__(
+        self,
+        registry: AgentRegistry | None = None,
+        tracing_backend: TracingBackend | None = None,
+        callbacks_factory: Callable[[], CallbackSink | None] | None = None,
+    ) -> None:
         self._registry = registry or build_default_registry()
         self._base_config = load_dev_agents_config()
+        self._tracing = tracing_backend or LangSmithTracingBackend()
+        self._callbacks_factory = callbacks_factory or default_callback_sink
 
         # Before any agent runs, so the LangSmith flags are in place by the
         # time the first graph builds its tracer.
@@ -223,7 +234,7 @@ class AgentExecutionService:
         try:
             await self._mark_running(callbacks, execution_id)
 
-            result = await tracing.traced_agent_run(
+            result = await self._tracing.wrap_stage(
                 asyncio.wait_for(agent.run(agent_input), timeout),
                 name=agent_type,
                 model=agent.model.settings.name,
@@ -246,14 +257,13 @@ class AgentExecutionService:
             if callbacks is not None:
                 await callbacks.aclose()
 
-    @staticmethod
-    def _callbacks(execution_id: int | None) -> CallbackClient | None:
-        """A client for reporting this run, or None when nobody asked for one."""
+    def _callbacks(self, execution_id: int | None) -> CallbackSink | None:
+        """A sink for reporting this run, or None when nobody asked for one."""
         if execution_id is None:
             return None
 
-        backend_url = _backend_url()
-        if backend_url is None:
+        callbacks = self._callbacks_factory()
+        if callbacks is None:
             logger.warning(
                 "execution_id=%s given but no backend url is configured, "
                 "so progress cannot be reported",
@@ -261,10 +271,10 @@ class AgentExecutionService:
             )
             return None
 
-        return CallbackClient(CallbackConfig(backend_url=backend_url))
+        return callbacks
 
     async def _mark_running(
-        self, callbacks: CallbackClient | None, execution_id: int | None
+        self, callbacks: CallbackSink | None, execution_id: int | None
     ) -> None:
         if callbacks is None or execution_id is None:
             return
@@ -273,7 +283,7 @@ class AgentExecutionService:
 
     async def _report(
         self,
-        callbacks: CallbackClient | None,
+        callbacks: CallbackSink | None,
         execution_id: int | None,
         result: BaseModel,
     ) -> None:
@@ -292,7 +302,7 @@ class AgentExecutionService:
 
     async def _report_failure(
         self,
-        callbacks: CallbackClient | None,
+        callbacks: CallbackSink | None,
         execution_id: int | None,
         error: str,
     ) -> None:
