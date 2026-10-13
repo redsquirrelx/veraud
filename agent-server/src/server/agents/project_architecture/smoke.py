@@ -42,6 +42,10 @@ class ArchitectureSmokeModel(OrientationSmokeModel):
         return json.dumps(
             {
                 "architecture": {
+                    "closest_architecture": {
+                        "pattern": "No clear pattern established",
+                        "assessment": claim,
+                    },
                     "explanation": claim,
                     "uncertainties": [
                         "Verify organization, patterns, deviations, and infrastructure with a real model."

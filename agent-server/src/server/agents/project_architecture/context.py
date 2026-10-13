@@ -1,10 +1,17 @@
-"""Architecture candidate projection, scope checks, and verifiable source citations."""
+"""Architectural source-reference validation, alias normalization, and salvage."""
 
+from copy import deepcopy
+from itertools import pairwise
 from pathlib import Path, PurePosixPath
 
-from ..project_analysis.context import walk_contracts
-from ..project_orientation.context import representation_view as orientation_view
-from .schemas import ArchitecturalClaim, ArchitectureReport, SourceCitation
+from ..repository_runtime.context import walk_contracts
+from .coverage import EvidenceGap
+from .schemas import (
+    ArchitecturalClaim,
+    ArchitectureClassification,
+    ArchitectureReport,
+    SourceCitation,
+)
 
 PROMPTS = Path(__file__).parent / "prompts"
 
@@ -31,7 +38,9 @@ def contract_view(schema):
         return {
             "required": value.get("required", []),
             "fields": {
-                key: shape(child) for key, child in value.get("properties", {}).items()
+                key: shape(child)
+                for key, child in value.get("properties", {}).items()
+                if key != "assessment_origin"
             },
         }
 
@@ -40,7 +49,7 @@ def contract_view(schema):
         "types": {
             name: fields(value) for name, value in schema.get("$defs", {}).items()
         },
-        "rules": "Return tool_calls OR architecture as the top-level key. [Type] means a JSON array, not one object. No extra fields. Claims are objects, never strings. Omit unused optional fields.",
+        "rules": "Return tool_calls OR architecture as the top-level key. [Type] means a JSON array, not one object. No extra fields. Claims are objects, never strings. Supported classifications additionally require observed_paths OR observed_dependencies, contrast_question (string), contrast_result (supported claim). Copy actual evidence IDs from the source ledger; do not invent identifiers. Omit unused optional fields.",
     }
 
 
@@ -72,130 +81,102 @@ def validate_orientation_input(tools, orientation):
             )
 
 
-def representation_view(tools, orientation=None):
-    view = orientation_view(tools)
-    snapshot = tools.accessible_snapshot
-    files = {source.id: source for source in snapshot.files}
-    roles = {
-        "controller",
-        "controllers",
-        "view",
-        "views",
-        "route",
-        "routes",
-        "service",
-        "services",
-        "repository",
-        "repositories",
-        "domain",
-        "application",
-        "infrastructure",
-        "model",
-        "models",
-        "database",
-        "adapters",
-        "ports",
+def connection_evidence_ids(tools, report, connection):
+    identifiers = set(connection.description.evidence_ids)
+    if connection not in report.connections:
+        # Classification graphs can reference an already described connection;
+        # duplicating the same endpoint citation list is not additional evidence.
+        for described in report.connections:
+            if described.description.status == "supported" and (
+                described.source_unit,
+                described.target_unit,
+            ) == (connection.source_unit, connection.target_unit):
+                identifiers.update(described.description.evidence_ids)
+    endpoints = {
+        unit.name: unit
+        for unit in report.organization
+        if unit.name in {connection.source_unit, connection.target_unit}
     }
-    symbols = {identifier: [] for identifier in files}
-    for symbol in snapshot.symbols:
-        if len(symbols[symbol.file_id]) < 2 and symbol.parent_symbol_id is None:
-            symbols[symbol.file_id].append(
-                {
-                    "name": symbol.name,
-                    "start_line": symbol.start_line,
-                    "end_line": symbol.end_line,
-                }
+    if len(endpoints) == 2 and all(
+        unit.responsibility.status == "supported" for unit in endpoints.values()
+    ):
+        records = {
+            record.id: record
+            for record in tools.retrieved_evidence
+            if record.kind == "source"
+        }
+        origin = endpoints[connection.source_unit]
+        target = endpoints[connection.target_unit]
+        owners = {
+            symbol.id: symbol.file_id for symbol in tools.accessible_snapshot.symbols
+        }
+        # Endpoint responsibility citations may be reused only for an actual,
+        # resolved structural dependency, never for a guessed runtime connection.
+        linked = {
+            (
+                owners.get(relation.source_id, relation.source_id),
+                owners.get(relation.target_id, relation.target_id),
             )
-    candidates = []
-    used_areas = set()
-    ordered = sorted(
-        snapshot.files,
-        key=lambda source: (
-            PurePosixPath(source.path).stem == "__init__",
-            (source.line_count or 0) <= 3,
-            source.path,
-        ),
-    )
-    for source in ordered:
-        path = PurePosixPath(source.path)
-        matches = [part for part in path.parts if part in roles]
-        if matches and not any(
-            part in {"tests", "test", "docs_src", "examples"} for part in path.parts
-        ):
-            role = matches[-1]
-            if role not in used_areas:
-                used_areas.add(role)
-                candidates.append(source)
-    selected = {source.id: source for source in candidates[:10]}
-    for item in view["candidate_files"]:
-        if len(selected) < 16:
-            selected.setdefault(item["id"], files[item["id"]])
-    if orientation and orientation.orientation:
-        for point in orientation.orientation.starting_points[:4]:
-            selected.setdefault(point.file_id, files[point.file_id])
-    selected = dict(list(selected.items())[:20])
-    view["candidate_files"] = [
-        {
-            "id": source.id,
-            "path": source.path,
-            "line_count": source.line_count,
-            "symbols": symbols[source.id],
+            for relation in tools.accessible_snapshot.relationships
+            if relation.resolution == "internal"
+            and relation.kind in {"import", "from_import", "inherits", "implements"}
+            and owners.get(relation.source_id, relation.source_id) in origin.file_ids
+            and owners.get(relation.target_id, relation.target_id) in target.file_ids
         }
-        for source in selected.values()
-    ]
-    view["omissions"]["candidate_files"] = len(files) - len(selected)
-    relationships = [
-        relation
-        for relation in snapshot.relationships
-        if relation.source_id in selected or relation.target_id in selected
-    ]
-    view["relationship_signals"] = [
-        {
-            "source_id": relation.source_id,
-            "target_id": relation.target_id,
-            "kind": relation.kind,
-            "resolution": relation.resolution,
+        cited = {
+            records[identifier].file_id
+            for identifier in identifiers
+            if identifier in records
         }
-        for relation in relationships[:16]
-    ]
-    view["infrastructure_signals"] = [
-        {
-            "name": item.name,
-            "kind": item.kind,
-            "detection": item.detection,
-            "evidence_ids": item.evidence_ids[:2],
-        }
-        for item in snapshot.infrastructure[:8]
-    ]
-    view["configuration_files"] = [
-        {"id": source.id, "path": source.path}
-        for source in ordered
-        if PurePosixPath(source.path)
-        .name.casefold()
-        .startswith(("dockerfile", "docker-compose", "compose."))
-    ][:8]
-    view["omissions"].update(
-        relationships=max(0, len(relationships) - 16),
-        infrastructure=max(0, len(snapshot.infrastructure) - 8),
-    )
-    view["orientation_guidance"] = None
-    if orientation and orientation.orientation:
-        value = orientation.orientation
-        view["orientation_guidance"] = {
-            "purpose": value.purpose.statement if value.purpose else None,
-            "components": [
-                {
-                    "name": item.name,
-                    "file_ids": item.file_ids,
-                    "responsibility": item.responsibility.statement,
-                }
-                for item in value.components
-            ],
-            "uncertainties": value.uncertainties,
-            "status": orientation.completion_status,
-            "instruction": "Unverified guidance; retrieve architect source before relying on a claim.",
-        }
-    return view
+        for origin_file, target_file in linked:
+            if not cited.intersection({origin_file, target_file}):
+                continue
+            for unit, file_id in ((origin, origin_file), (target, target_file)):
+                identifiers.update(
+                    identifier
+                    for identifier in unit.responsibility.evidence_ids
+                    if identifier in records and records[identifier].file_id == file_id
+                )
+    return identifiers
+
+
+def normalize_source_references(tools, raw):
+    """Resolve file-shaped citation aliases only to one actually inspected range."""
+    records = {}
+    known = set()
+    for record in tools.retrieved_evidence:
+        if record.kind == "source":
+            records.setdefault(record.file_id, set()).add(record.id)
+            known.add(record.id)
+    aliases = {}
+    for file_id, identifiers in records.items():
+        if len(identifiers) == 1:
+            identifier = next(iter(identifiers))
+            aliases[file_id] = identifier
+            aliases["retrieval:" + file_id.removeprefix("file:")] = identifier
+    result = deepcopy(raw)
+    repairs = {}
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "evidence_ids" and isinstance(child, list):
+                    for index, identifier in enumerate(child):
+                        if (
+                            isinstance(identifier, str)
+                            and identifier not in known
+                            and identifier in aliases
+                        ):
+                            child[index] = aliases[identifier]
+                            repairs[identifier] = aliases[identifier]
+                else:
+                    visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(result)
+    return result, repairs
 
 
 def validate_report(tools, report):
@@ -209,8 +190,19 @@ def validate_report(tools, report):
         if isinstance(claim, ArchitecturalClaim) and any(
             identifier not in source for identifier in claim.evidence_ids
         ):
+            invalid = [
+                identifier
+                for identifier in claim.evidence_ids
+                if identifier not in source
+            ]
             raise ValueError(
-                "Cite only source evidence delivered during the architect's own investigation."
+                f"Claim {claim.statement[:80]!r} cites unavailable source IDs {invalid[:4]}. Copy IDs from this inspected-source map: "
+                + str(
+                    {
+                        files[record.file_id].path: identifier
+                        for identifier, record in source.items()
+                    }
+                )
             )
     names = [unit.name for unit in report.organization]
     if len(names) != len(set(names)):
@@ -223,7 +215,24 @@ def validate_report(tools, report):
             for identifier in unit.responsibility.evidence_ids
         ):
             raise ValueError("Unit responsibility must cite its own file_ids.")
-    for connection in report.connections:
+    classification = report.closest_architecture
+    paths = classification.observed_paths if classification else ()
+    for path in paths:
+        for previous, following in pairwise(path):
+            if previous.target_unit != following.source_unit:
+                raise ValueError(
+                    "Observed path connections must form a continuous responsibility chain."
+                )
+    dependencies = classification.observed_dependencies if classification else ()
+    for connection in (
+        *report.connections,
+        *(edge for path in paths for edge in path),
+        *dependencies,
+    ):
+        if connection.source_unit == connection.target_unit:
+            raise ValueError(
+                "Architectural connections must join different responsibilities."
+            )
         if connection.source_unit not in names or connection.target_unit not in names:
             raise ValueError(
                 f"Connections must reference declared organization units {names}; got {connection.source_unit!r} -> {connection.target_unit!r}."
@@ -233,31 +242,60 @@ def validate_report(tools, report):
             and len(
                 {
                     source[identifier].file_id
-                    for identifier in connection.description.evidence_ids
+                    for identifier in connection_evidence_ids(tools, report, connection)
                 }
             )
             < 2
         ):
-            raise ValueError(
-                "Supported cross-unit connections require source from both responsibilities."
+            raise EvidenceGap(
+                f"Supported cross-unit connections require source from both responsibilities: {connection.source_unit} -> {connection.target_unit}. "
+                + "Available endpoint evidence: "
+                + str(
+                    {
+                        unit.name: unit.responsibility.evidence_ids
+                        for unit in report.organization
+                        if unit.name in {connection.source_unit, connection.target_unit}
+                    }
+                )
             )
         if connection.description.status == "supported":
             referenced = {
                 source[identifier].file_id
-                for identifier in connection.description.evidence_ids
+                for identifier in connection_evidence_ids(tools, report, connection)
             }
             if any(
                 not referenced.intersection(unit.file_ids)
                 for unit in report.organization
                 if unit.name in {connection.source_unit, connection.target_unit}
             ):
-                raise ValueError(
+                raise EvidenceGap(
                     "Connection evidence must include its source and target units."
                 )
     if (
         report.closest_architecture
         and report.closest_architecture.assessment.status == "supported"
     ):
+        if dependencies:
+            reached = {dependencies[0].source_unit}
+            nodes = {
+                name
+                for edge in dependencies
+                for name in (edge.source_unit, edge.target_unit)
+            }
+            while True:
+                expanded = reached | {
+                    name
+                    for edge in dependencies
+                    if reached.intersection({edge.source_unit, edge.target_unit})
+                    for name in (edge.source_unit, edge.target_unit)
+                }
+                if expanded == reached:
+                    break
+                reached = expanded
+            if reached != nodes:
+                raise EvidenceGap(
+                    "Observed dependency links must form a connected responsibility graph."
+                )
         cited = {
             source[identifier].file_id
             for identifier in report.closest_architecture.assessment.evidence_ids
@@ -273,8 +311,25 @@ def validate_report(tools, report):
             )
             < 2
         ):
-            raise ValueError(
+            raise EvidenceGap(
                 "Supported pattern classification requires multiple files across at least two observed responsibilities."
+            )
+        path_files = [
+            {
+                source[identifier].file_id
+                for edge in path
+                for identifier in connection_evidence_ids(tools, report, edge)
+            }
+            for path in (*paths, dependencies)
+            if path
+        ]
+        if not cited.intersection(set().union(*path_files)):
+            raise ValueError(
+                "Pattern assessment must cite its observed implementation path."
+            )
+        if classification.scope_kind == "repository" and path_files[0] == path_files[1]:
+            raise ValueError(
+                "Repository-wide paths must inspect different implementation files, not repeat the same evidence."
             )
     for item in report.infrastructure:
         if item.inspected_use and item.inspected_use.status == "supported":
@@ -334,19 +389,78 @@ def retain_valid_sections(tools, raw):
         collection = field not in {"closest_architecture", "explanation"}
         for member in values if collection and isinstance(values, list) else [values]:
             value = (*getattr(result, field), member) if collection else member
+            if field == "closest_architecture" and isinstance(value, dict):
+                value = value | {"assessment_origin": "model"}
             try:
                 candidate = ArchitectureReport.model_validate(
                     result.model_dump() | {field: value}
                 )
                 validate_report(tools, candidate)
-            except ValueError:
+            except ValueError as error:
+                if field == "closest_architecture" and isinstance(member, dict):
+                    try:
+                        assessment = ArchitecturalClaim.model_validate(
+                            member.get("assessment")
+                        )
+                        if assessment.status != "supported":
+                            continue
+                        downgraded = ArchitectureClassification(
+                            pattern=member.get("pattern"),
+                            assessment_origin="host_downgrade",
+                            scope_kind=member.get("scope_kind", "local"),
+                            assessment=assessment.model_copy(
+                                update={
+                                    "status": "hypothesis",
+                                    "limitations": (
+                                        *assessment.limitations,
+                                        "Host retained the model's proposed pattern as a hypothesis because its support failed validation: "
+                                        + str(error)[:500],
+                                    ),
+                                }
+                            ),
+                        )
+                        candidate = ArchitectureReport.model_validate(
+                            result.model_dump() | {field: downgraded}
+                        )
+                        validate_report(tools, candidate)
+                    except ValueError:
+                        continue
+                    result = candidate
                 continue
             result = candidate
-    return (
-        result
-        if result.organization or result.closest_architecture or result.explanation
-        else None
-    )
+    if not (result.organization or result.closest_architecture or result.explanation):
+        return None
+    if result.closest_architecture is None:
+        result = result.model_copy(
+            update={
+                "closest_architecture": ArchitectureClassification(
+                    pattern="No clear pattern established",
+                    assessment_origin="host_fallback",
+                    assessment=ArchitecturalClaim(
+                        statement="No valid architectural pattern assessment was retained.",
+                        scope="Accepted inspected findings",
+                        status="unresolved",
+                        limitations=(
+                            "Host fallback: the model omitted the classification or its assessment failed validation.",
+                        ),
+                    ),
+                )
+            }
+        )
+    if result.explanation is None:
+        result = result.model_copy(
+            update={
+                "explanation": ArchitecturalClaim(
+                    statement="A consolidated architectural explanation was not established.",
+                    scope="Accepted inspected findings",
+                    status="unresolved",
+                    limitations=(
+                        "Host fallback: the model omitted the explanation or it failed source validation.",
+                    ),
+                )
+            }
+        )
+    return result
 
 
 def citations_for(tools, report):

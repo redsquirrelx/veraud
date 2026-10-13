@@ -4,17 +4,17 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..project_analysis.schemas import (
-    AnalysisContract,
+from ..repository_runtime.schemas import (
+    AgentContract,
     BudgetUsage,
     ExecutionIssue,
     RepositoryToolCall,
     RetrievedEvidence,
 )
-from ..project_analysis.telemetry import ExecutionTelemetry
+from ..repository_runtime.telemetry import ExecutionTelemetry
 
 
-class ArchitecturalClaim(AnalysisContract):
+class ArchitecturalClaim(AgentContract):
     statement: str = Field(min_length=1, max_length=1500)
     scope: str = Field(min_length=1, max_length=250)
     status: Literal["supported", "hypothesis", "unresolved"]
@@ -32,30 +32,69 @@ class ArchitecturalClaim(AnalysisContract):
         return self
 
 
-class OrganizationUnit(AnalysisContract):
+class OrganizationUnit(AgentContract):
     name: str = Field(min_length=1, max_length=120)
     file_ids: tuple[str, ...] = Field(min_length=1)
     responsibility: ArchitecturalClaim
 
 
-class ArchitectureConnection(AnalysisContract):
+class ArchitectureConnection(AgentContract):
     source_unit: str
     target_unit: str
     description: ArchitecturalClaim
 
 
-class ArchitectureClassification(AnalysisContract):
+class ArchitectureClassification(AgentContract):
     pattern: str = Field(min_length=1, max_length=100)
     assessment: ArchitecturalClaim
+    scope_kind: Literal["local", "repository"] = "local"
+    observed_paths: tuple[tuple[ArchitectureConnection, ...], ...] = Field(
+        default=(), max_length=2
+    )
+    observed_dependencies: tuple[ArchitectureConnection, ...] = Field(
+        default=(), max_length=6
+    )
+    assessment_origin: Literal["model", "host_downgrade", "host_fallback"] = "model"
+    contrast_question: str | None = Field(default=None, min_length=1, max_length=400)
+    contrast_result: ArchitecturalClaim | None = None
+
+    @model_validator(mode="after")
+    def investigation(self):
+        if self.assessment.status == "supported":
+            if (not self.observed_paths and not self.observed_dependencies) or any(
+                not path for path in self.observed_paths
+            ):
+                raise ValueError(
+                    "Supported patterns require an observed implementation path or dependency links."
+                )
+            if any(
+                edge.description.status != "supported"
+                for path in (*self.observed_paths, self.observed_dependencies)
+                for edge in path
+            ):
+                raise ValueError("Observed paths must contain supported connections.")
+            if (
+                not self.contrast_question
+                or self.contrast_result is None
+                or self.contrast_result.status != "supported"
+            ):
+                raise ValueError(
+                    "Supported patterns require a source-backed contrast question and result."
+                )
+            if self.scope_kind == "repository" and len(self.observed_paths) < 2:
+                raise ValueError(
+                    "Repository-wide patterns require two independently inspected paths; otherwise use local scope."
+                )
+        return self
 
 
-class ArchitectureDeviation(AnalysisContract):
+class ArchitectureDeviation(AgentContract):
     observed_decision: ArchitecturalClaim
     pattern_expectation: str = Field(min_length=1, max_length=500)
     explanation: str = Field(min_length=1, max_length=700)
 
 
-class InfrastructureFinding(AnalysisContract):
+class InfrastructureFinding(AgentContract):
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["execution_unit", "communication", "state"]
     configured: ArchitecturalClaim | None = None
@@ -70,7 +109,7 @@ class InfrastructureFinding(AnalysisContract):
         return self
 
 
-class ArchitectureReport(AnalysisContract):
+class ArchitectureReport(AgentContract):
     organization: tuple[OrganizationUnit, ...] = Field(default=(), max_length=8)
     connections: tuple[ArchitectureConnection, ...] = Field(default=(), max_length=10)
     closest_architecture: ArchitectureClassification | None = None
@@ -83,7 +122,7 @@ class ArchitectureReport(AnalysisContract):
     uncertainties: tuple[str, ...] = Field(default=(), max_length=10)
 
 
-class ArchitectureTurn(AnalysisContract):
+class ArchitectureTurn(AgentContract):
     tool_calls: tuple[RepositoryToolCall, ...] = Field(default=(), max_length=4)
     architecture: ArchitectureReport | None = None
 
@@ -94,13 +133,15 @@ class ArchitectureTurn(AnalysisContract):
         return self
 
 
-class ArchitectureLimits(AnalysisContract):
-    max_model_calls: int = Field(default=6, ge=1, le=6)
-    max_tool_calls: int = Field(default=10, ge=1, le=10)
-    max_prompt_characters: int = Field(default=24000, ge=6000)
+class ArchitectureLimits(AgentContract):
+    soft_token_budgets: bool = True
+    max_model_calls: int = Field(default=8, ge=1, le=8)
+    max_tool_calls: int = Field(default=20, ge=1, le=20)
+    max_prompt_characters: int = Field(default=36000, ge=6000)
+    max_source_characters: int = Field(default=2400, ge=400)
 
 
-class SourceCitation(AnalysisContract):
+class SourceCitation(AgentContract):
     evidence_id: str
     file_id: str
     path: str
@@ -109,13 +150,23 @@ class SourceCitation(AnalysisContract):
     content_hash: str
 
 
-class ArchitectureResult(AnalysisContract):
+class ApplicationCoverage(AgentContract):
+    project_id: str
+    path: str
+    status: Literal["explained", "inspected", "uninspected"]
+    inspected_file_ids: tuple[str, ...] = ()
+    reason: str
+
+
+class ArchitectureResult(AgentContract):
     snapshot_hash: str
     completion_status: Literal["complete", "partial", "failed"]
     architecture: ArchitectureReport | None = None
     citations: tuple[SourceCitation, ...] = ()
     retrieved_evidence: tuple[RetrievedEvidence, ...] = ()
     inspected_file_ids: tuple[str, ...] = ()
+    application_coverage: tuple[ApplicationCoverage, ...] = ()
+    reference_repairs: dict[str, str] = Field(default_factory=dict)
     limitations: tuple[str, ...] = ()
     execution_issues: tuple[ExecutionIssue, ...] = ()
     usage: BudgetUsage

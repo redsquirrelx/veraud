@@ -38,7 +38,9 @@ the analyzer, architect and judge on pinned repositories from `appdata/workspace
 See [the in-memory repository analysis guide](docs/agent-server/repository-analysis.md)
 for deterministic structural analysis and source queries without model calls.
 
-#### Project analysis agent
-See [the project analyst and runner guide](docs/agent-server/project-analysis-runner.md)
-for the new LangGraph functional investigation, `run_project_analysis.py`, offline
-protocol checks, and pinned workspace evaluation.
+#### Repository agents
+See [project orientation](docs/agent-server/project-orientation.md) and
+[project architecture](docs/agent-server/project-architecture.md) for the focused
+LangGraph agents, dedicated runners, evidence contracts, and offline protocol checks.
+Their snapshot-bound execution primitives are described in
+[the shared runtime guide](docs/agent-server/repository-runtime.md).

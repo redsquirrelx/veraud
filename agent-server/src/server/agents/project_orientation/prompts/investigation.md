@@ -9,3 +9,7 @@ relevant implementation range before calling its behavior supported. Find symbol
 to locate useful ranges when needed; otherwise leave the responsibility hypothetical.
 On the final available turn, return the orientation
 using inspected evidence and explicit uncertainties; do not request more tools.
+
+source_evidence_ledger preserves actual evidence IDs and ranges. query_ledger lists
+recent requests even when results are omitted. Reuse inspected evidence rather than
+repeating equivalent queries; retrieve a different needed range after truncation.

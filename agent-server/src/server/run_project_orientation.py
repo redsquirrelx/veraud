@@ -6,12 +6,12 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from server.run_project_analysis import main as run_analysis
+from server.repository_runner import main as run_repository
 
 
 def main(argv=None):
     arguments = sys.argv[1:] if argv is None else list(argv)
-    return run_analysis(["--orientation", *arguments])
+    return run_repository(arguments, mode="orientation")
 
 
 if __name__ == "__main__":

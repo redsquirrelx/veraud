@@ -8,30 +8,30 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from ...services.repository_analysis.context import create_identifier
-from ..project_analysis.investigation import tool_signatures
-from ..project_analysis.schemas import BudgetUsage, ExecutionIssue
-from ..project_analysis.telemetry import TextCallObserver, measure_json, measured_prompt
-from ..project_analysis.token_budget import account_tokens, admit_request, input_ratio
-from ..project_analysis.validation import (
+from ..repository_runtime.responses import (
     normalize_record_arrays,
     parse_json_value,
     validation_feedback,
 )
+from ..repository_runtime.schemas import ExecutionIssue, RepositoryToolCall
+from ..repository_runtime.telemetry import TextCallObserver
+from ..repository_runtime.token_budget import (
+    TokenBudgetExceeded,
+    admit_request,
+)
+from ..repository_runtime.tools import RepositoryToolset
+from ..repository_runtime.working_context import (
+    rejection_details,
+    source_arguments,
+    source_view,
+)
 from .context import (
-    prompt_template,
     representation_view,
-    retain_valid_sections,
     validate_orientation,
 )
-from .schemas import OrientationLimits, OrientationResult, OrientationTurn
-
-ALLOWED_TOOLS = {
-    "list_files",
-    "find_symbols",
-    "get_source_excerpt",
-    "list_relationships",
-    "search_repository_text",
-}
+from .prompting import ALLOWED_TOOLS, prepare_prompt
+from .results import assemble_result
+from .schemas import Orientation, OrientationLimits, OrientationResult, OrientationTurn
 
 
 class OrientationState(TypedDict):
@@ -39,9 +39,9 @@ class OrientationState(TypedDict):
     responses: list[dict]
     calls: int
     tool_calls: int
-    pending: tuple
+    pending: tuple[RepositoryToolCall, ...]
     raw: dict | None
-    orientation: object
+    orientation: Orientation | None
     errors: tuple[str, ...]
     issues: tuple[ExecutionIssue, ...]
     corrected: bool
@@ -51,7 +51,7 @@ class OrientationState(TypedDict):
 
 @dataclass(frozen=True)
 class OrientationRuntime:
-    tools: object
+    tools: RepositoryToolset
     generate: object
     limits: OrientationLimits
     on_event: object = None
@@ -91,69 +91,14 @@ def build_orientation_graph():
                     problem(state, "call_limit", "Orientation call limit reached."),
                 ),
             }
-        responses = list(state["responses"])
-        omitted = 0
-        cap = min(
-            context.limits.max_prompt_characters,
-            int(budget.max_input_tokens_per_call / input_ratio(context.generate)) - 128,
-        )
-        while True:
-            data = {
-                "representation": state["representation"],
-                "tool_results": responses,
-                "omitted_tool_results": omitted,
-                "remaining_model_calls": max_calls - state["calls"],
-                "remaining_tool_calls": min(
-                    context.limits.max_tool_calls, budget.max_tool_calls
-                )
-                - state["tool_calls"],
-                "validation_errors": state["errors"],
-            }
-            text, sizes = measure_json(
-                data,
-                fields={"tool_results": "history", "validation_errors": "feedback"},
-            )
-            prompt = measured_prompt(
-                [
-                    (prompt_template("system"), "instructions"),
-                    (
-                        prompt_template(
-                            "correction" if state["errors"] else "investigation"
-                        ),
-                        "instructions",
-                    ),
-                    (
-                        "\nOUTPUT_SCHEMA\n"
-                        + json.dumps(
-                            OrientationTurn.model_json_schema(), separators=(",", ":")
-                        ),
-                        "contracts",
-                    ),
-                    (
-                        "\nTOOLS\n"
-                        + json.dumps(
-                            {
-                                key: value
-                                for key, value in tool_signatures().items()
-                                if key in ALLOWED_TOOLS
-                            }
-                        ),
-                        "contracts",
-                    ),
-                    ("\nORIENTATION_DATA\n", "framing"),
-                    (text, sizes),
-                ],
-                stage="investigation",
-                objective_id="orientation",
-                correction=bool(state["errors"]),
-            )
-            if len(prompt) <= cap or not responses:
-                break
-            responses.pop(0)
-            omitted += 1
+        prompt = prepare_prompt(state, context, max_calls)
         event(context, "orientation_turn", turn=state["calls"] + 1, max_turns=max_calls)
         submitted = False
         try:
+            if len(prompt) > context.limits.max_prompt_characters:
+                raise TokenBudgetExceeded(
+                    "Prompt exceeds the fixed context character limit."
+                )
             admit_request(context.generate, budget, prompt, "orientation")
             context.generate.request_guard = lambda text, attempts: admit_request(
                 context.generate, budget, text, "orientation", attempts
@@ -167,6 +112,15 @@ def build_orientation_graph():
                 ),
             )
         except Exception as error:  # noqa: BLE001 - provider boundary; cancellation propagates
+            if isinstance(error, TokenBudgetExceeded):
+                event(
+                    context,
+                    "context_rejected",
+                    reason=str(error),
+                    **rejection_details(
+                        context.generate, budget, prompt, "orientation"
+                    ),
+                )
             return {
                 "calls": state["calls"] + int(submitted),
                 "route": "finish",
@@ -181,14 +135,13 @@ def build_orientation_graph():
                     ),
                 ),
             }
-        update = {"calls": state["calls"] + 1, "raw": None, "orientation": None}
+        update = {"calls": state["calls"] + 1, "raw": state["raw"], "orientation": None}
         try:
             value = normalize_record_arrays(
                 parse_json_value(answer, 30000), OrientationTurn.model_json_schema()
             )
-            update["raw"] = (
-                value.get("orientation") if isinstance(value, dict) else None
-            )
+            if isinstance(value, dict) and "orientation" in value:
+                update["raw"] = value["orientation"]
             turn = OrientationTurn.model_validate(value)
             if turn.tool_calls:
                 if any(call.name not in ALLOWED_TOOLS for call in turn.tool_calls):
@@ -215,19 +168,26 @@ def build_orientation_graph():
         responses = list(state["responses"])
         for index, call in enumerate(state["pending"]):
             event(context, "tool_started", tool=call.name)
+            arguments, requested_end = source_arguments(
+                context.tools, call.name, call.arguments
+            )
             response = context.tools.execute(
                 call.name,
-                call.arguments,
+                arguments,
                 tool_call_id=create_identifier(
                     "tool_call", "orientation", state["calls"], index
                 ),
             )
-            view = context.tools.model_view(response)
+            view = source_view(context.tools, response, requested_end)
             # Replace equivalent results while preserving full delivered provenance internally.
             signature = json.dumps([call.name, call.arguments], sort_keys=True)
             responses = [item for item in responses if item["signature"] != signature]
             responses.append(
-                {"signature": signature, "role": "tool", "content": json.dumps(view)}
+                {
+                    "signature": signature,
+                    "role": "tool",
+                    "content": json.dumps(view, separators=(",", ":")),
+                }
             )
             event(
                 context,
@@ -270,66 +230,11 @@ def build_orientation_graph():
 
     def finish(state, runtime):
         context = runtime.context
-        orientation = retain_valid_sections(context.tools, state["raw"])
-        evidence = context.tools.retrieved_evidence
-        inspected = tuple(
-            sorted({record.file_id for record in evidence if record.kind == "source"})
-        )
-        complete = bool(
-            orientation
-            and orientation.project_type
-            and orientation.purpose
-            and orientation.project_type.status != "unresolved"
-            and orientation.purpose.status != "unresolved"
-            and orientation.starting_points
-            and inspected
-            and not state["issues"]
-            and not state["errors"]
-        )
-        status = "complete" if complete else "partial" if orientation else "failed"
-        limitations = (
-            "Orientation covers selected technical files, not the entire repository. Source access validation does not prove semantic sufficiency.",
-        )
-        if not complete:
-            limitations += (
-                "Missing, invalid, or uninspected sections remain unresolved.",
-            )
-        counts, estimates = account_tokens(
-            context.generate, context.tools.context.input.budget
-        )
-        totals = (
-            context.generate.usage_totals()
-            if hasattr(context.generate, "usage_totals")
-            else {"unknown_usage_attempts": state["calls"]}
-        )
-        usage = BudgetUsage(
-            model_calls=state["calls"],
-            tool_calls=context.tools.budget_usage.tool_calls,
-            retrieved_characters=context.tools.budget_usage.retrieved_characters,
-            elapsed_seconds=context.tools.context.elapsed_seconds,
-            accounted_tokens=counts,
-            estimated_tokens=estimates,
-            token_budget_exhausted=any(
-                issue.category == "token_budget_exhausted" for issue in state["issues"]
-            ),
-            **totals,
-        )
-        result = OrientationResult(
-            snapshot_hash=context.tools.context.input.snapshot_hash,
-            completion_status=status,
-            orientation=orientation,
-            retrieved_evidence=evidence,
-            inspected_file_ids=inspected,
-            limitations=limitations,
-            execution_issues=state["issues"],
-            usage=usage,
-            telemetry=context.generate.telemetry(context.tools.tool_measurements),
-        )
-        context.tools.context.require_snapshot(result.snapshot_hash)
+        result = assemble_result(state, context)
         event(
             context,
             "finished",
-            status=status,
+            status=result.completion_status,
             model_calls=state["calls"],
             tool_calls=state["tool_calls"],
         )
