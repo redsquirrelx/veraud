@@ -1,0 +1,223 @@
+version: 1
+description: >-
+  Six real workspace checkouts. References were inspected in source at the pinned
+  commits. Component/fact lists are curated minimums, not exhaustive inventories.
+  Judge labels are initial source-based annotations, available for human review.
+cases:
+  - id: pyshop
+    repository: 199836402-thisishaykins-PyShop
+    commit: 12de0665357d6dad9dda3ce0fd0d6a85a2347b46
+    kinds: [web_service]
+    primary_language: python
+    entrypoints: [manage.py, pyshop/wsgi.py]
+    entrypoints_exhaustive: true
+    key_components: [products/views.py, products/models.py, pyshop/urls.py]
+    expected_facts:
+      - id: product-list
+        description: The product index queries Product.objects.all and renders index.html.
+        evidence: ['products/views.py:7-11']
+      - id: django-models
+        description: Product and Offer are Django ORM models; Product has price and stock.
+        evidence: ['products/models.py:5-15']
+      - id: routing
+        description: The project URL configuration delegates products/ to products.urls.
+        evidence: ['pyshop/urls.py:16-22']
+    judge_claims:
+      - id: supported-products
+        observation: The index view fetches all Product records and renders index.html with those products.
+        evidence: ['products/views.py:7-11']
+        verdict: supported
+        rationale: The ORM query and render arguments are explicit.
+      - id: contradicted-products
+        observation: The index view always returns JSON and never renders an HTML template.
+        evidence: ['products/views.py:7-11']
+        verdict: contradicted
+        rationale: The view calls render with index.html.
+      - id: unverifiable-performance
+        observation: In production, the index view has a measured p95 latency below five milliseconds.
+        evidence: ['products/views.py:7-11']
+        verdict: unverifiable
+        rationale: Source contains no production measurements.
+
+  - id: hexagonal-python
+    repository: 563728375-szymon6927-hexagonal-architecture-python
+    commit: ac564424204904485545a6d0692244dcda34a18d
+    kinds: [web_service]
+    primary_language: python
+    entrypoints: [src/app.py]
+    entrypoints_exhaustive: true
+    key_components: [src/app.py, src/clients/application/client_service.py, src/clients/domain/client_repository.py, src/clients/infrastructure/in_memory_client_repository.py]
+    expected_facts:
+      - id: router-composition
+        description: FastAPI composes clients, gym classes and gym passes routers.
+        evidence: ['src/app.py:9-17']
+      - id: repository-port
+        description: ClientService depends on the IClientRepository abstraction.
+        evidence: ['src/clients/application/client_service.py:14-33', 'src/clients/domain/client_repository.py:7-18']
+      - id: in-memory-adapter
+        description: An in-memory repository implements the client port using a dictionary and deep copies.
+        evidence: ['src/clients/infrastructure/in_memory_client_repository.py:9-26']
+    judge_claims:
+      - id: supported-adapter
+        observation: InMemoryClientRepository implements IClientRepository and stores clients in an instance dictionary.
+        evidence: ['src/clients/infrastructure/in_memory_client_repository.py:9-26']
+        verdict: supported
+        rationale: The superclass, dictionary and save method are explicit.
+      - id: contradicted-adapter
+        observation: InMemoryClientRepository.save persists the client by issuing an SQL INSERT to PostgreSQL.
+        evidence: ['src/clients/infrastructure/in_memory_client_repository.py:9-26']
+        verdict: contradicted
+        rationale: Save only assigns a deep copy to the dictionary.
+      - id: unverifiable-adapter
+        observation: This repository implementation has demonstrated a production throughput of ten thousand writes per second.
+        evidence: ['src/clients/infrastructure/in_memory_client_repository.py:9-26']
+        verdict: unverifiable
+        rationale: No throughput measurements appear in the source.
+
+  - id: mario
+    repository: 134998564-Winter091-MarioPygame
+    commit: 391504b27424940dfbc7d430cab850636979189e
+    kinds: [desktop_app]
+    primary_language: python
+    entrypoints: [Next/main.py]
+    entrypoints_exhaustive: true
+    key_components: [Next/Core.py, Next/Map.py, Next/Player.py, Next/MenuManager.py]
+    expected_facts:
+      - id: startup
+        description: Next/main.py creates Core and enters main_loop.
+        evidence: ['Next/main.py:1-5']
+      - id: game-loop
+        description: The Core game loop calls input, update and render, then limits FPS with its clock.
+        evidence: ['Next/Core.py:43-48']
+      - id: composition
+        description: Core initializes pygame and composes a Map, Sound and MenuManager.
+        evidence: ['Next/Core.py:18-30']
+    judge_claims:
+      - id: supported-loop
+        observation: Core.main_loop repeatedly calls input, update and render and then clock.tick(FPS).
+        evidence: ['Next/Core.py:43-48']
+        verdict: supported
+        rationale: All four calls appear in that loop and order.
+      - id: contradicted-loop
+        observation: Core.main_loop only handles input and never calls update or render.
+        evidence: ['Next/Core.py:43-48']
+        verdict: contradicted
+        rationale: Update and render are called explicitly.
+      - id: unverifiable-fps
+        observation: Production measurements prove the game never drops below sixty frames per second on any machine.
+        evidence: ['Next/Core.py:43-48']
+        verdict: unverifiable
+        rationale: A clock limit is not a measured FPS guarantee.
+
+  - id: gitfolio
+    repository: 1129823629-github-samples-gitfolio
+    commit: 084e000ab40102e95dd3c04cd5b90f49adc01d5e
+    kinds: []
+    notes: >-
+      Static Next.js portfolio. The current analyzer taxonomy has no web_app or
+      static_site category; kind accuracy is intentionally not scored here.
+      This also tests framework entrypoints that are not named main.ts.
+    primary_language: typescript
+    entrypoints: [app/page.tsx, app/layout.tsx]
+    entrypoints_exhaustive: true
+    key_components: [app/page.tsx, app/layout.tsx, next.config.ts]
+    expected_facts:
+      - id: portfolio-page
+        description: The Next.js home page renders portfolio content and project cards.
+        evidence: ['app/page.tsx:6-8', 'app/page.tsx:62-105']
+      - id: root-layout
+        description: RootLayout supplies HTML/body and renders children with Geist fonts.
+        evidence: ['app/layout.tsx:20-34']
+      - id: static-export
+        description: Next.js is configured for static export with unoptimized images.
+        evidence: ['next.config.ts:3-13']
+    judge_claims:
+      - id: supported-export
+        observation: The Next.js configuration enables static export and sets images.unoptimized to true.
+        evidence: ['next.config.ts:3-13']
+        verdict: supported
+        rationale: Both configuration values are explicit.
+      - id: contradicted-export
+        observation: The Next.js configuration sets images.unoptimized to false.
+        evidence: ['next.config.ts:3-13']
+        verdict: contradicted
+        rationale: The value is true, not false.
+      - id: unverifiable-export
+        observation: This configuration has been measured to reduce deployment time by exactly fifty percent.
+        evidence: ['next.config.ts:3-13']
+        verdict: unverifiable
+        rationale: Configuration contains no deployment measurements or comparison.
+
+  - id: hexagonal-typescript
+    repository: 316988921-Sairyss-domain-driven-hexagon
+    commit: 5c2d15a7e2d69e83dfddf28468ee9f30e02c30de
+    kinds: [web_service]
+    primary_language: typescript
+    entrypoints: [src/main.ts]
+    entrypoints_exhaustive: true
+    key_components: [src/main.ts, src/app.module.ts, src/modules/user/database/user.repository.ts, src/libs/db/sql-repository.base.ts]
+    expected_facts:
+      - id: nest-startup
+        description: NestFactory bootstraps AppModule, installs validation and listens on port 3000.
+        evidence: ['src/main.ts:6-20']
+      - id: module-composition
+        description: AppModule composes CQRS, Slonik persistence, GraphQL, UserModule and WalletModule.
+        evidence: ['src/app.module.ts:26-46']
+      - id: persistence-adapter
+        description: UserRepository implements a repository port over SqlRepositoryBase with a Slonik pool.
+        evidence: ['src/modules/user/database/user.repository.ts:33-49']
+    judge_claims:
+      - id: supported-startup
+        observation: Bootstrap creates a Nest application from AppModule and listens on port 3000.
+        evidence: ['src/main.ts:6-20']
+        verdict: supported
+        rationale: NestFactory.create(AppModule) and app.listen(3000) are explicit.
+      - id: contradicted-startup
+        observation: Bootstrap explicitly listens on port 8080 rather than port 3000.
+        evidence: ['src/main.ts:6-20']
+        verdict: contradicted
+        rationale: The listen argument is 3000.
+      - id: unverifiable-startup
+        observation: This bootstrap has a measured cold-start time below one hundred milliseconds in production.
+        evidence: ['src/main.ts:6-20']
+        verdict: unverifiable
+        rationale: No timing measurements are supplied.
+
+  - id: fastapi
+    repository: 160919119-fastapi-fastapi
+    commit: f5c6e9b4f9cadc1bf0f9a1fd672e621206b63007
+    kinds: [library]
+    primary_language: python
+    entrypoints: [fastapi/__init__.py]
+    entrypoints_exhaustive: true
+    key_components: [fastapi/applications.py, fastapi/routing.py, fastapi/dependencies/utils.py, fastapi/background.py]
+    notes: >-
+      Large framework repository with extensive docs and tests. Keep current
+      collection limits to expose selection/truncation failures; report whether
+      reference paths were visible, rather than silently auditing a subfolder.
+    expected_facts:
+      - id: public-api
+        description: The fastapi package exports FastAPI, APIRouter and dependency/parameter helpers.
+        evidence: ['fastapi/__init__.py:5-25']
+      - id: starlette-application
+        description: The FastAPI application class extends Starlette.
+        evidence: ['fastapi/applications.py:32-48']
+      - id: background-tasks
+        description: FastAPI BackgroundTasks extends the Starlette background task collection.
+        evidence: ['fastapi/background.py:1-15']
+    judge_claims:
+      - id: supported-background
+        observation: FastAPI BackgroundTasks inherits from StarletteBackgroundTasks.
+        evidence: ['fastapi/background.py:1-15']
+        verdict: supported
+        rationale: The import alias and class base are explicit.
+      - id: contradicted-background
+        observation: BackgroundTasks has no superclass and does not extend StarletteBackgroundTasks.
+        evidence: ['fastapi/background.py:1-15']
+        verdict: contradicted
+        rationale: The class declaration directly extends StarletteBackgroundTasks.
+      - id: unverifiable-background
+        observation: This class has demonstrated a production throughput of one million background tasks per second.
+        evidence: ['fastapi/background.py:1-15']
+        verdict: unverifiable
+        rationale: Source supplies no task throughput measurements.

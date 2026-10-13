@@ -36,3 +36,9 @@ def pipeline() -> None:
     from .run_pipeline import main
 
     raise SystemExit(main())
+
+
+def benchmark() -> None:
+    from .run_benchmark import main
+
+    raise SystemExit(main())

@@ -9,6 +9,7 @@ __pycache__/
 dev-agents.yaml
 .ruff_cache
 .pytest_cache/
+agent-server/results/benchmark/
 
 # Environment
 .env
