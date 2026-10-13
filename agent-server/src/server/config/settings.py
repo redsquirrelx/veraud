@@ -28,6 +28,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # agent-server/src/server/config -> up four is the repo root.
 ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
 LANGSMITH_CLOUD = "https://api.smith.langchain.com"
 
 
@@ -46,6 +48,7 @@ class ServerSettings(_FromEnvFile):
     port_backend: int
     port_agentserver: int
     llm_api_key: str
+    workspace_root: str = ""
 
 
 class TracingSettings(_FromEnvFile):
@@ -87,3 +90,22 @@ def clear_cache() -> None:
     """Forget the built settings, so the next call re-reads the .env."""
     get_server_settings.cache_clear()
     get_tracing_settings.cache_clear()
+
+
+def resolve_workspace_root() -> Path:
+    """Checkout root shared with the backend.
+
+    `WORKSPACE_ROOT` in the .env relocates it; empty (the default) means the
+    repo appdata/workspace next to the backend DATABASE_URL. Falls back to
+    that default when settings are unavailable (no .env), which the dev
+    runners rely on.
+    """
+    from pydantic import ValidationError
+
+    try:
+        configured = get_server_settings().workspace_root
+    except ValidationError:
+        return REPO_ROOT / "appdata" / "workspace"
+    if configured.strip():
+        return Path(configured).expanduser().resolve()
+    return REPO_ROOT / "appdata" / "workspace"

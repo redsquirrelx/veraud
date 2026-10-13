@@ -24,7 +24,6 @@ from ..agents.project_architecture import ProjectArchitectureAgent
 from ..agents.project_orientation import ProjectOrientationAgent
 from ..agents.project_semantic_validation import ProjectSemanticValidationAgent
 from ..agents.project_semantic_validation.schemas import ValidationLimits
-from ..agents.repository_runtime.access import DEFAULT_WORKSPACE_ROOT
 from ..agents.repository_runtime.model_runtime import (
     ModelGateway,
     close_model_clients,
@@ -32,6 +31,7 @@ from ..agents.repository_runtime.model_runtime import (
 )
 from ..agents.repository_runtime.schemas import ExecutionBudget
 from ..config.logs import get_logger
+from ..config.settings import resolve_workspace_root
 from ..pipelines.project_architecture import ProjectArchitecturePipeline
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
@@ -91,10 +91,10 @@ async def build_project_agents(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Snapshot the repo, then build one model+gateway+agent per stage."""
     root = Path(parsed.root_path).expanduser().resolve()
-    workspace = DEFAULT_WORKSPACE_ROOT.expanduser().resolve()
+    workspace = resolve_workspace_root()
     if root.parent != workspace:
         raise InvalidConfigError(
-            f"root_path must be a checkout directly inside the workspace ({workspace})"
+            f"root_path must be a checkout directly inside the shared workspace ({workspace})"
         )
 
     snapshot = await RepositoryAnalysisService().analyze(

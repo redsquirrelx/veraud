@@ -28,15 +28,13 @@ from .agents.repository_runtime import (
     RepositoryToolset,
     ToolLimits,
 )
-from .agents.repository_runtime.access import (
-    DEFAULT_WORKSPACE_ROOT,
-    RepositoryAccessError,
-)
+from .agents.repository_runtime.access import RepositoryAccessError
 from .agents.repository_runtime.model_runtime import (
     ModelGateway,
     close_model_clients,
     create_project_model,
 )
+from .config.settings import resolve_workspace_root
 from .pipelines import ProjectArchitecturePipeline
 from .repository_progress import ProgressReporter, with_progress
 from .repository_reports import ArchitectureCheckpoint, load_architecture_report
@@ -55,7 +53,7 @@ def build_parser(mode):
     )
     parser.set_defaults(mode=mode)
     parser.add_argument("root", help="Selected repository checkout")
-    parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
+    parser.add_argument("--workspace-root", type=Path, default=resolve_workspace_root())
     parser.add_argument("--smoke", action="store_true", help="Offline protocol check")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--quiet", action="store_true")

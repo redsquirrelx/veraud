@@ -7,9 +7,15 @@ import { env } from "./config/env.js"
 
 const projectRoot = fileURLToPath(new URL("../../", import.meta.url))
 
+// Checkouts live in the repo appdata/workspace shared with the agent-server
+// (next to DATABASE_URL), unless WORKSPACE_DIR overrides it.
+const workspaceDir = env.WORKSPACE_DIR !== ""
+  ? env.WORKSPACE_DIR
+  : join(projectRoot, "..", "appdata", "workspace")
+
 const { app } = await buildApp({
   databaseUrl: env.DATABASE_URL,
-  workspaceDir: join(projectRoot, "appdata", "workspace"),
+  workspaceDir,
   agentServerUrl: `http://localhost:${env.PORT_AGENTSERVER}`,
 })
 

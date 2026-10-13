@@ -108,7 +108,7 @@ class TestWorkspaceGuard:
             )
         )
         parsed = parse_project_architecture_input({"root_path": "/elsewhere/repo"})
-        with pytest.raises(InvalidConfigError, match="directly inside the workspace"):
+        with pytest.raises(InvalidConfigError, match="directly inside the shared workspace"):
             asyncio.run(build_project_agents(exec_stub, _config(), None, parsed, 600))
 
 
@@ -123,7 +123,7 @@ class TestBuildProjectAgents:
         repo.mkdir(parents=True)
         (repo / "main.py").write_text("def main():\n    return 1\n")
         monkeypatch.setattr(
-            definition_module, "DEFAULT_WORKSPACE_ROOT", workspace
+            definition_module, "resolve_workspace_root", lambda: workspace
         )
 
         made_models = []
