@@ -47,6 +47,42 @@ class SemanticPipelineResult(BaseModel):
         return self
 
 
+def revision_feedback(review, tools):
+    """Select actionable evidence requests and source-backed corrections."""
+    requests = [
+        finding
+        for finding in review.findings
+        if finding.missing_evidence
+        or (finding.verdict in {"overstated", "contradicted"} and finding.correction)
+    ]
+    if not requests:
+        return None
+    selected = {
+        target.id: target for target in review_targets(tools, review.original_result)
+    }
+    return {
+        "report_hash": review.report_hash,
+        "requests": [
+            {
+                "target_id": item.target_id,
+                "original_claim": selected[item.target_id].claim.model_dump(
+                    mode="json"
+                ),
+                "verdict": item.verdict,
+                "reason": item.reason,
+                "counterevidence_check": item.counterevidence_check,
+                "correction": item.correction.model_dump(mode="json")
+                if item.correction
+                else None,
+                "missing_evidence": [
+                    request.model_dump(mode="json") for request in item.missing_evidence
+                ],
+            }
+            for item in requests
+        ],
+    }
+
+
 async def validate_architecture_pipeline(
     original,
     *,

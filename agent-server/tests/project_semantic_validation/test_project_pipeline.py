@@ -1,6 +1,7 @@
 """Backend-facing graph shares one snapshot and isolates stage ledgers."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -84,9 +85,15 @@ def test_backend_pipeline_runs_all_stages_over_one_snapshot(tmp_path):
     assert len(seen) == 5 and len({id(tools) for tools in seen}) == 5
     assert all(tools.context.snapshot is snapshot for tools in seen)
     assert hooks.events == [
-        (stage, action)
-        for stage in ("orientation", "architecture", "semantic_validation")
-        for action in ("start", "result")
+        ("orientation", "start"),
+        ("orientation", "result"),
+        ("architecture", "start"),
+        ("architecture", "result"),
+        ("semantic_validation", "start"),
+        ("architecture", "start"),
+        ("architecture", "result"),
+        ("semantic_validation", "start"),
+        ("semantic_validation", "result"),
     ]
     assert result.tool_calls == sum(tools.budget_usage.tool_calls for tools in seen)
     assert (
@@ -116,6 +123,175 @@ def test_pipeline_skip_stages_and_reuse_does_not_reuse_ledgers(tmp_path):
     assert hooks.events == [
         ("architecture", action) for _ in range(2) for action in ("start", "result")
     ]
+
+
+def test_failed_revision_preserves_first_review_and_stops(tmp_path):
+    from server.agents.project_architecture.schemas import ArchitectureResult
+    from server.agents.repository_runtime.schemas import BudgetUsage
+    from server.agents.repository_runtime.telemetry import ExecutionTelemetry
+
+    pipeline, snapshot, workspace, _seen, hooks = setup_pipeline(tmp_path)
+    original_run = pipeline.architect.run
+    published = []
+    original_publish = hooks.on_stage_result
+
+    async def publish(stage, result):
+        if stage == "semantic_validation":
+            published.append(result)
+        await original_publish(stage, result)
+
+    async def fail_revision(tools, orientation=None, **kwargs):
+        if kwargs.get("feedback"):
+            return ArchitectureResult(
+                snapshot_hash=snapshot.repository.snapshot_hash,
+                completion_status="failed",
+                usage=BudgetUsage(),
+                telemetry=ExecutionTelemetry(),
+            )
+        return await original_run(tools, orientation, **kwargs)
+
+    hooks.on_stage_result = publish
+    pipeline.architect.run = fail_revision
+    result = asyncio.run(
+        pipeline.run(
+            snapshot,
+            budget=ExecutionBudget(
+                max_total_tokens=200000, max_tokens_per_objective=100000
+            ),
+            workspace_root=workspace,
+        )
+    )
+    history = result.semantic_validation
+    assert history.return_count == 1 and len(history.validations) == 1
+    assert history.revised_architecture.completion_status == "failed"
+    assert result.displayed_architecture == result.architecture
+    assert published == [history]
+
+
+def test_developed_report_reviews_findings_beyond_old_limit(tmp_path):
+    from server.agents.project_architecture.schemas import (
+        ArchitecturalClaim,
+        ArchitectureReport,
+    )
+
+    pipeline, snapshot, workspace, _seen, _hooks = setup_pipeline(tmp_path)
+
+    async def scenario():
+        budget = ExecutionBudget(
+            max_model_calls=24, max_total_tokens=300000, max_tokens_per_objective=200000
+        )
+        initial = await pipeline.run(
+            snapshot,
+            budget=budget,
+            workspace_root=workspace,
+            validate_semantics=False,
+            include_diagram=False,
+        )
+        original = initial.architecture
+        findings = tuple(
+            ArchitecturalClaim(
+                statement=f"Inspection finding {index}: "
+                + "The retained excerpt defines the inspected scope. " * 35,
+                scope="retained source",
+                status="hypothesis",
+                evidence_ids=(original.retrieved_evidence[0].id,),
+                limitations=(
+                    "Offline fixture leaves the interpretation hypothetical.",
+                ),
+            )
+            for index in range(24)
+        )
+        report = ArchitectureReport.model_validate(
+            original.architecture.model_dump() | {"supporting_evidence": findings}
+        )
+        expanded = original.model_copy(update={"architecture": report})
+        reviewed = await pipeline.run(
+            snapshot,
+            budget=budget,
+            workspace_root=workspace,
+            resume_architecture=expanded,
+            include_diagram=False,
+            allow_return=False,
+        )
+        return findings, reviewed.semantic_validation.validations[0]
+
+    findings, review = asyncio.run(scenario())
+    assert len(review.selected_target_ids) > 18
+    assert not review.pending_target_ids
+    checked = {item.target_id: item.checked_statement for item in review.findings}
+    assert all(
+        checked[f"/supporting_evidence/{index}"] == claim.statement
+        for index, claim in enumerate(findings)
+    )
+
+
+@pytest.mark.parametrize("verdict", ["overstated", "contradicted"])
+@pytest.mark.parametrize("allow_return", [True, False])
+def test_graph_returns_for_corrections_once(tmp_path, verdict, allow_return):
+    pipeline, snapshot, workspace, _seen, hooks = setup_pipeline(tmp_path)
+    feedbacks = []
+
+    class CorrectionModel(SemanticValidationSmokeModel):
+        async def generate(self, prompt):
+            answer = json.loads(await super().generate(prompt))
+            if "findings" in answer:
+                data = json.loads(str(prompt).split("\nVALIDATION_DATA\n", 1)[1])
+                evidence_id = data["source_evidence_ledger"][0]["id"]
+                for finding in answer["findings"]:
+                    finding.update(
+                        verdict=verdict,
+                        evidence_ids=[evidence_id],
+                        missing_evidence=[],
+                        correction={
+                            "statement": "Only the inspected implementation is established.",
+                            "scope": "inspected source",
+                            "status": "hypothesis",
+                            "evidence_ids": [evidence_id],
+                            "limitations": [
+                                "Offline fixture does not establish global behavior."
+                            ],
+                        },
+                    )
+            return json.dumps(answer)
+
+    original_run = pipeline.architect.run
+
+    async def capture(tools, orientation=None, **kwargs):
+        if kwargs.get("feedback"):
+            feedbacks.append(kwargs["feedback"])
+        return await original_run(tools, orientation, **kwargs)
+
+    pipeline.architect.run = capture
+    pipeline.validator.generate = CorrectionModel().generate
+    result = asyncio.run(
+        pipeline.run(
+            snapshot,
+            budget=ExecutionBudget(
+                max_total_tokens=200000, max_tokens_per_objective=100000
+            ),
+            workspace_root=workspace,
+            include_diagram=False,
+            allow_return=allow_return,
+        )
+    )
+    history = result.semantic_validation
+    assert history.return_count == int(allow_return)
+    assert len(history.validations) == 1 + int(allow_return)
+    assert len(feedbacks) == int(allow_return)
+    assert all(
+        not finding.missing_evidence for finding in history.validations[0].findings
+    )
+    if allow_return:
+        assert feedbacks[0]["requests"][0]["correction"] is not None
+        assert feedbacks[0]["requests"][0]["verdict"] == verdict
+        assert history.validations[1].original_result == history.revised_architecture
+        assert [stage for stage, action in hooks.events if action == "start"] == [
+            "orientation",
+            "architecture",
+            "semantic_validation",
+            "architecture",
+            "semantic_validation",
+        ]
 
 
 def test_terminal_503_keeps_orientation_cause_and_skips_downstream_stages(
@@ -219,6 +395,8 @@ def test_terminal_503_keeps_orientation_cause_and_skips_downstream_stages(
                 "100000",
                 "--max-input-tokens",
                 "12000",
+                "--max-tokens",
+                "3000",
             ]
         )
         == 1

@@ -33,7 +33,7 @@ from ..agents.repository_runtime import (
 from ..agents.repository_runtime.schemas import BudgetUsage, ExecutionIssue
 from ..agents.repository_runtime.telemetry import ExecutionTelemetry
 from ..services.repository_analysis import RepositorySnapshot
-from .semantic_validation import SemanticPipelineResult, validate_architecture_pipeline
+from .semantic_validation import SemanticPipelineResult, revision_feedback
 
 
 class ProjectArchitecturePipelineHooks(Protocol):
@@ -142,6 +142,11 @@ class PipelineState(TypedDict, total=False):
     semantic_validation: SemanticPipelineResult | None
     stages: tuple[PipelineStageOutcome, ...]
     diagram_composition: DiagramCompositionResult | None
+    revised_architecture: ArchitectureResult | None
+    diagram_revision: DiagramCompositionResult | None
+    revision_feedback: dict | None
+    return_count: int
+    route: str
 
 
 @dataclass(frozen=True)
@@ -204,7 +209,11 @@ class ProjectArchitecturePipeline:
         graph.add_edge("orientation", "architecture")
         graph.add_edge("architecture", "diagram_composition")
         graph.add_edge("diagram_composition", "semantic_validation")
-        graph.add_edge("semantic_validation", END)
+        graph.add_conditional_edges(
+            "semantic_validation",
+            lambda state: state.get("route", "finish"),
+            {"revise": "architecture", "finish": END},
+        )
         self.graph = graph.compile()
 
     async def run(
@@ -280,13 +289,13 @@ class ProjectArchitecturePipeline:
             }
         )
 
-    async def _stage(self, stage, action, context):
+    async def _stage(self, stage, action, context, *, publish=True):
         if self.on_event:
             self.on_event(stage + "_started", {})
         if self.hooks:
             await self.hooks.on_stage_start(stage)
         result = await context.execute(action()) if context.execute else await action()
-        if self.hooks:
+        if self.hooks and publish:
             await self.hooks.on_stage_result(stage, result)
         if self.on_event:
             self.on_event(
@@ -314,6 +323,28 @@ class ProjectArchitecturePipeline:
 
     async def _architecture(self, state, runtime):
         context = runtime.context
+        if state.get("revision_feedback"):
+            result = await self._stage(
+                "architecture",
+                lambda: self.architect.run(
+                    context.fresh_tools(),
+                    state.get("orientation"),
+                    feedback=state["revision_feedback"],
+                    objective_id="architecture_revision",
+                ),
+                context,
+            )
+            checkpoint = getattr(self.hooks, "on_architecture_revision", None)
+            if checkpoint:
+                await checkpoint(result)
+            return {
+                "revised_architecture": result,
+                "return_count": 1,
+                "stages": (
+                    *state.get("stages", ()),
+                    self._outcome("architecture", result),
+                ),
+            }
         if context.resume_architecture is not None:
             if self.hooks:
                 await self.hooks.on_stage_result(
@@ -363,6 +394,20 @@ class ProjectArchitecturePipeline:
 
     async def _validation(self, state, runtime):
         context = runtime.context
+        revised = state.get("revised_architecture")
+        if revised is not None and revised.architecture is None:
+            history = state["semantic_validation"].model_copy(
+                update={
+                    "revised_architecture": revised,
+                    "return_count": 1,
+                }
+            )
+            if self.hooks:
+                await self.hooks.on_stage_result("semantic_validation", history)
+            return {
+                "semantic_validation": history,
+                "route": "finish",
+            }
         if not context.validate_semantics or state["architecture"].architecture is None:
             reason = (
                 "Disabled by caller."
@@ -377,8 +422,22 @@ class ProjectArchitecturePipeline:
                 ),
             }
         if getattr(getattr(self.validator, "generate", None), "stopped", False):
+            history = (
+                state["semantic_validation"].model_copy(
+                    update={
+                        "revised_architecture": revised,
+                        "return_count": state.get("return_count", 0),
+                        "diagram_revision": state.get("diagram_revision"),
+                    }
+                )
+                if revised
+                else None
+            )
+            if history and self.hooks:
+                await self.hooks.on_stage_result("semantic_validation", history)
             return {
-                "semantic_validation": None,
+                "semantic_validation": history,
+                "route": "finish",
                 "stages": (
                     *state.get("stages", ()),
                     await self._skip(
@@ -387,26 +446,61 @@ class ProjectArchitecturePipeline:
                     ),
                 ),
             }
-        # The caller wrapper retains tracing/heartbeats; hooks receive the full history.
+
+        async def review_once():
+            review = await self.validator.run(
+                context.fresh_tools(),
+                revised or state["architecture"],
+                **(
+                    {"objective_id": "semantic_revalidation"}
+                    if revised
+                    else {"soft_token_budgets": True}
+                ),
+            )
+            return SemanticPipelineResult(
+                original_architecture=state["architecture"],
+                revised_architecture=revised,
+                validations=(*state["semantic_validation"].validations, review)
+                if revised
+                else (review,),
+                return_count=state.get("return_count", 0),
+                diagram_revision=state.get("diagram_revision"),
+            )
+
         result = await self._stage(
             "semantic_validation",
-            lambda: validate_architecture_pipeline(
-                state["architecture"],
-                validator=self.validator,
-                fresh_tools=context.fresh_tools,
-                architect=self.architect if context.allow_return else None,
-                orientation=state.get("orientation"),
-                on_event=self.on_event,
-                compose_revision=(
-                    lambda revised: self._compose_revision(revised, context)
-                )
-                if context.include_diagram
-                else None,
-            ),
+            review_once,
             context,
+            publish=False,
         )
+        feedback = None
+        if context.allow_return and not state.get("return_count", 0):
+            feedback = revision_feedback(result.validations[-1], context.fresh_tools())
+            if feedback and getattr(
+                getattr(self.architect, "generate", None), "stopped", False
+            ):
+                if self.on_event:
+                    self.on_event(
+                        "architecture_revision_skipped",
+                        {
+                            "reason": "Shared provider unavailable after a terminal failure."
+                        },
+                    )
+                feedback = None
+        if feedback and self.on_event:
+            self.on_event(
+                "semantic_validation_return",
+                {
+                    "round": 1,
+                    "targets": [item["target_id"] for item in feedback["requests"]],
+                },
+            )
+        if not feedback and self.hooks:
+            await self.hooks.on_stage_result("semantic_validation", result)
         return {
             "semantic_validation": result,
+            "revision_feedback": feedback,
+            "route": "revise" if feedback else "finish",
             "stages": (
                 *state.get("stages", ()),
                 self._outcome("semantic_validation", result.validations[-1]),
@@ -415,6 +509,22 @@ class ProjectArchitecturePipeline:
 
     async def _diagram(self, state, runtime):
         context = runtime.context
+        revised = state.get("revised_architecture")
+        if revised is not None:
+            composition = (
+                await self._compose_revision(revised, context)
+                if context.include_diagram
+                else None
+            )
+            if composition is not None:
+                revised = revised.model_copy(
+                    update={
+                        "architecture": revised.architecture.model_copy(
+                            update={"diagram": composition.diagram}
+                        ),
+                    }
+                )
+            return {"revised_architecture": revised, "diagram_revision": composition}
         original = state["architecture"]
         report = original.architecture
         reason = None
@@ -424,10 +534,6 @@ class ProjectArchitecturePipeline:
             reason = "No organization units available for diagram composition."
         elif report.diagram is not None:
             reason = "The report already includes an authored diagram."
-        elif getattr(
-            getattr(self.diagram_architect, "generate", None), "stopped", False
-        ):
-            reason = "Shared provider unavailable after an earlier terminal failure."
         if reason:
             return {
                 "diagram_composition": None,
@@ -460,16 +566,11 @@ class ProjectArchitecturePipeline:
         }
 
     async def _compose_revision(self, revised, context):
-        checkpoint_revision = getattr(self.hooks, "on_architecture_revision", None)
-        if checkpoint_revision:
-            await checkpoint_revision(revised)
         if (
             revised.architecture is None
             or not revised.architecture.organization
             or revised.architecture.diagram is not None
         ):
-            return None
-        if getattr(getattr(self.diagram_architect, "generate", None), "stopped", False):
             return None
         if self.on_event:
             self.on_event("diagram_revision_started", {})
