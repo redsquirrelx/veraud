@@ -6,6 +6,11 @@ from typing import Any
 def response_usage(response: Any) -> dict[str, int | None]:
     usage = getattr(response, "usage_metadata", None) or {}
     metadata = getattr(response, "response_metadata", None) or {}
+    if hasattr(usage, "prompt_token_count"):
+        return {
+            "input_tokens": getattr(usage, "prompt_token_count", None),
+            "output_tokens": getattr(usage, "candidates_token_count", None),
+        }
     if not usage:
         usage = metadata.get("token_usage", {})
 
