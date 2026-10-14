@@ -201,6 +201,8 @@ export interface AgentExecution {
   error: string | null
   inputTokens: number | null
   outputTokens: number | null
+  estimatedTokens?: number | null
+  interruptionReason?: string | null
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
@@ -313,6 +315,8 @@ export interface AgentConfiguration {
   credential: { id: number, name: string, providerId: number, providerName: string }
   temperature: number | null
   maxTokens: number | null
+  tokenBudget?: number | null
+  absoluteTokenLimit?: number | null
 }
 
 export interface AgentSettings {
@@ -331,7 +335,7 @@ export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSett
   return await response.json() as AgentSettings[]
 }
 
-export async function saveAgentSettings(agentType: string, modelId: number, credentialId: number, options: { temperature?: number | null, maxTokens?: number | null } = {}): Promise<AgentSettings> {
+export async function saveAgentSettings(agentType: string, modelId: number, credentialId: number, options: { temperature?: number | null, maxTokens?: number | null, tokenBudget?: number | null, absoluteTokenLimit?: number | null } = {}): Promise<AgentSettings> {
   const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
