@@ -13,6 +13,8 @@ export const agentExecutionSchema = {
     error: { type: ["string", "null"] },
     inputTokens: { type: ["integer", "null"] },
     outputTokens: { type: ["integer", "null"] },
+    estimatedTokens: { type: ["integer", "null"], description: "Estimated usage, separate from provider-reported counts." },
+    interruptionReason: { type: ["string", "null"] },
     createdAt: { type: "string", format: "date-time" },
     startedAt: { type: ["string", "null"], format: "date-time" },
     finishedAt: { type: ["string", "null"], format: "date-time" },
