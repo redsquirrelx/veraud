@@ -160,7 +160,11 @@ export class AgentExecutionService {
 
   /** Starts any registered pipeline by name and then gets out of the way.
    *  Never throws: a failure here fails every row, because no stage got far
-   *  enough to report for itself. */
+   *  enough to report for itself.
+   *
+   *  The pipeline-level diagram (mermaid) is not a stage row: once the run
+   *  returns it is merged into the finished architecture row, so the frontend
+   *  can render it from the same result it already parses. */
   private async dispatchPipelineByName(pipeline: string, executions: Record<string, StoredAgentExecution>, configs: Record<string, AgentRunConfig>): Promise<void> {
     const ids = Object.keys(executions)
     try {
@@ -177,10 +181,51 @@ export class AgentExecutionService {
       const executionIds: Record<string, number> = {}
       for (const [stage, execution] of Object.entries(executions)) executionIds[stage] = execution.id
 
-      await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path) }, executionIds, configs)
+      const payload = await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path) }, executionIds, configs)
+      await this.attachDiagram(executions["architecture"], payload)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       for (const execution of Object.values(executions)) await this.fail(execution.id, message)
+    }
+  }
+
+  /** Merges the pipeline-level rendered diagram into the finished
+   *  architecture row. Never throws: a missing diagram only means the
+   *  frontend falls back to the structured counts. */
+  private async attachDiagram(architecture: StoredAgentExecution | undefined, payload: unknown): Promise<void> {
+    try {
+      if (architecture === undefined) return
+      const diagram = (payload as { diagram?: unknown } | null)?.diagram
+      if (typeof diagram !== "object" || diagram === null) return
+      const { mermaid, report_origin, report_hash } = diagram as Record<string, unknown>
+      if (typeof mermaid !== "string" || mermaid.trim() === "") return
+
+      const current = await this.executions.findById(architecture.id)
+      if (current === null || current.status !== "Completed" || current.result === null) return
+      let record: Record<string, unknown>
+      try {
+        const parsed: unknown = JSON.parse(current.result)
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return
+        record = parsed as Record<string, unknown>
+      } catch {
+        return
+      }
+      if (typeof record["architecture_diagram"] === "object" && record["architecture_diagram"] !== null) return
+
+      const patched = await this.executions.patchResult(
+        architecture.id,
+        JSON.stringify({
+          ...record,
+          architecture_diagram: {
+            mermaid,
+            report_origin: typeof report_origin === "string" ? report_origin : "original",
+            ...(typeof report_hash === "string" ? { report_hash } : {}),
+          },
+        }),
+      )
+      this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(patched) })
+    } catch (error) {
+      this.log.error(`Could not attach the diagram to execution ${architecture?.id}: ${error}`)
     }
   }
 

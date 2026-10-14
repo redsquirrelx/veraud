@@ -55,6 +55,10 @@ export interface AgentExecutionStore {
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
   markRunning(id: number): Promise<StoredAgentExecution>
   findById(id: number): Promise<StoredAgentExecution | null>
+  /** Overwrites the stored result of a finished row without touching its
+   *  status: used to attach the pipeline-level diagram to the architecture
+   *  row after every stage already reported. */
+  patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
   createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
@@ -144,6 +148,15 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     const execution = await this.db.agentExecution.update({
       where: { id },
       data: { status: "Running", startedAt: new Date() },
+    })
+
+    return this.toStored(execution)
+  }
+
+  async patchResult(id: number, result: string): Promise<StoredAgentExecution> {
+    const execution = await this.db.agentExecution.update({
+      where: { id },
+      data: { result },
     })
 
     return this.toStored(execution)

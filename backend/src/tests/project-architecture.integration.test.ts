@@ -177,6 +177,65 @@ describe("project architecture endpoint", () => {
     assert.equal(versions[0].derivedStatus, "Completed")
   })
 
+  it("merges the pipeline-level diagram into the finished architecture row", async () => {
+    let appRef: Awaited<ReturnType<typeof start>>["app"] | null = null
+    const { app, db, project } = await start({
+      invoker: {
+        run: async () => ({}),
+        runPipelineByName: async (_pipeline, _input, executionIds) => {
+          const deadline = Date.now() + 5000
+          while (appRef === null && Date.now() < deadline) {
+            await new Promise((done) => setTimeout(done, 20))
+          }
+          assert.ok(appRef !== null)
+          const completed = await appRef.inject({
+            method: "POST",
+            url: `/api/agent-executions/${executionIds["architecture"]}/completion`,
+            payload: {
+              status: "Completed",
+              result: JSON.stringify({ completion_status: "complete", architecture: { organization: [] } }),
+            },
+          })
+          assert.equal(completed.statusCode, 200)
+          return {
+            diagram: {
+              mermaid: "flowchart LR\n  core[core]",
+              report_origin: "original",
+              report_hash: "abc123",
+            },
+          }
+        },
+      },
+    })
+    appRef = app
+    await seedPipeline(db)
+
+    const opened = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/architecture`,
+      payload: { branch: "main", commitHash: COMMIT },
+    })
+    assert.equal(opened.statusCode, 201)
+
+    const deadline = Date.now() + 8000
+    let mermaid: unknown = null
+    while (Date.now() < deadline) {
+      const listed = await app.inject({ method: "GET", url: `/api/projects/${project.id}/versions` })
+      assert.equal(listed.statusCode, 200)
+      const architecture = listed.json()[0].executions.find(
+        (execution: { agentType: string }) => execution.agentType === "architecture",
+      )
+      if (typeof architecture?.result === "string" && architecture.result.includes("flowchart LR")) {
+        mermaid = JSON.parse(architecture.result).architecture_diagram
+        break
+      }
+      await new Promise((done) => setTimeout(done, 50))
+    }
+    assert.equal(typeof mermaid, "object")
+    assert.equal((mermaid as { mermaid: string }).mermaid, "flowchart LR\n  core[core]")
+    assert.equal((mermaid as { report_origin: string }).report_origin, "original")
+  })
+
   it("404s for an unknown project", async () => {
     const { app } = await start()
 
