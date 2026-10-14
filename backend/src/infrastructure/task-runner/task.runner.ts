@@ -45,18 +45,28 @@ export interface TaskQueue {
 interface RunnerJob extends QueuedTask {
   execution: ReturnType<typeof describeGitCommand>
   done: (result: TaskResult) => void
+  ready: boolean
+  blockedFailure?: string
+}
+
+type CommandExecutor = (binary: string, argv: string[]) => Promise<{ stdout: string, stderr: string }>
+
+function isExclusive(command: TaskCommand): boolean {
+  return command.kind === "clone" || command.kind === "pull" || command.kind === "fetch"
+    || command.kind === "checkout-branch" || command.kind === "checkout-detach"
 }
 
 export class TaskRunner implements TaskQueue {
   private log = logger.withTag("task-runner")
   private queue: RunnerJob[] = []
-  private running = false
+  private active = new Set<RunnerJob>()
 
   constructor(
     private tasks: TaskStore,
     private projects: ProjectStatusWriter,
     private gateway: EventSink,
-    private workspaceDir: string
+    private workspaceDir: string,
+    private execute: CommandExecutor = runFile
   ) {}
 
   async enqueue(task: QueuedTask): Promise<TaskResult> {
@@ -64,18 +74,27 @@ export class TaskRunner implements TaskQueue {
       throw new Error(`Unsupported command kind ${(task.command as { kind: string }).kind}`)
     }
     const execution = describeGitCommand(task.command, this.workspaceDir)
-    await this.tasks.update(task.taskId, {
-      status: "Queued",
-      exitCode: null,
-      logTrail: null,
-      command: formatCommand(execution.binary, execution.argv),
-    })
-    this.log.info(`Task ${task.taskId} queued`)
-    await this.announce(task.taskId)
+    let job!: RunnerJob
     const joined = new Promise<TaskResult>((done) => {
-      this.queue.push({ ...task, execution, done })
+      job = { ...task, execution, done, ready: false }
+      this.queue.push(job)
     })
-    void this.drain()
+    try {
+      await this.tasks.update(task.taskId, {
+        status: "Queued",
+        exitCode: null,
+        logTrail: null,
+        command: formatCommand(execution.binary, execution.argv),
+      })
+      this.log.info(`Task ${task.taskId} queued`)
+      await this.announce(task.taskId)
+      job.ready = true
+    } catch (error) {
+      this.queue.splice(this.queue.indexOf(job), 1)
+      throw error
+    } finally {
+      this.drain()
+    }
     return joined
   }
 
@@ -100,42 +119,76 @@ export class TaskRunner implements TaskQueue {
     })
   }
 
-  private async drain(): Promise<void> {
-    if (this.running) {
-      return
+  private drain(): void {
+    for (const job of [...this.queue]) {
+      if (!job.ready || !this.canRun(job)) continue
+      this.queue.splice(this.queue.indexOf(job), 1)
+      this.active.add(job)
+      void this.runScheduled(job)
     }
-    this.running = true
-
-    while (this.queue.length > 0) {
-      const job = this.queue.shift() as RunnerJob
-      await this.runJob(job)
-    }
-
-    this.running = false
   }
 
-  private async runJob(job: RunnerJob): Promise<void> {
-    await this.runDescribed(job, job.execution)
+  private canRun(job: RunnerJob): boolean {
+    if (job.blockedFailure !== undefined) return true
+    const active = [...this.active]
+    const sameProject = active.filter((other) => other.projectId === job.projectId)
+    if (job.command.kind === "clone") {
+      return !active.some((other) => other.command.kind === "clone")
+        && sameProject.length === 0
+        && this.queue.find((other) => other.command.kind === "clone") === job
+    }
+    // Even a clone that is still being persisted reserves its project's checkout.
+    if (this.queue.some((other) => other.projectId === job.projectId && other.command.kind === "clone")) return false
+    if (sameProject.some((other) => isExclusive(other.command))) return false
+    if (isExclusive(job.command) && sameProject.length > 0) return false
+    const earlier = this.queue.slice(0, this.queue.indexOf(job))
+    return !earlier.some((other) => other.projectId === job.projectId
+      && (isExclusive(job.command) || isExclusive(other.command)))
+  }
+
+  private async runScheduled(job: RunnerJob): Promise<void> {
+    let result: TaskResult
+    try {
+      if (job.blockedFailure !== undefined) {
+        result = { status: "Failed", exitCode: null, logTrail: job.blockedFailure, output: "" }
+        await this.updateTaskOnly(job, result.status, result.exitCode, result.logTrail)
+      } else {
+        result = await this.runDescribed(job, job.execution)
+      }
+    } catch (error) {
+      result = { status: "Failed", exitCode: null, logTrail: String(error).slice(-4000), output: "" }
+      this.log.error(`Task ${job.taskId} could not be completed: ${result.logTrail}`)
+    }
+    if (job.command.kind === "clone" && result.status !== "Succeded") {
+      for (const waiting of this.queue) {
+        if (waiting.projectId === job.projectId && waiting.command.kind !== "clone") {
+          waiting.blockedFailure = `Task blocked because clone task ${job.taskId} failed`
+        }
+      }
+    }
+    this.active.delete(job)
+    job.done(result)
+    this.drain()
   }
 
   private async runDescribed(
     job: RunnerJob,
     description: { binary: string, argv: string[], mutating: boolean }
-  ): Promise<void> {
+  ): Promise<TaskResult> {
     const announce = description.mutating ? this.update.bind(this) : this.updateTaskOnly.bind(this)
 
     await announce(job, "Running", null, null)
 
     try {
-      const { stdout, stderr } = await runFile(description.binary, description.argv)
+      const { stdout, stderr } = await this.execute(description.binary, description.argv)
       const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000), output: stdout }
       await announce(job, result.status, result.exitCode, result.logTrail)
-      job.done(result)
+      return result
     } catch (error) {
       const output = error instanceof Error ? error.message : String(error)
       const result = { status: "Failed", exitCode: 1, logTrail: output.slice(-4000), output: "" }
       await announce(job, result.status, result.exitCode, result.logTrail)
-      job.done(result)
+      return result
     }
   }
 
