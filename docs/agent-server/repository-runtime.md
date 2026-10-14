@@ -91,10 +91,7 @@ coverage, and runner handoff. Offline smoke checks validate the protocol, not th
 semantic accuracy of model conclusions.
 
 After the runtime extraction and agent cleanup, the full `uv run pytest -q` suite
-passed **256 tests**, including both dedicated runners' smoke paths. Targeted Ruff
-and `git diff --check` passed. Repository-wide Ruff also reports three existing
-import-formatting issues in `evaluator.py`, `semantic_matcher.py`, and
-`services/functional_adequacy/document_reader.py`.
+passed. Targeted Ruff and `git diff --check` passed.
 
 Compared with the last committed version, the focused agent/runtime/runner source
 and prompts decreased from **9,479 to 5,243 lines** (44.7%). This comparison includes

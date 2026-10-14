@@ -1,46 +1,16 @@
 # In-memory repository analysis
 
 `RepositoryAnalysisService` builds a typed, evidence-backed repository snapshot
-without LLM calls, API credentials, or executing repository code. The service and
-runner are independent of the analyzer/architect/judge pipeline.
+without LLM calls, API credentials, or executing repository code. The snapshot
+is built internally by the `project-architecture` pipeline definition and the
+`run_project_*` CLI runners.
 
-## Run against the workspace
+## Snapshot input
 
-From `agent-server`:
-
-```bash
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop
-```
-
-The default output summarizes technologies, structure, dependencies, architecture
-signals, entrypoints, infrastructure, testing, and extraction coverage. The runner
-also works by path:
-
-```bash
-uv run python src/server/run_repository_analysis.py ../appdata/workspace/199836402-thisishaykins-PyShop
-```
-
-Print the structured snapshot or run individual queries:
-
-```bash
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --json
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --query symbols --name Product
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --query source --path products/models.py --start-line 5 --end-line 15
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --query search --text "Product.objects"
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --query relationships --resolution internal
-uv run python -m server.run_repository_analysis ../appdata/workspace/199836402-thisishaykins-PyShop --query infrastructure
-```
-
-`--json` and `--query files` omit retained source text unless `--include-source`
-is supplied. Source excerpt queries always return the requested source. JSON goes
-to stdout; the service does not create output files or databases. Each runner
-invocation constructs a fresh snapshot and releases it on process exit.
-
-Other query names: `overview`, `projects`, `files`, `dependencies`, `entrypoints`,
-`architecture`, `tests`, and `evidence`. Use `--evidence-id` for evidence queries,
-`--source-id`/`--target-id` for relationship filters, and a symbol's `--source-id`
-for symbol source retrieval. List queries support `--offset` and `--limit`
-(1–500). Run `--help` for all filters and inventory limits.
+The default snapshot summarizes technologies, structure, dependencies, architecture
+signals, entrypoints, infrastructure, testing, and extraction coverage. Snapshots
+are built programmatically (see Python API below) by the `project-architecture`
+pipeline definition and the `run_project_*` CLI runners over a retained checkout.
 
 ## Python API
 
@@ -94,7 +64,7 @@ Python symbols use AST; JavaScript/TypeScript use Tree-sitter. Symbols include
 complete line spans, decorators, parent ownership, signatures where available,
 and base names. Typed relationships preserve internal, external, builtin,
 unresolved, and dynamic outcomes. Unresolved imports are not classified using
-packages installed on the analyzer host.
+packages installed on the local host.
 
 Manifest support includes `pyproject.toml`, literal `setup.py` fields,
 `setup.cfg`, requirements files, `Pipfile`, and nested `package.json` projects.
@@ -136,9 +106,9 @@ execution coverage. Text search is literal, in memory, and paginated.
 
 ```bash
 uv run pytest tests/repository_analysis -q
-uv run ruff check src/server/services/repository_analysis src/server/run_repository_analysis.py tests/repository_analysis
+uv run ruff check src/server/services/repository_analysis tests/repository_analysis
 ```
 
 Fixture tests cover deterministic output, source immutability after filesystem
 changes, consistency rejection, monorepo aliases, lock versions, decorators,
-evidence references, extraction limits, malformed manifests, and runner output.
+evidence references, extraction limits, malformed manifests, and snapshot queries.

@@ -11,7 +11,7 @@ orientation -> architecture -> diagram composition -> semantic review
 The pipeline consumes one retained `RepositorySnapshot`. Every stage and feedback
 round uses a fresh `RepositoryToolset` and evidence ledger over that snapshot. It
 does not import CLI code, collect a second snapshot, create backend execution rows,
-or own model clients. The existing legacy `ArchitectureAuditPipeline` is separate.
+or own model clients.
 
 ## Backend composition
 

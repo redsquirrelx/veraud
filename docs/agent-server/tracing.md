@@ -60,20 +60,19 @@ mirror, the two halves of the same trace would land in different projects.
 ## The shape of a trace
 
 ```
-analyzer                    one span per agent execution
-  LangGraph                 the graph, traced by langchain-core
-    hypothesize             one span per node
-      gemini/flash          one span per model call, under the node that made it
-    select
-    read                    no child: this node only touches the filesystem
-    verify                  also shows the conditional edge, _after_verify
-    synthesize
+project-architecture      one span per pipeline execution
+  LangGraph               the graph, traced by langchain-core
+    orientation           one span per stage
+      gemini/flash        one span per model call, under the stage that made it
+    architecture
+      gemini/flash
+    semantic_validation
       gemini/flash
 ```
 
-The analyzer loop shows up directly: if it needed a second read round, there are
-two `select`/`read`/`verify` spans in sequence. When a model call fails, the span
-records the error instead of the response.
+Stage loops show up directly: if architecture needed a second tool round,
+there are two consecutive tool spans in sequence. When a model call fails,
+the span records the error instead of the response.
 
 Root spans carry `model` and `timeout_seconds`. Model spans carry
 `prompt_chars`.
@@ -103,9 +102,7 @@ child of the surrounding span.
 | `config/settings.py` | declares every variable the server reads |
 | `config/tracing.py` | the module itself |
 | `app/execution_service.py` | `setup()` at construction; `traced_agent_run` around the timed run |
-| `agents/analyzer/agent.py` | `traced_generate` instead of `model.generate` |
-| `agents/architect/agent.py` | same |
-| `agents/judge/agent.py` | same |
+| `agents/repository_runtime/model_runtime.py` | `traced_generate` instead of `model.generate` |
 | `agents/dummy/agent.py` | same |
 
 `traced_agent_run` wraps the coroutine rather than the graph on purpose: that is

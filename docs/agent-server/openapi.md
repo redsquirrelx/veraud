@@ -48,7 +48,7 @@ network calls. It checks:
   `504` through substituted service failures.
 - Defaults, nullable overrides, service fallback values and input validation.
 
-The existing analyzer determinism tests remain part of the suite. The contract
+The contract
 checks exercise representative data; they do not execute real providers or
 simulate every possible value returned by an agent.
 

@@ -179,35 +179,6 @@ opaque here, matching each agent's own output schema.
 | `404` | Unknown pipeline `name` |
 | `422` | Bad config, bad input, or an unreadable `root_path` |
 | `504` | Pipeline timed out |
-
-## Judge agent
-
-Grades a past architecture description against its cited source: whether
-each responsibility and quality note is `supported`, `contradicted`, or
-`unverifiable`. Blind by design — it never sees the run's confidence.
-
-Source of truth: `agent-server/src/server/agents/judge/`,
-`agent-server/src/server/run_judge.py`. The judge is a CLI/benchmark agent
-only; it is not registered for HTTP execution.
-Inspect its schemas in code; its input requires a repository root and an existing
-architecture description. It is not part of any HTTP pipeline.
-
-```bash
-uv run --no-sync python -m server.run_judge <root> <description.json> --json
-```
-
-Same model by construction: the runner resolves the architect's model and
-hands that instance to the judge. There is no `judge` entry in
-`dev-agents.yaml` to drift out of sync. Evidence cites line intervals as
-`path:L1-L2` (bare path means the whole file); the judge re-reads exactly
-those lines plus context, and ranges pointing outside their file land in
-`unverifiable`. Every verdict names its evidence: a supported or
-contradicted verdict with no checkable evidence is demoted to
-`unverifiable`. Empty claims and unreadable evidence
-are `unverifiable` without spending a model call; unparseable grader answers
-fail toward `unverifiable`, never toward trust. The headline metric is the
-contradiction rate: shared-model agreement may be self-agreement, but a
-contradiction is evidence.
 ## `POST /api/agents/verify-access`
 
 Accepts `{ "model": { "provider": "OpenAI", "name": "MODEL_NAME" }, "api_key": "PROVIDER_KEY" }`.
