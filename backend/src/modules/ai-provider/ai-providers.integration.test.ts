@@ -54,12 +54,12 @@ describe("ai providers API", () => {
     await close()
   })
 
-  it("seeds OpenAI, Anthropic and Google", async () => {
+  it("seeds OpenAI, Anthropic, Google and Groq", async () => {
     const response = await fetch(`${baseUrl}/api/ai-providers`)
     const providers = await response.json() as Array<{ name: string }>
 
     assert.equal(response.status, 200)
-    assert.deepEqual(providers.map((provider) => provider.name), ["Anthropic", "Google", "OpenAI"])
+    assert.deepEqual(providers.map((provider) => provider.name), ["Anthropic", "Google", "Groq", "OpenAI"])
   })
 
   it("allows browser deletes through CORS", async () => {

@@ -7,7 +7,7 @@ export class InvalidAiRequestError extends Error {}
 export class DuplicateAiError extends Error {}
 export class AiInUseError extends Error {}
 
-export const SEEDED_AI_PROVIDERS: Array<string> = ["OpenAI", "Anthropic", "Google"]
+export const SEEDED_AI_PROVIDERS: Array<string> = ["OpenAI", "Anthropic", "Google", "Groq"]
 
 export interface AiModelView {
   id: number

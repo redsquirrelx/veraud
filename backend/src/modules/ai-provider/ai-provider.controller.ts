@@ -26,7 +26,7 @@ const apiKeyInput = { type: "string", description: "Trimmed non-empty token, up 
 export function registerAiProviderRoutes(app: FastifyInstance, service: AiProviderService): void {
   app.get("/api/ai-providers", { schema: {
     tags: ["AI Providers"], summary: "List AI providers",
-    description: "Lists seeded OpenAI, Anthropic and Google providers with models and masked credentials. Providers themselves are read-only.",
+    description: "Lists seeded OpenAI, Anthropic, Google and Groq providers with models and masked credentials. Providers themselves are read-only.",
     response: { 200: { type: "array", items: { $ref: "AiProvider#" } } },
   } }, async () => {
     return service.listProviders()
