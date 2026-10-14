@@ -3,9 +3,9 @@
 `GET /api/ai-providers` lists the fixed providers with their models
 and credentials; the `POST`/`PATCH`/`DELETE` routes below manage models and
 credentials scoped by provider. Providers themselves are read-only:
-`OpenAI`, `Anthropic` and `Google` are seeded idempotently at boot
+`OpenAI`, `Anthropic`, `Google` and `Groq` are seeded idempotently at boot
 (`ensureSeeded`, skipped when the name already exists), so a fresh
-database always serves the three. No task rows are involved: this is
+database always serves the four. No task rows are involved: this is
 plain CRUD, unlike the git commands.
 
 Source of truth: `backend/src/modules/ai-provider/`
