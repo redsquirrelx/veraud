@@ -31,3 +31,20 @@ calls annotation. Inspect linked_statement and linked_scope when judging these t
 Do not infer global purity or runtime deployment from a component-view scope.
 
 Read cited ranges first and inspect adjacent contracts or connected implementations when material. Do not infer uninspected behavior from imports. Distinguish a semantic contradiction from imprecise prose. Proposed corrections must be scoped, preserve uncertainty, and cite your own evidence. Never rewrite the original report, invent file IDs, or manufacture a global acceptance.
+
+Diagram targets may also describe a node role or a reported deviation's placement on
+specific components. Check the role and the deviation-to-component association against
+the source and the supplied original observation, not just whether the diagram looks
+plausible. Mechanism labels on relations are assertions too: verify named operations,
+protocols and contracts. Additional views use /diagram/views/N/... target pointers;
+evaluate each view's boundaries and scope independently. A dependency view does not
+establish a runtime flow, and configured execution boundaries do not prove deployment.
+
+relationship_coverage targets review the investigation of each module's incoming and
+outgoing relationships, including omissions. pending_paths/pending_units are structural
+navigation hints, not established runtime connections. Inspect relevant callers,
+collaborators and composition before accepting coverage or scoped isolation. A single
+valid edge does not establish complete boundary coverage. For uninvestigated or
+unresolved modules, request concrete missing evidence and candidate paths; do not
+approve coverage merely because the unit's responsibility is correct. Targets marked
+host-generated are review questions, not assertions the architect already established.

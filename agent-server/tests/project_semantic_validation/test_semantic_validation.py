@@ -80,7 +80,23 @@ def fixture(tmp_path):
                             "evidence_ids": [response.evidence[0].id],
                         },
                     }
-                ]
+                ],
+                "relationship_investigations": [
+                    {
+                        "unit_name": "Service",
+                        "status": "unresolved",
+                        "assessment": {
+                            "statement": "Port binding and incoming callers remain unverified.",
+                            "scope": "service.py",
+                            "status": "unresolved",
+                            "evidence_ids": [response.evidence[0].id],
+                            "limitations": [
+                                "Only the service implementation was inspected."
+                            ],
+                        },
+                        "examined_file_ids": [source.id],
+                    }
+                ],
             }
         ),
         retrieved_evidence=response.evidence,
@@ -146,7 +162,8 @@ class ReviewingModel:
                 }
             findings.append(finding)
         if self.partial_invalid and len(findings) > 1:
-            findings[1]["target_id"] = "/invented"
+            for finding in findings[1:]:
+                finding["target_id"] = "/invented"
         return json.dumps({"findings": findings})
 
 
@@ -188,7 +205,10 @@ def test_architect_citations_cannot_be_reused_as_validator_evidence(fixture):
         )
     )
     assert result.completion_status == "failed" and result.verdict == "inconclusive"
-    assert result.pending_target_ids == ("/organization/0/responsibility",)
+    assert result.pending_target_ids == (
+        "/organization/0/responsibility",
+        "/organization/0/relationship_coverage",
+    )
     assert result.execution_issues[-1].category == "invalid_findings"
 
 
@@ -204,14 +224,20 @@ def test_selection_and_partial_salvage_never_accept_unreviewed_claims(fixture):
         ).run(tools(), original)
     )
     assert result.verdict == "inconclusive" and result.completion_status == "partial"
-    assert result.pending_target_ids == ("/explanation",)
+    assert result.pending_target_ids == (
+        "/organization/0/relationship_coverage",
+        "/explanation",
+    )
     result = asyncio.run(
         ProjectSemanticValidationAgent(
             ReviewingModel(partial_invalid=True),
             limits=ValidationLimits(max_model_calls=2),
         ).run(tools(), original)
     )
-    assert len(result.findings) == 1 and result.pending_target_ids == ("/explanation",)
+    assert len(result.findings) == 1 and result.pending_target_ids == (
+        "/organization/0/relationship_coverage",
+        "/explanation",
+    )
     assert result.verdict != "accepted"
 
 
@@ -389,7 +415,10 @@ def test_provider_failure_preserves_previously_accepted_findings(fixture):
         ).run(tools(), original)
     )
     assert len(result.findings) == 1 and result.completion_status == "partial"
-    assert result.pending_target_ids == ("/explanation",)
+    assert result.pending_target_ids == (
+        "/organization/0/relationship_coverage",
+        "/explanation",
+    )
     assert result.execution_issues[-1].category == "RuntimeError"
 
 
@@ -406,7 +435,7 @@ def test_rejected_extra_finding_is_visible_even_when_all_targets_were_reviewed(f
             return json.dumps(value)
 
     result = asyncio.run(ProjectSemanticValidationAgent(Extra()).run(tools(), original))
-    assert len(result.findings) == 1 and not result.pending_target_ids
+    assert len(result.findings) == 2 and not result.pending_target_ids
     assert result.completion_status == "partial" and result.verdict == "inconclusive"
     assert result.execution_issues[-1].category == "invalid_findings"
 
@@ -481,7 +510,7 @@ def test_summary_identifies_displayed_report_and_separates_certainty(
     )
     assert "architect certainty: supported | semantic: overstated" in text
     assert "Final acceptance: not established" in text
-    assert "Semantic review coverage: 1 of 1 claims" in text
+    assert "Semantic review coverage: 2 of 2 claims" in text
     assert "Proposed correction (not automatically applied)" in text
     if revision:
         assert "Revised service responsibility." in text
@@ -518,7 +547,7 @@ def test_summary_explains_partial_review_and_failed_revision(fixture, capsys):
     text = capsys.readouterr().out
     assert "Report shown: ORIGINAL ARCHITECTURE REPORT" in text
     assert "Revision generation: failed; produced no report" in text
-    assert "Semantic review coverage: 0 of 1 claims" in text
+    assert "Semantic review coverage: 0 of 2 claims" in text
     assert "Pending claim: /organization/0/responsibility" in text
     assert "Review issue: token_budget_exhausted" in text
     assert "architect certainty: supported | semantic: not reviewed" in text

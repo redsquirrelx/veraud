@@ -7,7 +7,11 @@ from ..repository_runtime.token_budget import input_ratio
 from ..repository_runtime.tools import tool_signatures
 from ..repository_runtime.working_context import WorkingContext
 from .context import contract_view, prompt_template
-from .coverage import application_coverage
+from .coverage import (
+    application_coverage,
+    relationship_coverage,
+    relationship_recovery_tasks,
+)
 from .schemas import ArchitectureTurn
 
 ALLOWED_TOOLS = {
@@ -76,7 +80,14 @@ def prepare_prompt(state, context, maximum):
     # Diagram selection is a separate compact call; do not spend investigation
     # context/output tokens asking the model to duplicate its report structure.
     schema["$defs"]["ArchitectureReport"]["properties"].pop("diagram", None)
-    for name in ("ArchitectureDiagram", "DiagramNode", "DiagramEdge", "DiagramGroup"):
+    for name in (
+        "ArchitectureDiagram",
+        "DiagramView",
+        "DiagramDeviation",
+        "DiagramNode",
+        "DiagramEdge",
+        "DiagramGroup",
+    ):
         schema["$defs"].pop(name, None)
     contract = contract_view(schema)
     if need_source:
@@ -118,9 +129,23 @@ def prepare_prompt(state, context, maximum):
             "architect_inspected_file_count": len(inspected),
             "source_evidence_ledger": evidence,
             "application_coverage": coverage,
-            "closing_instruction": "Return architecture now with closest_architecture and explanation. Use a precisely scoped hypothesis with limitations if the pattern is only plausible, or an unresolved no-clear-pattern conclusion. Do not label insufficient evidence supported. Retain valid findings and explicitly declare incomplete coverage."
+            "pending_relationship_tasks": relationship_recovery_tasks(
+                context.tools,
+                state["architecture"],
+                state.get("relationship_actions", {}),
+            )[:8],
+            "relationship_recovery_actions": state.get("relationship_actions", {}),
+            "relationship_coverage": [
+                item
+                | {
+                    "pending_path_count": len(item["pending_paths"]),
+                    "pending_paths": item["pending_paths"][:12],
+                }
+                for item in relationship_coverage(context.tools, state["architecture"])
+            ],
+            "closing_instruction": "Return architecture now with concrete responsibilities, connection mechanisms, separately cited supporting findings, closest_architecture and a developed, reasoned explanation. Use a precisely scoped hypothesis with limitations if the pattern is only plausible, or an unresolved no-clear-pattern conclusion. Do not label insufficient evidence supported. Retain valid findings and explicitly declare incomplete coverage."
             if state["finalizing"]
-            else "Investigate missing evidence before closing; include a pattern assessment and explanation, even if unresolved.",
+            else "Investigate representative flows and distinct architectural findings before closing; include developed responsibilities, connections, supporting_evidence, a pattern assessment and explanation, even if unresolved.",
             "application_targets": state["representation"].get(
                 "application_targets", []
             ),

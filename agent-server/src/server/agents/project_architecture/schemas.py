@@ -15,7 +15,7 @@ from ..repository_runtime.telemetry import ExecutionTelemetry
 
 
 class ArchitecturalClaim(AgentContract):
-    statement: str = Field(min_length=1, max_length=1500)
+    statement: str = Field(min_length=1, max_length=3000)
     scope: str = Field(min_length=1, max_length=250)
     status: Literal["supported", "hypothesis", "unresolved"]
     evidence_ids: tuple[str, ...] = ()
@@ -42,6 +42,7 @@ class ArchitectureConnection(AgentContract):
     source_unit: str
     target_unit: str
     description: ArchitecturalClaim
+    kind: Literal["calls", "depends_on", "implements", "relationship"] = "relationship"
 
 
 class ArchitectureClassification(AgentContract):
@@ -49,10 +50,10 @@ class ArchitectureClassification(AgentContract):
     assessment: ArchitecturalClaim
     scope_kind: Literal["local", "repository"] = "local"
     observed_paths: tuple[tuple[ArchitectureConnection, ...], ...] = Field(
-        default=(), max_length=2
+        default=(), max_length=4
     )
     observed_dependencies: tuple[ArchitectureConnection, ...] = Field(
-        default=(), max_length=6
+        default=(), max_length=12
     )
     assessment_origin: Literal["model", "host_downgrade", "host_fallback"] = "model"
     contrast_question: str | None = Field(default=None, min_length=1, max_length=400)
@@ -109,6 +110,43 @@ class InfrastructureFinding(AgentContract):
         return self
 
 
+class RelationshipInvestigation(AgentContract):
+    unit_name: str = Field(min_length=1, max_length=120)
+    status: Literal["connected", "isolated", "unresolved"]
+    assessment: ArchitecturalClaim
+    examined_file_ids: tuple[str, ...] = ()
+    resolution_blocker: (
+        Literal["evidence_inconclusive", "dynamic_resolution"] | None
+    ) = None
+    blocker_reason: str | None = Field(default=None, min_length=1, max_length=700)
+
+    @model_validator(mode="after")
+    def certainty(self):
+        if (self.resolution_blocker is None) != (self.blocker_reason is None):
+            raise ValueError(
+                "A resolution blocker requires a concrete reason, and vice versa."
+            )
+        if self.status != "unresolved" and self.resolution_blocker:
+            raise ValueError(
+                "Only unresolved investigations may declare a resolution blocker."
+            )
+        if self.status == "connected" and self.assessment.status != "supported":
+            raise ValueError(
+                "Verified connection investigations require supported assessments; use unresolved otherwise."
+            )
+        if self.status == "unresolved" and self.assessment.status == "supported":
+            raise ValueError(
+                "Unresolved relationship investigations require hypothesis/unresolved certainty and limitations."
+            )
+        if self.status == "isolated" and (
+            not self.examined_file_ids or self.assessment.status != "supported"
+        ):
+            raise ValueError(
+                "Isolation requires inspected files and a supported, precisely scoped assessment."
+            )
+        return self
+
+
 class DiagramGroup(AgentContract):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     title: str = Field(min_length=1, max_length=120)
@@ -119,6 +157,15 @@ class DiagramNode(AgentContract):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     unit_ref: str = Field(pattern=r"^/organization/(0|[1-9][0-9]*)$")
     group_id: str | None = None
+    role: Literal[
+        "component",
+        "actor",
+        "interface",
+        "service",
+        "adapter",
+        "data_store",
+        "event_bus",
+    ] = "component"
 
 
 class DiagramEdge(AgentContract):
@@ -126,29 +173,48 @@ class DiagramEdge(AgentContract):
     target: str
     claim_ref: str = Field(min_length=1, max_length=200)
     kind: Literal["calls", "depends_on", "implements", "relationship"]
+    label: str | None = Field(default=None, min_length=1, max_length=120)
 
 
-class ArchitectureDiagram(AgentContract):
+class DiagramDeviation(AgentContract):
+    deviation_ref: str = Field(pattern=r"^/deviations/(0|[1-9][0-9]*)$")
+    node_ids: tuple[str, ...] = Field(min_length=1, max_length=12)
+    explanation: str = Field(min_length=1, max_length=400)
+
+
+class DiagramView(AgentContract):
     title: str = Field(min_length=1, max_length=120)
     scope: str = Field(min_length=1, max_length=250)
-    groups: tuple[DiagramGroup, ...] = Field(default=(), max_length=4)
+    view_kind: Literal["structure", "dependencies", "flow", "deployment", "custom"] = (
+        "structure"
+    )
+    direction: Literal["LR", "TB"] = "LR"
+    groups: tuple[DiagramGroup, ...] = Field(default=(), max_length=8)
     nodes: tuple[DiagramNode, ...] = Field(min_length=1, max_length=12)
-    edges: tuple[DiagramEdge, ...] = Field(default=(), max_length=16)
-    limitations: tuple[str, ...] = Field(default=(), max_length=6)
+    edges: tuple[DiagramEdge, ...] = Field(default=(), max_length=24)
+    deviations: tuple[DiagramDeviation, ...] = Field(default=(), max_length=10)
+    limitations: tuple[str, ...] = Field(default=(), max_length=10)
+
+
+class ArchitectureDiagram(DiagramView):
+    views: tuple[DiagramView, ...] = Field(default=(), max_length=2)
 
 
 class ArchitectureReport(AgentContract):
-    organization: tuple[OrganizationUnit, ...] = Field(default=(), max_length=8)
-    connections: tuple[ArchitectureConnection, ...] = Field(default=(), max_length=10)
+    organization: tuple[OrganizationUnit, ...] = Field(default=(), max_length=12)
+    connections: tuple[ArchitectureConnection, ...] = Field(default=(), max_length=18)
     closest_architecture: ArchitectureClassification | None = None
     supporting_evidence: tuple[ArchitecturalClaim, ...] = Field(
-        default=(), max_length=8
+        default=(), max_length=24
     )
-    deviations: tuple[ArchitectureDeviation, ...] = Field(default=(), max_length=6)
-    infrastructure: tuple[InfrastructureFinding, ...] = Field(default=(), max_length=6)
+    deviations: tuple[ArchitectureDeviation, ...] = Field(default=(), max_length=10)
+    infrastructure: tuple[InfrastructureFinding, ...] = Field(default=(), max_length=10)
     explanation: ArchitecturalClaim | None = None
-    uncertainties: tuple[str, ...] = Field(default=(), max_length=10)
+    uncertainties: tuple[str, ...] = Field(default=(), max_length=16)
     diagram: ArchitectureDiagram | None = None
+    relationship_investigations: tuple[RelationshipInvestigation, ...] = Field(
+        default=(), max_length=12
+    )
 
     @model_validator(mode="after")
     def diagram_references(self):
@@ -159,20 +225,24 @@ class ArchitectureReport(AgentContract):
 
 
 class ArchitectureTurn(AgentContract):
-    tool_calls: tuple[RepositoryToolCall, ...] = Field(default=(), max_length=4)
+    tool_calls: tuple[RepositoryToolCall, ...] = Field(default=(), max_length=8)
     architecture: ArchitectureReport | None = None
 
     @model_validator(mode="after")
     def action(self):
-        if bool(self.tool_calls) == (self.architecture is not None):
+        if self.tool_calls and self.architecture is not None:
             raise ValueError("Return tool_calls OR architecture, never both.")
+        if not self.tool_calls and self.architecture is None:
+            raise ValueError(
+                "No action returned: provide non-empty tool_calls OR an architecture report."
+            )
         return self
 
 
 class ArchitectureLimits(AgentContract):
     soft_token_budgets: bool = True
-    max_model_calls: int = Field(default=8, ge=1, le=8)
-    max_tool_calls: int = Field(default=20, ge=1, le=20)
+    max_model_calls: int = Field(default=16, ge=1, le=24)
+    max_tool_calls: int = Field(default=32, ge=1, le=48)
     max_prompt_characters: int = Field(default=36000, ge=6000)
     max_source_characters: int = Field(default=2400, ge=400)
 
@@ -194,6 +264,16 @@ class ApplicationCoverage(AgentContract):
     reason: str
 
 
+class RelationshipCoverage(AgentContract):
+    unit_name: str
+    status: Literal["connected", "isolated", "unresolved", "uninvestigated"]
+    pending_paths: tuple[str, ...] = ()
+    pending_units: tuple[str, ...] = ()
+    reason: str
+    resolution_blocker: str | None = None
+    blocker_reason: str | None = None
+
+
 class ArchitectureResult(AgentContract):
     snapshot_hash: str
     completion_status: Literal["complete", "partial", "failed"]
@@ -202,6 +282,7 @@ class ArchitectureResult(AgentContract):
     retrieved_evidence: tuple[RetrievedEvidence, ...] = ()
     inspected_file_ids: tuple[str, ...] = ()
     application_coverage: tuple[ApplicationCoverage, ...] = ()
+    relationship_coverage: tuple[RelationshipCoverage, ...] = ()
     reference_repairs: dict[str, str] = Field(default_factory=dict)
     limitations: tuple[str, ...] = ()
     execution_issues: tuple[ExecutionIssue, ...] = ()

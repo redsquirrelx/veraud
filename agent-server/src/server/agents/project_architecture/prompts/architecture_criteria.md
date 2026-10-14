@@ -8,7 +8,7 @@ Compare implementation, not names:
 Allow mixed/partial/other styles. Check boundaries and counterexamples; do not infer
 global compliance from a few files or self-description.
 
-For a supported closest_architecture, supply observed_paths: one or two arrays of
+For a supported closest_architecture, supply observed_paths: up to four arrays of
 supported ArchitectureConnection objects forming continuous responsibility chains.
 Follow an actual entry -> coordination -> domain/infrastructure path as applicable;
 do not invent missing layers. Cite the initiating call/wiring and receiving contract

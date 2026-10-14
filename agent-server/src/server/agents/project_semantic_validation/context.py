@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from ..project_architecture.coverage import relationship_coverage
 from ..project_architecture.diagram import diagram_interpretations
 from ..project_architecture.schemas import ArchitecturalClaim, SourceCitation
 from ..repository_runtime.access import repository_relative_path
@@ -127,13 +128,68 @@ def review_targets(tools, original):
                 "paths": [files[identifier].path for identifier in unit.file_ids],
             },
         )
+    coverage = {
+        item["unit_name"]: item
+        for item in relationship_coverage(
+            tools, report, source_records=original.retrieved_evidence
+        )
+    }
+    investigated = {
+        entry.unit_name: entry for entry in report.relationship_investigations
+    }
+    for index, unit in enumerate(report.organization):
+        entry = investigated.get(unit.name)
+        state = coverage[unit.name]
+        claim = (
+            entry.assessment
+            if entry
+            else ArchitecturalClaim(
+                statement=f"The report's incoming/outgoing relationship coverage for {unit.name} is sufficient within its inspected scope.",
+                scope=unit.responsibility.scope,
+                status="hypothesis",
+                evidence_ids=unit.responsibility.evidence_ids,
+                limitations=(
+                    "Host-generated review question, not an accepted architect finding: no explicit relationship investigation was reported.",
+                ),
+            )
+        )
+        add(
+            f"/organization/{index}/relationship_coverage",
+            "relationship_coverage",
+            claim,
+            {
+                "unit": unit.name,
+                "investigation_status": entry.status if entry else "uninvestigated",
+                "resolution_blocker": entry.resolution_blocker if entry else None,
+                "blocker_reason": entry.blocker_reason if entry else None,
+                "coverage_status": state["status"],
+                "pending_paths": state["pending_paths"][:12],
+                "pending_path_count": len(state["pending_paths"]),
+                "pending_units": state["pending_units"],
+                "coverage_reason": state["reason"],
+                "reported_connections": [
+                    {
+                        "source": edge.source_unit,
+                        "target": edge.target_unit,
+                        "kind": edge.kind,
+                        "statement": edge.description.statement,
+                    }
+                    for edge in report.connections
+                    if unit.name in {edge.source_unit, edge.target_unit}
+                ],
+            },
+        )
 
     def connection(pointer, edge):
         add(
             pointer + "/description",
             "connection",
             edge.description,
-            {"source_unit": edge.source_unit, "target_unit": edge.target_unit},
+            {
+                "source_unit": edge.source_unit,
+                "target_unit": edge.target_unit,
+                "relation_kind": edge.kind,
+            },
         )
 
     for index, edge in enumerate(report.connections):
@@ -213,6 +269,15 @@ def validate_finding(tools, finding, selected):
             "Verdict/correction cites source not inspected by this validator."
         )
     target = selected[finding.target_id]
+    if (
+        target.kind == "relationship_coverage"
+        and finding.verdict == "supported"
+        and target.context.get("investigation_status") != "unresolved"
+        and target.context.get("coverage_status") in {"uninvestigated", "unresolved"}
+    ):
+        raise ValueError(
+            "Incomplete module relationship coverage cannot be approved; request concrete missing evidence or a scoped correction."
+        )
     if target.source_hints and not target_was_inspected(target, records.values()):
         raise ValueError(
             f"Independently inspect the claim's cited source before closing it: {[hint.path for hint in target.source_hints]}."

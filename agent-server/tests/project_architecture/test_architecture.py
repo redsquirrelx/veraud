@@ -13,6 +13,7 @@ from server.agents.project_architecture.projection import representation_view
 from server.agents.project_architecture.schemas import (
     ArchitectureLimits,
     ArchitectureReport,
+    ArchitectureTurn,
 )
 from server.agents.project_orientation import ProjectOrientationAgent
 from server.agents.project_orientation.smoke import OrientationSmokeModel
@@ -68,6 +69,32 @@ def run(model, tools, orientation=None):
     return asyncio.run(ProjectArchitectureAgent(model).run(tools, orientation))
 
 
+def test_mixed_response_executes_tools_before_accepting_report(tools):
+    class MixedModel(Model):
+        async def generate(self, prompt):
+            value = json.loads(await super().generate(prompt))
+            if value.get("tool_calls"):
+                value["architecture"] = {"organization": "invalid premature report"}
+            return json.dumps(value)
+
+    events = []
+    model = MixedModel()
+    result = asyncio.run(
+        ProjectArchitectureAgent(
+            model, on_event=lambda name, values: events.append(name)
+        ).run(tools)
+    )
+    assert "architecture_mixed_response_recovered" in events
+    assert not result.execution_issues
+    assert result.architecture is not None
+    assert result.usage.tool_calls >= 2
+
+
+def test_empty_response_has_distinct_action_error():
+    with pytest.raises(ValueError, match="No action returned"):
+        ArchitectureTurn.model_validate({"tool_calls": [], "architecture": None})
+
+
 class Model:
     def __init__(self, *, single_file=False, invalid=False):
         self.prompts = []
@@ -121,6 +148,18 @@ class Model:
         ]
         raw = {
             "organization": units,
+            "relationship_investigations": [
+                {
+                    "unit_name": unit["name"],
+                    "status": "connected",
+                    "assessment": claim(
+                        "The inspected entry delegates to the inspected application; the boundary relationship is established by these files.",
+                        evidence,
+                    ),
+                    "examined_file_ids": unit["file_ids"],
+                }
+                for unit in units
+            ],
             "connections": [
                 {
                     "source_unit": "Entry",
@@ -406,9 +445,7 @@ def test_orientation_citations_cannot_be_used_as_architect_evidence(tools):
         ProjectOrientationAgent(OrientationSmokeModel()).run(tools)
     )
     fresh = RepositoryToolset(
-        RepositoryContext(
-            snapshot=tools.context.snapshot, input=tools.context.input
-        ),
+        RepositoryContext(snapshot=tools.context.snapshot, input=tools.context.input),
         workspace_root=tools.policy.workspace_root,
         limits=ToolLimits(compact=True),
     )
@@ -666,12 +703,12 @@ def test_runner_relaxed_architecture_defaults_respect_explicit_token_limits(
     assert main(args) == 0
     capsys.readouterr()
     budget, limits = captured[-1]
-    assert (budget.max_model_calls, budget.max_tool_calls) == (8, 20)
+    assert (budget.max_model_calls, budget.max_tool_calls) == (24, 32)
     assert (
         budget.max_input_tokens_per_call,
         budget.max_tokens_per_objective,
         budget.max_total_tokens,
-    ) == (10000, 40000, 80000)
+    ) == (10000, 80000, 160000)
     assert (
         limits.max_prompt_characters == 36000 and limits.max_source_characters == 2400
     )

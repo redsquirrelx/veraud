@@ -102,6 +102,9 @@ def test_large_metadata_does_not_hide_source_or_repeat_initial_prompt(
                     }
                 )
             responses = [json.loads(item["content"]) for item in data["tool_results"]]
+            responses = [
+                item for item in responses if "file_id" in item.get("data", {})
+            ]
             assert len(responses) == 2
             assert {value["data"]["path"] for value in responses} == {
                 "main.py",
@@ -147,6 +150,26 @@ def test_large_metadata_does_not_hide_source_or_repeat_initial_prompt(
             return json.dumps(
                 {
                     "architecture": {
+                        "relationship_investigations": [
+                            {
+                                "unit_name": "Application",
+                                "status": "unresolved",
+                                "resolution_blocker": "evidence_inconclusive",
+                                "blocker_reason": "Only truncated implementation ranges are retained; complete boundary behavior beyond these ranges is not established by this fixture.",
+                                "examined_file_ids": [
+                                    value["data"]["file_id"] for value in responses
+                                ],
+                                "assessment": {
+                                    "statement": "Cross-module boundaries were not investigated by this context-fitting fixture.",
+                                    "scope": "main.py and service.py",
+                                    "status": "unresolved",
+                                    "evidence_ids": evidence,
+                                    "limitations": [
+                                        "Only source context fitting was verified."
+                                    ],
+                                },
+                            }
+                        ],
                         "closest_architecture": {
                             "pattern": "No clear pattern established",
                             "assessment": {
@@ -185,8 +208,12 @@ def test_large_metadata_does_not_hide_source_or_repeat_initial_prompt(
     model = Model()
     result = asyncio.run(agent_type(model).run(tools))
     assert result.completion_status != "failed"
-    assert result.usage.model_calls == len(model.prompts) == 2
-    assert result.usage.tool_calls == 2
+    assert (
+        result.usage.model_calls
+        == len(model.prompts)
+        == (3 if role == "architecture" else 2)
+    )
+    assert result.usage.tool_calls == (3 if role == "architecture" else 2)
     assert not result.execution_issues
     assert any(
         part.category == "source" and part.characters > 0

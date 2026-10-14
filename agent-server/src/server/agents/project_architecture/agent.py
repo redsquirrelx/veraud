@@ -34,7 +34,13 @@ from .context import (
     validate_orientation_input,
     validate_report,
 )
-from .coverage import EvidenceGap, application_coverage, validate_closure
+from .coverage import (
+    EvidenceGap,
+    application_coverage,
+    relationship_coverage,
+    relationship_recovery_tasks,
+    validate_closure,
+)
 from .projection import representation_view
 from .prompting import ALLOWED_TOOLS, prepare_prompt
 from .results import assemble_result
@@ -63,6 +69,8 @@ class ArchitectureState(TypedDict):
     reference_repairs: dict[str, str]
     route: str
     result: ArchitectureResult
+    relationship_actions: dict[str, str]
+    relationship_tasks: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -204,8 +212,20 @@ def build_architecture_graph():
         }
         try:
             value, pruned = normalize_record_arrays(
-                parse_json_value(answer, 40000), ArchitectureTurn.model_json_schema()
+                parse_json_value(answer, 160000), ArchitectureTurn.model_json_schema()
             )
+            if (
+                isinstance(value, dict)
+                and value.get("tool_calls")
+                and value.get("architecture") is not None
+            ):
+                value.pop("architecture")
+                event(
+                    context,
+                    "architecture_mixed_response_recovered",
+                    action="tool_calls",
+                    reason="Investigate before accepting the report.",
+                )
             value, repairs = normalize_source_references(context.tools, value)
             if pruned:
                 event(context, "model_response_pruned", dropped=list(pruned))
@@ -241,6 +261,7 @@ def build_architecture_graph():
     def tools_node(state, runtime):
         context = runtime.context
         responses = list(state["responses"])
+        actions = dict(state["relationship_actions"])
         source_cap = min(
             context.limits.max_source_characters,
             max(
@@ -273,6 +294,14 @@ def build_architecture_graph():
                 ),
             )
             view = source_view(context.tools, response, requested_end)
+            action = state["relationship_tasks"].get(call.id)
+            if action:
+                actions[action] = (
+                    "ok"
+                    if response.status == "ok"
+                    else "error: "
+                    + json.dumps(view.get("error", "Source/tool unavailable"))[:500]
+                )
             signature = json.dumps([call.name, call.arguments], sort_keys=True)
             responses = [item for item in responses if item["signature"] != signature]
             responses.append(
@@ -294,16 +323,22 @@ def build_architecture_graph():
             "tool_calls": state["tool_calls"] + len(state["pending"]),
             "pending": (),
             "route": "inspect",
+            "relationship_actions": actions,
+            "relationship_tasks": {},
         }
 
     def validate(state, runtime):
         context = runtime.context
         errors = state["errors"]
         evidence_gap = False
+        report_valid = False
+        closure_valid = False
         if state["architecture"] is not None:
             try:
                 validate_report(context.tools, state["architecture"])
+                report_valid = True
                 validate_closure(context.tools, state["architecture"])
+                closure_valid = True
             except ValueError as error:
                 errors = validation_feedback(error)
                 evidence_gap = isinstance(error, EvidenceGap)
@@ -322,6 +357,184 @@ def build_architecture_graph():
                             + "; ".join(pending_coverage),
                         )
             else:
+                errors = ()
+        if report_valid:
+            pending = [
+                item
+                for item in relationship_coverage(context.tools, state["architecture"])
+                if item["status"] in {"unresolved", "uninvestigated"}
+            ]
+            if pending:
+                tasks = relationship_recovery_tasks(
+                    context.tools, state["architecture"], state["relationship_actions"]
+                )
+                remaining_calls = (
+                    min(
+                        context.limits.max_model_calls,
+                        context.tools.context.input.budget.max_model_calls,
+                    )
+                    - state["calls"]
+                )
+                remaining_tools = (
+                    min(
+                        context.limits.max_tool_calls,
+                        context.tools.context.input.budget.max_tool_calls,
+                    )
+                    - state["tool_calls"]
+                )
+                time_left = (
+                    context.tools.context.elapsed_seconds
+                    < context.tools.context.input.budget.max_elapsed_seconds
+                )
+                if (
+                    tasks
+                    and remaining_calls > 0
+                    and remaining_tools > 0
+                    and time_left
+                    and not getattr(context.generate, "stopped", False)
+                ):
+                    selected = tasks[: min(8, remaining_tools)]
+                    calls = tuple(
+                        RepositoryToolCall(
+                            id=f"relationship-recovery:{state['calls']}:{index}",
+                            name=task["name"],
+                            arguments=task["arguments"],
+                        )
+                        for index, task in enumerate(selected)
+                    )
+                    event(
+                        context,
+                        "architecture_relationship_recovery",
+                        pending_modules=[item["unit_name"] for item in pending],
+                        tasks=[task["key"] for task in selected],
+                    )
+                    return {
+                        "pending": calls,
+                        "relationship_tasks": {
+                            call.id: task["key"]
+                            for call, task in zip(calls, selected, strict=True)
+                        },
+                        "route": "tools",
+                        "errors": (
+                            *errors,
+                            "Mandatory relationship recovery: inspect the returned endpoints/search results, update connections and investigations, and address remaining pending paths before closing.",
+                        ),
+                        "evidence_recovery": True,
+                        "finalizing": False,
+                    }
+                entries = {
+                    entry.unit_name: entry
+                    for entry in state["architecture"].relationship_investigations
+                }
+                inspected = {
+                    record.file_id
+                    for record in context.tools.retrieved_evidence
+                    if record.kind == "source"
+                }
+                sources = {
+                    record.id: record.file_id
+                    for record in context.tools.retrieved_evidence
+                    if record.kind == "source"
+                }
+                units = {unit.name: unit for unit in state["architecture"].organization}
+                files = {
+                    source.id: source.path
+                    for source in context.tools.accessible_snapshot.files
+                }
+                blocked = {
+                    item["unit_name"]
+                    for item in pending
+                    if any(
+                        state["relationship_actions"].get("read:" + path, "ok") != "ok"
+                        for path in [
+                            *item["pending_paths"],
+                            *(
+                                files[file_id]
+                                for file_id in units[item["unit_name"]].file_ids
+                                if file_id in files
+                            ),
+                        ]
+                    )
+                }
+                unjustified = [
+                    item["unit_name"]
+                    for item in pending
+                    if item["unit_name"] not in blocked
+                    and not (
+                        entries.get(item["unit_name"])
+                        and entries[item["unit_name"]].resolution_blocker
+                        and entries[item["unit_name"]].blocker_reason
+                        and set(entries[item["unit_name"]].examined_file_ids)
+                        .intersection(units[item["unit_name"]].file_ids)
+                        .intersection(inspected)
+                        and any(
+                            sources.get(identifier) in units[item["unit_name"]].file_ids
+                            for identifier in entries[
+                                item["unit_name"]
+                            ].assessment.evidence_ids
+                        )
+                    )
+                ]
+                if blocked and not tasks and not unjustified:
+                    return {
+                        "route": "finish",
+                        "errors": errors,
+                        "issues": (
+                            *state["issues"],
+                            issue(
+                                state,
+                                "relationship_sources_unavailable",
+                                "Recovery could not read required source endpoints for: "
+                                + ", ".join(sorted(blocked)),
+                            ),
+                        ),
+                    }
+                if unjustified and remaining_calls > 0 and time_left and not tasks:
+                    event(
+                        context,
+                        "architecture_relationship_assessment_needed",
+                        modules=unjustified,
+                    )
+                    return {
+                        "route": "inspect",
+                        "errors": (
+                            *errors,
+                            f"Unresolved modules {unjustified} need further source investigation or an explicit evidence_inconclusive/dynamic_resolution blocker, concrete blocker_reason, examined_file_ids and cited assessment. Merely declaring unresolved cannot close the analysis.",
+                        ),
+                        "evidence_recovery": True,
+                    }
+                if not tasks and not unjustified and closure_valid:
+                    return {"route": "finish", "errors": ()}
+                if not time_left or (
+                    tasks and (remaining_calls <= 0 or remaining_tools <= 0)
+                ):
+                    return {
+                        "route": "finish",
+                        "errors": errors,
+                        "issues": (
+                            *state["issues"],
+                            issue(
+                                state,
+                                "relationship_recovery_budget_exhausted",
+                                "Pending relationship investigations remain because model/tool/time budget cannot fund recovery.",
+                            ),
+                        ),
+                    }
+                if unjustified and remaining_calls <= 0:
+                    return {
+                        "route": "finish",
+                        "errors": errors,
+                        "issues": (
+                            *state["issues"],
+                            issue(
+                                state,
+                                "relationship_assessment_incomplete",
+                                "Recovery was attempted, but the model did not resolve or justify these modules: "
+                                + ", ".join(unjustified),
+                            ),
+                        ),
+                    }
+            elif closure_valid:
                 return {"route": "finish", "errors": ()}
         if (
             evidence_gap
@@ -455,6 +668,8 @@ class ProjectArchitectureAgent:
                 "recovery_tool_calls": -1,
                 "finalizing": False,
                 "reference_repairs": {},
+                "relationship_actions": {},
+                "relationship_tasks": {},
             },
             context=ArchitectureRuntime(
                 tools,
@@ -465,6 +680,6 @@ class ProjectArchitectureAgent:
                 feedback,
                 objective_id,
             ),
-            config={"recursion_limit": 40},
+            config={"recursion_limit": max(40, self.limits.max_model_calls * 6 + 10)},
         )
         return state["result"]

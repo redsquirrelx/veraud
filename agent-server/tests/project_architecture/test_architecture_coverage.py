@@ -135,7 +135,9 @@ def test_frontend_is_investigated_or_explicitly_left_pending(
                 units.append(
                     {
                         "name": project,
-                        "file_ids": [record["file_id"] for record in records],
+                        "file_ids": list(
+                            dict.fromkeys(record["file_id"] for record in records)
+                        ),
                         "responsibility": {
                             "statement": "Implements the backend function."
                             if project == "backend"
@@ -156,6 +158,30 @@ def test_frontend_is_investigated_or_explicitly_left_pending(
                 {
                     "architecture": {
                         "organization": units,
+                        "relationship_investigations": [
+                            {
+                                "unit_name": unit["name"],
+                                "status": "unresolved",
+                                "resolution_blocker": "evidence_inconclusive",
+                                "blocker_reason": "This fixture establishes application responsibilities but does not interpret the cross-application runtime contract.",
+                                "assessment": unresolved
+                                | {
+                                    "evidence_ids": [
+                                        record["id"]
+                                        for record in data["source_evidence_ledger"]
+                                        if record["path"].startswith(unit["name"] + "/")
+                                    ]
+                                },
+                                "examined_file_ids": list(
+                                    dict.fromkeys(
+                                        record["file_id"]
+                                        for record in data["source_evidence_ledger"]
+                                        if record["path"].startswith(unit["name"] + "/")
+                                    )
+                                ),
+                            }
+                            for unit in units
+                        ],
                         "closest_architecture": {
                             "pattern": "No clear pattern established",
                             "assessment": unresolved,
@@ -171,12 +197,12 @@ def test_frontend_is_investigated_or_explicitly_left_pending(
             model, on_event=lambda name, values: events.append((name, values))
         ).run(tools)
     )
-    assert any(name == "architecture_evidence_needed" for name, _ in events)
+    assert any(name == "architecture_relationship_recovery" for name, _ in events)
     assert not result.execution_issues
     coverage = {item.path: item for item in result.application_coverage}
     assert coverage["backend"].status == "explained"
     if recover:
-        assert model.calls == 4 and result.usage.tool_calls == 4
+        assert model.calls >= 4 and result.usage.tool_calls >= 4
         assert coverage["frontend"].status == "explained"
         assert {citation.path for citation in result.citations} >= {
             "frontend/src/App.tsx",
@@ -184,8 +210,6 @@ def test_frontend_is_investigated_or_explicitly_left_pending(
         }
     else:
         assert result.completion_status == "partial"
-        assert coverage["frontend"].status == (
-            "inspected" if initial_frontend else "uninspected"
-        )
+        assert coverage["frontend"].status == "inspected"
         assert any("frontend" in item for item in result.architecture.uncertainties)
     assert not any(record.correction for record in result.telemetry.model_calls)

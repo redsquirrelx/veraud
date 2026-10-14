@@ -207,6 +207,31 @@ def validate_report(tools, report):
     names = [unit.name for unit in report.organization]
     if len(names) != len(set(names)):
         raise ValueError("Organization unit names must be unique.")
+    investigated = set()
+    inspected_files = {record.file_id for record in source.values()}
+    for entry in report.relationship_investigations:
+        if entry.unit_name not in names or entry.unit_name in investigated:
+            raise ValueError(
+                "Relationship investigations must name distinct declared organization units."
+            )
+        investigated.add(entry.unit_name)
+        if any(file_id not in inspected_files for file_id in entry.examined_file_ids):
+            raise ValueError(
+                "Relationship investigation files must have been inspected by this architect."
+            )
+        unit = next(
+            unit for unit in report.organization if unit.name == entry.unit_name
+        )
+        if entry.assessment.status == "supported" and (
+            not set(entry.examined_file_ids).intersection(unit.file_ids)
+            or not any(
+                source[identifier].file_id in unit.file_ids
+                for identifier in entry.assessment.evidence_ids
+            )
+        ):
+            raise ValueError(
+                "Supported relationship investigations must inspect and cite their own module source."
+            )
     for unit in report.organization:
         if any(identifier not in files for identifier in unit.file_ids):
             raise ValueError("Organization file_ids must be accessible snapshot files.")
@@ -382,6 +407,7 @@ def retain_valid_sections(tools, raw):
         "infrastructure",
         "explanation",
         "uncertainties",
+        "relationship_investigations",
         "diagram",
     ):
         values = raw.get(field)
