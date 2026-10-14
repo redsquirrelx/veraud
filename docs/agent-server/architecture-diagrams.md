@@ -168,6 +168,17 @@ composed after semantic acceptance using an unevaluated view.
   evidence IDs, architect certainty, and semantic status;
 - `limitations`: the view's declared omissions/uncertainties.
 
+## Frontend
+
+The backend merges the pipeline-level rendered diagram into the finished
+`architecture` execution row as `architecture_diagram`
+(`mermaid`, `report_origin`, `report_hash`), so the project detail page renders
+it from the same result it already parses — no extra endpoint. The Architecture
+section shows the Mermaid chart (lazy-loaded `mermaid`, SVG with source fallback
+on parse failure) with the displayed report's origin; runs without a diagram
+(predating diagrams, `--no-diagram`, or failed composition) keep the previous
+structured shape footnote instead.
+
 The pipeline selects the revised diagram when available and only uses matching
 semantic review findings. A revision that has not been revalidated is rendered with
 `not_reviewed` annotations, not the prior report's verdicts. Original/revised structured
