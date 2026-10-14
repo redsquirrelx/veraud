@@ -100,3 +100,40 @@
   font-size: 11px;
   color: #64748b;
 }
+.architecture-diagram-view {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 0.5rem;
+}
+
+.architecture-diagram-view h5 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.architecture-diagram-legend {
+  margin: 0.75rem 0;
+}
+
+.architecture-diagram-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+}
+
+.architecture-diagram-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.architecture-diagram-key i {
+  display: inline-block;
+  width: 1.2rem;
+  height: 0.85rem;
+  border-radius: 0.2rem;
+}

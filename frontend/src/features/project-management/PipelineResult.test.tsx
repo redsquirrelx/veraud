@@ -204,6 +204,44 @@ describe("OrientationResultView", () => {
 })
 
 describe("ProjectArchitectureResultView", () => {
+  it("renders independent diagram views with external color legends and deviation details", () => {
+    const report = JSON.parse(projectArchitectureWithDiagram)
+    const legend = [{ layer: "architect", status: "supported", color: "#dbeafe" }]
+    report.architecture_diagram.structure = { title: "Structure view", scope: "Application" }
+    report.architecture_diagram.legend = legend
+    report.architecture_diagram.deviation_notes = [{ id: "D1", observation: "Direct adapter coupling", expectation: "Depend on a port", explanation: "The use case bypasses its contract." }]
+    report.architecture_diagram.views = [{ structure: { title: "Dependency view", scope: "Contracts" }, mermaid: "flowchart TB\n  port[Port]", legend }]
+    const summary = parseProjectArchitectureResult(JSON.stringify(report))!
+    expect(summary.diagramViews).toHaveLength(2)
+    expect(summary.diagramViews[0]?.mermaid).not.toBe(summary.diagramViews[1]?.mermaid)
+    render(<ProjectArchitectureResultView summary={summary} />)
+    expect(screen.getByRole("region", { name: "Structure view" })).toBeDefined()
+    expect(screen.getByRole("region", { name: "Dependency view" })).toBeDefined()
+    expect(screen.getAllByText("Color legend")).toHaveLength(2)
+    expect(screen.getByText("Direct adapter coupling", { exact: false })).toBeDefined()
+    expect(screen.getByText("Expected: Depend on a port")).toBeDefined()
+    expect(screen.getAllByText(/Unreviewed does not mean rejected/)).toHaveLength(2)
+  })
+  it("shows the developed explanation, independent findings and pattern contrast", () => {
+    const report = JSON.parse(projectArchitecture)
+    report.architecture.explanation = { statement: "The inspected layers separate orchestration from persistence.", status: "supported" }
+    report.relationship_coverage = [{ unit_name: "core", status: "unresolved", reason: "The persistence boundary needs inspection.", pending_paths: ["store.py"] }]
+    report.architecture.supporting_evidence = [{ statement: "The service consumes the repository contract.", status: "hypothesis", scope: "service", limitations: ["Other flows remain uninspected."] }]
+    report.architecture.closest_architecture.contrast_question = "Does the service import a concrete adapter?"
+    report.architecture.closest_architecture.contrast_result = { statement: "The inspected operation uses the contract.", status: "supported" }
+    const summary = parseProjectArchitectureResult(JSON.stringify(report))!
+    render(<ProjectArchitectureResultView summary={summary} />)
+    expect(screen.getByText("The inspected layers separate orchestration from persistence.")).toBeDefined()
+    expect(screen.getByText("Module relationship coverage (1)")).toBeDefined()
+    expect(screen.getByText("The persistence boundary needs inspection.")).toBeDefined()
+    expect(screen.getByText("Pending endpoints (1): store.py")).toBeDefined()
+    expect(screen.getByText("Supporting findings (1)")).toBeDefined()
+    expect(screen.getByText("The service consumes the repository contract.")).toBeDefined()
+    expect(screen.getByText("Scope: service")).toBeDefined()
+    expect(screen.getByText("Other flows remain uninspected.")).toBeDefined()
+    expect(screen.getByText("Does the service import a concrete adapter?")).toBeDefined()
+    expect(screen.getByText("The inspected operation uses the contract.")).toBeDefined()
+  })
   it("renders units, connections, pattern and diagram shape", () => {
     const summary = parseProjectArchitectureResult(projectArchitecture)
     if (summary === null) {

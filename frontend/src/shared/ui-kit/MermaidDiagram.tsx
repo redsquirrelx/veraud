@@ -9,7 +9,7 @@ let api: typeof mermaidApi | null = null
 async function loadMermaid(): Promise<typeof mermaidApi> {
   if (api === null) {
     const module = await import("mermaid")
-    module.default.initialize({ startOnLoad: false, theme: "default", securityLevel: "strict" })
+    module.default.initialize({ startOnLoad: false, theme: "default", securityLevel: "strict", flowchart: { nodeSpacing: 70, rankSpacing: 100, padding: 20 } })
     api = module.default
   }
   return api

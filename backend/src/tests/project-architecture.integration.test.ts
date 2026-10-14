@@ -202,6 +202,10 @@ describe("project architecture endpoint", () => {
               mermaid: "flowchart LR\n  core[core]",
               report_origin: "original",
               report_hash: "abc123",
+              structure: { title: "Structure", scope: "Inspected core" },
+              views: [{ mermaid: "flowchart TB\n  port[port]", structure: { title: "Dependencies", scope: "Core contracts" } }],
+              legend: [{ layer: "architect", status: "supported", color: "#dbeafe" }],
+              deviation_notes: [{ id: "D1", observation: "Boundary bypass", expectation: "Use the contract", explanation: "Direct access" }],
             },
           }
         },
@@ -234,6 +238,9 @@ describe("project architecture endpoint", () => {
     assert.equal(typeof mermaid, "object")
     assert.equal((mermaid as { mermaid: string }).mermaid, "flowchart LR\n  core[core]")
     assert.equal((mermaid as { report_origin: string }).report_origin, "original")
+    assert.equal((mermaid as { views: { mermaid: string }[] }).views[0]?.mermaid, "flowchart TB\n  port[port]")
+    assert.equal((mermaid as { deviation_notes: { id: string }[] }).deviation_notes[0]?.id, "D1")
+    assert.equal((mermaid as { legend: { color: string }[] }).legend[0]?.color, "#dbeafe")
   })
 
   it("404s for an unknown project", async () => {

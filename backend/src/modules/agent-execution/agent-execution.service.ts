@@ -197,7 +197,8 @@ export class AgentExecutionService {
       if (architecture === undefined) return
       const diagram = (payload as { diagram?: unknown } | null)?.diagram
       if (typeof diagram !== "object" || diagram === null) return
-      const { mermaid, report_origin, report_hash } = diagram as Record<string, unknown>
+      const diagramRecord = diagram as Record<string, unknown>
+      const { mermaid, report_origin, report_hash } = diagramRecord
       if (typeof mermaid !== "string" || mermaid.trim() === "") return
 
       const current = await this.executions.findById(architecture.id)
@@ -218,6 +219,11 @@ export class AgentExecutionService {
           ...record,
           architecture_diagram: {
             mermaid,
+            structure: diagramRecord["structure"],
+            views: Array.isArray(diagramRecord["views"]) ? diagramRecord["views"] : [],
+            legend: Array.isArray(diagramRecord["legend"]) ? diagramRecord["legend"] : [],
+            deviation_notes: Array.isArray(diagramRecord["deviation_notes"]) ? diagramRecord["deviation_notes"] : [],
+            limitations: Array.isArray(diagramRecord["limitations"]) ? diagramRecord["limitations"] : [],
             report_origin: typeof report_origin === "string" ? report_origin : "original",
             ...(typeof report_hash === "string" ? { report_hash } : {}),
           },

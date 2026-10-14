@@ -54,12 +54,25 @@ export interface InfrastructureView {
   kind: string
 }
 
+export interface ArchitectureDiagramView {
+  title: string
+  scope: string
+  mermaid: string
+  colorLegend: boolean
+  limitations: string[]
+  deviations: { id: string; observation: string; expectation: string; explanation: string }[]
+}
+
 export interface ProjectArchitectureSummary {
   completionStatus: string
   units: ArchitectureUnitView[]
   connections: ArchitectureConnectionView[]
   pattern: string
   patternAssessment: string
+  explanation: string
+  supportingFindings: { statement: string; status: string; scope: string; limitations: string[] }[]
+  contrastQuestion: string
+  contrastResult: string
   deviations: ArchitectureDeviationView[]
   infrastructure: InfrastructureView[]
   uncertainties: string[]
@@ -71,6 +84,8 @@ export interface ProjectArchitectureSummary {
    *  the composition failed. */
   diagramMermaid: string
   diagramOrigin: string
+  diagramViews: ArchitectureDiagramView[]
+  relationshipCoverage: { unit: string; status: string; reason: string; pendingPaths: string[]; blocker: string; blockerReason: string }[]
 }
 
 export interface SemanticFindingView {
@@ -277,12 +292,36 @@ export function parseProjectArchitectureResult(result: string | null): ProjectAr
   const origin = rendered === null || typeof rendered["report_origin"] !== "string" || (rendered["report_origin"] as string).trim() === ""
     ? ""
     : (rendered["report_origin"] as string).trim()
+  const diagramViews: ArchitectureDiagramView[] = []
+  for (const artifact of rendered === null ? [] : [rendered, ...(Array.isArray(rendered["views"]) ? rendered["views"] : [])]) {
+    if (!isRecord(artifact)) continue
+    const chart = readString(artifact, "mermaid").trim()
+    if (chart === "") continue
+    const structure = isRecord(artifact["structure"]) ? artifact["structure"] : {}
+    diagramViews.push({
+      title: readString(structure, "title").trim() || (diagram === null ? "Architecture diagram" : readString(diagram, "title")) || "Architecture diagram",
+      scope: readString(structure, "scope").trim(),
+      mermaid: chart,
+      colorLegend: Array.isArray(artifact["legend"]) && artifact["legend"].length > 0,
+      limitations: readStrings(artifact["limitations"]),
+      deviations: (Array.isArray(artifact["deviation_notes"]) ? artifact["deviation_notes"] : []).flatMap((note: unknown) => isRecord(note) ? [{
+        id: readString(note, "id"), observation: readString(note, "observation"), expectation: readString(note, "expectation"), explanation: readString(note, "explanation"),
+      }] : []),
+    })
+  }
   return {
     completionStatus,
     units,
     connections,
     pattern: classification === null ? "" : readString(classification, "pattern").trim(),
     patternAssessment: assessment?.statement ?? "",
+    explanation: readClaim(report["explanation"])?.statement ?? "",
+    supportingFindings: (Array.isArray(report["supporting_evidence"]) ? report["supporting_evidence"] : []).flatMap((item: unknown) => {
+      const claim = readClaim(item)
+      return claim && isRecord(item) ? [{ ...claim, scope: readString(item, "scope").trim(), limitations: readStrings(item["limitations"]) }] : []
+    }),
+    contrastQuestion: classification === null ? "" : readString(classification, "contrast_question").trim(),
+    contrastResult: classification === null ? "" : readClaim(classification["contrast_result"])?.statement ?? "",
     deviations,
     infrastructure,
     uncertainties: readStrings(report["uncertainties"]).map((item) => item.trim()).filter((item) => item !== ""),
@@ -291,6 +330,10 @@ export function parseProjectArchitectureResult(result: string | null): ProjectAr
     diagramEdges: diagram === null || !Array.isArray(diagram["edges"]) ? 0 : (diagram["edges"] as unknown[]).length,
     diagramMermaid: mermaid,
     diagramOrigin: origin,
+    diagramViews,
+    relationshipCoverage: (Array.isArray(record["relationship_coverage"]) ? record["relationship_coverage"] : []).flatMap((item: unknown) => isRecord(item) && readString(item, "unit_name").trim() !== "" ? [{
+      unit: readString(item, "unit_name"), status: readString(item, "status"), reason: readString(item, "reason"), pendingPaths: readStrings(item["pending_paths"]), blocker: readString(item, "resolution_blocker"), blockerReason: readString(item, "blocker_reason"),
+    }] : []),
   }
 }
 
