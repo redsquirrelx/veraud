@@ -73,6 +73,9 @@ model AgentExecution {
   finishedAt   DateTime? @map("finished_at")
   inputTokens  Int?      @map("input_tokens")
   outputTokens Int?      @map("output_tokens")
+  estimatedTokens Int?  @map("estimated_tokens")
+  accountedTokens Int?  @map("accounted_tokens")
+  interruptionReason String? @map("interruption_reason")
   error        String?
   result       String?
   configurationSnapshot String? @map("configuration_snapshot")
@@ -124,6 +127,8 @@ model AgentSettings {
   aiCredentialId Int?   @map("ai_credential_id")
   temperature    Decimal?
   maxTokens      Int?    @map("max_tokens")
+  tokenBudget    Int?    @map("token_budget")
+  absoluteTokenLimit Int? @map("absolute_token_limit")
   verificationFingerprint String? @map("verification_fingerprint")
   verificationCheckedAt DateTime? @map("verification_checked_at")
   verificationError String? @map("verification_error")

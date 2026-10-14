@@ -64,6 +64,9 @@ Table agent_execution {
   finished_at datetime
   input_tokens int
   output_tokens int
+  estimated_tokens int
+  accounted_tokens int
+  interruption_reason varchar
   error text
   result text
   configuration_snapshot text
@@ -102,6 +105,8 @@ Table agent_settings {
 
   temperature decimal
   max_tokens int
+  token_budget int
+  absolute_token_limit int
   verification_fingerprint varchar
   verification_checked_at timestamp
   verification_error text

@@ -61,6 +61,8 @@ export function registerAgentSettingsRoutes(app: FastifyInstance, service: Agent
         modelId: { type: "integer", minimum: 1 }, credentialId: { type: "integer", minimum: 1 },
         temperature: { type: ["number", "null"], minimum: 0, maximum: 2 },
         maxTokens: { type: ["integer", "null"], minimum: 1, maximum: 2147483647 },
+        tokenBudget: { type: ["integer", "null"], minimum: 1, maximum: 2147483647 },
+        absoluteTokenLimit: { type: ["integer", "null"], minimum: 1, maximum: 2147483647 },
       },
     },
     response: { 200: agentSettingsSchema, ...errorResponses([400, 404, 422]) },

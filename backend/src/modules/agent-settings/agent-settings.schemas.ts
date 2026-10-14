@@ -9,6 +9,8 @@ export const configurationSchema = {
     properties: {
       model: selectionSchema, credential: selectionSchema,
       temperature: { type: ["number", "null"] }, maxTokens: { type: ["integer", "null"] },
+      tokenBudget: { type: ["integer", "null"], minimum: 1 },
+      absoluteTokenLimit: { type: ["integer", "null"], minimum: 1 },
     },
   }],
 } as const

@@ -199,4 +199,25 @@ HTTP response. The UI keys off `execution.id`.
 - The agent-server derives where to report from `PORT_BACKEND`. If it is not
   configured the run still works, it just reports nowhere and the row stays
   `Waiting`.
-- Token counts stay null: the agent-server does not return usage yet.
+- The existing callbacks accept input/output counts at completion. Live reporting
+  from the agent-server is still pending integration.
+
+## Token usage persistence
+
+Migration `20261014000000_agent_token_budget` adds nullable `estimatedTokens`,
+`accountedTokens` and `interruptionReason` to execution rows. Existing
+`inputTokens` and `outputTokens` store provider-reported cumulative counts;
+estimates are never written into those reported counters. Null means usage has
+not been recorded, rather than zero consumption.
+
+`AgentExecutionRepository.updateUsage()` stores cumulative progress while a row
+is Running, with `accountedTokens = (inputTokens ?? 0) + (outputTokens ?? 0) + estimatedTokens`.
+An atomic update rejects progress that would reduce reported or accounted usage
+and ignores progress after completion. Duplicate cumulative updates are safe.
+Completion preserves previously recorded usage when counts are absent/null, and
+can store a machine-readable interruption reason alongside `error` and the
+partial serialized `result`.
+
+The repository and project history read the new fields. Progress HTTP callbacks,
+public execution usage fields and WebSocket usage updates will be connected in
+the live-reporting phase.

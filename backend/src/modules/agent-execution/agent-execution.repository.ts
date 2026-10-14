@@ -33,6 +33,17 @@ export interface AgentExecutionCompletion {
   error: string | null
   inputTokens: number | null
   outputTokens: number | null
+  estimatedTokens?: number | null
+  accountedTokens?: number | null
+  interruptionReason?: string | null
+}
+
+/** Cumulative usage, never a delta. Estimates are distinct from provider counts. */
+export interface AgentExecutionUsage {
+  inputTokens: number | null
+  outputTokens: number | null
+  estimatedTokens: number
+  accountedTokens: number
 }
 
 export interface StoredAgentExecution {
@@ -44,6 +55,9 @@ export interface StoredAgentExecution {
   error: string | null
   inputTokens: number | null
   outputTokens: number | null
+  estimatedTokens: number | null
+  accountedTokens: number | null
+  interruptionReason: string | null
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
@@ -54,6 +68,7 @@ export interface AgentExecutionStore {
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
   markRunning(id: number): Promise<StoredAgentExecution>
+  updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution>
   findById(id: number): Promise<StoredAgentExecution | null>
   /** Overwrites the stored result of a finished row without touching its
    *  status: used to attach the pipeline-level diagram to the architecture
@@ -107,8 +122,11 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         status: data.status,
         result: data.result,
         error: data.error,
-        inputTokens: data.inputTokens,
-        outputTokens: data.outputTokens,
+        ...(data.inputTokens === null ? {} : { inputTokens: data.inputTokens }),
+        ...(data.outputTokens === null ? {} : { outputTokens: data.outputTokens }),
+        ...(data.estimatedTokens == null ? {} : { estimatedTokens: data.estimatedTokens }),
+        ...(data.accountedTokens == null ? {} : { accountedTokens: data.accountedTokens }),
+        ...(data.interruptionReason === undefined ? {} : { interruptionReason: data.interruptionReason }),
         finishedAt: new Date(),
       },
     })
@@ -162,6 +180,30 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     return this.toStored(execution)
   }
 
+  async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
+    for (const value of Object.values(usage)) {
+      if (value !== null && (!Number.isInteger(value) || value < 0 || value > 2147483647)) {
+        throw new RangeError("Token usage must contain non-negative 32-bit integers or null provider counts")
+      }
+    }
+    if (usage.accountedTokens !== (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + usage.estimatedTokens) {
+      throw new RangeError("Accounted tokens must equal reported input, reported output and estimated tokens")
+    }
+    // Atomic guard: duplicate/stale progress cannot reduce usage or reopen a run.
+    await this.db.agentExecution.updateMany({
+      where: {
+        id, status: "Running",
+        AND: [
+          { OR: [{ accountedTokens: null }, { accountedTokens: { lte: usage.accountedTokens } }] },
+          { OR: [{ inputTokens: null }, { inputTokens: { lte: usage.inputTokens ?? 0 } }] },
+          { OR: [{ outputTokens: null }, { outputTokens: { lte: usage.outputTokens ?? 0 } }] },
+        ],
+      },
+      data: usage,
+    })
+    return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
+  }
+
   async findById(id: number): Promise<StoredAgentExecution | null> {
     const execution = await this.db.agentExecution.findUnique({ where: { id } })
 
@@ -181,6 +223,9 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     error: string | null
     inputTokens: number | null
     outputTokens: number | null
+    estimatedTokens: number | null
+    accountedTokens: number | null
+    interruptionReason: string | null
     createdAt: Date
     startedAt: Date | null
     finishedAt: Date | null
@@ -195,6 +240,9 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       error: execution.error,
       inputTokens: execution.inputTokens,
       outputTokens: execution.outputTokens,
+      estimatedTokens: execution.estimatedTokens,
+      accountedTokens: execution.accountedTokens,
+      interruptionReason: execution.interruptionReason,
       createdAt: execution.createdAt,
       startedAt: execution.startedAt,
       finishedAt: execution.finishedAt,
