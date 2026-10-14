@@ -1,7 +1,8 @@
-import { Button, FilterTabs, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
+import { FilterTabs, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
 import type { VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { analyzedLabel } from "./useAnalyzedVersions.ts"
 import type { useVersionSelector } from "./useVersionSelector.ts"
+import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import "./VersionSelector.css"
 
 type Selection = ReturnType<typeof useVersionSelector>
@@ -9,7 +10,7 @@ type Selection = ReturnType<typeof useVersionSelector>
 export interface AnalysisAction {
   canAnalyze: boolean
   analyzing: boolean
-  onAnalyze: () => void
+  onAnalyze: (pipelineId: string) => void
 }
 
 export type VersionMode = "git" | "analyzed"
@@ -42,16 +43,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
 }) {
   const current = mode ?? "git"
   const analyzeButton = analysis === undefined ? null : (
-    <span className="version-analyze">
-      <Button
-        onClick={analysis.onAnalyze}
-        disabled={!analysis.canAnalyze || analysis.analyzing}
-        loading={analysis.analyzing}
-        loadingText="Analyzing"
-      >
-        Analyze
-      </Button>
-    </span>
+    <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
   )
 
   return (

@@ -187,11 +187,11 @@ export function ProjectDetailPage() {
     void refreshAnalyzed()
   }, [analysis.phase, analysis.execution, refreshAnalyzed])
 
-  function handleAnalyze() {
+  function handleAnalyze(pipelineId: string) {
     if (activeBranch === null || activeHash === null) {
       return
     }
-    void analysis.start(activeBranch, activeHash)
+    void analysis.start(activeBranch, activeHash, pipelineId)
   }
 
   /** Picks an analyzed version: checks out its commit, then shows its run. */

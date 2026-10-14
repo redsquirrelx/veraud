@@ -446,6 +446,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     expect(seen.length).toBe(1)
     expect(seen[0]?.url).toContain("/api/projects/2/architecture")
@@ -506,6 +507,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     expect(seen.length).toBe(1)
     expect(seen[0]?.url).toContain("/api/projects/2/architecture")
@@ -591,6 +593,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     expect(await screen.findByText("orientation run #21")).toBeDefined()
     expect(await screen.findByText("Orientation")).toBeDefined()
@@ -644,6 +647,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     expect(await screen.findByText("call_limit")).toBeDefined()
     expect(await screen.findByText("Model-call limit reached.", { exact: false })).toBeDefined()
@@ -871,6 +875,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {
