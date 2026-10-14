@@ -74,7 +74,6 @@ model AgentExecution {
   inputTokens  Int?      @map("input_tokens")
   outputTokens Int?      @map("output_tokens")
   estimatedTokens Int?  @map("estimated_tokens")
-  accountedTokens Int?  @map("accounted_tokens")
   interruptionReason String? @map("interruption_reason")
   error        String?
   result       String?
