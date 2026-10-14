@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ApiError, getAgentExecution, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
+import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
 import { DEFAULT_PIPELINE_ID, pipelineById } from "./pipelines.ts"
 
 export type AnalysisPhase = "idle" | "starting" | "tracking" | "done" | "error"
@@ -46,12 +47,13 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   }
 
   const wantedId = seed?.id ?? polled?.id ?? null
-  // Live events win; otherwise the poll beats the stale start snapshot.
-  const latest = wantedId === null ? null : (live.find((item) => item.id === wantedId) ?? polled ?? seed)
-  // Lifecycle events intentionally contain no configuration; retain the HTTP snapshot.
-  const execution = useMemo(() => latest === null ? null : {
-    ...latest, configuration: latest.configuration ?? polled?.configuration ?? seed?.configuration ?? null,
-  }, [latest, polled, seed])
+  const liveExecution = wantedId === null ? null : live.find((item) => item.id === wantedId)
+  const execution = useMemo(() => {
+    let latest = seed
+    if (polled) latest = mergeExecution(latest, polled)
+    if (liveExecution) latest = mergeExecution(latest, liveExecution)
+    return latest
+  }, [liveExecution, polled, seed])
 
   let phase: AnalysisPhase = "idle"
   if (failure !== "") {
