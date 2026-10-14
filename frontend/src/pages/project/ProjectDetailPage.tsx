@@ -7,13 +7,21 @@ import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
 import {
   AnalyzerResultView,
   ArchitectureResultView,
+  OrientationResultView,
   PipelineRunStatus,
+  ProjectArchitectureResultView,
+  SemanticValidationResultView,
+  StageStatusView,
 } from "../../features/project-management/PipelineResult.tsx"
 import {
   confidenceTone,
   kindTone,
   parseAnalyzerResult,
   parseArchitectureResult,
+  parseOrientationResult,
+  parseProjectArchitectureResult,
+  parseSemanticValidationResult,
+  verdictTone,
 } from "../../features/project-management/pipelineResult.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, MermaidDiagram, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
@@ -79,6 +87,9 @@ export function ProjectDetailPage() {
   const semanticValidationExec = stageExecution("semantic_validation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const analysisSummary = analyzerExec === null ? null : parseAnalyzerResult(analyzerExec.result)
   const architectureSummary = architectExec === null ? null : parseArchitectureResult(architectExec.result)
+  const orientationSummary = orientationExec === null ? null : parseOrientationResult(orientationExec.result)
+  const projectArchitectureSummary = projectArchitectureExec === null ? null : parseProjectArchitectureResult(projectArchitectureExec.result)
+  const semanticValidationSummary = semanticValidationExec === null ? null : parseSemanticValidationResult(semanticValidationExec.result)
   const summaryConfidence = architectureSummary?.confidence ?? analysisSummary?.confidence ?? null
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
@@ -323,7 +334,9 @@ export function ProjectDetailPage() {
               </section>
             </Card>}
             {activeSection === "overview" && analysis.execution !== null
-              && (analysisSummary !== null || architectureSummary !== null) && (
+              && (analysisSummary !== null || architectureSummary !== null
+                || orientationSummary !== null || projectArchitectureSummary !== null
+                || semanticValidationSummary !== null) && (
               <Card>
                 <div className="audit-block">
                   <div className="audit-head">
@@ -340,6 +353,24 @@ export function ProjectDetailPage() {
                           <>
                             <span className="label">Style</span>
                             <Badge tone={kindTone(architectureSummary.style)}>{architectureSummary.style}</Badge>
+                          </>
+                        )}
+                        {orientationSummary !== null && orientationSummary.projectType !== "" && (
+                          <>
+                            <span className="label">Project type</span>
+                            <Badge tone="info">{orientationSummary.projectType}</Badge>
+                          </>
+                        )}
+                        {projectArchitectureSummary !== null && projectArchitectureSummary.pattern !== "" && (
+                          <>
+                            <span className="label">Pattern</span>
+                            <Badge tone="info">{projectArchitectureSummary.pattern}</Badge>
+                          </>
+                        )}
+                        {semanticValidationSummary !== null && (
+                          <>
+                            <span className="label">Review</span>
+                            <Badge tone={verdictTone(semanticValidationSummary.verdict)}>{semanticValidationSummary.verdict}</Badge>
                           </>
                         )}
                         {summaryConfidence !== null && (
@@ -384,17 +415,23 @@ export function ProjectDetailPage() {
                 )}
                 {orientationExec !== null && (
                   <Card>
-                    <PipelineRunStatus execution={orientationExec} />
+                    {orientationSummary !== null
+                      ? <OrientationResultView summary={orientationSummary} execution={orientationExec} />
+                      : <StageStatusView title="Orientation" result={orientationExec.result} execution={orientationExec} />}
                   </Card>
                 )}
                 {projectArchitectureExec !== null && (
                   <Card>
-                    <PipelineRunStatus execution={projectArchitectureExec} />
+                    {projectArchitectureSummary !== null
+                      ? <ProjectArchitectureResultView summary={projectArchitectureSummary} execution={projectArchitectureExec} />
+                      : <StageStatusView title="Architecture" result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
                   </Card>
                 )}
                 {semanticValidationExec !== null && (
                   <Card>
-                    <PipelineRunStatus execution={semanticValidationExec} />
+                    {semanticValidationSummary !== null
+                      ? <SemanticValidationResultView summary={semanticValidationSummary} execution={semanticValidationExec} />
+                      : <StageStatusView title="Semantic validation" result={semanticValidationExec.result} execution={semanticValidationExec} />}
                   </Card>
                 )}
                 {architectureSummary !== null
@@ -521,9 +558,11 @@ function stageExecution(
     return tracked
   }
   if (tracked === null || tracked.evaluationId === null) {
-    return initial.find((item) => item.agentType === stage) ?? null
+    return initial.find((item) => item?.agentType === stage) ?? null
   }
-  const match = (rows: AgentExecution[]): AgentExecution | null => rows.find(
+  const clean = (rows: AgentExecution[]): AgentExecution[] =>
+    rows.filter((item): item is AgentExecution => item !== null && typeof item === "object")
+  const match = (rows: AgentExecution[]): AgentExecution | null => clean(rows).find(
     (item) => item.evaluationId === tracked.evaluationId && item.agentType === stage,
   ) ?? null
   const current = match(live)

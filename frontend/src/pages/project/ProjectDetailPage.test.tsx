@@ -529,6 +529,140 @@ describe("ProjectDetailPage", () => {
     expect(screen.getAllByText("Waiting")).toHaveLength(3)
   })
 
+  it("renders parsed orientation content once its run completes", async () => {    const orientationResult = JSON.stringify({
+      completion_status: "complete",
+      orientation: {
+        project_type: { statement: "A command-line tool.", status: "supported", evidence_ids: ["e1"] },
+        purpose: null,
+        components: [],
+        starting_points: [],
+        uncertainties: [],
+      },
+    })
+    const waiting = (id: number, agentType: string) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Waiting",
+      result: null,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: null,
+      finishedAt: null,
+    })
+    const completedOrientation = {
+      ...waiting(21, "orientation"),
+      status: "Completed",
+      result: orientationResult,
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/architecture")) {
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            orientation: completedOrientation,
+            architecture: waiting(22, "architecture"),
+            semantic_validation: waiting(23, "semantic_validation"),
+          },
+        }), { status: 201 })
+      }
+      if (url.includes("/api/projects/2/versions")) {
+        return new Response(JSON.stringify([{
+          id: 9,
+          branch: "main",
+          commitHash: "a".repeat(40),
+          analysisStatus: "Pending",
+          analyzedAt: null,
+          evaluationId: 7,
+          execution: completedOrientation,
+          executions: [completedOrientation, waiting(22, "architecture"), waiting(23, "semantic_validation")],
+          derivedStatus: "Waiting",
+        }]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    // A previous test may have left a tracked run behind; start clean so the
+    // menu is enabled and nothing restores mid-test.
+    window.localStorage.removeItem("analysis.lastExecution.2")
+    // Open the analysis section directly: result cards render there.
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+
+    expect(await screen.findByText("orientation run #21")).toBeDefined()
+    expect(await screen.findByText("Orientation")).toBeDefined()
+    expect(await screen.findByText("A command-line tool.")).toBeDefined()
+  })
+
+  it("explains a failed architecture run with its issues", async () => {
+    const failedArchitecture = JSON.stringify({
+      completion_status: "failed",
+      architecture: null,
+      limitations: ["Snapshot capped."],
+      execution_issues: [{ id: "issue:1", stage: "architecture", category: "call_limit", message: "Model-call limit reached." }],
+    })
+    const completed = (id: number, agentType: string, result: string | null) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Completed",
+      result,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    })
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/architecture")) {
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            orientation: completed(21, "orientation", null),
+            architecture: completed(22, "architecture", failedArchitecture),
+            semantic_validation: completed(23, "semantic_validation", null),
+          },
+        }), { status: 201 })
+      }
+      if (url.includes("/api/projects/2/versions")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    window.localStorage.removeItem("analysis.lastExecution.2")
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+
+    expect(await screen.findByText("call_limit")).toBeDefined()
+    expect(await screen.findByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(await screen.findByText("Snapshot capped.")).toBeDefined()
+  })
+
   it("disables Analyze while a sync is running", async () => {
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
