@@ -382,6 +382,8 @@ function toExecution(execution: StoredAgentExecution) {
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
+    estimatedTokens: execution.estimatedTokens,
+    interruptionReason: execution.interruptionReason,
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
