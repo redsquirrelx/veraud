@@ -278,51 +278,6 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     }
   })
 
-  app.post("/api/projects/:id/analyze", {
-    schema: {
-      tags: ["Projects"], summary: "Start analysis of a project version",
-      description: "Verifies both agents' saved configurations before transactionally selecting the version and creating one evaluation with analyzer and architect executions. Invalid access returns 422 with affected agents and creates no partial analysis. Starts the pipeline in the background with explicit per-stage configuration. Does not check out the commit. Completion arrives through callbacks/WebSocket. execution is the analyzer compatibility field; executions contains both stages.",
-      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, execution: { $ref: "AgentExecution#" }, executions: objectResponse({ analyzer: { $ref: "AgentExecution#" }, architect: { $ref: "AgentExecution#" } }) }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
-      params: idParams,
-      body: {
-        type: "object",
-        required: ["branch", "commitHash"],
-        properties: {
-          branch: branchInput,
-          commitHash: commitHashInput,
-        },
-      },
-    },
-  }, async (request, reply) => {
-    const params = request.params as { id: string }
-    const body = request.body as { branch: string; commitHash: string }
-
-    try {
-      const result = await service.analyzeProject(Number(params.id), body.branch, body.commitHash)
-      return reply.code(201).send({
-        versionId: result.versionId,
-        evaluationId: result.evaluationId,
-        execution: toExecution(result.execution),
-        executions: {
-          analyzer: toExecution(result.executions.analyzer),
-          architect: toExecution(result.executions.architect),
-        },
-      })
-    } catch (error) {
-      if (error instanceof ProjectNotFoundError) {
-        return reply.code(404).send({ message: error.message })
-      }
-      if (error instanceof InvalidGitRequestError) {
-        return reply.code(400).send({ message: error.message })
-      }
-      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
-        return reply.code(422).send({ message: error.message })
-      }
-      if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
-      throw error
-    }
-  })
-
   app.post("/api/projects/:id/architecture", {
     schema: {
       tags: ["Projects"], summary: "Start project-architecture analysis of a project version",

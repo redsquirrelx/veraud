@@ -4,10 +4,9 @@ import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infr
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import type { PipelineExecutions, ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
+import type { ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
-export { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
 
 export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
@@ -36,15 +35,7 @@ export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
 /** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
-  openPipelineForProject(projectId: number, branch: string, commitHash: string): Promise<AnalysisRequest>
   openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest>
-}
-
-export interface AnalysisRequest {
-  versionId: number
-  evaluationId: number
-  execution: StoredAgentExecution
-  executions: PipelineExecutions
 }
 
 export interface ProjectArchitectureAnalysisRequest {
@@ -390,47 +381,11 @@ export class ProjectService {
   }
 
   /**
-   * Runs the architecture-audit pipeline on the selected version: the version
-   * row is saved (or reused), it becomes the selected one, a fresh evaluation
-   * is created, and both agents are started in the background. The executions
-   * come back Waiting; the pipeline reports each stage afterwards.
-   */
-  async analyzeProject(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
-    const cleanBranch = assertValidBranch(branch)
-    const cleanHash = assertValidHash(commitHash).toLowerCase()
-    const project = await this.projects.findById(id)
-
-    if (project === null) {
-      throw new ProjectNotFoundError(`Project ${id} does not exist`)
-    }
-
-    // An analysis reads the checkout a running sync is rewriting. The runner
-    // marks the project SYNCING while the sync task is in flight.
-    if (project.status === "SYNCING") {
-      throw new SyncInProgressError(
-        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
-      )
-    }
-
-    this.requireWorkspace(project)
-
-    const running = await this.projects.findOpenExecution(project.id, cleanHash)
-
-    if (running !== null) {
-      throw new AnalysisAlreadyRunningError(
-        `Version ${cleanBranch} at ${cleanHash.slice(0, 7)} is already being analyzed (execution ${running.id})`
-      )
-    }
-
-    return this.analyses.openPipelineForProject(project.id, cleanBranch, cleanHash)
-  }
-
-  /**
-   * Runs the project-architecture pipeline on the selected version: same
-   * guards and version handling as analyzeProject, but three stage rows
-   * (orientation, architecture, semantic_validation) under one evaluation.
-   * The executions come back Waiting; the pipeline reports each stage
-   * afterwards.
+   * Runs the project-architecture pipeline on the selected version: the
+   * version row is saved (or reused), it becomes the selected one, a fresh
+   * evaluation is created, and three stage rows (orientation, architecture,
+   * semantic_validation) are started in the background. The executions come
+   * back Waiting; the pipeline reports each stage afterwards.
    */
   async analyzeProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
     const cleanBranch = assertValidBranch(branch)
@@ -471,7 +426,7 @@ export class ProjectService {
 
     return versions.map((version) => {
       const executions = version.executions.map((execution) => ({ ...execution, status: execution.status as StoredAgentExecution["status"] }))
-      const execution = executions.find((execution) => execution.agentType === "analyzer") ?? executions[0] ?? null
+      const execution = executions[0] ?? null
       return {
         id: version.id,
         branch: version.branch,

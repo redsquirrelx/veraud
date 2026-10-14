@@ -81,7 +81,6 @@ function makeService(options: {
     new GithubClient(),
     workspaceDir,
     {
-      openPipelineForProject: async () => { throw new Error("not used") },
       openProjectArchitecturePipelineForProject: async () => { throw new Error("not used") },
     }
   )

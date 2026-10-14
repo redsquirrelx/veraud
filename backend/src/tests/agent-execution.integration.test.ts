@@ -159,20 +159,20 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("registers an invocation and returns its id immediately", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const response = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     assert.equal(response.statusCode, 201)
 
     const body = response.json()
     assert.equal(typeof body.id, "number")
-    assert.equal(body.agentType, "analyzer")
+    assert.equal(body.agentType, "dummy")
     assert.equal(body.evaluationId, evaluation.id)
     assert.equal(body.status, "Waiting")
     assert.equal(body.result, null)
@@ -181,13 +181,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("closes the run with the agent result", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const { id } = opened.json()
@@ -219,13 +219,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("records a failure with its error message", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const { id } = opened.json()
@@ -244,13 +244,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("refuses to mark a failure without an error", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const response = await app.inject({
@@ -264,13 +264,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("ignores a duplicate callback on a finished run", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const { id } = opened.json()
@@ -294,13 +294,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("marks a run as running", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const response = await app.inject({
@@ -339,7 +339,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     const response = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer" },
+      payload: { agentType: "dummy" },
     })
 
     assert.equal(response.statusCode, 400)
@@ -347,13 +347,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("returns before the agent finishes", async () => {
     const { app, db } = await start({ withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     // The invoker never settles, so this holds only if open() did not wait.
@@ -371,20 +371,20 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     }
 
     const { app, db, workspaceDir } = await start({ invoker, withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const id = opened.json().id as number
 
     await waitFor(() => seen.length === 1)
 
-    assert.equal(seen[0]?.agentType, "analyzer")
+    assert.equal(seen[0]?.agentType, "dummy")
     assert.equal(seen[0]?.input.root_path, join(workspaceDir, CHECKOUT))
     // The agent reports its own progress against this id, so it has to be the
     // row this run created.
@@ -397,13 +397,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("records the result the agent reports back", async () => {
     const { app, db } = await start({ withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const { id } = opened.json()
@@ -429,13 +429,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("records the failure the agent reports back", async () => {
     const { app, db } = await start({ withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const { id } = opened.json()
@@ -460,13 +460,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     }
 
     const { app, db } = await start({ invoker, withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const row = await waitForStatus(db, opened.json().id, "Failed")
@@ -486,13 +486,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     }
 
     const { app, db } = await start({ invoker, withCheckout: false })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
     const { evaluation } = await seedEvaluation(db)
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: evaluation.id },
+      payload: { agentType: "dummy", evaluationId: evaluation.id },
     })
 
     const row = await waitForStatus(db, opened.json().id, "Failed")
@@ -503,12 +503,12 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
   it("422s when the evaluation does not exist", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
 
     const response = await app.inject({
       method: "POST",
       url: "/api/agent-executions",
-      payload: { agentType: "analyzer", evaluationId: 9999 },
+      payload: { agentType: "dummy", evaluationId: 9999 },
     })
 
     // evaluation_id is a foreign key, so the row cannot exist. That is a bad
@@ -541,16 +541,16 @@ it("422s when the agent type is not registered", async () => {
     }
 
     const { app, db, workspaceDir } = await start({ invoker, withCheckout: true })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions/direct",
-      payload: { agentType: "analyzer", input: { root_path: CHECKOUT } },
+      payload: { agentType: "dummy", input: { root_path: CHECKOUT } },
     })
 
     assert.equal(opened.statusCode, 201)
-    assert.equal(opened.json().agentType, "analyzer")
+    assert.equal(opened.json().agentType, "dummy")
     assert.equal(opened.json().evaluationId, null)
     assert.equal(opened.json().status, "Waiting")
 
@@ -558,7 +558,7 @@ it("422s when the agent type is not registered", async () => {
 
     await waitFor(() => seen.length === 1)
 
-    assert.equal(seen[0]?.agentType, "analyzer")
+    assert.equal(seen[0]?.agentType, "dummy")
     assert.equal(seen[0]?.input.root_path, join(workspaceDir, CHECKOUT))
     assert.equal(seen[0]?.executionId, id)
   })
@@ -591,12 +591,12 @@ it("422s when the agent type is not registered", async () => {
 
   it("422s a direct run that escapes the workspace", async () => {
     const { app, db } = await start()
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
 
     const response = await app.inject({
       method: "POST",
       url: "/api/agent-executions/direct",
-      payload: { agentType: "analyzer", input: { root_path: "../evil" } },
+      payload: { agentType: "dummy", input: { root_path: "../evil" } },
     })
 
     assert.equal(response.statusCode, 422)
@@ -609,7 +609,7 @@ it("422s when the agent type is not registered", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/agent-executions/direct",
-      payload: { agentType: "analyzer" },
+      payload: { agentType: "dummy" },
     })
 
     assert.equal(response.statusCode, 400)
@@ -625,12 +625,12 @@ it("422s when the agent type is not registered", async () => {
     }
 
     const { app, db } = await start({ invoker, withCheckout: false })
-    await seedSettings(db, "analyzer")
+    await seedSettings(db, "dummy")
 
     const opened = await app.inject({
       method: "POST",
       url: "/api/agent-executions/direct",
-      payload: { agentType: "analyzer", input: { root_path: "ghost" } },
+      payload: { agentType: "dummy", input: { root_path: "ghost" } },
     })
 
     assert.equal(opened.statusCode, 201)

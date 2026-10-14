@@ -13,12 +13,6 @@ export interface AgentInvoker {
    *  itself. Rejects only when the agent-server could not be reached or the run
    *  failed to start; a run that fails mid-flight is reported by the agent. */
   run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig): Promise<AgentInput>
-  /** Runs the analyzer then the architect as one pipeline.
-   *
-   *  Optional so tests that only cover single-agent runs need no pipeline
-   *  double. `openPipeline` fails both rows when the invoker has no pipeline
-   *  support instead of hanging them in Waiting. */
-  runPipeline?(input: PipelineInput, executionIds: PipelineExecutionIds, configs: PipelineConfigs): Promise<PipelineResult>
   /** Runs any registered pipeline by name with per-stage ids and configs.
    *
    *  Stage keys must match the agent-server's registered stage names; the
@@ -26,26 +20,10 @@ export interface AgentInvoker {
   runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>): Promise<Record<string, AgentInput>>
 }
 
-/** What the architecture-audit pipeline needs: only the repository root. The
- *  architect's input is derived server-side from the analyzer's output. */
+/** What the pipeline needs: only the repository root. Stage inputs are
+ *  derived server-side from previous stages. */
 export interface PipelineInput {
   root_path: string
-}
-
-export type PipelineExecutionIds = {
-  analyzer: number
-  architect: number
-}
-
-export type PipelineConfigs = {
-  analyzer: AgentRunConfig
-  architect: AgentRunConfig
-}
-
-/** Both agent outputs, opaque here like single-agent results. */
-export interface PipelineResult {
-  analysis: AgentInput
-  description: AgentInput
 }
 
 export class AgentInvocationError extends Error {
@@ -135,23 +113,6 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
     }
 
     return result
-  }
-
-  async runPipeline(
-    input: PipelineInput,
-    executionIds: PipelineExecutionIds,
-    configs: PipelineConfigs,
-    timeoutMs: number = PIPELINE_INVOKE_TIMEOUT_MS,
-  ): Promise<PipelineResult> {
-    const result = await this.runPipelineByName("architecture-audit", input, executionIds, configs, timeoutMs)
-
-    this.log.info(`Pipeline returned`)
-
-    if (result.analysis === undefined || result.description === undefined) {
-      throw new AgentInvocationError(`Pipeline returned no result`)
-    }
-
-    return { analysis: result.analysis, description: result.description }
   }
 
   /** Generic pipeline dispatch: stage keys travel untouched so any registered

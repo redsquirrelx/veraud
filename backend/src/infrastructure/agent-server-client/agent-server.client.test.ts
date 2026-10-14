@@ -26,20 +26,13 @@ test("HTTP dispatch sends captured config and access checks do not expose provid
     const client = new AgentServerClient(`http://127.0.0.1:${address.port}`)
     const config = { model: { provider: "OpenAI", name: "selected-model", temperature: 0.8, max_tokens: 4096 }, api_key: "secret-provider-key" }
     await client.verify(config)
-    assert.deepEqual(await client.run("analyzer", { root_path: "checkout" }, 12, config), { kind: "library" })
+    assert.deepEqual(await client.run("dummy", { root_path: "checkout" }, 12, config), { kind: "library" })
     assert.deepEqual(requests, [
       { path: "/api/agents/verify-access", body: config },
-      { path: "/api/agents/run", body: { agent_type: "analyzer", input: { root_path: "checkout" }, execution_id: 12, config } },
+      { path: "/api/agents/run", body: { agent_type: "dummy", input: { root_path: "checkout" }, execution_id: 12, config } },
     ])
-    const configs = { analyzer: config, architect: { ...config, model: { ...config.model, name: "architect-model", temperature: 0.1 } } }
-    assert.deepEqual(await client.runPipeline({ root_path: "checkout" }, { analyzer: 12, architect: 13 }, configs), {
-      analysis: { kind: "library" }, description: { style: "layered" },
-    })
-    assert.deepEqual(requests[2], { path: "/api/pipelines/architecture-audit/run", body: {
-      input: { root_path: "checkout" }, execution_ids: { analyzer: 12, architect: 13 }, stage_configs: configs,
-    } })
     denied = true
-    for (const attempt of [() => client.verify(config), () => client.run("analyzer", {}, 13, config), () => client.runPipeline({ root_path: "checkout" }, { analyzer: 12, architect: 13 }, configs)]) {
+    for (const attempt of [() => client.verify(config), () => client.run("dummy", {}, 13, config)]) {
       await assert.rejects(attempt, (error: unknown) => {
         assert.ok(error instanceof Error)
         assert.doesNotMatch(error.message, /secret-provider-key/)
@@ -48,7 +41,7 @@ test("HTTP dispatch sends captured config and access checks do not expose provid
     }
     denied = false
     malformed = true
-    for (const attempt of [() => client.verify(config), () => client.run("analyzer", {}, 14, config), () => client.runPipeline({ root_path: "checkout" }, { analyzer: 12, architect: 13 }, configs)]) {
+    for (const attempt of [() => client.verify(config), () => client.run("dummy", {}, 14, config)]) {
       await assert.rejects(attempt, (error: unknown) => {
         assert.ok(error instanceof Error)
         assert.doesNotMatch(error.message, /secret-provider-key/)

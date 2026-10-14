@@ -110,7 +110,7 @@ describe("project sync API", () => {
       data: { name: "sync-guard-credential", apiKey: "test-key", aiProviderId: provider.id },
     })
     await db.agentSettings.update({
-      where: { agentType: "analyzer" },
+      where: { agentType: "orientation" },
       data: { aiModelId: model.id, aiCredentialId: credential.id },
     })
     const version = await db.projectVersion.create({
@@ -120,7 +120,7 @@ describe("project sync API", () => {
       data: { projectVersionId: version.id, type: "Analysis" },
     })
     const execution = await db.agentExecution.create({
-      data: { agentType: "analyzer", evaluationId: evaluation.id, status: "Waiting" },
+      data: { agentType: "orientation", evaluationId: evaluation.id, status: "Waiting" },
     })
 
     const response = await fetch(`${baseUrl}/api/projects/1/sync`, { method: "POST" })

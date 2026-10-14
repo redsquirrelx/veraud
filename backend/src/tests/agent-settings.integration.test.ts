@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
-import { ANALYZER_AGENT_TYPE } from "../modules/project/project.service.js"
+import { PROJECT_ARCHITECTURE_AGENT_TYPE } from "../modules/agent-settings/agent-types.js"
 import { DUMMY_AGENT_TYPE } from "../modules/agent-settings/agent-types.js"
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
 import { BACKEND_AGENT_TYPES } from "../modules/agent-settings/agent-types.js"
@@ -39,7 +39,7 @@ test("agent settings list backend types without an agent-server and never expose
     const model = await db.aiModel.create({ data: { aiProviderId: openai.id, name: "example-model" } })
     const credential = await db.aiCredential.create({ data: { aiProviderId: openai.id, name: "production", apiKey: "private-key-not-for-public-responses" } })
     const foreignCredential = await db.aiCredential.create({ data: { aiProviderId: google.id, name: "google", apiKey: "another-private-key" } })
-    await db.agentSettings.update({ where: { agentType: ANALYZER_AGENT_TYPE }, data: { aiModelId: model.id, aiCredentialId: credential.id, temperature: 0.25, maxTokens: 2048 } })
+    await db.agentSettings.update({ where: { agentType: PROJECT_ARCHITECTURE_AGENT_TYPE }, data: { aiModelId: model.id, aiCredentialId: credential.id, temperature: 0.25, maxTokens: 2048 } })
     await db.agentSettings.update({ where: { agentType: DUMMY_AGENT_TYPE }, data: { aiModelId: model.id, aiCredentialId: foreignCredential.id } })
     await db.agentSettings.create({ data: { agentType: "retired", aiModelId: model.id, aiCredentialId: credential.id } })
     const repository = new AgentSettingsRepository(db)
@@ -67,14 +67,14 @@ test("agent settings list backend types without an agent-server and never expose
       { modelId: 999999, credentialId: credential.id },
       { modelId: model.id, credentialId: 999999 },
     ]) {
-      const invalid = await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload })
+      const invalid = await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload })
       assert.equal(invalid.statusCode, 422)
     }
-    assert.deepEqual(await db.agentSettings.findUnique({ where: { agentType: ANALYZER_AGENT_TYPE } }), existing.find((row) => row.agentType === ANALYZER_AGENT_TYPE))
+    assert.deepEqual(await db.agentSettings.findUnique({ where: { agentType: PROJECT_ARCHITECTURE_AGENT_TYPE } }), existing.find((row) => row.agentType === PROJECT_ARCHITECTURE_AGENT_TYPE))
     assert.equal((await app.inject({ method: "PUT", url: "/api/agent-settings/not-an-agent", payload: { modelId: model.id, credentialId: credential.id } })).statusCode, 404)
-    assert.equal((await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload: { modelId: model.id } })).statusCode, 400)
+    assert.equal((await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload: { modelId: model.id } })).statusCode, 400)
     const secondModel = await db.aiModel.create({ data: { aiProviderId: openai.id, name: "second-model" } })
-    const saved = await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload: { modelId: secondModel.id, credentialId: credential.id } })
+    const saved = await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload: { modelId: secondModel.id, credentialId: credential.id } })
     assert.equal(saved.statusCode, 200)
     assert.equal(saved.json().configuration.model.id, secondModel.id)
     assert.equal(saved.json().configuration.temperature, 0.25)
@@ -84,20 +84,20 @@ test("agent settings list backend types without an agent-server and never expose
 
     const assignment = { modelId: secondModel.id, credentialId: credential.id }
     for (const options of [{ temperature: -0.1 }, { temperature: 2.1 }, { maxTokens: 0 }, { maxTokens: 1.5 }, { maxTokens: 2147483648 }]) {
-      assert.equal((await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload: { ...assignment, ...options } })).statusCode, 400)
+      assert.equal((await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload: { ...assignment, ...options } })).statusCode, 400)
     }
-    const parameters = await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload: { ...assignment, temperature: 0, maxTokens: 4096 } })
+    const parameters = await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload: { ...assignment, temperature: 0, maxTokens: 4096 } })
     assert.equal(parameters.statusCode, 200)
     assert.equal(parameters.json().configuration.temperature, 0)
     assert.equal(parameters.json().configuration.maxTokens, 4096)
-    assert.equal(Number((await db.agentSettings.findUniqueOrThrow({ where: { agentType: ANALYZER_AGENT_TYPE } })).temperature), 0)
-    const cleared = await app.inject({ method: "PUT", url: "/api/agent-settings/analyzer", payload: { ...assignment, temperature: null, maxTokens: null } })
+    assert.equal(Number((await db.agentSettings.findUniqueOrThrow({ where: { agentType: PROJECT_ARCHITECTURE_AGENT_TYPE } })).temperature), 0)
+    const cleared = await app.inject({ method: "PUT", url: "/api/agent-settings/architecture", payload: { ...assignment, temperature: null, maxTokens: null } })
     assert.equal(cleared.statusCode, 200)
     assert.equal(cleared.json().configuration.temperature, null)
     assert.equal(cleared.json().configuration.maxTokens, null)
 
     await db.agentSettings.update({
-      where: { agentType: ANALYZER_AGENT_TYPE },
+      where: { agentType: PROJECT_ARCHITECTURE_AGENT_TYPE },
       data: { aiCredentialId: foreignCredential.id, temperature: null, maxTokens: null },
     })
     const mismatched = (await app.inject({ url: "/api/agent-settings" })).json()
