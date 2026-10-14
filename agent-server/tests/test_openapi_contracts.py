@@ -11,7 +11,6 @@ from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate
 from pydantic import BaseModel
 
-from server.agents.analyzer.schemas import ProjectDescription
 from server.agents.dummy.schemas import DummyInput, DummyOutput, Finding
 from server.api.schemas import ExecutionConfig, ExecutionRequest, ModelConfig
 from server.app import execution_service
@@ -106,7 +105,6 @@ def test_portal_and_exact_operation_coverage(api):
         ("POST", "/api/agents/run"),
         ("POST", "/api/agents/verify-access"),
         ("GET", "/api/pipelines"),
-        ("POST", "/api/pipelines/architecture-audit/run"),
         ("POST", "/api/pipelines/{name}/run"),
     }
 
@@ -123,7 +121,7 @@ def test_portal_and_exact_operation_coverage(api):
         for route in application_routes(app.routes)
         for method in route.methods
     }
-    assert len(expected) == 8
+    assert len(expected) == 7
     assert operations == registered == expected
     ids = []
     for method, path in operations:
@@ -145,7 +143,7 @@ def test_run_examples_match_registered_agent_inputs(api):
     client, _, service = api
     operation = client.get("/openapi.json").json()["paths"]["/api/agents/run"]["post"]
     examples = operation["requestBody"]["content"]["application/json"]["examples"]
-    assert set(examples) == {"dummy", "analyzer"}
+    assert set(examples) == {"dummy"}
     for example in examples.values():
         request = ExecutionRequest.model_validate(example["value"])
         assert request.agent_type in service.list_agents()
@@ -160,71 +158,58 @@ def test_run_examples_match_registered_agent_inputs(api):
 
 
 def test_pipeline_contract_preserves_stage_configuration_and_nested_results(api):
-    from server.app.pipeline_service import get_pipeline_service
+    from server.app.pipeline_service import get_generic_pipeline_service
 
     client, _, _ = api
     seen = []
-    output = {
-        "analysis": {"custom": {"nullable": None, "items": [1, {"extra": True}]}},
-        "description": {"diagram": "flowchart LR", "empty": []},
-    }
+    output = {"first": {"custom": {"nullable": None, "items": [1, {"extra": True}]}}}
 
     class Service:
-        async def run(self, input_data, config, execution_ids, **options):
-            seen.append(options["stage_configs"].model_dump(mode="json"))
+        async def run(self, pipeline_name, input_data, config, stage_configs=None, execution_ids=None, **options):
+            from server.app.pipeline_service import UnknownPipelineError
+
+            if pipeline_name != "two-stage":
+                raise UnknownPipelineError(f"Unknown pipeline: {pipeline_name!r}")
+            seen.append((pipeline_name, stage_configs))
             return output
 
     configurations = {
-        "analyzer": {
+        "first": {
             "model": {
                 "provider": "google",
-                "name": "analysis",
+                "name": "first-model",
                 "temperature": 0.1,
                 "max_tokens": 2000,
             },
-            "api_key": "analysis-key",
-        },
-        "architect": {
-            "model": {
-                "provider": "anthropic",
-                "name": "architecture",
-                "temperature": 0.4,
-                "max_tokens": 4000,
-            },
-            "api_key": "architecture-key",
+            "api_key": "first-key",
         },
     }
-    app.dependency_overrides[get_pipeline_service] = lambda: Service()
+    app.dependency_overrides[get_generic_pipeline_service] = lambda: Service()
     try:
-        path = "/api/pipelines/architecture-audit/run"
+        path = "/api/pipelines/two-stage/run"
         response = client.post(
             path,
-            json={"input": {"root_path": "/repo"}, "stage_configs": configurations},
+            json={"input": {"root": "/repo"}, "stage_configs": configurations},
         )
         assert response.status_code == 200
         assert response.json() == output
-        assert seen[0]["analyzer"]["api_key"] == "analysis-key"
-        assert seen[0]["architect"]["model"]["max_tokens"] == 4000
-        assert_response_contract(client, response, path, "post")
-        invalid = client.post(
-            path,
-            json={
-                "input": {"root_path": "/repo"},
-                "stage_configs": {"analyzer": configurations["analyzer"]},
-            },
+        assert seen[0][0] == "two-stage"
+        assert seen[0][1]["first"].api_key == "first-key"
+        assert_response_contract(client, response, "/api/pipelines/{name}/run", "post")
+        unknown = client.post(
+            "/api/pipelines/missing/run",
+            json={"input": {"root": "/repo"}},
         )
-        assert invalid.status_code == 422
-        assert "analysis-key" not in invalid.text
-        assert_response_contract(client, invalid, path, "post")
+        assert unknown.status_code == 404
     finally:
-        app.dependency_overrides.pop(get_pipeline_service, None)
+        app.dependency_overrides.pop(get_generic_pipeline_service, None)
 
 
 def test_status_and_list_responses(api):
     client, _, _ = api
     for path, expected in [
         ("/api/status", {"status": "ok", "service": "agent-server"}),
-        ("/api/agents", ["analyzer", "architect", "dummy", "judge"]),
+        ("/api/agents", ["dummy"]),
     ]:
         response = client.get(path)
         assert response.status_code == 200
@@ -232,7 +217,7 @@ def test_status_and_list_responses(api):
         assert_response_contract(client, response, path, "get")
 
 
-@pytest.mark.parametrize("name", ["dummy", "analyzer", "architect", "judge"])
+@pytest.mark.parametrize("name", ["dummy"])
 def test_agent_schema_response_matches_pydantic_models(api, name):
     client, _, service = api
     agent = service._registry.get(name)
@@ -262,20 +247,6 @@ def test_agent_schema_response_matches_pydantic_models(api, name):
                     )
                 ],
                 recommendations=["Document the function"],
-            ),
-        ),
-        (
-            "analyzer",
-            ProjectDescription(
-                kind="library",
-                summary="Example library",
-                primary_language="python",
-                entrypoints=["src/main.py"],
-                key_components=["src/core.py"],
-                confidence="high",
-                files_read=3,
-                read_rounds=1,
-                hypothesis_confirmed=True,
             ),
         ),
         (

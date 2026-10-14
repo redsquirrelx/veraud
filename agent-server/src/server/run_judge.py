@@ -24,14 +24,15 @@ if __package__ in (None, ""):
     # Launched by path: no package context, so make `server` importable.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from server.agents.architect.agent import ArchitectureAgent
 from server.agents.architect.schemas import ArchitectureDescription
 from server.agents.judge.agent import JudgeAgent
 from server.agents.judge.schemas import JudgeInput
 from server.api.schemas import ExecutionConfig
+from server.app.agent_registry import AgentRegistry
 from server.app.execution_service import (
     AgentExecutionService,
     InvalidConfigError,
-    build_default_registry,
 )
 from server.config.schemas import AgentSettings
 
@@ -110,7 +111,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 async def _grade(args, description: ArchitectureDescription):
-    service = AgentExecutionService(registry=build_default_registry())
+    # The judge borrows the architect model, resolved the same way, but the
+    # architect is a CLI-only agent: the HTTP registry stays dummy-only.
+    registry = AgentRegistry()
+    registry.register(ArchitectureAgent.agent_type, ArchitectureAgent)
+    service = AgentExecutionService(registry=registry)
     architect, _ = service.build_agent("architect", ExecutionConfig())
 
     logger.info(

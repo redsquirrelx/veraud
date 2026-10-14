@@ -1,14 +1,14 @@
-"""Phase 1: tracing and callback ports are injectable and default-safe.
+"""Tracing and callback ports are injectable and default-safe.
 
-The legacy pipeline and single-agent service must behave exactly as before
-when constructed without arguments, while accepting custom/no-op backends.
+The generic pipeline and single-agent service accept custom/no-op backends
+while defaulting to the production LangSmith/HTTP behavior.
 """
 
 import asyncio
 from types import SimpleNamespace
 
-from server.agents.analyzer.schemas import ProjectDescription
-from server.agents.architect.schemas import ArchitectureDescription
+from pydantic import BaseModel
+
 from server.api.schemas import ExecutionConfig
 from server.app.callback_port import (
     BackendCallbackSink,
@@ -16,9 +16,8 @@ from server.app.callback_port import (
     default_callback_sink,
 )
 from server.app.pipeline_service import (
-    ArchitectureAuditService,
-    PipelineExecutionIds,
-    PipelineInput,
+    GenericPipelineService,
+    PipelineDefinition,
 )
 from server.app.tracing_port import (
     LangSmithTracingBackend,
@@ -27,12 +26,12 @@ from server.app.tracing_port import (
 from server.infrastructure.callback.client import CallbackClient
 
 
-def _analysis():
-    return ProjectDescription(kind="library", summary="s", primary_language="python")
+class _Output(BaseModel):
+    value: str
 
 
-def _description():
-    return ArchitectureDescription(style="layered")
+def _result(value="done"):
+    return _Output(value=value)
 
 
 class StubAgent:
@@ -134,26 +133,53 @@ class TestCallbackPorts:
 
 class TestPortsInjectedIntoPipeline:
     def test_pipeline_runs_with_noop_tracing_and_recorder_sink(self):
-        analyzer = StubAgent(_analysis())
-        architect = StubAgent(_description())
+        first = StubAgent(_result("one"))
+        second = StubAgent(_result("two"))
         sink = RecorderSink()
-        service = ArchitectureAuditService(
+
+        async def _build(exec_service, config, stage_configs, parsed, timeout):
+            return {"first": first, "second": second}, {}
+
+        class _Graph:
+            def __init__(self, agents, hooks):
+                self._agents = agents
+                self._hooks = hooks
+
+            async def run(self):
+                outputs = {}
+                for stage in ("first", "second"):
+                    await self._hooks.on_stage_start(stage)
+                    result = await self._agents[stage].run(None)
+                    await self._hooks.on_stage_result(stage, result)
+                    outputs[stage] = result.model_dump()
+                return outputs
+
+        definition = PipelineDefinition(
+            name="two-stage",
+            stages=["first", "second"],
+            parse_input=lambda raw: raw,
+            build_agents=_build,
+            adapt_hooks=lambda generic: generic,
+            create_pipeline=lambda agents, hooks, ctx: _Graph(agents, hooks),
+            run_pipeline=lambda pipeline, parsed, ctx: pipeline.run(),
+        )
+        service = GenericPipelineService(
             execution_service=SimpleNamespace(
-                build_agent=lambda agent_type, config: (
-                    (analyzer, 60) if agent_type == "analyzer" else (architect, 60)
-                ),
+                build_agent=lambda agent_type, config: (_result(), 60),
             ),
             callbacks_factory=lambda: sink,  # type: ignore[return-value]
             tracing_backend=NoOpTracingBackend(),
+            registry={"two-stage": definition},
         )
         result = asyncio.run(
             service.run(
-                PipelineInput(root_path="/repo"),
+                "two-stage",
+                {},
                 ExecutionConfig(),
-                PipelineExecutionIds(analyzer=11, architect=12),
+                execution_ids={"first": 11, "second": 12},
             )
         )
-        assert result["analysis"]["kind"] == "library"
+        assert result == {"first": {"value": "one"}, "second": {"value": "two"}}
         kinds = [(c[0], c[1]) for c in sink.calls if c[0] != "close"]
         assert kinds == [("running", 11), ("complete", 11), ("running", 12), ("complete", 12)]
 

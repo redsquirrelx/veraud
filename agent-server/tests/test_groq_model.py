@@ -44,8 +44,8 @@ def service(monkeypatch):
     monkeypatch.setattr(AgentExecutionService, "_server_api_key", staticmethod(lambda: "server-key"))
     service = AgentExecutionService()
     # Tests must not depend on the developer's local provider selection.
-    service._base_config["architect"] = (
-        AgentSettings(agent_id="architect", timeout_seconds=180),
+    service._base_config["dummy"] = (
+        AgentSettings(agent_id="dummy", timeout_seconds=180),
         _settings(provider="gemini", name="gemini-test-model"),
     )
     return service
@@ -53,13 +53,13 @@ def service(monkeypatch):
 
 def test_switch_to_groq_requires_explicit_model(service):
     with pytest.raises(InvalidConfigError, match="model.name is required"):
-        service.build_agent("architect", ExecutionConfig(model=ModelConfig(provider="groq")))
+        service.build_agent("dummy", ExecutionConfig(model=ModelConfig(provider="groq")))
 
 
 def test_request_overrides_reach_groq_client(service, monkeypatch):
     constructor = Mock()
     monkeypatch.setattr(groq, "ChatOpenAI", constructor)
-    agent, timeout = service.build_agent("architect", ExecutionConfig(
+    agent, timeout = service.build_agent("dummy", ExecutionConfig(
         model=ModelConfig(provider="groq", name="groq-test-model", temperature=0.3, max_tokens=2000),
         api_key="request-key", timeout_seconds=45,
     ))
@@ -73,13 +73,13 @@ def test_request_overrides_reach_groq_client(service, monkeypatch):
 
 
 def test_yaml_groq_defaults_and_server_key(service, monkeypatch):
-    service._base_config["architect"] = (
-        AgentSettings(agent_id="architect", timeout_seconds=120), _settings(),
+    service._base_config["dummy"] = (
+        AgentSettings(agent_id="dummy", timeout_seconds=120), _settings(),
     )
     constructor = Mock()
     monkeypatch.setattr(groq, "ChatOpenAI", constructor)
 
-    agent, timeout = service.build_agent("architect", ExecutionConfig())
+    agent, timeout = service.build_agent("dummy", ExecutionConfig())
 
     assert isinstance(agent.model, GroqModel)
     assert timeout == 120

@@ -214,13 +214,14 @@ class TestSameModel:
         assert agent.model is model
 
     def test_judge_borrows_architect_model_from_service(self):
+        from server.agents.architect.agent import ArchitectureAgent
         from server.api.schemas import ExecutionConfig
-        from server.app.execution_service import (
-            AgentExecutionService,
-            build_default_registry,
-        )
+        from server.app.agent_registry import AgentRegistry
+        from server.app.execution_service import AgentExecutionService
 
-        service = AgentExecutionService(registry=build_default_registry())
+        registry = AgentRegistry()
+        registry.register(ArchitectureAgent.agent_type, ArchitectureAgent)
+        service = AgentExecutionService(registry=registry)
         architect, _ = service.build_agent("architect", ExecutionConfig())
         judge = JudgeAgent(
             AgentSettings(agent_id="judge", timeout_seconds=120),
