@@ -38,6 +38,7 @@ from ..services.repository_analysis import (
     RepositoryAnalysisService,
 )
 from .execution_service import InvalidConfigError
+from .usage_reporting import gateway_progress
 
 if TYPE_CHECKING:
     from ..api.schemas import ExecutionConfig
@@ -135,24 +136,23 @@ async def build_project_agents(
                 return await super().generate(prompt)
 
         smoke_model = PipelineSmokeModel() if parsed.validate_semantics else ArchitectureSmokeModel()
-        smoke_gateway = ModelGateway(
-            smoke_model,
-            interval=_GATEWAY_INTERVAL,
-            max_retries=_GATEWAY_MAX_RETRIES,
-            backoff=_GATEWAY_BACKOFF,
-            trace=True,
-            remaining_seconds=lambda _deadline=deadline: max(0.0, _deadline - monotonic()),
-        )
+        def smoke_gateway():
+            return ModelGateway(
+                smoke_model, interval=_GATEWAY_INTERVAL,
+                max_retries=_GATEWAY_MAX_RETRIES, backoff=_GATEWAY_BACKOFF,
+                trace=True,
+                remaining_seconds=lambda _deadline=deadline: max(0.0, _deadline - monotonic()),
+            )
         agents = {
             "orientation": ProjectOrientationAgent(
-                smoke_model, generate=smoke_gateway
+                smoke_model, generate=smoke_gateway()
             ),
             "architecture": ProjectArchitectureAgent(
-                smoke_model, generate=smoke_gateway
+                smoke_model, generate=smoke_gateway()
             ),
             "semantic_validation": ProjectSemanticValidationAgent(
                 smoke_model,
-                generate=smoke_gateway,
+                generate=smoke_gateway(),
                 limits=ValidationLimits(max_claims=parsed.max_review_claims),
             ),
         }
@@ -217,14 +217,42 @@ class ProjectArchitectureHooksAdapter:
 
     def __init__(self, generic: GenericReportingHooks) -> None:
         self._generic = generic
+        self._architecture_result: BaseModel | None = None
+        self._semantic_result: BaseModel | None = None
+
+    def bind_usage(self, agents, budget):
+        for stage in STAGES:
+            gateway = agents[stage].generate
+            self._generic.register_usage(stage, lambda gateway=gateway: gateway_progress(gateway, budget))
+
+            async def on_usage(source, stage=stage):
+                await self._generic.on_stage_progress(stage, gateway_progress(source, budget))
+
+            gateway.on_usage = on_usage
 
     async def on_stage_start(self, stage: str) -> None:
         if stage in self._TRACKED:
             await self._generic.on_stage_start(stage)
 
     async def on_stage_result(self, stage: str, result: BaseModel) -> None:
+        if stage == "architecture":
+            # The same agent may still compose diagrams and revise its report.
+            if self._architecture_result is None:
+                self._architecture_result = result
+            self._generic.retain_partial(stage, result)
+            return
+        if stage == "semantic_validation" and self._architecture_result is not None:
+            self._semantic_result = result
+            self._generic.retain_partial(stage, result)
+            return
         if stage in self._TRACKED:
             await self._generic.on_stage_result(stage, result)
+
+    async def finish(self, result):
+        if self._architecture_result is not None:
+            await self._generic.on_stage_result("architecture", result.architecture)
+        if self._semantic_result is not None:
+            await self._generic.on_stage_result("semantic_validation", self._semantic_result)
 
     async def on_stage_skip(self, stage: str, reason: str) -> None:
         if stage in self._TRACKED:
@@ -234,6 +262,8 @@ class ProjectArchitectureHooksAdapter:
 def create_project_pipeline(
     agents: dict[str, Any], graph_hooks: Any, ctx: dict[str, Any]
 ) -> ProjectArchitecturePipeline:
+    if graph_hooks is not None:
+        graph_hooks.bind_usage(agents, ctx["budget"])
     return ProjectArchitecturePipeline(
         agents["architecture"],
         orientation=agents["orientation"],
@@ -261,6 +291,8 @@ async def run_project_pipeline(
             include_diagram=parsed.include_diagram,
             deadline=ctx["deadline"],
         )
+        if pipeline.hooks is not None:
+            await pipeline.hooks.finish(result)
         return result.model_dump(mode="json")
     finally:
         for model in ctx["models"].values():
