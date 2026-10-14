@@ -60,7 +60,6 @@ export interface StoredAgentExecutionSummary {
   inputTokens: number | null
   outputTokens: number | null
   estimatedTokens: number | null
-  accountedTokens: number | null
   interruptionReason: string | null
   createdAt: Date
   startedAt: Date | null
@@ -233,7 +232,6 @@ export class ProjectRepository implements ProjectStore {
           inputTokens: run.inputTokens,
           outputTokens: run.outputTokens,
           estimatedTokens: run.estimatedTokens,
-          accountedTokens: run.accountedTokens,
           interruptionReason: run.interruptionReason,
           createdAt: run.createdAt,
           startedAt: run.startedAt,
