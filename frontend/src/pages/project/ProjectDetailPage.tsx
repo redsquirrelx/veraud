@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
 import { ApiError, listProjects, syncProject, type AgentExecution, type ProjectSummary, type VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
+import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
 import { useTasks } from "../../shared/task-manager/useTasks.ts"
 import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
 import {
@@ -429,6 +430,7 @@ export function ProjectDetailPage() {
               ) : (
                 <Card>
                   {runStatuses}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>View partial results</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>Configuration used</h3>
                     <p className="label">Captured for {execution.agentType} #{execution.id}</p>
@@ -437,7 +439,9 @@ export function ProjectDetailPage() {
                       <dt>Provider</dt><dd>{execution.configuration!.model.providerName}</dd>
                       <dt>Credential</dt><dd>{execution.configuration!.credential.name} (#{execution.configuration!.credential.id})</dd>
                       <dt>Temperature</dt><dd>{execution.configuration!.temperature}</dd>
-                      <dt>Maximum tokens</dt><dd>{execution.configuration!.maxTokens}</dd>
+                       <dt>Maximum output tokens per call</dt><dd>{execution.configuration!.maxTokens}</dd>
+                       <dt>Initial token budget</dt><dd>{execution.configuration!.tokenBudget?.toLocaleString() ?? "Not recorded"}</dd>
+                       <dt>Absolute token limit</dt><dd>{execution.configuration!.absoluteTokenLimit?.toLocaleString() ?? "Not recorded"}</dd>
                     </dl>
                     <p className="label">Captured when this execution started. Later Settings changes apply to new executions.</p>
                   </div>)}
@@ -485,5 +489,5 @@ function stageExecution(
   if (current === null) {
     return stored
   }
-  return { ...current, configuration: current.configuration ?? stored?.configuration ?? null }
+  return mergeExecution(stored, current)
 }
