@@ -159,7 +159,6 @@ def create_model(arguments):
         )
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
-    from .config.dev_agents_config import load_dev_agents_config
     from .config.schemas import ModelCredentials, ModelSettings
     from .config.settings import ENV_FILE
 
@@ -167,11 +166,8 @@ def create_model(arguments):
         model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
         llm_api_key: str = ""
 
-    defaults = load_dev_agents_config().get("analyzer", (None, None))[1]
-    provider = arguments.provider or (defaults.provider if defaults else "google")
-    name = arguments.model or (
-        defaults.name if defaults and provider == defaults.provider else None
-    )
+    provider = arguments.provider or "google"
+    name = arguments.model
     api_key = arguments.api_key or Credentials().llm_api_key
     if not name or not api_key:
         raise ValueError(
@@ -224,7 +220,6 @@ def run_metadata(arguments, tools, model):
         Path(__file__),
         server / "repository_progress.py",
         server / "repository_reports.py",
-        server / "semantic_validation_pipeline.py",
         server / "pipelines/project_architecture.py",
         server / "pipelines/semantic_validation.py",
     ]

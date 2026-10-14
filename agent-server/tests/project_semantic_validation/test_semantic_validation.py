@@ -23,7 +23,7 @@ from server.agents.repository_runtime import (
 )
 from server.agents.repository_runtime.schemas import BudgetUsage
 from server.agents.repository_runtime.telemetry import ExecutionTelemetry
-from server.semantic_validation_pipeline import validate_architecture_pipeline
+from server.pipelines.semantic_validation import validate_architecture_pipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
 

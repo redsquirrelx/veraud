@@ -7,8 +7,30 @@ from types import SimpleNamespace
 
 from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
 from ...benchmark.telemetry import response_usage
-from ..analyzer.parsing import extract_text
 from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
+
+
+def extract_text(response: object) -> str:
+    """Normalize whatever the model client returns into a string."""
+    if response is None:
+        return ""
+    if isinstance(response, str):
+        return response
+
+    content = getattr(response, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+
+    text = getattr(response, "text", None)
+    if isinstance(text, str):
+        return text
+
+    return str(response)
 
 
 class ModelGateway:

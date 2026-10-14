@@ -12,33 +12,3 @@ def dev():
         port = get_server_settings().port_agentserver,
         reload = True,
     )
-
-
-def repomap() -> None:
-    from .run_repomap import main
-
-    raise SystemExit(main())
-
-
-def depgraph() -> None:
-    from .run_depgraph import main
-
-    raise SystemExit(main())
-
-
-def analyzer() -> None:
-    from .run_analyzer import main
-
-    raise SystemExit(main())
-
-
-def pipeline() -> None:
-    from .run_pipeline import main
-
-    raise SystemExit(main())
-
-
-def benchmark() -> None:
-    from .run_benchmark import main
-
-    raise SystemExit(main())
