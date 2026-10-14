@@ -190,3 +190,30 @@ class TestHooksAdapter:
         completes = {c[1]: (c[2], c[3]) for c in sink.calls if c[0] == "complete"}
         assert completes[22][0] == "Failed" and "boom" in (completes[22][1] or "")
         assert completes[23][0] == "Failed" and "Skipped" in (completes[23][1] or "")
+
+    def test_skipped_stage_closes_its_row_instead_of_hanging(self):
+        sink = RecorderSink()
+        from server.app.pipeline_service import GenericReportingHooks
+
+        generic = GenericReportingHooks(
+            sink,
+            {"orientation": 21, "architecture": 22, "semantic_validation": 23},
+            ["orientation", "architecture", "semantic_validation"],
+        )
+        adapter = ProjectArchitectureHooksAdapter(generic)
+
+        async def main():
+            await adapter.on_stage_start("orientation")
+            await adapter.on_stage_result("orientation", _fake_result())
+            await adapter.on_stage_skip("diagram_composition", "No organization units.")
+            await adapter.on_stage_skip("semantic_validation", "No architecture report was produced.")
+
+        asyncio.run(main())
+
+        completes = {c[1]: (c[2], c[3]) for c in sink.calls if c[0] == "complete"}
+        # Diagram has no row: nothing reported for it.
+        assert set(completes) == {21, 23}
+        assert completes[21][0] == "Completed"
+        assert completes[23][0] == "Failed"
+        assert "Skipped" in (completes[23][1] or "")
+        assert "No architecture report" in (completes[23][1] or "")

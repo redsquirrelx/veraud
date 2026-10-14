@@ -89,6 +89,13 @@ class GenericReportingHooks:
         await self._report(self._ids[stage], result)
         self.completed.add(stage)
 
+    async def on_stage_skip(self, stage: str, reason: str) -> None:
+        """Close a stage the graph did not run, so its row never hangs."""
+        await self._report_failure(
+            self._ids[stage], f"Skipped: {reason or 'stage did not run'}"
+        )
+        self.completed.add(stage)
+
     async def close_failed(self, error: str) -> None:
         """Close whatever the failure left unfinished."""
         pending = [name for name in self._order if name not in self.completed]

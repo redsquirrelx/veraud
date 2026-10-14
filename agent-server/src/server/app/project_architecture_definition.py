@@ -226,6 +226,10 @@ class ProjectArchitectureHooksAdapter:
         if stage in self._TRACKED:
             await self._generic.on_stage_result(stage, result)
 
+    async def on_stage_skip(self, stage: str, reason: str) -> None:
+        if stage in self._TRACKED:
+            await self._generic.on_stage_skip(stage, reason)
+
 
 def create_project_pipeline(
     agents: dict[str, Any], graph_hooks: Any, ctx: dict[str, Any]
