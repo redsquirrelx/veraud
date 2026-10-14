@@ -20,6 +20,16 @@ class CallbackConfig(BaseModel):
     )
 
 
+class ExecutionProgress(BaseModel):
+    """Cumulative reported usage; null means the provider supplied no count."""
+
+    input_tokens: int | None = Field(default=None, ge=0, le=2147483647, alias="inputTokens")
+    output_tokens: int | None = Field(default=None, ge=0, le=2147483647, alias="outputTokens")
+    estimated_tokens: int = Field(default=0, ge=0, le=2147483647, alias="estimatedTokens")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ExecutionOutcome(BaseModel):
     """What an agent reports when it finishes.
 
@@ -38,6 +48,8 @@ class ExecutionOutcome(BaseModel):
     error: str | None = Field(default=None, description="Required when status is Failed")
     input_tokens: int | None = Field(default=None, ge=0, alias="inputTokens")
     output_tokens: int | None = Field(default=None, ge=0, alias="outputTokens")
+    estimated_tokens: int | None = Field(default=None, ge=0, alias="estimatedTokens")
+    interruption_reason: str | None = Field(default=None, alias="interruptionReason")
 
     model_config = ConfigDict(populate_by_name=True)
 
