@@ -15,6 +15,7 @@ from ..infrastructure.callback.schemas import (
     CallbackConfig,
     CallbackResult,
     ExecutionOutcome,
+    ExecutionProgress,
 )
 
 
@@ -25,6 +26,9 @@ class CallbackSink:
         raise NotImplementedError
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
+        raise NotImplementedError
+
+    async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
         raise NotImplementedError
 
     async def aclose(self) -> None:
@@ -43,6 +47,9 @@ class BackendCallbackSink(CallbackSink):
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
         return await self._client.complete(execution_id, outcome)
 
+    async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
+        return await self._client.progress(execution_id, usage)
+
     async def aclose(self) -> None:
         await self._client.aclose()
 
@@ -54,6 +61,9 @@ class NoOpCallbackSink(CallbackSink):
         return CallbackResult(acknowledged=False, error="noop sink")
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
+        return CallbackResult(acknowledged=False, error="noop sink")
+
+    async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
         return CallbackResult(acknowledged=False, error="noop sink")
 
     async def aclose(self) -> None:
