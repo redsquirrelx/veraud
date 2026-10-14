@@ -66,6 +66,11 @@ export interface ProjectArchitectureSummary {
   diagramTitle: string
   diagramNodes: number
   diagramEdges: number
+  /** Rendered Mermaid chart merged by the backend from the pipeline-level
+   *  diagram; empty when the run predates diagrams, skipped composition, or
+   *  the composition failed. */
+  diagramMermaid: string
+  diagramOrigin: string
 }
 
 export interface SemanticFindingView {
@@ -267,6 +272,11 @@ export function parseProjectArchitectureResult(result: string | null): ProjectAr
     }
   }
   const diagram = isRecord(report["diagram"]) ? (report["diagram"] as Record<string, unknown>) : null
+  const rendered = isRecord(record["architecture_diagram"]) ? (record["architecture_diagram"] as Record<string, unknown>) : null
+  const mermaid = rendered === null || typeof rendered["mermaid"] !== "string" ? "" : (rendered["mermaid"] as string).trim()
+  const origin = rendered === null || typeof rendered["report_origin"] !== "string" || (rendered["report_origin"] as string).trim() === ""
+    ? ""
+    : (rendered["report_origin"] as string).trim()
   return {
     completionStatus,
     units,
@@ -279,6 +289,8 @@ export function parseProjectArchitectureResult(result: string | null): ProjectAr
     diagramTitle: diagram === null ? "" : readString(diagram, "title").trim(),
     diagramNodes: diagram === null || !Array.isArray(diagram["nodes"]) ? 0 : (diagram["nodes"] as unknown[]).length,
     diagramEdges: diagram === null || !Array.isArray(diagram["edges"]) ? 0 : (diagram["edges"] as unknown[]).length,
+    diagramMermaid: mermaid,
+    diagramOrigin: origin,
   }
 }
 

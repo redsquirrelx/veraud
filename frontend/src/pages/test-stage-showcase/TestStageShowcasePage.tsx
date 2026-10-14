@@ -63,6 +63,10 @@ const architectureJson = JSON.stringify({
     },
   },
   limitations: ["Snapshot capped at 5000 files."],
+  architecture_diagram: {
+    mermaid: "flowchart LR\n  api[api]\n  core[core]\n  store[store]\n  api --> core\n  core --> store",
+    report_origin: "original",
+  },
 })
 
 const validationJson = JSON.stringify({

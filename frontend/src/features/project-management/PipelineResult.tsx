@@ -1,4 +1,4 @@
-import { Badge } from "../../shared/ui-kit/index.ts"
+import { Badge, MermaidDiagram } from "../../shared/ui-kit/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import "./PipelineStage.css"
 import {
@@ -165,10 +165,19 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
           </div>
         </>
       )}
-      {summary.diagramTitle !== "" && (
-        <span className="stage-footnote">
-          Diagram “{summary.diagramTitle}”: {summary.diagramNodes} node(s), {summary.diagramEdges} edge(s)
-        </span>
+      {summary.diagramMermaid !== "" ? (
+        <>
+          <span className="stage-section-label">
+            Diagram{summary.diagramOrigin !== "" ? ` (${summary.diagramOrigin} report)` : ""}
+          </span>
+          <MermaidDiagram chart={summary.diagramMermaid} label={summary.diagramTitle !== "" ? summary.diagramTitle : "Architecture diagram"} />
+        </>
+      ) : (
+        summary.diagramTitle !== "" && (
+          <span className="stage-footnote">
+            Diagram “{summary.diagramTitle}”: {summary.diagramNodes} node(s), {summary.diagramEdges} edge(s)
+          </span>
+        )
       )}
       {summary.uncertainties.length > 0 && (
         <>

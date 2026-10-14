@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import {
   OrientationResultView,
@@ -71,6 +71,22 @@ const projectArchitecture = JSON.stringify({
   },
 })
 
+const projectArchitectureWithDiagram = JSON.stringify({
+  ...JSON.parse(projectArchitecture),
+  architecture_diagram: {
+    mermaid: "flowchart LR\n  core[core]",
+    report_origin: "original",
+    report_hash: "abc123",
+  },
+})
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn(async (_id: string, chart: string) => ({ svg: `<svg>${chart}</svg>`, diagramType: "flowchart" })),
+  },
+}))
+
 const validation = JSON.stringify({
   completion_status: "complete",
   verdict: "revisions_needed",
@@ -123,6 +139,24 @@ describe("parseProjectArchitectureResult", () => {
     expect(parsed?.diagramTitle).toBe("Components")
     expect(parsed?.diagramNodes).toBe(1)
     expect(parsed?.diagramEdges).toBe(0)
+    expect(parsed?.diagramMermaid).toBe("")
+    expect(parsed?.diagramOrigin).toBe("")
+  })
+
+  it("parses the merged pipeline mermaid and ignores malformed diagram payloads", () => {
+    const parsed = parseProjectArchitectureResult(projectArchitectureWithDiagram)
+    expect(parsed?.diagramMermaid).toBe("flowchart LR\n  core[core]")
+    expect(parsed?.diagramOrigin).toBe("original")
+    const malformed = parseProjectArchitectureResult(JSON.stringify({
+      ...JSON.parse(projectArchitecture),
+      architecture_diagram: { mermaid: 42, report_origin: "original" },
+    }))
+    expect(malformed?.diagramMermaid).toBe("")
+    const blank = parseProjectArchitectureResult(JSON.stringify({
+      ...JSON.parse(projectArchitecture),
+      architecture_diagram: { mermaid: "   ", report_origin: "original" },
+    }))
+    expect(blank?.diagramMermaid).toBe("")
   })
 
   it("rejects malformed payloads and missing reports", () => {
@@ -183,6 +217,17 @@ describe("ProjectArchitectureResultView", () => {
     expect(screen.getByText("core drives the CLI.", { exact: false })).toBeDefined()
     expect(screen.getByText("CLI imports core internals.", { exact: false })).toBeDefined()
     expect(screen.getByText("sqlite")).toBeDefined()
+    expect(screen.getByText("Diagram “Components”: 1 node(s), 0 edge(s)", { exact: false })).toBeDefined()
+  })
+
+  it("renders the merged mermaid diagram instead of the shape footnote", () => {
+    const summary = parseProjectArchitectureResult(projectArchitectureWithDiagram)
+    if (summary === null) {
+      throw new Error("architecture diagram fixture must parse")
+    }
+    render(<ProjectArchitectureResultView summary={summary} />)
+    expect(screen.getByText("Diagram (original report)", { exact: false })).toBeDefined()
+    expect(screen.queryByText("1 node(s)", { exact: false })).toBeNull()
   })
 })
 
