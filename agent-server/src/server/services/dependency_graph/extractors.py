@@ -1,4 +1,5 @@
 import ast
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -180,7 +181,9 @@ class PythonImportExtractor(ImportExtractor):
 
     def extract(self, source: str) -> list[ImportRecord]:
         try:
-            tree = ast.parse(source)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(source)
         except SyntaxError as error:
             logger.debug("skipping unparseable python: %s", error)
             return []

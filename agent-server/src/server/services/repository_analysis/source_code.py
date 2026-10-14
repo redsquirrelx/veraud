@@ -2,6 +2,7 @@
 
 import ast
 import re
+import warnings
 
 import tree_sitter_javascript
 import tree_sitter_typescript
@@ -27,7 +28,14 @@ def extract_source_code(context: AnalysisContext) -> None:
         ).append(source_file)
         if source_file.language == "python":
             try:
-                syntax_tree = ast.parse(source_file.content)
+                # Repo sources are third-party text: non-raw escapes (e.g. "\d"
+                # in a regex written as "\\d") warn at compile time. The AST
+                # shape is unaffected, so only that warning is suppressed here.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", SyntaxWarning)
+                    syntax_tree = ast.parse(
+                        source_file.content, filename=source_file.path
+                    )
             except SyntaxError as error:
                 context.add_issue(
                     source_file.path,

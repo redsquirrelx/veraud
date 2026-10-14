@@ -7,7 +7,11 @@ from typing import Literal
 
 from pydantic import model_validator
 
-from ..repository_runtime.responses import parse_json_value, validation_feedback
+from ..repository_runtime.responses import (
+    normalize_record_arrays,
+    parse_json_value,
+    validation_feedback,
+)
 from ..repository_runtime.results import execution_results
 from ..repository_runtime.schemas import AgentContract, BudgetUsage, ExecutionIssue
 from ..repository_runtime.telemetry import (
@@ -165,9 +169,13 @@ async def compose_diagram(
             generate(prompt),
             max(0, budget.max_elapsed_seconds - tools.context.elapsed_seconds),
         )
-        diagram = ArchitectureDiagram.model_validate(
-            parse_json_value(response, MAX_RESPONSE_CHARACTERS)
+        value, pruned = normalize_record_arrays(
+            parse_json_value(response, MAX_RESPONSE_CHARACTERS),
+            ArchitectureDiagram.model_json_schema(),
         )
+        if pruned:
+            event("model_response_pruned", dropped=list(pruned))
+        diagram = ArchitectureDiagram.model_validate(value)
         ArchitectureReport.model_validate(
             original.architecture.model_dump() | {"diagram": diagram}
         )

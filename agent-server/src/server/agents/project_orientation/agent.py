@@ -137,9 +137,11 @@ def build_orientation_graph():
             }
         update = {"calls": state["calls"] + 1, "raw": state["raw"], "orientation": None}
         try:
-            value = normalize_record_arrays(
+            value, pruned = normalize_record_arrays(
                 parse_json_value(answer, 30000), OrientationTurn.model_json_schema()
             )
+            if pruned:
+                event(context, "model_response_pruned", dropped=list(pruned))
             if isinstance(value, dict) and "orientation" in value:
                 update["raw"] = value["orientation"]
             turn = OrientationTurn.model_validate(value)

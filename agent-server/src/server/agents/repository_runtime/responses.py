@@ -35,34 +35,63 @@ def validation_feedback(error):
 
 
 def normalize_record_arrays(value, schema):
-    """Recover singleton object arrays without changing facts or primitive fields."""
-    definitions = schema.get("$defs", {})
+    """Recover singleton object arrays and prune unknown keys.
 
-    def visit(item, contract):
-        if "$ref" in contract:
-            contract = definitions[contract["$ref"].rsplit("/", 1)[1]]
-        if "anyOf" in contract:
-            contract = next(
-                (child for child in contract["anyOf"] if child.get("type") != "null"),
-                contract,
-            )
-            return visit(item, contract) if "anyOf" not in contract else item
+    The model is never trusted to honour the schema exactly: a single object
+    where the contract wants a one-member array is wrapped, and keys absent
+    from the contract are dropped instead of failing the turn.
+
+    Returns `(normalized, dropped_paths)`. Dropped paths use dotted notation
+    with `[index]` for array members, so callers can audit what the model
+    sent beyond the contract. Facts and primitive fields are never changed.
+    """
+    definitions = schema.get("$defs", {})
+    dropped: list[str] = []
+
+    def resolve(contract):
+        seen = 0
+        while ("$ref" in contract or "anyOf" in contract) and seen < 10:
+            seen += 1
+            if "$ref" in contract:
+                contract = definitions.get(contract["$ref"].rsplit("/", 1)[-1], {})
+                continue
+            children = [
+                child for child in contract["anyOf"] if child.get("type") != "null"
+            ]
+            if not children:
+                return {}
+            contract = children[0]
+        return contract
+
+    def visit(item, contract, path):
+        contract = resolve(contract)
         if contract.get("type") == "array":
             child = contract.get("items", {})
-            resolved = definitions.get(child.get("$ref", "").rsplit("/", 1)[-1], child)
-            if isinstance(item, dict) and resolved.get("type") == "object":
-                item = [item]
-            return (
-                [visit(member, child) for member in item]
-                if isinstance(item, list)
-                else item
+            resolved = definitions.get(
+                child.get("$ref", "").rsplit("/", 1)[-1], child
             )
+            if isinstance(item, dict) and resolve(resolved).get("type") == "object":
+                item = [item]
+            if isinstance(item, list):
+                return [
+                    visit(member, child, f"{path}[{index}]")
+                    for index, member in enumerate(item)
+                ]
+            return item
         if isinstance(item, dict):
-            properties = contract.get("properties", {})
-            return {
-                key: visit(member, properties[key]) if key in properties else member
-                for key, member in item.items()
-            }
+            if "properties" not in contract:
+                # Free-form maps (e.g. dict[str, str]) declare no properties:
+                # nothing to prune without risking real facts.
+                return item
+            properties = contract["properties"]
+            kept = {}
+            for key, member in item.items():
+                location = f"{path}.{key}" if path else key
+                if key in properties:
+                    kept[key] = visit(member, properties[key], location)
+                else:
+                    dropped.append(location)
+            return kept
         return item
 
-    return visit(value, schema)
+    return visit(value, schema, ""), tuple(dropped)

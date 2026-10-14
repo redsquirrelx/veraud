@@ -191,9 +191,11 @@ def build_validation_graph():
             }
         update = {"calls": state["calls"] + 1, "active_ids": active, "raw_findings": []}
         try:
-            value = normalize_record_arrays(
+            value, pruned = normalize_record_arrays(
                 parse_json_value(answer, 40000), ValidationTurn.model_json_schema()
             )
+            if pruned:
+                event(context, "model_response_pruned", dropped=list(pruned))
             if (
                 isinstance(value, dict)
                 and value.get("findings")

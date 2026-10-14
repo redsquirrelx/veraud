@@ -6,6 +6,7 @@ import json
 import posixpath
 import re
 import tomllib
+import warnings
 
 import yaml
 
@@ -146,7 +147,11 @@ def read_project_configuration(context: AnalysisContext) -> None:
                 }
             elif file_name == "setup.py":
                 configuration = {}
-                syntax_tree = ast.parse(source_file.content)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", SyntaxWarning)
+                    syntax_tree = ast.parse(
+                        source_file.content, filename=source_file.path
+                    )
                 for node in ast.walk(syntax_tree):
                     if (
                         isinstance(node, ast.Call)

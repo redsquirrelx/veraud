@@ -203,10 +203,12 @@ def build_architecture_graph():
             "reference_repairs": state["reference_repairs"],
         }
         try:
-            value = normalize_record_arrays(
+            value, pruned = normalize_record_arrays(
                 parse_json_value(answer, 40000), ArchitectureTurn.model_json_schema()
             )
             value, repairs = normalize_source_references(context.tools, value)
+            if pruned:
+                event(context, "model_response_pruned", dropped=list(pruned))
             update["reference_repairs"] = state["reference_repairs"] | repairs
             if repairs:
                 event(context, "architecture_reference_normalized", aliases=repairs)
