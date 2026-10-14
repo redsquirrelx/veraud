@@ -97,16 +97,17 @@ or unresolved claims. Semantic status is separately labeled, including pending r
 ## CLI
 
 ```powershell
-uv run python -m server.run_project_architecture <checkout> --diagram
-uv run python -m server.run_project_architecture <checkout> --validate-semantics --diagram
-uv run python -m server.run_project_architecture <checkout> --validate-semantics --diagram --json
+uv run python -m server.run_project_architecture <checkout>
+uv run python -m server.run_project_architecture <checkout> --validate-semantics
+uv run python -m server.run_project_architecture <checkout> --validate-semantics --json
 ```
 
-`--diagram` enables model composition and prints a Mermaid block after the normal
-human-readable summary. Use `--diagram --json` to request the view in JSON. JSON
-output contains `architecture_diagram` when a valid view was produced; the
-flag does not append Markdown to JSON. If no view is present, the field is null and
-`--diagram` reports its unavailability. Older reports without a diagram remain valid.
+Diagram composition runs by default and prints a Mermaid block after the normal
+human-readable summary. Use `--no-diagram` to skip it. Use `--diagram --json`
+only when you need to force the view in JSON mode (JSON output contains
+`architecture_diagram` when a valid view was produced; the
+flag does not append Markdown to JSON). If no view is present, the field is null and
+the run reports its unavailability. Older reports without a diagram remain valid.
 
 The top-level architectural report remains original in the CLI JSON envelope, while
 `architecture_diagram` corresponds to the **displayed** report: revised if a revised
@@ -116,7 +117,7 @@ semantic review runner also exports the original report's diagram with review an
 
 ## Recovery after a provider failure
 
-With `--diagram`, the CLI atomically saves the architectural report **before** asking
+The CLI atomically saves the architectural report **before** asking
 for the component view. The summary and JSON expose `architecture_checkpoint`; the
 default is `.architecture-checkpoints/<repository>-<path-hash>.json` under the current
 directory. Use `--checkpoint <file>` for an explicit location. A revised report is
@@ -151,9 +152,9 @@ request pacing. HTTP 503 remains a provider failure; recovery does not fabricate
 
 ## Backend and library
 
-`ProjectArchitecturePipeline.run(..., include_diagram=True)` enables the composition
-stage by default for backend callers. Set it to false to omit the additional call.
-The CLI enables composition only with `--diagram`. The pipeline exports
+`ProjectArchitecturePipeline.run(..., include_diagram=True)` composes by default
+for backend callers. Set it to false to omit the additional call.
+The CLI composes by default; pass `--no-diagram` to skip. The pipeline exports
 `diagram_composition` with its source report hash, accepted selection, issues, usage,
 and role-local telemetry. A revised report is composed again before revalidation;
 that result is preserved as `semantic_validation.diagram_revision`. It is never

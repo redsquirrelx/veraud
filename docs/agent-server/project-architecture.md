@@ -277,7 +277,8 @@ Use fresh snapshot-bound tools; the caller owns model resources. Passing orienta
 from another snapshot fails before a model call. Tools retain checkout isolation
 and narrative documentation exclusions, including indirect evidence retrieval.
 The installed CLI entrypoint is `project-architecture`.
-`--diagram` adds one compact model composition call after investigation, then prints
+Diagram composition runs by default (one compact model call after investigation);
+`--no-diagram` skips it. On success it prints
 the architect's selected component view as Mermaid (or exports it with `--json`).
 The structured view is source-linked and its relation types, groups, and scope are
 reviewed semantically. See [architecture diagrams](architecture-diagrams.md).

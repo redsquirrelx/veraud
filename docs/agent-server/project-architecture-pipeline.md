@@ -67,8 +67,8 @@ boundaries. No HTTP routes or existing backend reporting contracts are replaced.
 - `validate_semantics=False`: omit semantic review; optional diagram composition
   still runs, and the validator may be omitted.
 - `allow_return=False`: review once without returning to the architect.
-- `include_diagram=False`: omit the dedicated model composition call (backend default
-  is true; the CLI enables it with `--diagram`). It selects from report references,
+- `include_diagram=False`: omit the dedicated model composition call (on by default
+  in both HTTP and CLI; use `--no-diagram`). It selects from report references,
   performs no repository reads, and precedes semantic review.
 - `resume_architecture=saved_result`: skip orientation and architecture investigation,
   verify the result's snapshot hash, and continue composition/review according to the

@@ -120,7 +120,7 @@ Source of truth: `agent-server/src/server/api/pipelines.py`,
     "include_orientation": true,
     "validate_semantics": true,
     "allow_return": true,
-    "include_diagram": false
+    "include_diagram": true
   },
   "config": {},
   "stage_configs": {
