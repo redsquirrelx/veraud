@@ -65,7 +65,6 @@ Table agent_execution {
   input_tokens int
   output_tokens int
   estimated_tokens int
-  accounted_tokens int
   interruption_reason varchar
   error text
   result text
