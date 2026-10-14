@@ -206,31 +206,6 @@ export interface AgentExecution {
   finishedAt: string | null
 }
 
-export interface AnalysisRequest {
-  versionId: number
-  evaluationId: number
-  executions: { analyzer: AgentExecution; architect: AgentExecution }
-  /** Analyzer compatibility field supplied by the backend. */
-  execution?: AgentExecution
-}
-
-export async function requestAnalysis(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, commitHash }),
-    signal: AbortSignal.timeout(600000),
-  })
-
-  const body = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, body.message ?? "Could not analyze the project")
-  }
-
-  return body as AnalysisRequest
-}
-
 export interface ProjectArchitectureRequest {
   versionId: number
   evaluationId: number

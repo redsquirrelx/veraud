@@ -5,8 +5,6 @@ import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecution
 import { useTasks } from "../../shared/task-manager/useTasks.ts"
 import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
 import {
-  AnalyzerResultView,
-  ArchitectureResultView,
   OrientationResultView,
   PipelineRunStatus,
   ProjectArchitectureResultView,
@@ -14,16 +12,12 @@ import {
   StageStatusView,
 } from "../../features/project-management/PipelineResult.tsx"
 import {
-  confidenceTone,
-  kindTone,
-  parseAnalyzerResult,
-  parseArchitectureResult,
   parseOrientationResult,
   parseProjectArchitectureResult,
   parseSemanticValidationResult,
   verdictTone,
 } from "../../features/project-management/pipelineResult.ts"
-import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, MermaidDiagram, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
+import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
@@ -85,12 +79,9 @@ export function ProjectDetailPage() {
   const orientationExec = stageExecution("orientation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const projectArchitectureExec = stageExecution("architecture", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const semanticValidationExec = stageExecution("semantic_validation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
-  const analysisSummary = analyzerExec === null ? null : parseAnalyzerResult(analyzerExec.result)
-  const architectureSummary = architectExec === null ? null : parseArchitectureResult(architectExec.result)
   const orientationSummary = orientationExec === null ? null : parseOrientationResult(orientationExec.result)
   const projectArchitectureSummary = projectArchitectureExec === null ? null : parseProjectArchitectureResult(projectArchitectureExec.result)
   const semanticValidationSummary = semanticValidationExec === null ? null : parseSemanticValidationResult(semanticValidationExec.result)
-  const summaryConfidence = architectureSummary?.confidence ?? analysisSummary?.confidence ?? null
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
@@ -196,11 +187,11 @@ export function ProjectDetailPage() {
     void refreshAnalyzed()
   }, [analysis.phase, analysis.execution, refreshAnalyzed])
 
-  function handleAnalyze(pipelineId: string) {
+  function handleAnalyze() {
     if (activeBranch === null || activeHash === null) {
       return
     }
-    void analysis.start(activeBranch, activeHash, pipelineId)
+    void analysis.start(activeBranch, activeHash)
   }
 
   /** Picks an analyzed version: checks out its commit, then shows its run. */
@@ -214,10 +205,13 @@ export function ProjectDetailPage() {
       return
     }
     setAnalyzedId(id)
-    // The semantic_validation row carries the final verdict; fall back to the
-    // architect, then to the analyzer when an old version only has those rows.
+    // The semantic_validation row carries the final verdict; fall back through
+    // the other project stages, then to legacy rows when an old version only
+    // has those.
     analysis.show(
       target.executions.find((execution) => execution.agentType === "semantic_validation")
+        ?? target.executions.find((execution) => execution.agentType === "architecture")
+        ?? target.executions.find((execution) => execution.agentType === "orientation")
         ?? target.executions.find((execution) => execution.agentType === "architect")
         ?? target.executions.find((execution) => execution.agentType === "analyzer")
         ?? null,
@@ -313,19 +307,7 @@ export function ProjectDetailPage() {
                 >
                   Open on GitHub<ExternalIcon size={12} />
                 </a>
-                {analysisSummary !== null && <div className="project-overview-analysis">
-                  <h3>Analysis summary</h3>
-                  <div className="project-name-row">
-                    <span className="label">Type</span>
-                    <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
-                    <span className="label">Confidence</span>
-                    <Badge tone={confidenceTone(analysisSummary.confidence)}>{analysisSummary.confidence}</Badge>
-                  </div>
-                  {analysisSummary.summary !== "" && (
-                    <p className="project-summary">{analysisSummary.summary}</p>
-                  )}
-                </div>}
-              {analysis.analyzing && (
+                {analysis.analyzing && (
                 <div className="files-loading" role="status" aria-label="Loading">
                   <Spinner />
                   <span className="label">Analyzing the project</span>
@@ -334,8 +316,7 @@ export function ProjectDetailPage() {
               </section>
             </Card>}
             {activeSection === "overview" && analysis.execution !== null
-              && (analysisSummary !== null || architectureSummary !== null
-                || orientationSummary !== null || projectArchitectureSummary !== null
+              && (orientationSummary !== null || projectArchitectureSummary !== null
                 || semanticValidationSummary !== null) && (
               <Card>
                 <div className="audit-block">
@@ -343,18 +324,6 @@ export function ProjectDetailPage() {
                     <h4 className="audit-title">Summary</h4>
                     <div className="audit-head-right">
                       <div className="audit-status-row">
-                        {analysisSummary !== null && (
-                          <>
-                            <span className="label">Type</span>
-                            <Badge tone={kindTone(analysisSummary.kind)}>{analysisSummary.kind}</Badge>
-                          </>
-                        )}
-                        {architectureSummary !== null && (
-                          <>
-                            <span className="label">Style</span>
-                            <Badge tone={kindTone(architectureSummary.style)}>{architectureSummary.style}</Badge>
-                          </>
-                        )}
                         {orientationSummary !== null && orientationSummary.projectType !== "" && (
                           <>
                             <span className="label">Project type</span>
@@ -373,22 +342,9 @@ export function ProjectDetailPage() {
                             <Badge tone={verdictTone(semanticValidationSummary.verdict)}>{semanticValidationSummary.verdict}</Badge>
                           </>
                         )}
-                        {summaryConfidence !== null && (
-                          <>
-                            <span className="label">Confidence</span>
-                            <Badge tone={confidenceTone(summaryConfidence)}>{summaryConfidence}</Badge>
-                          </>
-                        )}
                       </div>
                     </div>
                   </div>
-                  {analysisSummary !== null && analysisSummary.summary !== "" && (
-                    <p className="audit-text">{analysisSummary.summary}</p>
-                  )}
-                  {architectureSummary !== null && architectureSummary.dataFlow !== "" && (
-                    <p className="audit-text">{architectureSummary.dataFlow}</p>
-                  )}
-                  <span className="label">{summaryCounts(analysisSummary, architectureSummary)}</span>
                   <div className="audit-button-row">
                     <Button onClick={() => void navigate(`/projects/${id}/analysis`)}>
                       View full analysis
@@ -401,16 +357,12 @@ export function ProjectDetailPage() {
               <>
                 {analyzerExec !== null && (
                   <Card>
-                    {analysisSummary !== null
-                      ? <AnalyzerResultView summary={analysisSummary} execution={analyzerExec} />
-                      : <PipelineRunStatus execution={analyzerExec} />}
+                    <PipelineRunStatus execution={analyzerExec} />
                   </Card>
                 )}
                 {architectExec !== null && (
                   <Card>
-                    {architectureSummary !== null
-                      ? <ArchitectureResultView description={architectureSummary} execution={architectExec} />
-                      : <PipelineRunStatus execution={architectExec} />}
+                    <PipelineRunStatus execution={architectExec} />
                   </Card>
                 )}
                 {orientationExec !== null && (
@@ -432,26 +384,6 @@ export function ProjectDetailPage() {
                     {semanticValidationSummary !== null
                       ? <SemanticValidationResultView summary={semanticValidationSummary} execution={semanticValidationExec} />
                       : <StageStatusView title="Semantic validation" result={semanticValidationExec.result} execution={semanticValidationExec} />}
-                  </Card>
-                )}
-                {architectureSummary !== null
-                  && (architectureSummary.diagramContainers !== "" || architectureSummary.diagramComponents !== "") && (
-                  <Card>
-                    <div className="audit-block">
-                      <h4 className="audit-title">Diagrams</h4>
-                      {architectureSummary.diagramContainers !== "" && (
-                        <>
-                          <span className="label">Containers</span>
-                          <MermaidDiagram chart={architectureSummary.diagramContainers} label="Containers diagram" />
-                        </>
-                      )}
-                      {architectureSummary.diagramComponents !== "" && (
-                        <>
-                          <span className="label">Components</span>
-                          <MermaidDiagram chart={architectureSummary.diagramComponents} label="Components diagram" />
-                        </>
-                      )}
-                    </div>
                   </Card>
                 )}
               </>
@@ -497,7 +429,7 @@ export function ProjectDetailPage() {
               ) : (
                 <Card>
                   {runStatuses}
-                  {[analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>Configuration used</h3>
                     <p className="label">Captured for {execution.agentType} #{execution.id}</p>
                     <dl>
@@ -527,23 +459,6 @@ export function ProjectDetailPage() {
 function fileLanguage(path: string): string {
   const dot = path.lastIndexOf(".")
   return dot < 0 ? "" : path.slice(dot + 1).toLowerCase()
-}
-
-/** One line of counts for the overview summary card. */
-function summaryCounts(
-  analysis: { keyComponents: string[] } | null,
-  architecture: { components: unknown[]; risks: unknown[]; qualityNotes: unknown[] } | null,
-): string {
-  const parts: string[] = []
-  if (analysis !== null && analysis.keyComponents.length > 0) {
-    parts.push(`${analysis.keyComponents.length} key component(s)`)
-  }
-  if (architecture !== null) {
-    parts.push(`${architecture.components.length} component(s)`)
-    parts.push(`${architecture.risks.length} risk(s)`)
-    parts.push(`${architecture.qualityNotes.length} quality note(s)`)
-  }
-  return parts.join(" · ")
 }
 
 /** One pipeline row of the tracked evaluation, if it is known. */

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestAnalysis, requestProjectArchitecture } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestProjectArchitecture } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -111,28 +111,6 @@ const waitingExecution = {
   startedAt: null,
   finishedAt: null,
 }
-
-describe("requestAnalysis", () => {
-  it("posts the selected version and returns both runs", async () => {
-    const seen: Array<{ url: string, body: unknown }> = []
-    const architectRun = { ...waitingExecution, id: 12, agentType: "architect" }
-    globalThis.fetch = (async (url: string, init?: { body?: string }) => {
-      seen.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") as unknown })
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: { analyzer: waitingExecution, architect: architectRun } }), { status: 201 })
-    }) as typeof fetch
-
-    const response = await requestAnalysis(2, "main", "a".repeat(40))
-
-    expect(response).toEqual({ versionId: 3, evaluationId: 7, executions: { analyzer: waitingExecution, architect: architectRun } })
-    expect(seen[0]?.url).toContain("/api/projects/2/analyze")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
-  })
-
-  it("reports a missing checkout with the backend message", async () => {
-    stubFetch(422, { message: "Project acme/Demo has no local checkout" })
-
-    await expect(requestAnalysis(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422, message: "Project acme/Demo has no local checkout" } as Partial<ApiError>)  })
-})
 
 describe("requestProjectArchitecture", () => {
   it("posts the selected version and returns all three runs", async () => {

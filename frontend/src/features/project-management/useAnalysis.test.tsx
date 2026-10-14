@@ -53,10 +53,10 @@ const waiting = {
   finishedAt: null,
 }
 
-const architectWaiting = { ...waiting, id: 12, agentType: "architect" }
+const validationWaiting = { ...waiting, id: 12, agentType: "semantic_validation" }
 
 function analyzeResponse() {
-  return { versionId: 3, evaluationId: 7, executions: { analyzer: waiting, architect: architectWaiting } }
+  return { versionId: 3, evaluationId: 7, executions: { orientation: waiting, architecture: { ...waiting, id: 13, agentType: "architecture" }, semantic_validation: validationWaiting } }
 }
 
 afterEach(() => {
@@ -80,7 +80,7 @@ describe("useAnalysis", () => {
     }
     globalThis.fetch = (async () => {
       const response = analyzeResponse()
-      return new Response(JSON.stringify({ ...response, executions: { ...response.executions, architect: { ...response.executions.architect, configuration } } }), { status: 201 })
+      return new Response(JSON.stringify({ ...response, executions: { ...response.executions, semantic_validation: { ...response.executions.semantic_validation, configuration } } }), { status: 201 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
@@ -99,32 +99,23 @@ describe("useAnalysis", () => {
     await act(async () => {
       FakeSocket.instances[0]?.push({
         type: "agent-execution.updated",
-        execution: { ...architectWaiting, status: "Completed", result: "{\"style\":\"layered\"}" },
+        execution: { ...validationWaiting, status: "Completed", result: "{\"verdict\":\"accepted\"}" },
       })
     })
 
     await waitFor(() => {
       expect(result.current.phase).toBe("done")
     })
-    expect(result.current.execution?.result).toBe("{\"style\":\"layered\"}")
+    expect(result.current.execution?.result).toBe("{\"verdict\":\"accepted\"}")
     expect(result.current.analyzing).toBe(false)
     expect(result.current.execution?.configuration).toEqual(configuration)
   })
 
   it("starts a project-architecture run against its endpoint tracking validation", async () => {
     const seen: string[] = []
-    const validationWaiting = { ...waiting, id: 23, agentType: "semantic_validation" }
     globalThis.fetch = (async (url: string) => {
       seen.push(String(url))
-      return new Response(JSON.stringify({
-        versionId: 3,
-        evaluationId: 7,
-        executions: {
-          orientation: { ...waiting, id: 21, agentType: "orientation" },
-          architecture: { ...waiting, id: 22, agentType: "architecture" },
-          semantic_validation: validationWaiting,
-        },
-      }), { status: 201 })
+      return new Response(JSON.stringify(analyzeResponse()), { status: 201 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
@@ -136,13 +127,13 @@ describe("useAnalysis", () => {
 
     expect(seen.some((url) => url.includes("/api/projects/2/architecture"))).toBe(true)
     expect(result.current.phase).toBe("tracking")
-    expect(result.current.execution?.id).toBe(23)
+    expect(result.current.execution?.id).toBe(12)
     expect(result.current.execution?.agentType).toBe("semantic_validation")
   })
 
   it("reports a failed start with the backend message", async () => {
     globalThis.fetch = (async () => {
-      return new Response(JSON.stringify({ message: "No agent type analyzer is registered" }), { status: 422 })
+      return new Response(JSON.stringify({ message: "No agent type orientation is registered" }), { status: 422 })
     }) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 
@@ -153,7 +144,7 @@ describe("useAnalysis", () => {
     })
 
     expect(result.current.phase).toBe("error")
-    expect(result.current.message).toBe("No agent type analyzer is registered")
+    expect(result.current.message).toBe("No agent type orientation is registered")
     expect(result.current.execution).toBeNull()
   })
 
@@ -175,7 +166,7 @@ describe("useAnalysis", () => {
   })
 
   it("lands the result through polling when the socket stays silent", async () => {
-    const completed = { ...architectWaiting, status: "Completed", result: "{\"style\":\"layered\"}" }
+    const completed = { ...validationWaiting, status: "Completed", result: "{\"verdict\":\"accepted\"}" }
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes("/agent-executions/")) {
         return new Response(JSON.stringify(completed), { status: 200 })
@@ -194,7 +185,7 @@ describe("useAnalysis", () => {
     await waitFor(() => {
       expect(result.current.phase).toBe("done")
     })
-    expect(result.current.execution?.result).toBe("{\"style\":\"layered\"}")
+    expect(result.current.execution?.result).toBe("{\"verdict\":\"accepted\"}")
   })
 
   it("reopens the last run after a reload", async () => {

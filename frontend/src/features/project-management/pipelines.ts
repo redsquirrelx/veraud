@@ -10,17 +10,8 @@ export interface PipelineOption {
   trackedStage: string
 }
 
-/** Pipelines the backend serves. Mirrors the agent-server registry; the
- *  backend has no listing endpoint, so this is explicit on purpose. */
+/** The pipeline the backend serves. A second entry revives the Analyze menu. */
 export const PIPELINES: PipelineOption[] = [
-  {
-    id: "architecture-audit",
-    label: "Classic audit",
-    description: "Analyzer then architect",
-    endpoint: "analyze",
-    stages: ["analyzer", "architect"],
-    trackedStage: "architect",
-  },
   {
     id: "project-architecture",
     label: "Project architecture",
