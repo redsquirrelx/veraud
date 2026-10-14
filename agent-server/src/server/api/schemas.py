@@ -45,11 +45,11 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = Field(
         default=None,
         description=(
-            "Token limit override. Null uses the base value, or 1000 when no "
+            "Token limit override. Null uses the base value, or 40000 when no "
             "base is configured. Provider-specific limits are not validated "
             "by this HTTP model."
         ),
-        examples=[1000],
+        examples=[40000],
     )
 
 

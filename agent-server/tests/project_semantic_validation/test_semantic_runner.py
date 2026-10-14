@@ -22,6 +22,8 @@ def test_standalone_and_integrated_smoke_preserve_original(tmp_path, capsys):
         "--json",
         "--max-total-tokens",
         "160000",
+        "--max-tokens",
+        "3000",
     ]
     assert architecture_main(args) == 0
     original = json.loads(capsys.readouterr().out)

@@ -428,7 +428,7 @@ def test_service_resolves_defaults_and_zero_overrides(api, monkeypatch):
             "provider": "gemini",
             "name": "example-model",
             "temperature": 0.2,
-            "max_tokens": 1000,
+            "max_tokens": 40000,
         },
         "key": "configured-key",
     }

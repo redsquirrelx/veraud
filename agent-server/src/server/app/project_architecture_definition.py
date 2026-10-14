@@ -61,14 +61,14 @@ class ProjectArchitectureInput(BaseModel):
     root_path: str = Field(description="Repository checkout to audit")
     max_files: int = Field(default=5000, ge=1)
     max_depth: int = Field(default=30, ge=0)
-    max_model_calls: int = Field(default=8, ge=1)
-    max_tool_calls: int = Field(default=20, ge=1)
-    max_total_tokens: int = Field(default=80000, ge=1000)
+    max_model_calls: int = Field(default=24, ge=1)
+    max_tool_calls: int = Field(default=32, ge=1)
+    max_total_tokens: int = Field(default=160000, ge=1000)
     max_input_tokens_per_call: int = Field(default=10000, ge=500)
-    max_objective_tokens: int = Field(default=40000, ge=1000)
-    max_output_tokens_per_call: int = Field(default=3000, ge=256)
+    max_objective_tokens: int = Field(default=80000, ge=1000)
+    max_output_tokens_per_call: int = Field(default=40000, ge=256)
     max_retrieved_characters: int = Field(default=150000, ge=1)
-    max_review_claims: int = Field(default=18, ge=1, le=64)
+    max_review_claims: int = Field(default=64, ge=1, le=64)
     include_orientation: bool = True
     validate_semantics: bool = True
     allow_return: bool = True

@@ -64,22 +64,25 @@ def build_parser(mode):
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--temperature", type=float, default=0)
     parser.add_argument(
-        "--max-tokens", type=int, default=3000, help="Provider output limit per call"
+        "--max-tokens",
+        type=int,
+        default=40000 if investigation else 3000,
+        help="Provider output limit per call",
     )
     parser.add_argument(
-        "--max-total-tokens", type=int, default=80000 if investigation else 60000
+        "--max-total-tokens", type=int, default=160000 if investigation else 60000
     )
     parser.add_argument(
         "--max-input-tokens", type=int, default=10000 if investigation else 6000
     )
     parser.add_argument(
-        "--max-objective-tokens", type=int, default=40000 if investigation else 20000
+        "--max-objective-tokens", type=int, default=80000 if investigation else 20000
     )
     parser.add_argument(
-        "--max-model-calls", type=int, default=8 if investigation else 4
+        "--max-model-calls", type=int, default=24 if investigation else 4
     )
     parser.add_argument(
-        "--max-tool-calls", type=int, default=20 if investigation else 6
+        "--max-tool-calls", type=int, default=32 if investigation else 6
     )
     parser.add_argument("--max-retrieved-characters", type=int, default=150000)
     parser.add_argument("--timeout", type=float, default=600)
@@ -137,7 +140,7 @@ def build_parser(mode):
             help="Exported ArchitectureResult JSON",
         )
     if investigation:
-        parser.add_argument("--max-review-claims", type=int, default=18)
+        parser.add_argument("--max-review-claims", type=int, default=64)
     return parser
 
 
@@ -284,10 +287,10 @@ async def run(arguments):
     architecture = arguments.mode == "architecture"
     budget = ExecutionBudget(
         max_model_calls=min(
-            8 if arguments.mode != "orientation" else 4, arguments.max_model_calls
+            24 if arguments.mode != "orientation" else 4, arguments.max_model_calls
         ),
         max_tool_calls=min(
-            20 if arguments.mode != "orientation" else 6, arguments.max_tool_calls
+            32 if arguments.mode != "orientation" else 6, arguments.max_tool_calls
         ),
         max_total_tokens=arguments.max_total_tokens,
         max_input_tokens_per_call=arguments.max_input_tokens,

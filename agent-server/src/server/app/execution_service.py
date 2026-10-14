@@ -152,7 +152,7 @@ class AgentExecutionService:
 
         max_tokens = config.model.max_tokens
         if max_tokens is None:
-            max_tokens = base_model.max_tokens if base_model else 1000
+            max_tokens = base_model.max_tokens if base_model else 40000
 
         timeout = config.timeout_seconds
         if timeout is None:

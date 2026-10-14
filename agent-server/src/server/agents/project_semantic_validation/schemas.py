@@ -48,7 +48,7 @@ class ProposedCorrection(AgentContract):
 
 class SemanticFinding(AgentContract):
     target_id: str = Field(min_length=1)
-    checked_statement: str = Field(min_length=1, max_length=1500)
+    checked_statement: str = Field(min_length=1, max_length=3000)
     verdict: Literal["supported", "overstated", "contradicted", "insufficient_evidence"]
     reason: str = Field(min_length=1, max_length=1200)
     counterevidence_check: str = Field(min_length=1, max_length=900)
@@ -89,9 +89,9 @@ class ValidationTurn(AgentContract):
 
 
 class ValidationLimits(AgentContract):
-    max_model_calls: int = Field(default=8, ge=1, le=12)
-    max_tool_calls: int = Field(default=16, ge=1, le=24)
-    max_claims: int = Field(default=18, ge=1, le=64)
+    max_model_calls: int = Field(default=24, ge=1, le=32)
+    max_tool_calls: int = Field(default=32, ge=1, le=32)
+    max_claims: int = Field(default=64, ge=1, le=64)
     batch_size: int = Field(default=4, ge=1, le=4)
     max_prompt_characters: int = Field(default=24000, ge=6000)
 

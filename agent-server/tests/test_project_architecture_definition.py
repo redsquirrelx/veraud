@@ -56,7 +56,9 @@ class TestInput:
     def test_defaults_mirror_cli_investigation(self):
         parsed = parse_project_architecture_input({"root_path": "/repo"})
         assert (parsed.max_files, parsed.max_depth) == (5000, 30)
-        assert (parsed.max_model_calls, parsed.max_tool_calls) == (8, 20)
+        assert (parsed.max_model_calls, parsed.max_tool_calls) == (24, 32)
+        assert parsed.max_review_claims == 64
+        assert parsed.max_output_tokens_per_call == 40000
         assert parsed.include_orientation is True
         assert parsed.validate_semantics is True
         assert parsed.allow_return is True
