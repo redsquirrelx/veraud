@@ -1,14 +1,15 @@
 import asyncio
+from collections.abc import Callable
 from functools import lru_cache
 
 from pydantic import BaseModel, ValidationError
 
-from ..agents.analyzer.agent import ProjectAnalyzerAgent
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
 from ..agents.models.anthropic import AnthropicModel
 from ..agents.models.base import Model
 from ..agents.models.gemini import GeminiModel
+from ..agents.models.groq import GroqModel
 from ..agents.models.openrouter import OpenRouterModel
 from ..api.schemas import ExecutionConfig
 from ..config import tracing
@@ -19,9 +20,14 @@ from ..config.schemas import (
     ModelCredentials,
     ModelSettings,
 )
-from ..infrastructure.callback.client import CallbackClient
-from ..infrastructure.callback.schemas import CallbackConfig, ExecutionOutcome
+from ..infrastructure.callback.schemas import ExecutionOutcome
 from .agent_registry import AgentRegistry
+from .callback_port import (
+    CallbackSink,
+    backend_url,
+    default_callback_sink,
+)
+from .tracing_port import LangSmithTracingBackend, TracingBackend
 
 logger = get_logger("execution-service")
 
@@ -37,17 +43,10 @@ class InvalidInputError(ValueError):
 def _backend_url() -> str | None:
     """Where to report progress, from PORT_BACKEND, or None if unavailable.
 
-    Imported here rather than at module level so that everything in this package
-    still imports when there is no .env, which the dev runners rely on.
+    Kept here for backwards compatibility; new code should import
+    `backend_url` from `.callback_port`.
     """
-    try:
-        from ..config.settings import get_server_settings
-
-        settings = get_server_settings()
-    except ValidationError:
-        return None
-
-    return f"http://localhost:{settings.port_backend}"
+    return backend_url()
 
 
 def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model:
@@ -61,17 +60,19 @@ def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model
     if provider in ("openrouter", "openai"):
         return OpenRouterModel(settings=settings, credentials=credentials)
 
+    if provider == "groq":
+        return GroqModel(settings=settings, credentials=credentials)
+    
     if provider == "anthropic":
         return AnthropicModel(settings=settings, credentials=credentials)
-    
+
     raise InvalidConfigError(f"Unsupported model provider: {settings.provider!r}")
 
 
 def build_default_registry() -> AgentRegistry:
     registry = AgentRegistry()
-    
+
     registry.register(DummyAgent.agent_type, DummyAgent)
-    registry.register(ProjectAnalyzerAgent.agent_type, ProjectAnalyzerAgent)
 
     return registry
 
@@ -79,11 +80,23 @@ def build_default_registry() -> AgentRegistry:
 class AgentExecutionService:
     """Stateless manager: instantiates the agent matching agent_type,
     assigns it the base config from dev_agents_config (overridden by the
-    request), and runs it."""
+    request), and runs it.
 
-    def __init__(self, registry: AgentRegistry | None = None) -> None:
+    `tracing` and `callbacks_factory` are injectable ports (Phase 1): production
+    uses the LangSmith backend and the HTTP backend sink; tests inject
+    recorders or no-ops. Defaults preserve the previous behaviour.
+    """
+
+    def __init__(
+        self,
+        registry: AgentRegistry | None = None,
+        tracing_backend: TracingBackend | None = None,
+        callbacks_factory: Callable[[], CallbackSink | None] | None = None,
+    ) -> None:
         self._registry = registry or build_default_registry()
         self._base_config = load_dev_agents_config()
+        self._tracing = tracing_backend or LangSmithTracingBackend()
+        self._callbacks_factory = callbacks_factory or default_callback_sink
 
         # Before any agent runs, so the LangSmith flags are in place by the
         # time the first graph builds its tracer.
@@ -104,30 +117,42 @@ class AgentExecutionService:
             "output_schema": agent_cls.output_schema.model_json_schema(),
         }
 
-    def build_agent(
+    def resolve_model_settings(
         self, agent_type: str, config: ExecutionConfig
-    ) -> tuple[BaseAgent, int]:
-        logger.info("Instantiating agent %r", agent_type)
-        agent_cls = self._registry.get(agent_type)
+    ) -> tuple[ModelSettings, ModelCredentials, int]:
+        """Merge request overrides over server defaults for one stage.
 
+        Shared by `build_agent` and pipeline definitions whose agents are not
+        `BaseAgent`s (e.g. project-architecture stages): the merge, the groq
+        name guard and the dev-key fallback live here exactly once.
+        """
         base_settings, base_model = self._base_config.get(agent_type, (None, None))
 
         provider = config.model.provider or (
             base_model.provider if base_model else "gemini"
         )
 
+        if (
+            provider.lower() == "groq"
+            and not config.model.name
+            and (base_model is None or base_model.provider.lower() != "groq")
+        ):
+            raise InvalidConfigError(
+                "model.name is required when switching to provider 'groq'"
+            )
+
         name = config.model.name or (base_model.name if base_model else None)
-        
+
         if not name:
             raise InvalidConfigError("model.name is required for this agent_type")
-        
+
         temperature = config.model.temperature
         if temperature is None:
             temperature = base_model.temperature if base_model else 0.2
 
         max_tokens = config.model.max_tokens
         if max_tokens is None:
-            max_tokens = base_model.max_tokens if base_model else 1000
+            max_tokens = base_model.max_tokens if base_model else 40000
 
         timeout = config.timeout_seconds
         if timeout is None:
@@ -142,7 +167,7 @@ class AgentExecutionService:
         except ValidationError:
             api_key = "dev-dummy-key"
 
-        model = build_model(
+        return (
             ModelSettings(
                 provider=provider,
                 name=name,
@@ -150,7 +175,18 @@ class AgentExecutionService:
                 max_tokens=max_tokens,
             ),
             ModelCredentials(api_key=api_key),
+            timeout,
         )
+
+    def build_agent(
+        self, agent_type: str, config: ExecutionConfig
+    ) -> tuple[BaseAgent, int]:
+        logger.info("Instantiating agent %r", agent_type)
+        agent_cls = self._registry.get(agent_type)
+
+        settings, credentials, timeout = self.resolve_model_settings(agent_type, config)
+
+        model = build_model(settings, credentials)
 
         agent = agent_cls(
             settings=AgentSettings(agent_id=agent_type, timeout_seconds=timeout),
@@ -159,7 +195,7 @@ class AgentExecutionService:
 
         logger.info(
             "Instantiated agent %r model=%r timeout=%ss",
-            agent_type, name, timeout,
+            agent_type, settings.name, timeout,
         )
 
         return agent, timeout
@@ -206,7 +242,7 @@ class AgentExecutionService:
         try:
             await self._mark_running(callbacks, execution_id)
 
-            result = await tracing.traced_agent_run(
+            result = await self._tracing.wrap_stage(
                 asyncio.wait_for(agent.run(agent_input), timeout),
                 name=agent_type,
                 model=agent.model.settings.name,
@@ -229,14 +265,13 @@ class AgentExecutionService:
             if callbacks is not None:
                 await callbacks.aclose()
 
-    @staticmethod
-    def _callbacks(execution_id: int | None) -> CallbackClient | None:
-        """A client for reporting this run, or None when nobody asked for one."""
+    def _callbacks(self, execution_id: int | None) -> CallbackSink | None:
+        """A sink for reporting this run, or None when nobody asked for one."""
         if execution_id is None:
             return None
 
-        backend_url = _backend_url()
-        if backend_url is None:
+        callbacks = self._callbacks_factory()
+        if callbacks is None:
             logger.warning(
                 "execution_id=%s given but no backend url is configured, "
                 "so progress cannot be reported",
@@ -244,10 +279,10 @@ class AgentExecutionService:
             )
             return None
 
-        return CallbackClient(CallbackConfig(backend_url=backend_url))
+        return callbacks
 
     async def _mark_running(
-        self, callbacks: CallbackClient | None, execution_id: int | None
+        self, callbacks: CallbackSink | None, execution_id: int | None
     ) -> None:
         if callbacks is None or execution_id is None:
             return
@@ -256,7 +291,7 @@ class AgentExecutionService:
 
     async def _report(
         self,
-        callbacks: CallbackClient | None,
+        callbacks: CallbackSink | None,
         execution_id: int | None,
         result: BaseModel,
     ) -> None:
@@ -275,7 +310,7 @@ class AgentExecutionService:
 
     async def _report_failure(
         self,
-        callbacks: CallbackClient | None,
+        callbacks: CallbackSink | None,
         execution_id: int | None,
         error: str,
     ) -> None:

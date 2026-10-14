@@ -72,7 +72,7 @@ describe("useAnalyzedVersions", () => {
       analysisStatus: "Pending",
       analyzedAt: null,
       evaluationId: 7,
-      execution: null,
+      executions: [],
       derivedStatus: "Completed",
     })).toBe(`main @ ${"b".repeat(7)} · Completed`)
     expect(analyzedLabel({
@@ -82,7 +82,7 @@ describe("useAnalyzedVersions", () => {
       analysisStatus: "Pending",
       analyzedAt: null,
       evaluationId: null,
-      execution: null,
+      executions: [],
       derivedStatus: "NeverAnalyzed",
     })).toBe("? @ ? · NeverAnalyzed")
   })

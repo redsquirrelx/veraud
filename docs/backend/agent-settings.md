@@ -7,8 +7,9 @@ the response under **Agent Settings** at `/docs`.
 ## Source of available agents
 
 `agent-types.ts` defines the shared backend catalog, currently containing
-`analyzer` and `dummy`. The project-analysis workflow uses the same `ANALYZER_AGENT_TYPE`
-constant. The frontend renders the backend response without its own type list.
+`dummy`, `orientation`, `architecture` and `semantic_validation`. The
+project-architecture workflow uses the shared stage constants. The frontend
+renders the backend response without its own type list.
 
 Each declared type appears even if it has no saved configuration. Settings for
 other types are omitted. The endpoint
@@ -96,8 +97,10 @@ verified pairs, so revoked keys are not trusted based on an old success. Missing
 assignments, mismatched providers, invalid generation parameters and denied access
 block the start with `422`, including `agents: [{ agentType, reason }]`.
 `prepareExecution(agentTypes)` checks all required types and collects their issues
-before a workflow creates any records. Project analysis currently requires only
-`analyzer`; `dummy` can be invoked through the direct execution endpoint.
+before a workflow creates any records. Project analysis requires
+`orientation`, `architecture` and `semantic_validation`, each with its own
+saved configuration. Individual agents can also
+be invoked through the direct execution endpoint with their schema-specific input.
 
 After successful checks, the backend captures an immutable public configuration
 snapshot in `agent_execution.configuration_snapshot`. `configuration` is returned

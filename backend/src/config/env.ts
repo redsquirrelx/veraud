@@ -57,6 +57,9 @@ export const env = Object.freeze({
   PORT_BACKEND:         getPort("PORT_BACKEND"),
   PORT_AGENTSERVER:     getPort("PORT_AGENTSERVER"),
   DATABASE_URL:         getText("DATABASE_URL"),
+  /** Optional checkout root shared with the agent-server. Empty means the
+   *  repo appdata/workspace next to DATABASE_URL. */
+  WORKSPACE_DIR:        process.env["WORKSPACE_DIR"]?.trim() ?? "",
 })
 
 if (errors.length > 0) {

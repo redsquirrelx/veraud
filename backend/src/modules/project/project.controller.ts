@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify"
 import { branchInput, commitHashInput, errorResponses, objectResponse } from "../../infrastructure/openapi/routeSchemas.js"
 import { RepoNotAccessibleError } from "../../infrastructure/github-client/github.client.js"
 import { UnknownExecutionTargetError, type StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
+import { DuplicateProjectError, AnalysisAlreadyRunningError, AnalysisInProgressError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, SyncInProgressError, WorkspaceMissingError } from "./project.service.js"
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
-import { DuplicateProjectError, AnalysisAlreadyRunningError, GitOperationError, InvalidGitRequestError, InvalidUrlError, ProjectFileError, ProjectNotFoundError, ProjectService, SyncFailedError, WorkspaceMissingError } from "./project.service.js"
 
 const idParams = {
   type: "object",
@@ -67,7 +67,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof ProjectNotFoundError) {
         return reply.code(404).send({ message: error.message })
       }
-      if (error instanceof SyncFailedError) {
+      if (error instanceof SyncFailedError || error instanceof AnalysisInProgressError) {
         return reply.code(422).send({ message: error.message })
       }
       throw error
@@ -278,11 +278,11 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     }
   })
 
-  app.post("/api/projects/:id/analyze", {
+  app.post("/api/projects/:id/architecture", {
     schema: {
-      tags: ["Projects"], summary: "Start analysis of a project version",
-      description: "Verifies the analyzer's saved model and credential through a live access check before transactionally selecting the version and creating evaluation/execution records. Invalid access returns 422 with affected agents and creates no partial analysis. Captures the configuration and starts the analyzer in the background. Does not check out the commit. Rejects an already-open execution for the same commit; completion arrives later through callbacks/WebSocket.",
-      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, execution: { $ref: "AgentExecution#" } }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
+      tags: ["Projects"], summary: "Start project-architecture analysis of a project version",
+      description: "Verifies the orientation, architecture and semantic_validation saved configurations before transactionally selecting the version and creating one evaluation with one execution per stage. Invalid access returns 422 with affected agents and creates no partial analysis. Starts the project-architecture pipeline in the background with explicit per-stage configuration. Does not check out the commit. Completion arrives through callbacks/WebSocket; executions is keyed by stage name.",
+      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, executions: objectResponse({ orientation: { $ref: "AgentExecution#" }, architecture: { $ref: "AgentExecution#" }, semantic_validation: { $ref: "AgentExecution#" } }) }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
       params: idParams,
       body: {
         type: "object",
@@ -298,11 +298,15 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     const body = request.body as { branch: string; commitHash: string }
 
     try {
-      const result = await service.analyzeProject(Number(params.id), body.branch, body.commitHash)
+      const result = await service.analyzeProjectArchitecture(Number(params.id), body.branch, body.commitHash)
       return reply.code(201).send({
         versionId: result.versionId,
         evaluationId: result.evaluationId,
-        execution: toExecution(result.execution),
+        executions: {
+          orientation: toExecution(result.executions.orientation),
+          architecture: toExecution(result.executions.architecture),
+          semantic_validation: toExecution(result.executions.semantic_validation),
+        },
       })
     } catch (error) {
       if (error instanceof ProjectNotFoundError) {
@@ -311,7 +315,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
       if (error instanceof InvalidGitRequestError) {
         return reply.code(400).send({ message: error.message })
       }
-      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError) {
+      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
         return reply.code(422).send({ message: error.message })
       }
       if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
@@ -336,6 +340,7 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
         analyzedAt: version.analyzedAt,
         evaluationId: version.evaluationId,
         execution: version.execution === null ? null : toExecution(version.execution),
+        executions: version.executions.map((execution) => toExecution(execution)),
         derivedStatus: version.derivedStatus,
       })))
     } catch (error) {

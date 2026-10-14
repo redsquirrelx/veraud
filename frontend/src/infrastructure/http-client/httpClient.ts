@@ -206,14 +206,14 @@ export interface AgentExecution {
   finishedAt: string | null
 }
 
-export interface AnalysisRequest {
+export interface ProjectArchitectureRequest {
   versionId: number
   evaluationId: number
-  execution: AgentExecution
+  executions: { orientation: AgentExecution; architecture: AgentExecution; semantic_validation: AgentExecution }
 }
 
-export async function requestAnalysis(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/analyze`, {
+export async function requestProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureRequest> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/architecture`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ branch, commitHash }),
@@ -226,7 +226,7 @@ export async function requestAnalysis(id: number, branch: string, commitHash: st
     throw new ApiError(response.status, body.message ?? "Could not analyze the project")
   }
 
-  return body as AnalysisRequest
+  return body as ProjectArchitectureRequest
 }
 
 export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
@@ -246,7 +246,9 @@ export interface VersionAnalysisSummary {
   analysisStatus: string
   analyzedAt: string | null
   evaluationId: number | null
-  execution: AgentExecution | null
+  executions: AgentExecution[]
+  /** Analyzer (or first historical run), null when the evaluation has no runs. */
+  execution?: AgentExecution | null
   derivedStatus: string
 }
 

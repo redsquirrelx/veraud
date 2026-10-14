@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { BACKEND_AGENT_TYPES } from "../modules/agent-settings/agent-types.js"
 
 describe("OpenAPI portal", () => {
   it("serves Swagger UI, its assets, and the discovered backend specification", async () => {
@@ -70,7 +71,7 @@ describe("OpenAPI portal", () => {
         "POST /api/ai-providers/{id}/credentials",
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
-        "POST /api/projects/{id}/analyze",
+        "POST /api/projects/{id}/architecture",
         "POST /api/projects/{id}/file",
         "POST /api/projects/{id}/git/branches",
         "POST /api/projects/{id}/git/checkout",
@@ -108,10 +109,15 @@ describe("OpenAPI portal", () => {
       assert.deepEqual(missingExecution.json(), { error: "Agent execution 0 not found" })
       const agentSettings = await app.inject({ method: "GET", url: "/api/agent-settings" })
       assert.equal(agentSettings.statusCode, 200)
-      assert.deepEqual(agentSettings.json(), [
-        { agentType: "analyzer", configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null } },
-        { agentType: "dummy", configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null } },
-      ])
+      assert.deepEqual(agentSettings.json(), [...BACKEND_AGENT_TYPES].sort().map((agentType) => ({
+        agentType, configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null },
+      })))
+      const architectureResponse = specification.paths["/api/projects/{id}/architecture"].post.responses["201"].content["application/json"].schema
+      assert.ok(architectureResponse.properties.executions.properties.orientation)
+      assert.ok(architectureResponse.properties.executions.properties.architecture)
+      assert.ok(architectureResponse.properties.executions.properties.semantic_validation)
+      const dereferenced = await SwaggerParser.dereference(structuredClone(specification)) as typeof specification
+      assert.ok(dereferenced.paths["/api/projects/{id}/versions"].get.responses["200"].content["application/json"].schema.items.properties.executions)
     } finally {
       await app.close()
       await db.$disconnect()

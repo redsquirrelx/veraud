@@ -5,7 +5,7 @@ Consult `/docs` for current request/response definitions and examples.
 ## Discover, inspect, execute
 
 1. Call `GET /api/agents` to discover registered agent names. Currently this
-   returns `["analyzer", "dummy"]` in alphabetical order.
+   returns `["dummy"]` in alphabetical order.
 2. Call `GET /api/agents/{agent_type}/schema` for the selected agent. Its
    `input_schema` describes the `input` object; `output_schema` describes the
    returned `result`. These are Pydantic-generated JSON Schema documents.
@@ -46,33 +46,6 @@ The examples require suitable provider credentials and are not offline runs.
 
 The output includes the evaluated attribute, a score, findings and
 recommendations. Omitting `evaluated_attribute` uses `maintainability`.
-
-### Analyzer: describe a repository
-
-```json
-{
-  "agent_type": "analyzer",
-  "config": {
-    "model": {
-      "provider": "openrouter",
-      "name": "openai/gpt-oss-120b"
-    },
-    "timeout_seconds": 120
-  },
-  "input": {
-    "root_path": "C:/workspace/example-repository",
-    "max_files": 500,
-    "max_depth": 8,
-    "max_read_rounds": 2,
-    "max_files_per_round": 8
-  }
-}
-```
-
-`root_path` must be accessible on the agent-server filesystem, not the browser's
-machine. The collection options shown are the input model defaults. The output
-describes project kind, summary, language, entrypoints, key components and the
-evidence behind the description.
 
 ## Configuration resolution
 
@@ -126,8 +99,8 @@ a JSON-string result. The backend owns the execution row and its ID.
 
 ## Errors
 
-- `404`: unregistered agent. The YAML's `architect` entry is currently not
-  registered; discover names from `/api/agents` instead of the config file.
+- `404`: unregistered agent. Config-file entries are not necessarily
+  registered agents; discover names from `/api/agents` instead.
 - `422`: FastAPI request validation returns a `detail` array; domain failures
   for configuration, agent input or missing files return a `detail` string.
 - `504`: `{"detail":"Agent execution timed out"}`.

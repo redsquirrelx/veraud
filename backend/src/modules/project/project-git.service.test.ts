@@ -57,6 +57,7 @@ function makeService(options: {
       createEvaluation: async () => { throw new Error("not used") },
       listVersions: async () => { throw new Error("not used") },
       findOpenExecution: async () => { throw new Error("not used") },
+      findAnyOpenExecution: async () => { throw new Error("not used") },
     },
     new TaskService(
       {
@@ -79,7 +80,9 @@ function makeService(options: {
     ),
     new GithubClient(),
     workspaceDir,
-    { open: async () => { throw new Error("not used") }, openForProject: async () => { throw new Error("not used") } }
+    {
+      openProjectArchitecturePipelineForProject: async () => { throw new Error("not used") },
+    }
   )
 
   return { service, enqueued, created, workspaceDir }

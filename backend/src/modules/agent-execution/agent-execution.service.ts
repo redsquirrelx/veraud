@@ -5,6 +5,8 @@ import type { AgentTargetResolver } from "../../infrastructure/agent-target/agen
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
+import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
+import { PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -19,6 +21,13 @@ export class AgentExecutionNotFoundError extends Error {
     super(`Agent execution ${id} not found`)
     this.name = "AgentExecutionNotFoundError"
   }
+}
+
+/** The rows one project-architecture pipeline drives, keyed by stage name. */
+export interface ProjectArchitectureExecutions {
+  orientation: StoredAgentExecution
+  architecture: StoredAgentExecution
+  semantic_validation: StoredAgentExecution
 }
 
 export class InvalidCompletionError extends Error {
@@ -102,12 +111,21 @@ export class AgentExecutionService {
     return execution
   }
 
-  async openForProject(projectId: number, branch: string, commitHash: string, agentType: string) {
-    const [configuration] = await this.settings.prepareExecution([agentType])
-    const result = await this.executions.createForProject(projectId, branch, commitHash, configuration!)
-    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(result.execution) })
-    void this.dispatch(result.execution, configuration!.transport)
-    return result
+  async openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
+    const configurations = await this.settings.prepareExecution([...PROJECT_ARCHITECTURE_PIPELINE_STAGES])
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations)
+    const executions = {
+      orientation: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[0]]!,
+      architecture: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[1]]!,
+      semantic_validation: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[2]]!,
+    }
+    for (const execution of Object.values(executions)) {
+      this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    }
+    const configs: Record<string, AgentRunConfig> = {}
+    for (const configuration of configurations) configs[configuration.agentType] = configuration.transport
+    void this.dispatchPipelineByName(PROJECT_ARCHITECTURE_PIPELINE_NAME, executions, configs)
+    return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
   /** Starts the agent and then gets out of the way. Never throws: a failure here
@@ -137,6 +155,83 @@ export class AgentExecutionService {
       await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /** Starts any registered pipeline by name and then gets out of the way.
+   *  Never throws: a failure here fails every row, because no stage got far
+   *  enough to report for itself.
+   *
+   *  The pipeline-level diagram (mermaid) is not a stage row: once the run
+   *  returns it is merged into the finished architecture row, so the frontend
+   *  can render it from the same result it already parses. */
+  private async dispatchPipelineByName(pipeline: string, executions: Record<string, StoredAgentExecution>, configs: Record<string, AgentRunConfig>): Promise<void> {
+    const ids = Object.keys(executions)
+    try {
+      const first = executions[ids[0]!]!
+      if (first.evaluationId === null) {
+        throw new Error(`Execution ${first.id} has no evaluation to resolve`)
+      }
+
+      if (this.agents.runPipelineByName === undefined) {
+        throw new Error("The agent invoker does not support pipelines")
+      }
+
+      const input = await this.targets.resolve(first.evaluationId)
+      const executionIds: Record<string, number> = {}
+      for (const [stage, execution] of Object.entries(executions)) executionIds[stage] = execution.id
+
+      const payload = await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path) }, executionIds, configs)
+      await this.attachDiagram(executions["architecture"], payload)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      for (const execution of Object.values(executions)) await this.fail(execution.id, message)
+    }
+  }
+
+  /** Merges the pipeline-level rendered diagram into the finished
+   *  architecture row. Never throws: a missing diagram only means the
+   *  frontend falls back to the structured counts. */
+  private async attachDiagram(architecture: StoredAgentExecution | undefined, payload: unknown): Promise<void> {
+    try {
+      if (architecture === undefined) return
+      const diagram = (payload as { diagram?: unknown } | null)?.diagram
+      if (typeof diagram !== "object" || diagram === null) return
+      const diagramRecord = diagram as Record<string, unknown>
+      const { mermaid, report_origin, report_hash } = diagramRecord
+      if (typeof mermaid !== "string" || mermaid.trim() === "") return
+
+      const current = await this.executions.findById(architecture.id)
+      if (current === null || current.status !== "Completed" || current.result === null) return
+      let record: Record<string, unknown>
+      try {
+        const parsed: unknown = JSON.parse(current.result)
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return
+        record = parsed as Record<string, unknown>
+      } catch {
+        return
+      }
+      if (typeof record["architecture_diagram"] === "object" && record["architecture_diagram"] !== null) return
+
+      const patched = await this.executions.patchResult(
+        architecture.id,
+        JSON.stringify({
+          ...record,
+          architecture_diagram: {
+            mermaid,
+            structure: diagramRecord["structure"],
+            views: Array.isArray(diagramRecord["views"]) ? diagramRecord["views"] : [],
+            legend: Array.isArray(diagramRecord["legend"]) ? diagramRecord["legend"] : [],
+            deviation_notes: Array.isArray(diagramRecord["deviation_notes"]) ? diagramRecord["deviation_notes"] : [],
+            limitations: Array.isArray(diagramRecord["limitations"]) ? diagramRecord["limitations"] : [],
+            report_origin: typeof report_origin === "string" ? report_origin : "original",
+            ...(typeof report_hash === "string" ? { report_hash } : {}),
+          },
+        }),
+      )
+      this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(patched) })
+    } catch (error) {
+      this.log.error(`Could not attach the diagram to execution ${architecture?.id}: ${error}`)
     }
   }
 
@@ -173,7 +268,7 @@ export class AgentExecutionService {
   }
 
   private async close(id: number, completion: AgentExecutionCompletion): Promise<void> {
-    const execution = await this.executions.complete(id, completion)
+    const execution = await this.complete(id, completion)
 
     this.log.info(`Execution ${id} closed as ${execution.status}`)
 

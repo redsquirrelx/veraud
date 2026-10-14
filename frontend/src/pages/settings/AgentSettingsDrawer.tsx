@@ -110,10 +110,10 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
           <div className="settings-agent-parameter">
             <label className="ui-text-input">
             <span className="ui-item-legend">Maximum tokens</span>
-            <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={maxTokens} placeholder="Default" disabled={saving}
+            <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={maxTokens} placeholder="Default: 40,000" disabled={saving}
               aria-invalid={!tokensValid} onChange={(event) => { setMaxTokens(event.target.value); setError("") }} />
             </label>
-            <span className="settings-hint">A positive integer limiting generated output.</span>
+            <span className="settings-hint">A positive integer limiting generated output. Default: 40,000 tokens when left empty, unless a server-side agent default is configured.</span>
           </div>
         </div>
         {!temperatureValid && <p className="settings-error" role="alert">Temperature must be between 0 and 2.</p>}

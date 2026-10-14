@@ -47,10 +47,10 @@ function serviceWith(rows: StoredProjectDetails[]) {
     createEvaluation: async () => { throw new Error("not used here") },
     listVersions: async () => { throw new Error("not used here") },
     findOpenExecution: async () => { throw new Error("not used here") },
+    findAnyOpenExecution: async () => { throw new Error("not used here") },
   }
   return new ProjectService(projects, null as never, new GithubClient(), "", {
-    open: async () => { throw new Error("not used here") },
-    openForProject: async () => { throw new Error("not used here") },
+    openProjectArchitecturePipelineForProject: async () => { throw new Error("not used here") },
   })
 }
 

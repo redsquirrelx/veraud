@@ -68,10 +68,10 @@ info:
     transition.
 
 
-    Task lifecycle: Queued ΓåÆ Running ΓåÆ Succeded or Failed (Succeded is the existing spelling). The
-    running callback for an execution is optional: a run can go from Waiting directly to Completed
-    or Failed. No initial state or history is sent on connection; recover available state through
-    HTTP.
+    Task lifecycle: Queued ΓåÆ Running ΓåÆ Succeded or Failed (Succeded is the existing spelling).
+    The running callback for an execution is optional: a run can go from Waiting directly to
+    Completed or Failed. No initial state or history is sent on connection; recover available state
+    through HTTP.
   license:
     name: ISC
 defaultContentType: application/json

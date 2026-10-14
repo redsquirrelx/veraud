@@ -21,7 +21,7 @@ class ModelConfig(BaseModel):
         default=None,
         description=(
             "Model provider override. Supported names are gemini/google and "
-            "openrouter/openai and anthropic (case-insensitive). Null or an empty string uses "
+            "openrouter/openai, groq and anthropic (case-insensitive). Null or an empty string uses "
             "the agent's base provider, or gemini when no base is configured."
         ),
         examples=["openrouter"],
@@ -45,11 +45,11 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = Field(
         default=None,
         description=(
-            "Token limit override. Null uses the base value, or 1000 when no "
+            "Token limit override. Null uses the base value, or 40000 when no "
             "base is configured. Provider-specific limits are not validated "
             "by this HTTP model."
         ),
-        examples=[1000],
+        examples=[40000],
     )
 
 

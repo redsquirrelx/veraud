@@ -1,10 +1,24 @@
 import ast
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from ...config.logs import get_logger
 
 logger = get_logger("service.depgraph.extractors")
+
+try:
+    import tree_sitter_javascript as _ts_javascript
+    import tree_sitter_typescript as _ts_typescript
+    from tree_sitter import Language as _TsLanguage
+    from tree_sitter import Parser as _TsParser
+    from tree_sitter import Query as _TsQuery
+    from tree_sitter import QueryCursor as _TsQueryCursor
+
+    _TREE_SITTER_AVAILABLE = True
+except ImportError:  # pragma: no cover - missing optional dependency
+    logger.warning("tree-sitter grammars missing: typescript/javascript get no import records")
+    _TREE_SITTER_AVAILABLE = False
 
 
 @dataclass(frozen=True)
@@ -167,7 +181,9 @@ class PythonImportExtractor(ImportExtractor):
 
     def extract(self, source: str) -> list[ImportRecord]:
         try:
-            tree = ast.parse(source)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(source)
         except SyntaxError as error:
             logger.debug("skipping unparseable python: %s", error)
             return []
@@ -182,12 +198,175 @@ def build_default_extractors() -> dict[str, ImportExtractor]:
     """Map each supported language to the extractor that handles it."""
     extractors: dict[str, ImportExtractor] = {}
 
-    for extractor in (PythonImportExtractor(),):
+    for extractor in (PythonImportExtractor(), TypeScriptImportExtractor()):
         for language in extractor.languages:
             extractors[language] = extractor
 
     logger.info("Import extractors registered for: %s", sorted(extractors))
     return extractors
+
+
+class TypeScriptImportExtractor(ImportExtractor):
+    """Static `import` / `export ... from` plus literal `require()` / `import()`.
+
+    Covers typescript, tsx, javascript and jsx through two grammars: the
+    extractor tries each and merges what parses. A call with a non-literal
+    argument is dynamic (resolvable at runtime only), mirroring how Python
+    treats `__import__` with an expression. Never raises.
+    """
+
+    languages = frozenset({"typescript", "javascript"})
+
+    _QUERY = """
+    (import_statement) @import_stmt
+    (export_statement) @export_stmt
+    (call_expression) @call
+    """
+
+    def __init__(self) -> None:
+        self._grammars: list[tuple[str, object]] = []
+
+        if not _TREE_SITTER_AVAILABLE:
+            return
+
+        try:
+            self._grammars = [
+                ("tsx", _TsLanguage(_ts_typescript.language_tsx())),
+                ("javascript", _TsLanguage(_ts_javascript.language())),
+            ]
+        except Exception as error:  # noqa: BLE001 - grammar load is version-sensitive
+            logger.warning("tree-sitter grammars unusable: %s", error)
+            self._grammars = []
+
+    def extract(self, source: str) -> list[ImportRecord]:
+        if not self._grammars:
+            return []
+
+        try:
+            blob = source.encode("utf-8", errors="ignore")
+        except Exception as error:  # noqa: BLE001 - defensive: never raise
+            logger.debug("skipping unencodable source: %s", error)
+            return []
+
+        records: list[ImportRecord] = []
+
+        for name, language in self._grammars:
+            try:
+                tree = _TsParser(language).parse(blob)
+                matches = _TsQueryCursor(_TsQuery(language, self._QUERY)).matches(tree.root_node)
+                pairs = list(matches)
+            except Exception as error:  # noqa: BLE001 - grammar/query mismatch
+                logger.debug("skipping tree-sitter %s pass: %s", name, error)
+                continue
+
+            for _pattern, captures in pairs:
+                for capture, nodes in captures.items():
+                    for node in nodes:
+                        record = self._record(capture, node, blob)
+                        if record is not None:
+                            records.append(record)
+
+        return _dedupe(records)
+
+    def _record(self, capture: str, node, blob: bytes) -> ImportRecord | None:
+        """One record for a captured statement, or None when it imports nothing."""
+        try:
+            if capture == "import_stmt":
+                return self._import_record(node, blob)
+            if capture == "export_stmt":
+                return self._export_record(node, blob)
+            if capture == "call":
+                return self._call_record(node, blob)
+        except Exception as error:  # noqa: BLE001 - defensive: never raise
+            logger.debug("skipping import node: %s", error)
+        return None
+
+    def _import_record(self, node, blob: bytes) -> ImportRecord | None:
+        specifier = _statement_source(node, blob)
+        if specifier is None:
+            return None
+
+        text = blob[node.start_byte:node.end_byte].decode("utf-8", errors="replace").lstrip()
+        line = node.start_point[0] + 1
+
+        if text.startswith("import type"):
+            return ImportRecord(specifier, 0, "type_only", True, line)
+
+        if _has_child(node, "import_clause"):
+            return ImportRecord(specifier, 0, "from_import", True, line)
+
+        # Bare `import "./setup"`: a side effect, no names.
+        return ImportRecord(specifier, 0, "import", False, line)
+
+    def _export_record(self, node, blob: bytes) -> ImportRecord | None:
+        # `export { x }` without a source exports nothing from elsewhere.
+        specifier = _statement_source(node, blob)
+        if specifier is None:
+            return None
+
+        return ImportRecord(specifier, 0, "reexport", True, node.start_point[0] + 1)
+
+    def _call_record(self, node, blob: bytes) -> ImportRecord | None:
+        function = node.child_by_field_name("function")
+        if function is None:
+            return None
+
+        name = (
+            blob[function.start_byte:function.end_byte].decode("utf-8", errors="replace")
+            if function.type == "identifier"
+            else "import"
+            if function.type == "import"
+            else None
+        )
+        if name not in ("require", "import"):
+            return None
+
+        line = node.start_point[0] + 1
+        arguments = node.child_by_field_name("arguments")
+        named = arguments.named_children if arguments is not None else []
+        first = named[0] if named else None
+
+        if first is not None and first.type == "string" and _is_plain_string(first):
+            specifier = _string_text(first, blob)
+            if specifier:
+                return ImportRecord(specifier, 0, "import", False, line)
+
+        return ImportRecord("<dynamic>", 0, "dynamic", False, line, reason="dynamic_expr")
+
+
+def _statement_source(node, blob: bytes) -> str | None:
+    """The `source` module string of an import/export statement.
+
+    Only the statement's own source field counts: string literals inside the
+    body (defaults, comparisons) are not modules.
+    """
+    source = node.child_by_field_name("source")
+    if source is None or source.type != "string":
+        return None
+
+    text = _string_text(source, blob)
+    return text or None
+
+
+def _string_text(node, blob: bytes) -> str | None:
+    """Raw text of a string node without its quotes."""
+    for child in node.children:
+        if child.type == "string_fragment":
+            return blob[child.start_byte:child.end_byte].decode("utf-8", errors="replace")
+
+    text = blob[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        return text[1:-1]
+    return text or None
+
+
+def _is_plain_string(node) -> bool:
+    """A string literal, not a template with substitutions."""
+    return not any(child.type == "template_substitution" for child in node.children)
+
+
+def _has_child(node, kind: str) -> bool:
+    return any(child.type == kind for child in node.children)
 
 
 # -- helpers ---------------------------------------------------------------

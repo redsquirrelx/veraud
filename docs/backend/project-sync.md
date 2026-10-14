@@ -36,4 +36,4 @@ return `422` (`message` is user-facing). Every transition broadcasts
 |---|---|
 | `400` | Non-numeric id |
 | `404` | Unknown project |
-| `422` | Clone/pull/fetch failed, nothing persisted beyond the previous state |
+| `422` | Clone/pull/fetch failed, nothing persisted beyond the previous state; or an analysis pipeline (`Waiting`/`Running`) is open on the project, since a sync would rewrite the checkout it reads |

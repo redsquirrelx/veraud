@@ -3,9 +3,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .api.executions import router as executions_router
+from .api.pipelines import router as pipelines_router
 from .api.schemas import StatusResponse
 
 router = APIRouter(prefix="/api")
+
 
 @router.get(
     "/status",
@@ -16,18 +18,23 @@ router = APIRouter(prefix="/api")
         "Returns the agent-server health indicator and service name. "
         "Does not probe model providers or backend callback connectivity."
     ),
-    responses={200: {
-        "description": "Agent-server is responding.",
-        "content": {"application/json": {"example": {
-            "status": "ok", "service": "agent-server",
-        }}},
-    }},
+    responses={
+        200: {
+            "description": "Agent-server is responding.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ok",
+                        "service": "agent-server",
+                    }
+                }
+            },
+        }
+    },
 )
 def get_status():
-    return {
-        "status": "ok",
-        "service": "agent-server"
-    }
+    return {"status": "ok", "service": "agent-server"}
+
 
 app = FastAPI(
     title="Veraud Agent Server API",
@@ -46,6 +53,10 @@ app = FastAPI(
                 "and execute them with optional configuration overrides."
             ),
         },
+        {
+            "name": "Pipelines",
+            "description": "Repository audit pipelines with explicit per-stage configuration and lifecycle callbacks.",
+        },
     ],
     swagger_ui_parameters={
         "docExpansion": "none",
@@ -57,10 +68,14 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(executions_router)
+app.include_router(pipelines_router)
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_without_secrets(request, error: RequestValidationError):
     # FastAPI's default `input` may echo the complete config, including API keys.
-    details = [{key: value for key, value in item.items() if key not in {"input", "ctx"}} for item in error.errors()]
+    details = [
+        {key: value for key, value in item.items() if key not in {"input", "ctx"}}
+        for item in error.errors()
+    ]
     return JSONResponse(status_code=422, content={"detail": details})

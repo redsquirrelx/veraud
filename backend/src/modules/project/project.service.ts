@@ -4,10 +4,9 @@ import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infr
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
+import type { ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
-import { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
-export { ANALYZER_AGENT_TYPE } from "../agent-settings/agent-types.js"
 
 export class InvalidUrlError extends Error {}
 export class DuplicateProjectError extends Error {}
@@ -18,6 +17,8 @@ export class WorkspaceMissingError extends Error {}
 export class GitOperationError extends Error {}
 export class ProjectFileError extends Error {}
 export class AnalysisAlreadyRunningError extends Error {}
+export class AnalysisInProgressError extends Error {}
+export class SyncInProgressError extends Error {}
 
 export interface GitCommit {
   commitHash: string
@@ -32,16 +33,15 @@ const MAX_FILE_BYTES = 512 * 1024
 
 export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
-/** Opens an agent run for an evaluation. Satisfied by AgentExecutionService. */
+/** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
-  open(agentType: string, evaluationId: number): Promise<StoredAgentExecution>
-  openForProject(projectId: number, branch: string, commitHash: string, agentType: string): Promise<AnalysisRequest>
+  openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest>
 }
 
-export interface AnalysisRequest {
+export interface ProjectArchitectureAnalysisRequest {
   versionId: number
   evaluationId: number
-  execution: StoredAgentExecution
+  executions: ProjectArchitectureExecutions
 }
 
 export interface VersionAnalysis {
@@ -52,6 +52,7 @@ export interface VersionAnalysis {
   analyzedAt: Date | null
   evaluationId: number | null
   execution: StoredAgentExecution | null
+  executions: StoredAgentExecution[]
   derivedStatus: string
 }
 
@@ -121,10 +122,20 @@ export class ProjectService {
     return this.projects.list()
   }
 
-  async syncProject(id: number): Promise<StoredProjectDetails> {    const project = await this.projects.findById(id)
+  async syncProject(id: number): Promise<StoredProjectDetails> {
+    const project = await this.projects.findById(id)
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    // A sync rewrites the checkout a running pipeline is reading.
+    const open = await this.projects.findAnyOpenExecution(project.id)
+
+    if (open !== null) {
+      throw new AnalysisInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already being analyzed (execution ${open.id})`
+      )
     }
 
     const folder = projectWorkspaceFolder(project)
@@ -370,18 +381,25 @@ export class ProjectService {
   }
 
   /**
-   * Runs the analyzer on the selected version: the version row is saved (or
-   * reused), it becomes the selected one, a fresh evaluation is created, and
-   * the agent is started in the background. The execution comes back Waiting;
-   * the agent reports its own progress afterwards.
+   * Runs the project-architecture pipeline on the selected version: the
+   * version row is saved (or reused), it becomes the selected one, a fresh
+   * evaluation is created, and three stage rows (orientation, architecture,
+   * semantic_validation) are started in the background. The executions come
+   * back Waiting; the pipeline reports each stage afterwards.
    */
-  async analyzeProject(id: number, branch: string, commitHash: string): Promise<AnalysisRequest> {
+  async analyzeProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
     const cleanBranch = assertValidBranch(branch)
     const cleanHash = assertValidHash(commitHash).toLowerCase()
     const project = await this.projects.findById(id)
 
     if (project === null) {
       throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    if (project.status === "SYNCING") {
+      throw new SyncInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
+      )
     }
 
     this.requireWorkspace(project)
@@ -394,7 +412,7 @@ export class ProjectService {
       )
     }
 
-    return this.analyses.openForProject(project.id, cleanBranch, cleanHash, ANALYZER_AGENT_TYPE)
+    return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {
@@ -406,19 +424,25 @@ export class ProjectService {
 
     const versions = await this.projects.listVersions(project.id)
 
-    return versions.map((version) => ({
-      id: version.id,
-      branch: version.branch,
-      commitHash: version.commitHash,
-      analysisStatus: version.analysisStatus,
-      analyzedAt: version.analyzedAt,
-      evaluationId: version.evaluation?.id ?? null,
-      execution: version.execution === null ? null : { ...version.execution, status: version.execution.status as StoredAgentExecution["status"] },
-      derivedStatus: version.execution?.status ?? (version.evaluation === null ? "NeverAnalyzed" : "Pending"),
-    }))
+    return versions.map((version) => {
+      const executions = version.executions.map((execution) => ({ ...execution, status: execution.status as StoredAgentExecution["status"] }))
+      const execution = executions[0] ?? null
+      return {
+        id: version.id,
+        branch: version.branch,
+        commitHash: version.commitHash,
+        analysisStatus: version.analysisStatus,
+        analyzedAt: version.analyzedAt,
+        evaluationId: version.evaluation?.id ?? null,
+        execution,
+        executions,
+        derivedStatus: deriveStatus(version.evaluation, version.executions),
+      }
+    })
   }
 
-  private requireWorkspace(project: StoredProjectDetails): string {    const folder = projectWorkspaceFolder(project)
+  private requireWorkspace(project: StoredProjectDetails): string {
+    const folder = projectWorkspaceFolder(project)
     const targetDir = join(this.workspaceDir, folder)
 
     if (existsSync(targetDir) === false || readdirSync(targetDir).length === 0) {
@@ -427,6 +451,30 @@ export class ProjectService {
 
     return folder
   }
+}
+
+/** One status for a version with two pipeline rows: an open run wins, then any
+ *  failure, then completion only when every row completed. */
+function deriveStatus(
+  evaluation: { id: number } | null,
+  executions: Array<{ status: string }>,
+): string {
+  const open = executions.find((execution) => execution.status === "Running")
+    ?? executions.find((execution) => execution.status === "Waiting")
+
+  if (open !== undefined) {
+    return open.status
+  }
+
+  if (executions.some((execution) => execution.status === "Failed")) {
+    return "Failed"
+  }
+
+  if (executions.length > 0 && executions.every((execution) => execution.status === "Completed")) {
+    return "Completed"
+  }
+
+  return evaluation === null ? "NeverAnalyzed" : "Pending"
 }
 
 function isDetachedHead(targetDir: string): boolean {
@@ -458,7 +506,8 @@ function assertValidFilePath(requestPath: string): string {
   return segments.join("/")
 }
 
-function assertValidBranch(branch: string): string {  const trimmed = branch.trim()
+function assertValidBranch(branch: string): string {
+  const trimmed = branch.trim()
 
   if (trimmed.length === 0 || trimmed.length > 255 || BRANCH_PATTERN.test(trimmed) === false) {
     throw new InvalidGitRequestError("Branch must use letters, numbers, dot, underscore, slash or dash")

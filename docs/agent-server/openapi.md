@@ -6,12 +6,14 @@ OpenAPI 3.1.0 document at `/openapi.json`. The application title is
 
 ## Implementation
 
-- `src/server/main.py`: metadata, described Status/Agents groups, Swagger UI
+- `src/server/main.py`: metadata, described Status/Agents/Pipelines groups, Swagger UI
   configuration and status operation.
 - `src/server/api/executions.py`: operation descriptions, request examples,
   success responses and domain errors.
 - `src/server/api/schemas.py`: public Pydantic models, defaults, descriptions
   and examples.
+- `src/server/api/pipelines.py`: audit request/response contracts, independent
+  stage configurations, shared deadline and documented validation/timeout errors.
 - Agent-owned input/output models are published dynamically through
   `/api/agents/{agent_type}/schema`; the run endpoint stays agent-agnostic.
 
@@ -38,7 +40,7 @@ network calls. It checks:
 - Exact method/path coverage against registered routes and the baseline in the
   test, including metadata and unique operation IDs.
 - Documented response examples and actual response payloads against JSON Schema.
-- Named dummy/analyzer request examples against the selected agent's input schema.
+- Named dummy request examples against the selected agent's input schema.
 - Published agent schemas against their Pydantic models.
 - Successful status/list/schema/execution responses, including nested, nullable
   and arbitrary result data, to detect serialization field loss.
@@ -46,7 +48,7 @@ network calls. It checks:
   `504` through substituted service failures.
 - Defaults, nullable overrides, service fallback values and input validation.
 
-The existing analyzer determinism tests remain part of the suite. The contract
+The contract
 checks exercise representative data; they do not execute real providers or
 simulate every possible value returned by an agent.
 

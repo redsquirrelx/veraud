@@ -66,7 +66,10 @@ describe("project route navigation", () => {
 
   it("keeps sidebar navigation available while loading and when project loading fails", async () => {
     let release: (response: Response) => void = () => {}
-    vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => { release = resolve }))
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation((input, init) => new URL(String(input)).pathname === "/api/projects"
+      ? new Promise<Response>((resolve) => { release = resolve })
+      : normalFetch(input, init))
     renderRoute("/projects/2")
     expect(screen.getByRole("status")).toHaveTextContent("Loading project")
     expect(screen.getByRole("link", { name: "Home" })).toBeDefined()

@@ -8,9 +8,10 @@ import { projectWorkspaceFolder } from "../../modules/project/project-workspace.
 /** Builds the payload an agent is invoked with.
  *
  *  The backend owns this rather than the caller, so opening an execution is one
- *  call with no knowledge of what any particular agent expects. The shape is the
- *  analyzer's, which is the only agent registered today; a second agent with a
- *  different shape needs a branch here, not a change at the call site. */
+ *  call with no knowledge of what any particular agent expects. The shape is
+ *  the pipeline's (`root_path` only); stage-specific inputs are derived
+ *  server-side, so a new pipeline needs a branch here, not a change at the
+ *  call site. */
 export interface AgentTargetResolver {
   resolve(evaluationId: number): Promise<AgentInput>
 }

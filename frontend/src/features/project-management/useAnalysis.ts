@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { ApiError, getAgentExecution, requestAnalysis, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, getAgentExecution, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
+import { DEFAULT_PIPELINE_ID, pipelineById } from "./pipelines.ts"
 
 export type AnalysisPhase = "idle" | "starting" | "tracking" | "done" | "error"
 
@@ -28,6 +29,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   const [trackedProject, setTrackedProject] = useState<number | null>(projectId)
   const [seed, setSeed] = useState<AgentExecution | null>(null)
   const [polled, setPolled] = useState<AgentExecution | null>(null)
+  const [initialExecutions, setInitialExecutions] = useState<AgentExecution[]>([])
   const [starting, setStarting] = useState(false)
   const [failure, setFailure] = useState("")
   const [tracked, setTracked] = useState(false)
@@ -37,6 +39,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setTrackedProject(projectId)
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setStarting(false)
     setFailure("")
     setTracked(false)
@@ -104,7 +107,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     return () => clearInterval(timer)
   })
 
-  async function start(branch: string, commitHash: string) {
+  async function start(branch: string, commitHash: string, pipelineId: string = DEFAULT_PIPELINE_ID) {
     if (projectId === null || starting) {
       return
     }
@@ -112,11 +115,18 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setTracked(true)
     try {
-      const response = await requestAnalysis(projectId, branch, commitHash)
-      localStorage.set(lastExecutionKey(projectId), response.execution.id)
-      setSeed(response.execution)
+      // The tracked row is the one that finishes last for the chosen
+      // pipeline, so progress follows the run to completion.
+      const option = pipelineById(pipelineId)
+      const response = await requestProjectArchitecture(projectId, branch, commitHash)
+      const rows = Object.values(response.executions)
+      setInitialExecutions(rows)
+      const trackedRow = (response.executions as Record<string, AgentExecution>)[option.trackedStage] ?? rows[0]!
+      localStorage.set(lastExecutionKey(projectId), trackedRow.id)
+      setSeed(trackedRow)
     } catch (error) {
       setFailure(describeFailure(error, "Could not analyze the project"))
     } finally {
@@ -130,6 +140,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     }
     setSeed(null)
     setPolled(null)
+    setInitialExecutions([])
     setStarting(false)
     setFailure("")
     setTracked(false)
@@ -141,6 +152,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setFailure("")
     setSeed(null)
     setPolled(execution)
+    setInitialExecutions([])
     setTracked(false)
     if (projectId !== null && execution !== null) {
       localStorage.set(lastExecutionKey(projectId), execution.id)
@@ -150,6 +162,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   return {
     phase,
     execution,
+    initialExecutions,
     message: failure,
     analyzing: phase === "starting" || phase === "tracking",
     tracked,

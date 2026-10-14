@@ -1,0 +1,4 @@
+Review the active_targets in this batch. Return tool_calls OR findings as bounded JSON matching OUTPUT_SCHEMA, with no Markdown fences or extra fields.
+Group reads shared by multiple claims. Use get_source_excerpt to inspect implementation, not only metadata. Repeat retrieval only when you need additional ranges or lost context.
+Findings may cover a subset of the active batch; every finding identifies the exact target JSON pointer. After evidence inspection, close claims with the appropriate verdict rather than repeatedly querying navigation metadata. Explicitly request missing evidence if the investigation cannot decide.
+Errors describe rejected findings; correct those without discarding valid findings already accepted. Original claim evidence IDs are not valid validator citations until independently delivered by your own tools.

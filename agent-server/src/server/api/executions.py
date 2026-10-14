@@ -93,7 +93,7 @@ def _http_error(
     ),
     responses={200: {
         "description": "Alphabetically sorted registered agent names.",
-        "content": {"application/json": {"example": ["analyzer", "dummy"]}},
+        "content": {"application/json": {"example": ["dummy"]}},
     }},
 )
 def list_agents(service: ServiceDep) -> list[str]:
@@ -226,28 +226,6 @@ async def run_agent(
                     "timeout_seconds": 60,
                 },
                 "input": {"code": "def add(a, b): return a + b"},
-            },
-        },
-        "analyzer": {
-            "summary": "Describe a repository with the analyzer agent",
-            "description": (
-                "root_path must exist on the agent-server filesystem. Selects "
-                "a supported provider and requires provider credentials. "
-                "Collection options shown are the input model defaults."
-            ),
-            "value": {
-                "agent_type": "analyzer",
-                "config": {
-                    "model": {"provider": "openrouter", "name": "openai/gpt-oss-120b"},
-                    "timeout_seconds": 120,
-                },
-                "input": {
-                    "root_path": "C:/workspace/example-repository",
-                    "max_files": 500,
-                    "max_depth": 8,
-                    "max_read_rounds": 2,
-                    "max_files_per_round": 8,
-                },
             },
         },
     })],

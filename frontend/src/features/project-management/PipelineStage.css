@@ -1,0 +1,139 @@
+/* Modern compact stage views (project-architecture pipeline). Legacy
+ * audit-block styles stay untouched; these classes close whitespace with
+ * dividers instead of stacked labels. */
+
+.stage-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stage-title {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.stage-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.stage-lede {
+  font-size: 12.5px;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.stage-section-label {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.stage-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-top: 1px solid #e2e8f0;
+}
+
+.stage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+}
+
+.stage-row-main {
+  flex: 1;
+  min-width: 0;
+  color: #0f172a;
+  line-height: 1.45;
+}
+
+.stage-row-sub {
+  color: #64748b;
+  font-size: 11px;
+  margin-top: 0.15rem;
+  line-height: 1.4;
+}
+
+.stage-row-side {
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+}
+
+.stage-path {
+  font-size: 11px;
+}
+
+.stage-correction {
+  border-left: 2px solid #f59e0b;
+  background: #fffbeb;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 12px;
+  color: #334155;
+  margin-top: 0.25rem;
+  line-height: 1.4;
+}
+
+.stage-footnote {
+  font-size: 11px;
+  color: #64748b;
+}
+.architecture-diagram-view {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 0.5rem;
+}
+
+.architecture-diagram-view h5 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.architecture-diagram-legend {
+  margin: 0.75rem 0;
+}
+
+.architecture-diagram-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+}
+
+.architecture-diagram-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.architecture-diagram-key i {
+  display: inline-block;
+  width: 1.2rem;
+  height: 0.85rem;
+  border-radius: 0.2rem;
+}

@@ -1,10 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
+
+vi.mock("../../shared/ui-kit/MermaidDiagram.tsx", () => ({
+  MermaidDiagram: ({ chart, label }: { chart: string; label: string }) => (
+    <div role="img" aria-label={label}>{chart}</div>
+  ),
+}))
 
 const realFetch = globalThis.fetch
 const realWebSocket = globalThis.WebSocket
@@ -93,7 +99,8 @@ function renderDetail(entry: string) {
     <MemoryRouter initialEntries={[entry]}>
       <ToastProvider>
         <Routes>
-          <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="projects/:id" element={<Navigate to="overview" replace />} />
+          <Route path="projects/:id/:section" element={<ProjectDetailPage />} />
         </Routes>
         <Dock />
       </ToastProvider>
@@ -396,32 +403,38 @@ describe("ProjectDetailPage", () => {
 
   it("analyzes the applied version and shows the run in audits", async () => {
     const seen: Array<{ url: string, body: unknown }> = []
+    const waiting = (id: number, agentType: string, configuration: unknown = null) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      configuration,
+      status: "Waiting",
+      result: null,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: null,
+      finishedAt: null,
+    })
+    const captured = {
+      model: { id: 1, name: "captured-model", providerId: 1, providerName: "OpenAI" },
+      credential: { id: 2, name: "captured-credential", providerId: 1, providerName: "OpenAI" },
+      temperature: 0.2, maxTokens: 2048,
+    }
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/analyze")) {
+      if (url.endsWith("/architecture")) {
         seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
         return new Response(JSON.stringify({
           versionId: 9,
           evaluationId: 7,
-          execution: {
-            id: 11,
-            evaluationId: 7,
-            agentType: "analyzer",
-            configuration: {
-              model: { id: 1, name: "captured-model", providerId: 1, providerName: "OpenAI" },
-              credential: { id: 2, name: "captured-credential", providerId: 1, providerName: "OpenAI" },
-              temperature: 0.2, maxTokens: 2048,
-            },
-            status: "Waiting",
-            result: null,
-            error: null,
-            inputTokens: null,
-            outputTokens: null,
-            createdAt: "2026-01-01",
-            startedAt: null,
-            finishedAt: null,
+          executions: {
+            orientation: waiting(21, "orientation"),
+            architecture: waiting(22, "architecture"),
+            semantic_validation: { ...waiting(23, "semantic_validation"), configuration: captured },
           },
         }), { status: 201 })
       }
@@ -433,21 +446,234 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/analyze")
+    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
     expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
 
     // The run shows in the header card spinner.
     expect(await screen.findByText("Analyzing the project")).toBeDefined()
 
+    // Sync stays disabled while the pipeline reads the checkout.
+    expect(screen.getByRole("button", { name: "Sync" }).hasAttribute("disabled")).toBe(true)
+
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("analyzer run #11")).toBeDefined()
-    expect(screen.getByText("Waiting")).toBeDefined()
+    // The semantic_validation row finishes last, so it is the tracked run.
+    expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
+    expect(screen.getAllByText("Waiting")).toHaveLength(3)
     expect(screen.getByRole("heading", { name: "Configuration used" })).toBeDefined()
     expect(screen.getByText("captured-model")).toBeDefined()
     expect(screen.getByText("captured-credential (#2)")).toBeDefined()
+  })
+
+  it("starts the project-architecture pipeline from the Analyze menu tracking validation", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    const waiting = (id: number, agentType: string) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Waiting",
+      result: null,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: null,
+      finishedAt: null,
+    })
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/architecture")) {
+        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            orientation: waiting(21, "orientation"),
+            architecture: waiting(22, "architecture"),
+            semantic_validation: waiting(23, "semantic_validation"),
+          },
+        }), { status: 201 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+
+    expect(seen.length).toBe(1)
+    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+
+    // The semantic_validation row finishes last, so it is the tracked run.
+    expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
+    expect(screen.getAllByText("Waiting")).toHaveLength(3)
+  })
+
+  it("renders parsed orientation content once its run completes", async () => {    const orientationResult = JSON.stringify({
+      completion_status: "complete",
+      orientation: {
+        project_type: { statement: "A command-line tool.", status: "supported", evidence_ids: ["e1"] },
+        purpose: null,
+        components: [],
+        starting_points: [],
+        uncertainties: [],
+      },
+    })
+    const waiting = (id: number, agentType: string) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Waiting",
+      result: null,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: null,
+      finishedAt: null,
+    })
+    const completedOrientation = {
+      ...waiting(21, "orientation"),
+      status: "Completed",
+      result: orientationResult,
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/architecture")) {
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            orientation: completedOrientation,
+            architecture: waiting(22, "architecture"),
+            semantic_validation: waiting(23, "semantic_validation"),
+          },
+        }), { status: 201 })
+      }
+      if (url.includes("/api/projects/2/versions")) {
+        return new Response(JSON.stringify([{
+          id: 9,
+          branch: "main",
+          commitHash: "a".repeat(40),
+          analysisStatus: "Pending",
+          analyzedAt: null,
+          evaluationId: 7,
+          execution: completedOrientation,
+          executions: [completedOrientation, waiting(22, "architecture"), waiting(23, "semantic_validation")],
+          derivedStatus: "Waiting",
+        }]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    // A previous test may have left a tracked run behind; start clean so the
+    // menu is enabled and nothing restores mid-test.
+    window.localStorage.removeItem("analysis.lastExecution.2")
+    // Open the analysis section directly: result cards render there.
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+
+    expect(await screen.findByText("orientation run #21")).toBeDefined()
+    expect(await screen.findByText("Orientation")).toBeDefined()
+    expect(await screen.findByText("A command-line tool.")).toBeDefined()
+  })
+
+  it("explains a failed architecture run with its issues", async () => {
+    const failedArchitecture = JSON.stringify({
+      completion_status: "failed",
+      architecture: null,
+      limitations: ["Snapshot capped."],
+      execution_issues: [{ id: "issue:1", stage: "architecture", category: "call_limit", message: "Model-call limit reached." }],
+    })
+    const completed = (id: number, agentType: string, result: string | null) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Completed",
+      result,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    })
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/architecture")) {
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            orientation: completed(21, "orientation", null),
+            architecture: completed(22, "architecture", failedArchitecture),
+            semantic_validation: completed(23, "semantic_validation", null),
+          },
+        }), { status: 201 })
+      }
+      if (url.includes("/api/projects/2/versions")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    window.localStorage.removeItem("analysis.lastExecution.2")
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+
+    expect(await screen.findByText("call_limit")).toBeDefined()
+    expect(await screen.findByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(await screen.findByText("Snapshot capped.")).toBeDefined()
+  })
+
+  it("disables Analyze while a sync is running", async () => {
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/sync")) {
+        // The sync never settles: the button must stay off meanwhile.
+        return new Promise<Response>(() => {})
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+
+    await userEvent.click(screen.getByRole("button", { name: "Sync" }))
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true))
   })
 
   it("checks out an analyzed version and shows its stored run", async () => {
@@ -464,10 +690,11 @@ describe("ProjectDetailPage", () => {
       startedAt: "2026-01-01",
       finishedAt: "2026-01-01",
     }
+    const architectCompleted = { ...completed, id: 31, agentType: "architect", result: "{\"style\":\"layered\"}" }
     const waitingRun = { ...completed, id: 22, status: "Waiting", result: null, finishedAt: null }
     const versions = [
-      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
-      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, execution: waitingRun, derivedStatus: "Waiting" },
+      { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed, architectCompleted], derivedStatus: "Completed" },
+      { id: 10, branch: "main", commitHash: "c".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 8, executions: [waitingRun], derivedStatus: "Waiting" },
     ]
     const seen: string[] = []
     stubFetch((url, init) => {
@@ -500,8 +727,10 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("analyzer run #21")).toBeDefined()
-    expect(screen.getByText("Completed")).toBeDefined()
+    // The architect carries the final verdict, so a version with both rows
+    // shows the architect run.
+    expect(await screen.findByText("architect run #31")).toBeDefined()
+    expect(screen.getAllByText("Completed").length).toBe(2)
 
     // A second pick moves the detached checkout without re-attaching first.
     await userEvent.click(screen.getByRole("button", { name: "Overview" }))
@@ -514,6 +743,7 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
+    // A version with only the analyzer row falls back to it.
     expect(await screen.findByText("analyzer run #22")).toBeDefined()
   })
 
@@ -537,7 +767,7 @@ describe("ProjectDetailPage", () => {
       }
       if (url.endsWith("/versions")) {
         return new Response(JSON.stringify([
-          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed], derivedStatus: "Completed" },
         ]), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
@@ -562,9 +792,9 @@ describe("ProjectDetailPage", () => {
     const completed = {
       id: 21,
       evaluationId: 7,
-      agentType: "analyzer",
+      agentType: "orientation",
       status: "Completed",
-      result: "{\"kind\":\"library\",\"confidence\":\"high\",\"summary\":\"A widget library for tests.\"}",
+      result: "{\"completion_status\":\"complete\",\"orientation\":{\"project_type\":{\"statement\":\"A command-line tool.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]},\"purpose\":null,\"components\":[],\"starting_points\":[],\"uncertainties\":[]}}",
       error: null,
       inputTokens: null,
       outputTokens: null,
@@ -578,7 +808,7 @@ describe("ProjectDetailPage", () => {
       }
       if (url.endsWith("/versions")) {
         return new Response(JSON.stringify([
-          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, execution: completed, derivedStatus: "Completed" },
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [completed], derivedStatus: "Completed" },
         ]), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
@@ -593,39 +823,44 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
     await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
 
-    expect(await screen.findByText("Type")).toBeDefined()
-    expect(screen.getByText("library")).toBeDefined()
-    expect(screen.getByText("Confidence")).toBeDefined()
-    expect(screen.getByText("high")).toBeDefined()
-    expect(screen.getByText("A widget library for tests.")).toBeDefined()
+    expect(await screen.findByText("acme/Demo")).toBeDefined()
+    // The Overview summary card shows the orientation verdict.
+    expect(await screen.findByText("Summary")).toBeDefined()
+    expect(screen.getByText("Project type")).toBeDefined()
+    expect(screen.getByText("A command-line tool.")).toBeDefined()
     expect(screen.queryByText("Analyzing")).toBeNull()
 
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("analyzer run #21")).toBeDefined()
+    expect(await screen.findByText("orientation run #21")).toBeDefined()
   })
 
   it("shows an Analyzing badge while the run is open", async () => {
+    const waiting = (id: number, agentType: string) => ({
+      id,
+      evaluationId: 7,
+      agentType,
+      status: "Waiting",
+      result: null,
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: null,
+      finishedAt: null,
+    })
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/analyze")) {
+      if (url.endsWith("/architecture")) {
         return new Response(JSON.stringify({
           versionId: 9,
           evaluationId: 7,
-          execution: {
-            id: 11,
-            evaluationId: 7,
-            agentType: "analyzer",
-            status: "Waiting",
-            result: null,
-            error: null,
-            inputTokens: null,
-            outputTokens: null,
-            createdAt: "2026-01-01",
-            startedAt: null,
-            finishedAt: null,
+          executions: {
+            orientation: waiting(21, "orientation"),
+            architecture: waiting(22, "architecture"),
+            semantic_validation: waiting(23, "semantic_validation"),
           },
         }), { status: 201 })
       }
@@ -640,6 +875,7 @@ describe("ProjectDetailPage", () => {
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
     await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
 
     const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {
@@ -647,5 +883,153 @@ describe("ProjectDetailPage", () => {
     }
     expect(within(headerRow as HTMLElement).getByText("Analyzing")).toBeDefined()
     expect(screen.queryByText("library")).toBeNull()
+  })
+
+  it("shows the pipeline summary in overview with a button to the analysis", async () => {
+    const base = {
+      evaluationId: 7,
+      status: "Completed",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const orientation = {
+      ...base,
+      id: 21,
+      agentType: "orientation",
+      result: "{\"completion_status\":\"complete\",\"orientation\":{\"project_type\":{\"statement\":\"A command-line tool.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]},\"purpose\":null,\"components\":[],\"starting_points\":[],\"uncertainties\":[]}}",
+    }
+    const architecture = {
+      ...base,
+      id: 22,
+      agentType: "architecture",
+      result: "{\"completion_status\":\"complete\",\"architecture\":{\"organization\":[],\"connections\":[],\"closest_architecture\":{\"pattern\":\"layered\",\"assessment\":{\"statement\":\"Layers are visible.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]}},\"deviations\":[],\"infrastructure\":[],\"uncertainties\":[]}}",
+    }
+    const validation = {
+      ...base,
+      id: 23,
+      agentType: "semantic_validation",
+      result: "{\"completion_status\":\"complete\",\"verdict\":\"accepted\",\"selected_target_ids\":[],\"pending_target_ids\":[],\"findings\":[]}",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [orientation, architecture, validation], derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    // Header carries every stage verdict (and the Overview summary repeats them).
+    expect(await screen.findByText("A command-line tool.")).toBeDefined()
+
+    // The Overview summary shows key details without the full listing.
+    expect(await screen.findByText("Summary")).toBeDefined()
+    expect(screen.getByText("layered")).toBeDefined()
+    expect(screen.getByText("accepted")).toBeDefined()
+
+    // The button navigates to the analysis subpage without a reload.
+    await userEvent.click(screen.getByRole("button", { name: "View full analysis" }))
+
+    expect(await screen.findByRole("heading", { name: "Orientation" })).toBeDefined()
+    expect(screen.getByRole("heading", { name: "Architecture" })).toBeDefined()
+    expect(screen.getByRole("heading", { name: "Semantic validation" })).toBeDefined()
+    expect(screen.getByText("orientation run #21")).toBeDefined()
+    expect(screen.getByText("architecture run #22")).toBeDefined()
+    expect(screen.getByText("semantic_validation run #23")).toBeDefined()
+    expect(screen.queryByText("Summary")).toBeNull()
+  })
+
+  it("renders the full analysis at the analysis subpage", async () => {
+    const base = {
+      evaluationId: 7,
+      status: "Completed",
+      error: null,
+      inputTokens: null,
+      outputTokens: null,
+      createdAt: "2026-01-01",
+      startedAt: "2026-01-01",
+      finishedAt: "2026-01-01",
+    }
+    const orientation = {
+      ...base,
+      id: 21,
+      agentType: "orientation",
+      result: "{\"completion_status\":\"complete\",\"orientation\":{\"project_type\":{\"statement\":\"A command-line tool.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]},\"purpose\":null,\"components\":[{\"name\":\"core\",\"file_ids\":[\"f1\"],\"responsibility\":{\"statement\":\"Runs the audit.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]}}],\"starting_points\":[],\"uncertainties\":[]}}",
+    }
+    const architecture = {
+      ...base,
+      id: 22,
+      agentType: "architecture",
+      result: "{\"completion_status\":\"complete\",\"architecture\":{\"organization\":[{\"name\":\"core\",\"file_ids\":[\"f1\"],\"responsibility\":{\"statement\":\"Holds the core logic.\",\"status\":\"supported\",\"evidence_ids\":[\"e1\"]}}],\"connections\":[],\"closest_architecture\":null,\"deviations\":[],\"infrastructure\":[],\"uncertainties\":[]}}",
+    }
+    const validation = {
+      ...base,
+      id: 23,
+      agentType: "semantic_validation",
+      result: "{\"completion_status\":\"complete\",\"verdict\":\"accepted\",\"selected_target_ids\":[],\"pending_target_ids\":[],\"findings\":[]}",
+    }
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([
+          { id: 9, branch: "main", commitHash: "b".repeat(40), analysisStatus: "Pending", analyzedAt: null, evaluationId: 7, executions: [orientation, architecture, validation], derivedStatus: "Completed" },
+        ]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/")) {
+        return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/analysis")
+
+    await screen.findByText("acme/Demo")
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
+
+    // All three runs, each result in its own card.
+    expect(await screen.findByText("orientation run #21")).toBeDefined()
+    expect(screen.getByText("architecture run #22")).toBeDefined()
+    expect(screen.getByText("semantic_validation run #23")).toBeDefined()
+    const orientationCard = screen.getByRole("heading", { name: "Orientation" }).closest(".ui-card")
+    const architectureCard = screen.getByRole("heading", { name: "Architecture" }).closest(".ui-card")
+    const validationCard = screen.getByRole("heading", { name: "Semantic validation" }).closest(".ui-card")
+    expect(orientationCard).not.toBeNull()
+    expect(architectureCard).not.toBeNull()
+    expect(validationCard).not.toBeNull()
+    expect(orientationCard).not.toBe(architectureCard)
+    expect(architectureCard).not.toBe(validationCard)
+    // Orientation sections are shown once in the analysis view.
+    expect(screen.getAllByText("A command-line tool.").length).toBe(1)
+    expect(screen.getByText("Holds the core logic.", { exact: false })).toBeDefined()
+    // The summary card belongs to Overview, not to the analysis subpage.
+    expect(screen.queryByText("Summary")).toBeNull()
+  })
+
+  it("redirects unknown sections to overview", async () => {
+    stubProjects()
+    renderDetail("/projects/2/nope")
+
+    expect(await screen.findByText("acme/Demo")).toBeDefined()
+    expect(screen.queryByText("Select a file to preview")).toBeNull()
+    expect(screen.queryByText("No analysis yet — pick a version and press Analyze")).toBeNull()
   })
 })
