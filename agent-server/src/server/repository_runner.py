@@ -98,8 +98,10 @@ def build_parser(mode):
         )
         parser.add_argument(
             "--diagram",
-            action="store_true",
-            help="Ask the architect to compose a component view after investigation, then print Mermaid",
+            dest="diagram",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Compose a component view after investigation, then print Mermaid (use --no-diagram to skip)",
         )
         parser.add_argument("--no-semantic-return", action="store_true")
         parser.add_argument(

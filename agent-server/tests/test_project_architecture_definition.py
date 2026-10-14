@@ -60,7 +60,7 @@ class TestInput:
         assert parsed.include_orientation is True
         assert parsed.validate_semantics is True
         assert parsed.allow_return is True
-        assert parsed.include_diagram is False
+        assert parsed.include_diagram is True
 
     def test_invalid_input_is_422(self):
         with pytest.raises(InvalidConfigError):

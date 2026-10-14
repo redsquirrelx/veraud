@@ -72,7 +72,7 @@ class ProjectArchitectureInput(BaseModel):
     include_orientation: bool = True
     validate_semantics: bool = True
     allow_return: bool = True
-    include_diagram: bool = False
+    include_diagram: bool = True
 
 
 def parse_project_architecture_input(raw: dict) -> ProjectArchitectureInput:
