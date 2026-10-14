@@ -64,6 +64,7 @@ afterEach(() => {
   globalThis.WebSocket = realWebSocket
   FakeSocket.instances = []
   window.localStorage.removeItem("analysis.lastExecution.2")
+  window.localStorage.removeItem("agents.recentExecutionIds")
   vi.useRealTimers()
 })
 
