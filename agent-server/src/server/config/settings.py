@@ -96,16 +96,34 @@ def resolve_workspace_root() -> Path:
     """Checkout root shared with the backend.
 
     `WORKSPACE_ROOT` in the .env relocates it; empty (the default) means the
-    repo appdata/workspace next to the backend DATABASE_URL. Falls back to
-    that default when settings are unavailable (no .env), which the dev
-    runners rely on.
+    repo appdata/workspace next to the backend DATABASE_URL. The repo root is
+    located by git marker so every entrypoint resolves the same directory.
+    Falls back to the layout default when settings are unavailable (no .env),
+    which the dev runners rely on.
     """
     from pydantic import ValidationError
 
     try:
         configured = get_server_settings().workspace_root
     except ValidationError:
-        return REPO_ROOT / "appdata" / "workspace"
+        return _repo_workspace()
     if configured.strip():
         return Path(configured).expanduser().resolve()
-    return REPO_ROOT / "appdata" / "workspace"
+    return _repo_workspace()
+
+
+def _repo_workspace() -> Path:
+    found = find_repo_root(REPO_ROOT)
+    return (found if found is not None else REPO_ROOT) / "appdata" / "workspace"
+
+
+def find_repo_root(start: Path) -> Path | None:
+    """First ancestor containing `.git`, or None outside a git checkout."""
+    current = start.expanduser().resolve()
+    for _ in range(64):
+        if (current / ".git").exists():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+    return None

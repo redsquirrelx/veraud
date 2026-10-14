@@ -6,7 +6,7 @@ set; the agent-server resolves the same root unless WORKSPACE_ROOT is set.
 
 from pathlib import Path
 
-from server.config.settings import clear_cache, resolve_workspace_root
+from server.config.settings import clear_cache, find_repo_root, resolve_workspace_root
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,7 +17,6 @@ def test_default_is_the_repo_workspace():
         assert resolve_workspace_root() == REPO_ROOT / "appdata" / "workspace"
     finally:
         clear_cache()
-
 
 def test_env_override_relocates_the_root(tmp_path, monkeypatch):
     monkeypatch.setenv("PORT_BACKEND", "7501")
@@ -41,3 +40,11 @@ def test_blank_override_keeps_the_default(monkeypatch):
         assert resolve_workspace_root() == REPO_ROOT / "appdata" / "workspace"
     finally:
         clear_cache()
+
+
+def test_find_repo_root_by_marker(tmp_path):
+    nested = tmp_path / "backend" / "src" / "config"
+    nested.mkdir(parents=True)
+    assert find_repo_root(nested) is None
+    (tmp_path / ".git").mkdir()
+    assert find_repo_root(nested) == tmp_path.resolve()
