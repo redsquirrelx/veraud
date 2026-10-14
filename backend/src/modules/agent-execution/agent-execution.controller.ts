@@ -53,6 +53,17 @@ const closeBody = {
     error: { type: ["string", "null"], description: "Required to be truthy when failing an open execution. Omitted means null." },
     inputTokens: { type: ["integer", "null"], minimum: 0, examples: [1200] },
     outputTokens: { type: ["integer", "null"], minimum: 0, examples: [180] },
+    estimatedTokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
+    interruptionReason: { type: ["string", "null"], minLength: 1 },
+  },
+} as const
+
+const progressBody = {
+  type: "object", required: ["inputTokens", "outputTokens"], additionalProperties: false,
+  properties: {
+    inputTokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
+    outputTokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
+    estimatedTokens: { type: "integer", minimum: 0, maximum: 2147483647, default: 0 },
   },
 } as const
 
@@ -161,6 +172,21 @@ export function registerAgentExecutionRoutes(
     }
   })
 
+  app.post("/api/agent-executions/:id/progress", { schema: {
+    params: idParams, body: progressBody,
+    tags: ["Agent Executions"], summary: "Report cumulative agent token usage",
+    description: "Stores provider-reported input/output counts and separate estimates while Running. Counts are cumulative, not deltas. Duplicate, stale and post-completion progress cannot reduce usage or reopen an execution.",
+    response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404], "ExecutionError", false) },
+  } }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const body = request.body as { inputTokens: number | null, outputTokens: number | null, estimatedTokens?: number }
+    try {
+      const execution = await service.updateUsage(Number(id), { ...body, estimatedTokens: body.estimatedTokens ?? 0 })
+      broadcast(gateway, "agent-execution.updated", execution)
+      return toResponse(execution)
+    } catch (error) { return notFoundOrRethrow(error, reply) }
+  })
+
   /** Called by the agent-server when the run finishes, successfully or not. */
   app.post(
     "/api/agent-executions/:id/completion",
@@ -177,6 +203,8 @@ export function registerAgentExecutionRoutes(
         error?: string | null
         inputTokens?: number | null
         outputTokens?: number | null
+        estimatedTokens?: number | null
+        interruptionReason?: string | null
       }
 
       try {
@@ -186,6 +214,8 @@ export function registerAgentExecutionRoutes(
           error: body.error ?? null,
           inputTokens: body.inputTokens ?? null,
           outputTokens: body.outputTokens ?? null,
+          ...(body.estimatedTokens === undefined ? {} : { estimatedTokens: body.estimatedTokens }),
+          ...(body.interruptionReason === undefined ? {} : { interruptionReason: body.interruptionReason }),
         })
 
         logger
@@ -212,6 +242,8 @@ function toResponse(execution: StoredAgentExecution) {
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
+    estimatedTokens: execution.estimatedTokens,
+    interruptionReason: execution.interruptionReason,
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
