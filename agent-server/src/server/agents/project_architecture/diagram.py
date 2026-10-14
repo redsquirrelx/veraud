@@ -51,6 +51,12 @@ def validate_diagram(report):
     diagram = report.diagram
     if diagram is None:
         return
+    for view in diagram.views:
+        validate_diagram(
+            report.model_copy(
+                update={"diagram": ArchitectureDiagram(**view.model_dump())}
+            )
+        )
     groups = {group.id for group in diagram.groups}
     nodes = {node.id: node for node in diagram.nodes}
     if len(groups) != len(diagram.groups) or len(nodes) != len(diagram.nodes):
@@ -86,6 +92,27 @@ def validate_diagram(report):
                 "Diagram edges cannot repeat the same directed claim and kind."
             )
         links.add(identity)
+    references = set()
+    for annotation in diagram.deviations:
+        diagram_deviation(report, annotation.deviation_ref)
+        if annotation.deviation_ref in references:
+            raise ValueError("A diagram view cannot repeat a deviation annotation.")
+        references.add(annotation.deviation_ref)
+        if len(set(annotation.node_ids)) != len(annotation.node_ids) or any(
+            node_id not in nodes for node_id in annotation.node_ids
+        ):
+            raise ValueError(
+                "Deviation annotations must reference distinct existing nodes."
+            )
+
+
+def diagram_deviation(report, reference):
+    match = re.fullmatch(r"/deviations/(0|[1-9][0-9]*)", reference)
+    if not match or int(match[1]) >= len(report.deviations):
+        raise ValueError(
+            "Diagram deviations must reference existing report deviations."
+        )
+    return report.deviations[int(match[1])]
 
 
 def report_connections(report):
@@ -169,6 +196,10 @@ def _node_targets(report, node):
         pointers += (
             f"/diagram/groups/{next(index for index, group in enumerate(report.diagram.groups) if group.id == node.group_id)}",
         )
+    if node.role != "component":
+        pointers += (
+            f"/diagram/nodes/{next(index for index, item in enumerate(report.diagram.nodes) if item.id == node.id)}/role",
+        )
     return pointers
 
 
@@ -176,7 +207,7 @@ def _edge_targets(report, edge, index):
     pointers = (edge.claim_ref,)
     if not is_projected_diagram(report):
         pointers += ("/diagram/scope",)
-        if edge.kind != "relationship":
+        if edge.kind != "relationship" or edge.label:
             pointers += (f"/diagram/edges/{index}",)
     return pointers
 
@@ -190,7 +221,7 @@ class DiagramInterpretation:
 
 
 def diagram_interpretations(report):
-    """Only new grouping/type/scope interpretations need extra semantic targets."""
+    """Expose grouping, roles, mechanisms and deviation placement for review."""
     diagram = report.diagram
     if not diagram or is_projected_diagram(report):
         return ()
@@ -222,7 +253,7 @@ def diagram_interpretations(report):
             "/diagram/scope",
             "diagram_scope",
             claim(
-                f"Component view {diagram.title!r} describes these responsibilities: {', '.join(unit.name for unit in units)}.",
+                f"{diagram.view_kind.capitalize()} view {diagram.title!r} describes these responsibilities: {', '.join(unit.name for unit in units)}.",
                 diagram.scope,
                 [unit.responsibility for unit in units],
             ),
@@ -257,7 +288,7 @@ def diagram_interpretations(report):
             )
         )
     for index, edge in enumerate(diagram.edges):
-        if edge.kind == "relationship":
+        if edge.kind == "relationship" and not edge.label:
             continue
         connection = diagram_connection(report, edge.claim_ref)
         result.append(
@@ -265,7 +296,8 @@ def diagram_interpretations(report):
                 f"/diagram/edges/{index}",
                 "diagram_relation",
                 claim(
-                    f"Diagram relation {edge.kind}: {connection.source_unit} -> {connection.target_unit}.",
+                    f"Diagram relation {edge.kind}: {connection.source_unit} -> {connection.target_unit}."
+                    + (f" Mechanism: {edge.label}." if edge.label else ""),
                     diagram.scope,
                     [connection.description],
                 ),
@@ -274,8 +306,71 @@ def diagram_interpretations(report):
                     "linked_statement": connection.description.statement,
                     "linked_scope": connection.description.scope,
                     "relation_kind": edge.kind,
+                    "mechanism": edge.label,
                 },
             )
+        )
+    for index, node in enumerate(diagram.nodes):
+        if node.role == "component":
+            continue
+        unit = diagram_unit(report, node.unit_ref)
+        result.append(
+            DiagramInterpretation(
+                f"/diagram/nodes/{index}/role",
+                "diagram_role",
+                claim(
+                    f"{unit.name} is represented as {node.role}.",
+                    diagram.scope,
+                    [unit.responsibility],
+                ),
+                {
+                    "unit_ref": node.unit_ref,
+                    "role": node.role,
+                    "linked_statement": unit.responsibility.statement,
+                },
+            )
+        )
+    for index, annotation in enumerate(diagram.deviations):
+        deviation = diagram_deviation(report, annotation.deviation_ref)
+        affected = [
+            diagram_unit(
+                report,
+                next(node.unit_ref for node in diagram.nodes if node.id == node_id),
+            )
+            for node_id in annotation.node_ids
+        ]
+        result.append(
+            DiagramInterpretation(
+                f"/diagram/deviations/{index}",
+                "diagram_deviation",
+                claim(
+                    f"Deviation affects {', '.join(unit.name for unit in affected)}: {annotation.explanation}",
+                    diagram.scope,
+                    [
+                        deviation.observed_decision,
+                        *(unit.responsibility for unit in affected),
+                    ],
+                ),
+                {
+                    "deviation_ref": annotation.deviation_ref,
+                    "observed_decision": deviation.observed_decision.statement,
+                    "pattern_expectation": deviation.pattern_expectation,
+                    "explanation": deviation.explanation,
+                },
+            )
+        )
+    for index, view in enumerate(diagram.views):
+        local = report.model_copy(
+            update={"diagram": ArchitectureDiagram(**view.model_dump())}
+        )
+        result.extend(
+            DiagramInterpretation(
+                item.pointer.replace("/diagram/", f"/diagram/views/{index}/", 1),
+                item.kind,
+                item.claim,
+                item.context,
+            )
+            for item in diagram_interpretations(local)
         )
     return tuple(result)
 
@@ -306,6 +401,21 @@ class DiagramAnnotation(AgentContract):
     ]
 
 
+class DiagramLegendItem(AgentContract):
+    layer: Literal["architect", "semantic"]
+    status: str
+    color: str
+
+
+class DiagramDeviationNote(AgentContract):
+    id: str
+    observation: str
+    expectation: str
+    explanation: str
+    architect_status: str
+    semantic_verdict: str
+
+
 class RenderedArchitectureDiagram(AgentContract):
     snapshot_hash: str
     report_hash: str
@@ -314,7 +424,32 @@ class RenderedArchitectureDiagram(AgentContract):
     mermaid: str
     nodes: tuple[DiagramAnnotation, ...] = ()
     edges: tuple[DiagramAnnotation, ...] = ()
+    deviations: tuple[DiagramAnnotation, ...] = ()
+    views: tuple["RenderedArchitectureDiagram", ...] = ()
     limitations: tuple[str, ...] = ()
+    deviation_notes: tuple[DiagramDeviationNote, ...] = ()
+    legend: tuple[DiagramLegendItem, ...] = ()
+
+
+ARCHITECT_COLORS = {
+    "supported": "#dbeafe",
+    "hypothesis": "#fef3c7",
+    "unresolved": "#e5e7eb",
+}
+SEMANTIC_COLORS = {
+    "supported": "#15803d",
+    "overstated": "#c2410c",
+    "contradicted": "#b91c1c",
+    "insufficient_evidence": "#64748b",
+    "not_reviewed": "#94a3b8",
+}
+DIAGRAM_LEGEND = tuple(
+    {"layer": "architect", "status": status, "color": color}
+    for status, color in ARCHITECT_COLORS.items()
+) + tuple(
+    {"layer": "semantic", "status": status, "color": color}
+    for status, color in SEMANTIC_COLORS.items()
+)
 
 
 def _semantic_verdict(reviewed, pointers):
@@ -337,7 +472,7 @@ def render_diagram(result, *, findings=(), report_origin="original"):
         return None
     diagram = report.diagram
     reviewed = {finding.target_id: finding.verdict for finding in findings}
-    nodes, edges = [], []
+    nodes, edges, deviations = [], [], []
     for node in diagram.nodes:
         unit = diagram_unit(report, node.unit_ref)
         pointers = _node_targets(report, node)
@@ -369,6 +504,67 @@ def render_diagram(result, *, findings=(), report_origin="original"):
     text = json.dumps(
         report.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
+    for index, annotation in enumerate(diagram.deviations):
+        decision = diagram_deviation(report, annotation.deviation_ref).observed_decision
+        pointers = (
+            annotation.deviation_ref + "/observed_decision",
+            f"/diagram/deviations/{index}",
+        )
+        deviations.append(
+            DiagramAnnotation(
+                id=f"deviation_{index}",
+                label=decision.statement,
+                claim_ref=annotation.deviation_ref + "/observed_decision",
+                review_target_ids=pointers,
+                evidence_ids=decision.evidence_ids,
+                architect_status=decision.status,
+                semantic_verdict=_semantic_verdict(reviewed, pointers),
+            )
+        )
+    views = []
+    for index, view in enumerate(diagram.views):
+        local_report = report.model_copy(
+            update={"diagram": ArchitectureDiagram(**view.model_dump())}
+        )
+        local_findings = tuple(
+            finding.model_copy(
+                update={
+                    "target_id": finding.target_id.replace(
+                        f"/diagram/views/{index}/", "/diagram/", 1
+                    )
+                }
+            )
+            for finding in findings
+            if not finding.target_id.startswith("/diagram/")
+            or finding.target_id.startswith(f"/diagram/views/{index}/")
+        )
+        rendered = render_diagram(
+            result.model_copy(update={"architecture": local_report}),
+            findings=local_findings,
+            report_origin=report_origin,
+        )
+        annotations = {
+            key: tuple(
+                item.model_copy(
+                    update={
+                        "review_target_ids": tuple(
+                            pointer.replace("/diagram/", f"/diagram/views/{index}/", 1)
+                            for pointer in item.review_target_ids
+                        )
+                    }
+                )
+                for item in getattr(rendered, key)
+            )
+            for key in ("nodes", "edges", "deviations")
+        }
+        views.append(
+            rendered.model_copy(
+                update={
+                    "report_hash": hashlib.sha256(text.encode()).hexdigest(),
+                    **annotations,
+                }
+            )
+        )
     return RenderedArchitectureDiagram(
         snapshot_hash=result.snapshot_hash,
         report_hash=hashlib.sha256(text.encode()).hexdigest(),
@@ -377,11 +573,29 @@ def render_diagram(result, *, findings=(), report_origin="original"):
         mermaid=render_mermaid(report, findings=findings),
         nodes=tuple(nodes),
         edges=tuple(edges),
+        deviations=tuple(deviations),
+        views=tuple(views),
         limitations=diagram.limitations,
+        legend=DIAGRAM_LEGEND,
+        deviation_notes=tuple(
+            {
+                "id": f"D{index + 1}",
+                "observation": diagram_deviation(
+                    report, item.deviation_ref
+                ).observed_decision.statement,
+                "expectation": diagram_deviation(
+                    report, item.deviation_ref
+                ).pattern_expectation,
+                "explanation": item.explanation,
+                "architect_status": deviations[index].architect_status,
+                "semantic_verdict": deviations[index].semantic_verdict,
+            }
+            for index, item in enumerate(diagram.deviations)
+        ),
     )
 
 
-def render_mermaid(report: ArchitectureReport, *, findings=()):
+def render_mermaid(report: ArchitectureReport, *, findings=(), _prefix=""):
     """Render only this report's structure; caller supplies matching review findings."""
     validate_diagram(report)
     if not report.diagram:
@@ -393,21 +607,26 @@ def render_mermaid(report: ArchitectureReport, *, findings=()):
         return _semantic_verdict(reviewed, pointers)
 
     lines = [
-        "flowchart LR",
+        f"flowchart {diagram.direction}",
         f"  %% {_label(diagram.title)} | scope: {_label(diagram.scope)}",
         "  %% Solid = architect supported; dashed = hypothesis/unresolved. Semantic verdicts are separate.",
     ]
-    ids = {node.id: f"n{index}" for index, node in enumerate(diagram.nodes)}
+    ids = {node.id: f"{_prefix}n{index}" for index, node in enumerate(diagram.nodes)}
 
     def node_line(node, indent):
         unit = diagram_unit(report, node.unit_ref)
-        review = verdict(*_node_targets(report, node))
-        return f'{indent}{ids[node.id]}["{_label(unit.name)} | architect: {unit.responsibility.status} | semantic: {review}"]'
+        label = _label(unit.name)
+        shapes = {
+            "actor": ('(["', '"])'),
+            "interface": ('{{"', '"}}'),
+            "data_store": ('[("', '")]'),
+            "event_bus": ('{{"', '"}}'),
+        }
+        opening, closing = shapes.get(node.role, ('["', '"]'))
+        return f"{indent}{ids[node.id]}{opening}{label}{closing}"
 
     for index, group in enumerate(diagram.groups):
-        lines.append(
-            f'  subgraph g{index}["{_label(group.title)} | scope: {_label(group.scope)}"]'
-        )
+        lines.append(f'  subgraph {_prefix}g{index}["{_label(group.title)}"]')
         lines.extend(
             node_line(node, "    ")
             for node in diagram.nodes
@@ -420,10 +639,32 @@ def render_mermaid(report: ArchitectureReport, *, findings=()):
     for index, edge in enumerate(diagram.edges):
         connection: ArchitectureConnection = diagram_connection(report, edge.claim_ref)
         style = "-->" if connection.description.status == "supported" else "-.->"
-        text = f"{edge.kind} | architect: {connection.description.status} | semantic: {verdict(*_edge_targets(report, edge, index))}"
+        text = _label(edge.label or edge.kind)
         lines.append(f'  {ids[edge.source]} {style}|"{text}"| {ids[edge.target]}')
+        color = SEMANTIC_COLORS[verdict(*_edge_targets(report, edge, index))]
+        lines.append(f"  linkStyle {index} stroke:{color},stroke-width:2px")
     for node in diagram.nodes:
-        if diagram_unit(report, node.unit_ref).responsibility.status != "supported":
-            lines.append(f"  style {ids[node.id]} stroke-dasharray: 5 5")
+        status = diagram_unit(report, node.unit_ref).responsibility.status
+        semantic = verdict(*_node_targets(report, node))
+        lines.append(
+            f"  style {ids[node.id]} fill:{ARCHITECT_COLORS[status]},stroke:{SEMANTIC_COLORS[semantic]},stroke-width:{1 if semantic == 'not_reviewed' else 3}px,color:#172033"
+            + (",stroke-dasharray: 5 5" if semantic == "insufficient_evidence" else "")
+        )
+    for index, annotation in enumerate(diagram.deviations):
+        deviation = diagram_deviation(report, annotation.deviation_ref)
+        decision = deviation.observed_decision
+        identifier = f"{_prefix}d{index}"
+        semantic = verdict(
+            annotation.deviation_ref + "/observed_decision",
+            f"/diagram/deviations/{index}",
+        )
+        label = f"D{index + 1}"
+        lines.append(f'  {identifier}["{label}"]')
+        lines.append(
+            f"  style {identifier} fill:#fff3cd,stroke:{SEMANTIC_COLORS[semantic]},color:#513c06"
+            + (",stroke-dasharray: 5 5" if decision.status != "supported" else "")
+        )
+        for node_id in annotation.node_ids:
+            lines.append(f"  {identifier} -.-> {ids[node_id]}")
     lines.extend(f"  %% Limitation: {_label(item)}" for item in diagram.limitations)
     return "\n".join(lines) + "\n"

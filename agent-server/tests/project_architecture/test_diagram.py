@@ -15,7 +15,12 @@ from server.agents.project_architecture.diagram import (
     render_diagram,
     render_mermaid,
 )
+from server.agents.project_architecture.diagram_composition import (
+    complete_views,
+    missing_views,
+)
 from server.agents.project_architecture.schemas import (
+    ArchitectureDiagram,
     ArchitectureReport,
     ArchitectureResult,
 )
@@ -110,6 +115,31 @@ def fixture(tmp_path):
                     ),
                 },
             ],
+            "relationship_investigations": [
+                {
+                    "unit_name": name,
+                    "status": "connected",
+                    "assessment": claim(statement, [path]),
+                    "examined_file_ids": [records[path].file_id],
+                }
+                for name, path, statement in (
+                    (
+                        "Use Case",
+                        "service.py",
+                        "The service consumes the inspected Port contract.",
+                    ),
+                    (
+                        "Port",
+                        "port.py",
+                        "The inspected contract is consumed by Service and implemented by Adapter.",
+                    ),
+                    (
+                        "Adapter",
+                        "adapter.py",
+                        "The adapter implements the inspected Port contract.",
+                    ),
+                )
+            ],
             "closest_architecture": {
                 "pattern": "Ports and adapters",
                 "assessment": {
@@ -170,6 +200,99 @@ def fixture(tmp_path):
         telemetry=ExecutionTelemetry(),
     )
     return tools, fresh, original, snapshot, workspace
+
+
+def multiview_report(original):
+    raw = original.architecture.model_dump(mode="json")
+    raw["deviations"] = [
+        {
+            "observed_decision": {
+                "statement": "Adapter returns a constant instead of reading external state.",
+                "scope": "adapter.py",
+                "status": "supported",
+                "evidence_ids": list(
+                    original.architecture.organization[2].responsibility.evidence_ids
+                ),
+            },
+            "pattern_expectation": "The persistence adapter delegates to an external store.",
+            "explanation": "This adapter is a local stub; this is a variation, not proof of a defect.",
+        }
+    ]
+    diagram = raw["diagram"]
+    diagram["nodes"][0]["role"] = "service"
+    diagram["nodes"][1]["role"] = "interface"
+    diagram["nodes"][2]["role"] = "adapter"
+    diagram["edges"][0]["label"] = "load contract"
+    diagram["deviations"] = [
+        {
+            "deviation_ref": "/deviations/0",
+            "node_ids": ["adapter"],
+            "explanation": "The adapter's load implementation returns a constant.",
+        }
+    ]
+    extra = {key: value for key, value in diagram.items() if key != "views"}
+    diagram["views"] = [
+        {
+            **extra,
+            "title": "Dependency inversion",
+            "view_kind": "dependencies",
+            "direction": "TB",
+        }
+    ]
+    return ArchitectureReport.model_validate(raw)
+
+
+def test_multiple_views_and_deviations_are_traceable_and_reviewable(fixture):
+    tools, _, original, _, _ = fixture
+    report = multiview_report(original)
+    result = original.model_copy(update={"architecture": report})
+    validate_report(tools, report)
+    targets = {item.id: item for item in review_targets(tools, result)}
+    assert "/diagram/nodes/1/role" in targets
+    assert "/diagram/deviations/0" in targets
+    pointer = "/diagram/views/0/deviations/0"
+    assert pointer in targets
+    finding = SemanticFinding(
+        target_id=pointer,
+        checked_statement=targets[pointer].claim.statement,
+        verdict="insufficient_evidence",
+        reason="Placement requires inspection.",
+        counterevidence_check="The adapter might be a test stub rather than the active persistence adapter.",
+        missing_evidence=(
+            {"question": "Where is this adapter selected?", "paths": ["adapter.py"]},
+        ),
+    )
+    rendered = render_diagram(result, findings=(finding,))
+    assert len(rendered.views) == 1
+    assert rendered.views[0].report_hash == rendered.report_hash
+    assert rendered.views[0].deviations[0].semantic_verdict == "insufficient_evidence"
+    assert pointer in rendered.views[0].deviations[0].review_target_ids
+    assert "view_primary" not in rendered.mermaid and "view_0" not in rendered.mermaid
+    assert rendered.mermaid.startswith("flowchart LR")
+    assert rendered.views[0].mermaid.startswith("flowchart TB")
+    assert 'd0["D1"]' in rendered.mermaid
+    assert rendered.deviation_notes[0].observation.startswith(
+        "Adapter returns a constant"
+    )
+    assert "load contract" in rendered.mermaid and rendered.legend
+    assert "architect:" not in rendered.mermaid and "semantic:" not in rendered.mermaid
+    assert 'legend["' not in rendered.mermaid
+
+
+@pytest.mark.parametrize(
+    "reference,node_ids",
+    [("/deviations/99", ["adapter"]), ("/deviations/0", ["ghost"])],
+)
+def test_deviation_annotations_reject_unavailable_references(
+    fixture, reference, node_ids
+):
+    _, _, original, _, _ = fixture
+    raw = multiview_report(original).model_dump(mode="json")
+    raw["diagram"]["views"][0]["deviations"][0].update(
+        deviation_ref=reference, node_ids=node_ids
+    )
+    with pytest.raises(ValueError, match="existing"):
+        ArchitectureReport.model_validate(raw)
 
 
 @pytest.mark.parametrize(
@@ -271,7 +394,7 @@ def test_semantic_labels_require_linked_claim_and_interpretation_reviews(fixture
         render_diagram(original, findings=rejected).edges[0].semantic_verdict
         == "contradicted"
     )
-    assert "semantic: contradicted" in render_mermaid(
+    assert "linkStyle 0 stroke:#b91c1c" in render_mermaid(
         original.architecture, findings=rejected
     )
 
@@ -283,7 +406,31 @@ def test_hypothesis_uses_dashed_edges_without_upgrading_certainty(fixture):
     )
     report = ArchitectureReport.model_validate(raw)
     assert "n0 -.->" in render_mermaid(report)
-    assert "architect: hypothesis" in render_mermaid(report)
+    assert "architect: hypothesis" not in render_mermaid(report)
+
+
+@pytest.mark.parametrize(
+    "semantic,color",
+    [
+        ("supported", "#15803d"),
+        ("overstated", "#c2410c"),
+        ("contradicted", "#b91c1c"),
+        ("insufficient_evidence", "#64748b"),
+    ],
+)
+def test_node_fill_and_border_represent_independent_judgments(fixture, semantic, color):
+    _, fresh, original, _, _ = fixture
+    findings = tuple(
+        item.model_copy(update={"verdict": semantic})
+        if item.target_id == "/organization/0/responsibility"
+        else item
+        for item in findings_for(fresh, original)
+    )
+    chart = render_mermaid(original.architecture, findings=findings)
+    assert f"style n0 fill:#dbeafe,stroke:{color}" in chart
+    assert "architect:" not in chart and "semantic:" not in chart
+    if semantic == "insufficient_evidence":
+        assert "stroke-dasharray: 5 5" in chart
 
 
 def test_labels_cannot_inject_mermaid_nodes_html_or_directives(fixture):
@@ -461,7 +608,7 @@ def test_compact_composition_preserves_model_selection_and_native_output_limit(f
             data = json.loads(prompt.split("\nDIAGRAM_DATA\n", 1)[1])
             assert len(data["units"]) == 3
             assert "TOOLS" not in prompt and "tool_results" not in prompt
-            assert len(prompt) < 10000
+            assert len(prompt) < 48000
             self.calls.append(max_output_tokens)
             return json.dumps(selected)
 
@@ -470,18 +617,22 @@ def test_compact_composition_preserves_model_selection_and_native_output_limit(f
     tools = fresh()
     composition = asyncio.run(agent.compose_diagram(tools, original))
     assert composition.completion_status == "complete"
-    assert composition.diagram.model_dump(mode="json") == selected
+    assert composition.composition_origin == "host_fallback"
+    assert (
+        composition.diagram.nodes == ArchitectureDiagram.model_validate(selected).nodes
+    )
+    assert not missing_views(original.architecture, composition.diagram)
     assert (
         len(composition.diagram.nodes) == 2
     )  # The host did not add the omitted adapter.
-    assert model.calls == [1200]
-    assert composition.usage.model_calls == 1 and composition.usage.tool_calls == 0
+    assert model.calls == [3000, 3000]  # One directed correction before fallback.
+    assert composition.usage.model_calls == 2 and composition.usage.tool_calls == 0
     assert not tools.retrieved_evidence
     assert original.architecture.diagram is None
 
 
 @pytest.mark.parametrize("failure", ["direction", "provider"])
-def test_composition_failure_preserves_report_and_does_not_retry_format(
+def test_composition_failure_preserves_report_and_guarantees_fallback_views(
     fixture, failure
 ):
     _, fresh, original, _, _ = fixture
@@ -502,8 +653,10 @@ def test_composition_failure_preserves_report_and_does_not_retry_format(
     result = asyncio.run(
         ProjectArchitectureAgent(model).compose_diagram(fresh(), original)
     )
-    assert result.completion_status == "failed" and result.diagram is None
-    assert result.execution_issues and model.calls == 1
+    assert result.completion_status == "complete" and result.diagram is not None
+    assert result.composition_origin == "host_fallback"
+    assert not missing_views(original.architecture, result.diagram)
+    assert result.execution_issues and model.calls == 2
     assert original.model_dump_json() == before
 
 
@@ -529,6 +682,67 @@ def test_composition_external_cancellation_propagates(fixture):
     asyncio.run(scenario())
 
 
+def test_missing_views_are_corrected_once_by_model(fixture):
+    _, fresh, original, _, _ = fixture
+
+    class Model:
+        calls = 0
+
+        async def generate(self, prompt):
+            self.calls += 1
+            if self.calls == 1:
+                return original.architecture.diagram.model_dump_json()
+            assert "CORRECTION" in prompt
+            data = json.loads(str(prompt).split("\nDIAGRAM_DATA\n", 1)[1])
+            assert data["required_views"] == ["structure", "dependencies"]
+            return complete_views(
+                original.architecture, original.architecture.diagram
+            ).model_dump_json()
+
+    model = Model()
+    composition = asyncio.run(
+        ProjectArchitectureAgent(model).compose_diagram(fresh(), original)
+    )
+    assert composition.composition_origin == "model_repaired"
+    assert model.calls == 2 and not composition.execution_issues
+    assert {
+        view.view_kind for view in [composition.diagram, *composition.diagram.views]
+    } == {"structure", "dependencies"}
+
+
+def test_fallback_adds_flow_only_for_explicit_supported_calls(fixture):
+    tools, _, original, _, _ = fixture
+    plain = complete_views(original.architecture)
+    assert len(plain.views) == 1
+    assert any("runtime flow" in limitation for limitation in plain.limitations)
+    raw = original.architecture.model_dump(mode="json")
+    raw["connections"][0]["kind"] = "calls"
+    raw["connections"][1]["kind"] = "implements"
+    report = ArchitectureReport.model_validate(raw)
+    completed = complete_views(report)
+    assert not missing_views(report, completed)
+    assert {view.view_kind for view in [completed, *completed.views]} == {
+        "structure",
+        "dependencies",
+        "flow",
+    }
+    flow = next(view for view in completed.views if view.view_kind == "flow")
+    assert all(edge.kind == "calls" for edge in flow.edges)
+    validate_report(tools, report.model_copy(update={"diagram": completed}))
+
+
+def test_empty_connection_report_has_explicit_dependency_and_flow_limits(fixture):
+    report = fixture[2].architecture.model_copy(
+        update={"connections": (), "diagram": None}
+    )
+    diagram = complete_views(report)
+    assert not diagram.views[0].edges
+    assert any(
+        "No connections" in limitation for limitation in diagram.views[0].limitations
+    )
+    assert any("runtime flow" in limitation for limitation in diagram.limitations)
+
+
 def test_pipeline_composes_original_and_revised_views_before_their_reviews(fixture):
     from server.agents.repository_runtime.model_runtime import ModelGateway
 
@@ -550,7 +764,9 @@ def test_pipeline_composes_original_and_revised_views_before_their_reviews(fixtu
             raw["title"] = (
                 "Original selected view" if self.calls == 1 else "Revised selected view"
             )
-            return json.dumps(raw)
+            return complete_views(
+                original.architecture, ArchitectureDiagram.model_validate(raw)
+            ).model_dump_json()
 
     model = Model()
     gateway = ModelGateway(model)
@@ -756,7 +972,9 @@ def test_runner_checkpoints_before_503_and_resumes_without_investigation(
             self.calls += 1
             if self.failing:
                 raise Unavailable("Service temporarily overloaded")
-            return json.dumps(selected)
+            return complete_views(
+                original.architecture, ArchitectureDiagram.model_validate(selected)
+            ).model_dump_json()
 
     model = Model()
     monkeypatch.setattr(repository_runner, "create_model", lambda arguments: model)
@@ -780,9 +998,8 @@ def test_runner_checkpoints_before_503_and_resumes_without_investigation(
     data, usable = asyncio.run(repository_runner.run(parser.parse_args(base)))
     assert usable and data["pipeline_status"] == "partial"
     assert model.calls == 3 and len(investigation_calls) == 1
-    assert reviews == [
-        None
-    ]  # A failed presentation gateway did not stop source review.
+    assert len(reviews) == 1 and reviews[0] is not None
+    assert data["diagram_composition"]["composition_origin"] == "host_fallback"
     assert data["pipeline_usage"]["provider_attempts"] == 3
     assert (
         "Service temporarily overloaded"
