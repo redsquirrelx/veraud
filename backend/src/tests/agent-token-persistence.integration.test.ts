@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { once } from "node:events"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -48,6 +49,10 @@ test("absolute-limit migration preserves saved budgets, usage and historical sna
     assert.equal(historical.result, '{"summary":"partial"}')
     assert.equal(historical.accounted_tokens, 11000)
     assert.equal(historical.interruption_reason, "token_budget_exhausted")
+    db.exec(readFileSync(new URL("../../prisma/migrations/20261014020000_derive_agent_token_total/migration.sql", import.meta.url), "utf8"))
+    assert.throws(() => db.prepare("SELECT accounted_tokens FROM agent_execution"))
+    const derived = db.prepare("SELECT input_tokens + output_tokens + estimated_tokens AS total FROM agent_execution WHERE id = 1").get()
+    assert.equal(derived?.total, 11000)
   } finally { db.close() }
 })
 
@@ -85,7 +90,7 @@ test("token budgets, immutable snapshots and cumulative usage survive persistenc
 
     const prepared = await settings.prepare("orientation")
     const execution = await executions.create({ agentType: "orientation", evaluationId: null, configuration: prepared })
-    assert.equal(execution.accountedTokens, null)
+    assert.equal(execution.inputTokens, null)
     assert.equal(execution.configuration?.absoluteTokenLimit, 12001)
     const strict = await save({ tokenBudget: 20000, absoluteTokenLimit: 20000 })
     assert.equal(strict.statusCode, 200, strict.body)
@@ -93,31 +98,53 @@ test("token budgets, immutable snapshots and cumulative usage survive persistenc
     await assert.rejects(executions.create({ agentType: "orientation", evaluationId: null, configuration: prepared }), AgentConfigurationError)
 
     await executions.markRunning(execution.id)
-    const usage = { inputTokens: 8000, outputTokens: 2000, estimatedTokens: 1000, accountedTokens: 11000 }
-    await executions.updateUsage(execution.id, usage)
-    await executions.updateUsage(execution.id, usage)
-    const stale = await executions.updateUsage(execution.id, { inputTokens: 100, outputTokens: 100, estimatedTokens: 0, accountedTokens: 200 })
-    assert.equal(stale.accountedTokens, 11000)
+    const progressUrl = `/api/agent-executions/${execution.id}/progress`
+    const usage = { inputTokens: 8000, outputTokens: 2000, estimatedTokens: 1000 }
+    await app.ready()
+    const socket = await app.injectWS("/ws")
+    try {
+      const nextEvent = once(socket, "message", { signal: AbortSignal.timeout(5000) })
+      const progress = await app.inject({ method: "POST", url: progressUrl, payload: usage })
+      assert.equal(progress.statusCode, 200, progress.body)
+      assert.equal(progress.json().estimatedTokens, 1000)
+      assert.equal(progress.json().status, "Running")
+      const [message] = await nextEvent
+      const event = JSON.parse(String(message))
+      assert.equal(event.type, "agent-execution.updated")
+      assert.equal(event.execution.id, execution.id)
+      assert.equal(event.execution.inputTokens, 8000)
+      assert.equal(event.execution.estimatedTokens, 1000)
+    } finally { socket.terminate() }
+    assert.equal((await app.inject({ method: "POST", url: progressUrl, payload: usage })).json().inputTokens, 8000)
+    const stale = await executions.updateUsage(execution.id, { inputTokens: 100, outputTokens: 100, estimatedTokens: 0 })
     assert.equal(stale.inputTokens, 8000)
-    await assert.rejects(executions.updateUsage(execution.id, { ...usage, accountedTokens: 11001 }), RangeError)
     await assert.rejects(executions.updateUsage(execution.id, { ...usage, estimatedTokens: -1 }), RangeError)
+    for (const invalid of [{ inputTokens: -1, outputTokens: 0 }, { inputTokens: 1.5, outputTokens: 0 }, { inputTokens: 2147483648, outputTokens: 0 }, { inputTokens: 1 }]) {
+      assert.equal((await app.inject({ method: "POST", url: progressUrl, payload: invalid })).statusCode, 400)
+    }
+    assert.equal((await app.inject({ method: "POST", url: "/api/agent-executions/999999/progress", payload: usage })).statusCode, 404)
 
     const partial = '{"summary":"partial analysis"}'
-    const completed = await executions.complete(execution.id, {
+    const completion = await app.inject({ method: "POST", url: `/api/agent-executions/${execution.id}/completion`, payload: {
       status: "Failed", result: partial, error: "Absolute token limit reached",
       inputTokens: null, outputTokens: null, interruptionReason: "token_budget_exhausted",
-    })
+    } })
+    assert.equal(completion.statusCode, 200, completion.body)
+    const completed = (await executions.findById(execution.id))!
     assert.equal(completed.inputTokens, 8000)
     assert.equal(completed.outputTokens, 2000)
     assert.equal(completed.estimatedTokens, 1000)
-    assert.equal(completed.accountedTokens, 11000)
     assert.equal(completed.interruptionReason, "token_budget_exhausted")
-    const late = await executions.updateUsage(execution.id, { inputTokens: 9000, outputTokens: 2000, estimatedTokens: 1000, accountedTokens: 12000 })
+    const late = await executions.updateUsage(execution.id, { inputTokens: 9000, outputTokens: 2000, estimatedTokens: 1000 })
     assert.deepEqual(late, completed)
     const persisted = await db.agentExecution.findUniqueOrThrow({ where: { id: execution.id } })
     assert.equal(persisted.result, partial)
-    assert.equal(persisted.accountedTokens, 11000)
+    assert.equal((persisted.inputTokens ?? 0) + (persisted.outputTokens ?? 0) + (persisted.estimatedTokens ?? 0), 11000)
     assert.equal(persisted.interruptionReason, "token_budget_exhausted")
+    const stored = (await app.inject({ url: `/api/agent-executions/${execution.id}` })).json()
+    assert.equal(stored.estimatedTokens, 1000)
+    assert.equal(stored.interruptionReason, "token_budget_exhausted")
+    assert.equal((await app.inject({ method: "POST", url: `/api/agent-executions/${execution.id}/running` })).json().status, "Failed")
 
     const cleared = await save({ tokenBudget: null, absoluteTokenLimit: null })
     assert.equal(cleared.json().configuration.tokenBudget, null)
