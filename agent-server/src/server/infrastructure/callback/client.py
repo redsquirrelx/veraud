@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 
 from ...config.logs import get_logger
-from .schemas import CallbackConfig, CallbackResult, ExecutionOutcome
+from .schemas import CallbackConfig, CallbackResult, ExecutionOutcome, ExecutionProgress
 
 logger = get_logger("infrastructure.callback")
 
@@ -38,6 +38,12 @@ class CallbackClient:
         return await self._post(
             f"/api/agent-executions/{execution_id}/completion",
             outcome.model_dump(by_alias=True),
+        )
+
+    async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
+        return await self._post(
+            f"/api/agent-executions/{execution_id}/progress",
+            usage.model_dump(by_alias=True),
         )
 
     async def aclose(self) -> None:

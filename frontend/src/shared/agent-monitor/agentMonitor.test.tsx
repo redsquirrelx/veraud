@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { AgentExecutionsProvider } from "./agentMonitor.tsx"
 import { useAgentExecutions } from "./useAgentExecutions.ts"
 
 const realWebSocket = globalThis.WebSocket
+const realFetch = globalThis.fetch
 
 type Listener = (event: { data: string }) => void
 
@@ -60,7 +61,13 @@ const opened = {
 
 afterEach(() => {
   globalThis.WebSocket = realWebSocket
+  globalThis.fetch = realFetch
+  window.localStorage.removeItem("agents.recentExecutionIds")
   FakeSocket.instances = []
+})
+
+beforeEach(() => {
+  globalThis.fetch = (async () => new Response(JSON.stringify({ ...opened, configuration: null }))) as typeof fetch
 })
 
 describe("AgentExecutionsProvider", () => {

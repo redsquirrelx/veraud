@@ -225,6 +225,16 @@ components:
             - integer
             - "null"
           description: Optional output token usage.
+        estimatedTokens:
+          type:
+            - integer
+            - "null"
+          description: Estimated usage, separate from provider-reported counts.
+        interruptionReason:
+          type:
+            - string
+            - "null"
+          description: Machine-readable interruption cause.
         createdAt:
           type: string
           format: date-time

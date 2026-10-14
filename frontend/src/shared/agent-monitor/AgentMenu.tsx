@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Card, CheckIcon, ChevronDownIcon, ChevronUpIcon, CrossIcon, Spinner, XIcon } from "../ui-kit/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import "./AgentMenu.css"
+import { AgentTokenUsage } from "./AgentTokenUsage.tsx"
 
 export function AgentMenu({ executions }: { executions: AgentExecution[] }) {
   const [expanded, setExpanded] = useState(false)
@@ -80,6 +81,7 @@ export function AgentMenu({ executions }: { executions: AgentExecution[] }) {
                 <span className="mono">{execution.agentType} run #{execution.id}</span>
                 <span className="label">{execution.status}</span>
               </div>
+              <AgentTokenUsage execution={execution} />
             </Card>
           ))}
         </div>

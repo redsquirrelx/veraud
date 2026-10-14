@@ -46,6 +46,7 @@ class ModelGateway:
         on_event=None,
         trace=False,
         remaining_seconds=None,
+        on_usage=None,
     ):
         if (
             not math.isfinite(interval)
@@ -67,6 +68,7 @@ class ModelGateway:
         self.trace = trace
         self.stopped = False
         self.remaining_seconds = remaining_seconds
+        self.on_usage = on_usage
 
     async def __call__(self, prompt):
         if self.stopped:
@@ -257,6 +259,8 @@ class ModelGateway:
                 input_tokens=record["input_tokens"],
                 output_tokens=record["output_tokens"],
             )
+            if self.on_usage is not None:
+                await self.on_usage(self)
 
     def usage_totals(self):
         def token_total(name):

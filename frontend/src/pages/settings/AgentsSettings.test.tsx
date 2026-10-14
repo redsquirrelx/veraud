@@ -27,7 +27,7 @@ describe("AgentsSettings", () => {
     expect(within(drawer).getByRole("button", { name: "example" })).toBeEnabled()
     expect(within(drawer).getByRole("button", { name: "production" })).toBeEnabled()
     expect(within(drawer).getByRole("spinbutton", { name: /Temperature/ })).toHaveValue(0)
-    expect(within(drawer).getByRole("spinbutton", { name: /Maximum tokens/ })).toHaveValue(1024)
+    expect(within(drawer).getByRole("spinbutton", { name: /Maximum output tokens per call/ })).toHaveValue(1024)
     expect(within(drawer).getByRole("button", { name: "Save changes" })).toBeDisabled()
   })
 
@@ -71,7 +71,7 @@ describe("AgentsSettings", () => {
     expect(drawer.getByRole("button", { name: "Save changes" })).toBeDisabled()
     await user.clear(temperature)
     await user.type(temperature, "0")
-    await user.clear(drawer.getByRole("spinbutton", { name: /Maximum tokens/ }))
+    await user.clear(drawer.getByRole("spinbutton", { name: /Maximum output tokens per call/ }))
     await user.click(drawer.getByRole("button", { name: "Save changes" }))
     expect(await drawer.findByRole("alert")).toHaveTextContent("Save failed")
     expect(temperature).toHaveValue(0)
@@ -79,13 +79,13 @@ describe("AgentsSettings", () => {
     await user.click(drawer.getByRole("button", { name: "Save changes" }))
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated))
     expect(fetch).toHaveBeenLastCalledWith(expect.stringContaining("/api/agent-settings/analyzer"), expect.objectContaining({
-      method: "PUT", body: JSON.stringify({ modelId: 3, credentialId: 2, temperature: 0, maxTokens: null }),
+      method: "PUT", body: JSON.stringify({ modelId: 3, credentialId: 2, temperature: 0, maxTokens: null, tokenBudget: null, absoluteTokenLimit: null }),
     }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(screen.getByRole("button", { name: "new-model" })).toBeDefined()
     await user.click(screen.getByRole("button", { name: "Configure analyzer" }))
     expect(within(screen.getByRole("dialog")).getByRole("spinbutton", { name: /Temperature/ })).toHaveValue(0)
-    expect(within(screen.getByRole("dialog")).getByRole("spinbutton", { name: /Maximum tokens/ })).toHaveValue(null)
+    expect(within(screen.getByRole("dialog")).getByRole("spinbutton", { name: /Maximum output tokens per call/ })).toHaveValue(null)
   })
 
   it("cancels requests when leaving the agents section", async () => {

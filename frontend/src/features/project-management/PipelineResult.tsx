@@ -1,5 +1,6 @@
 import { Badge, MermaidDiagram } from "../../shared/ui-kit/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { AgentTokenUsage } from "../../shared/agent-monitor/AgentTokenUsage.tsx"
 import "./PipelineStage.css"
 import {
   auditTone,
@@ -13,14 +14,19 @@ import {
 /** One pipeline row, with its error when it failed. */
 export function PipelineRunStatus({ execution }: { execution: AgentExecution }) {
   return (
-    <div className="audit-status-row">
-      <Badge tone={auditTone(execution.status)}>{execution.status}</Badge>
-      <span className="label">
-        {execution.agentType} run #{execution.id}
-      </span>
-      {execution.status === "Failed" && execution.error !== null && execution.error !== "" && (
-        <span className="audit-error">{execution.error}</span>
-      )}
+    <div className="audit-run-status">
+      <div className="audit-status-row">
+        <Badge tone={auditTone(execution.status)}>{execution.status}</Badge>
+        <span className="label">
+          {execution.agentType} run #{execution.id}
+        </span>
+        {execution.status === "Failed" && execution.error !== null && execution.error !== "" && (
+          <span className="audit-error">{execution.error}</span>
+        )}
+        {execution.status === "Failed" && execution.interruptionReason === "token_budget_exhausted" && <span className="audit-error">Execution interrupted: token budget exhausted.</span>}
+        {execution.status === "Failed" && execution.result && <Badge tone="info">Partial results available — incomplete</Badge>}
+      </div>
+      <AgentTokenUsage execution={execution} />
     </div>
   )
 }

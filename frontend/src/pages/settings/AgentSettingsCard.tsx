@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Card, ItemSelector } from "../../shared/ui-kit/index.ts"
 import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
+import { DEFAULT_TOKEN_BUDGET, DEFAULT_ABSOLUTE_TOKEN_LIMIT } from "../../shared/agent-monitor/tokenBudgets.ts"
 
 interface AgentSettingsCardProps {
   agent: AgentSettings
@@ -91,6 +92,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       {error && <p className="settings-error" role="alert">{error}</p>}
       {saved && !dirty && <p className="settings-hint" role="status">Configuration saved.</p>}
       <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading} onUpdated={onVerified} />
+      <p className="settings-hint">Initial budget: {(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET).toLocaleString()} · Absolute limit: {(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT).toLocaleString()}</p>
       <div className="settings-agent-footer">
         <Button variant="secondary" ariaLabel={`Configure ${agent.agentType}`} onClick={onConfigure}>Configure</Button>
         <Button disabled={!canSave} loading={saving} loadingText="Saving..." onClick={() => void save()}>Save changes</Button>

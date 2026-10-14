@@ -28,6 +28,7 @@ from .callback_port import (
     default_callback_sink,
 )
 from .tracing_port import LangSmithTracingBackend, TracingBackend
+from .usage_reporting import ReportingModel
 
 logger = get_logger("execution-service")
 
@@ -238,6 +239,8 @@ class AgentExecutionService:
         )
 
         callbacks = self._callbacks(execution_id)
+        reporting_model = ReportingModel(agent.model, callbacks, execution_id)
+        agent.model = reporting_model
 
         try:
             await self._mark_running(callbacks, execution_id)
@@ -249,17 +252,17 @@ class AgentExecutionService:
                 timeout_seconds=timeout,
             )
 
-            await self._report(callbacks, execution_id, result)
+            await self._report(callbacks, execution_id, result, reporting_model.usage.model_dump())
 
             return result
 
         except TimeoutError:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
-            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s")
+            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s", reporting_model.usage.model_dump())
             raise
         except Exception as error:  # noqa: BLE001 - Report failures without leaking provider credentials.
             message = f"Agent execution failed ({type(error).__name__}); check model access and agent input"
-            await self._report_failure(callbacks, execution_id, message)
+            await self._report_failure(callbacks, execution_id, message, reporting_model.usage.model_dump())
             raise InvalidConfigError(message) from None
         finally:
             if callbacks is not None:
@@ -294,6 +297,7 @@ class AgentExecutionService:
         callbacks: CallbackSink | None,
         execution_id: int | None,
         result: BaseModel,
+        usage: dict | None = None,
     ) -> None:
         """Close the row with the agent's output, serialized.
 
@@ -305,7 +309,7 @@ class AgentExecutionService:
 
         await callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Completed", result=result.model_dump_json()),
+            ExecutionOutcome(status="Completed", result=result.model_dump_json(), **(usage or {})),
         )
 
     async def _report_failure(
@@ -313,13 +317,14 @@ class AgentExecutionService:
         callbacks: CallbackSink | None,
         execution_id: int | None,
         error: str,
+        usage: dict | None = None,
     ) -> None:
         if callbacks is None or execution_id is None:
             return
 
         await callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Failed", error=error),
+            ExecutionOutcome(status="Failed", error=error, **(usage or {})),
         )
 
 

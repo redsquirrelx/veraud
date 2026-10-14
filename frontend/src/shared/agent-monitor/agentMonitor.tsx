@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { backendWsUrl, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { backendWsUrl, getAgentExecution, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
+import { mergeExecution } from "./mergeExecution.ts"
 import { AgentExecutionsContext } from "./useAgentExecutions.ts"
 
 interface AgentExecutionEvent {
@@ -26,6 +28,42 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     let alive = true
     let socket: WebSocket | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
+    const stored = localStorage.get<unknown>("agents.recentExecutionIds", [])
+    const knownIds = new Set<number>(Array.isArray(stored) ? stored.filter((id): id is number => Number.isInteger(id) && id > 0).slice(-50) : [])
+    const hydrated = new Set<number>()
+    const pending = new Set<number>()
+    const revisions = new Map<number, number>()
+
+    function apply(execution: AgentExecution, snapshotOnly = false) {
+      if (!alive) return
+      setExecutions((current) => {
+        const index = current.findIndex((item) => item.id === execution.id)
+        if (index === -1) return [...current, execution].sort((a, b) => a.id - b.id).slice(-50)
+        const next = [...current]
+        next[index] = snapshotOnly ? {
+          ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
+        } : mergeExecution(current[index], execution)
+        return next
+      })
+    }
+
+    async function refresh(id: number) {
+      if (pending.has(id)) return
+      pending.add(id)
+      const revision = revisions.get(id) ?? 0
+      try {
+        const execution = await getAgentExecution(id)
+        if (execution.id !== id) return
+        hydrated.add(id)
+        apply(execution, revision !== (revisions.get(id) ?? 0))
+      } catch {
+        // A later event/reconnect can retry; transient HTTP failures keep the live row.
+      } finally { pending.delete(id) }
+    }
+
+    function restore() {
+      for (const id of knownIds) void refresh(id)
+    }
 
     function handleMessage(event: MessageEvent) {
       if (!alive) {
@@ -40,15 +78,12 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
       if (!isAgentEvent(data)) {
         return
       }
-      setExecutions((current) => {
-        const index = current.findIndex((execution) => execution.id === data.execution.id)
-        if (index === -1) {
-          return [...current, data.execution]
-        }
-        const next = [...current]
-        next[index] = data.execution
-        return next
-      })
+      knownIds.add(data.execution.id)
+      if (knownIds.size > 50) knownIds.delete(knownIds.values().next().value!)
+      localStorage.set("agents.recentExecutionIds", [...knownIds])
+      revisions.set(data.execution.id, (revisions.get(data.execution.id) ?? 0) + 1)
+      apply(data.execution)
+      if (data.execution.configuration === undefined && !hydrated.has(data.execution.id)) void refresh(data.execution.id)
     }
 
     function schedule() {
@@ -69,11 +104,13 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
         return
       }
       socket.addEventListener("message", handleMessage)
+      socket.addEventListener("open", restore)
       socket.addEventListener("close", schedule)
       socket.addEventListener("error", () => socket?.close())
     }
 
     connect()
+    restore()
 
     return () => {
       alive = false

@@ -132,6 +132,33 @@ from `backend/` before restarting both services:
 pnpm exec prisma migrate deploy
 ```
 
+## Token budget persistence
+
+Migrations `20261014000000_agent_token_budget` and
+`20261014010000_agent_absolute_token_limit` introduce nullable `tokenBudget` and
+`absoluteTokenLimit` settings. These describe the cumulative input/output
+budget of an agent execution; `maxTokens` still describes output per model call.
+The settings PUT endpoint accepts both new fields. Omission preserves a saved
+value and null clears its override. Both values are positive 32-bit integers.
+
+When both overrides are present, `absoluteTokenLimit` must be greater than or
+equal to `tokenBudget`; invalid combinations are rejected with `422`. Equal
+values mean a strict budget. The tolerance margin is derived as
+`absoluteTokenLimit - tokenBudget`, rather than stored as a percentage.
+Null means the runtime must resolve that parameter's default. No new default
+budget or absolute limit is assigned by these migrations.
+
+The second migration converts previously saved percentages to their calculated
+absolute limits and removes the old percentage column. Previous execution
+snapshots keep their captured absolute limit and drop the percentage property.
+
+New execution snapshots retain these values. Changing either setting invalidates
+the current configuration fingerprint and cannot change an existing snapshot.
+Historical snapshots without the new properties remain readable.
+
+This persistence phase stores configuration; passing it to the runtime budget
+and enforcing tolerance will be integrated in the execution phase.
+
 ## Verification
 
 From `backend/`:

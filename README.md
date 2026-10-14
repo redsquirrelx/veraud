@@ -56,7 +56,7 @@ With the backend running, open `http://<backend-host>:<backend-port>/docs` for
 Swagger UI, or `/docs/json` for the OpenAPI specification. Use the backend port
 configured for your environment, rather than the frontend port.
 
-The portal documents all 27 backend HTTP operations and supports "Try it out".
+The portal documents all 31 backend HTTP operations and supports "Try it out".
 See [the backend documentation index](docs/backend/README.md) for HTTP contracts,
 architecture notes and WebSocket lifecycle documentation.
 

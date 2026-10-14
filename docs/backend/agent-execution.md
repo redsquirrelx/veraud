@@ -153,6 +153,9 @@ Request:
 
 `status` is `Completed` or `Failed`. `Failed` requires a non-empty `error`.
 `result` and the token counts are nullable.
+`estimatedTokens` optionally supplies the cumulative estimated usage;
+`interruptionReason` optionally supplies a machine-readable interruption cause.
+Omitted or null counts preserve usage already received through progress callbacks.
 
 A callback on an already-closed run is **ignored** and the stored row is
 returned unchanged, so a retried or duplicated callback cannot overwrite a
@@ -181,7 +184,7 @@ Broadcast on `/ws` for every transition:
 | Event | When |
 |---|---|
 | `agent-execution.opened` | Row created (`Waiting`) |
-| `agent-execution.updated` | `Running`, `Completed` or `Failed` |
+| `agent-execution.updated` | `Running`, usage progress, `Completed` or `Failed` |
 
 Payload is `{ type, execution }` where `execution` has the same fields as the
 HTTP response. The UI keys off `execution.id`.
@@ -199,4 +202,42 @@ HTTP response. The UI keys off `execution.id`.
 - The agent-server derives where to report from `PORT_BACKEND`. If it is not
   configured the run still works, it just reports nowhere and the row stays
   `Waiting`.
-- Token counts stay null: the agent-server does not return usage yet.
+- The agent-server reports cumulative input/output usage after model calls and
+  includes final usage in success and failure completion callbacks.
+
+## Token usage persistence
+
+Migration `20261014000000_agent_token_budget` adds nullable `estimatedTokens`
+and `interruptionReason` to execution rows. Migration
+`20261014020000_derive_agent_token_total` removes the redundant `accountedTokens`
+column. Total consumption is calculated from the reported counts and estimates. Existing
+`inputTokens` and `outputTokens` store provider-reported cumulative counts;
+estimates are never written into those reported counters. Null means usage has
+not been recorded, rather than zero consumption.
+
+`AgentExecutionRepository.updateUsage()` stores cumulative progress while a row
+is Running. Total usage is `(inputTokens ?? 0) + (outputTokens ?? 0) + (estimatedTokens ?? 0)`.
+An atomic update rejects progress that would reduce reported or estimated usage
+and ignores progress after completion. Duplicate cumulative updates are safe.
+Completion preserves previously recorded usage when counts are absent/null, and
+can store a machine-readable interruption reason alongside `error` and the
+partial serialized `result`.
+
+## `POST /api/agent-executions/:id/progress`
+
+Accepts cumulative `inputTokens` and `outputTokens` (required, nullable) and
+`estimatedTokens` (optional, defaults to zero). Non-null counts must be
+non-negative 32-bit integers. Returns the execution and broadcasts
+`agent-execution.updated`; unknown IDs return `404`, invalid bodies return `400`.
+Waiting or closed rows are returned without updating consumption.
+
+The agent-server's model gateway reports each finished call, including retry
+estimates, to the correct stage execution. Architecture stays open through
+diagram composition and revisions so those calls belong to the same row.
+The completion callback includes the final cumulative counts as a fallback
+if earlier progress could not reach the backend. Reporting failures do not fail
+the model generation. Executions invoked without an execution ID do not report.
+
+HTTP execution responses, project history and lifecycle WebSocket events expose
+`estimatedTokens` and `interruptionReason` alongside input/output counts. This
+step reports usage; enforcement of the configured total budget follows separately.

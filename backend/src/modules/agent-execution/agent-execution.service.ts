@@ -10,6 +10,7 @@ import { PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGE
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
+  type AgentExecutionUsage,
   type AgentExecutionStatus,
   type AgentExecutionStore,
   type NewAgentExecution,
@@ -237,9 +238,15 @@ export class AgentExecutionService {
 
   /** Marks an invocation as in flight. Optional: the agent-server may skip it. */
   async markRunning(id: number): Promise<StoredAgentExecution> {
-    await this.require(id)
+    const existing = await this.require(id)
+    if (existing.status === "Completed" || existing.status === "Failed") return existing
 
     return this.executions.markRunning(id)
+  }
+
+  async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
+    await this.require(id)
+    return this.executions.updateUsage(id, usage)
   }
 
   /**
@@ -315,6 +322,8 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
+    estimatedTokens: execution.estimatedTokens,
+    interruptionReason: execution.interruptionReason,
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,

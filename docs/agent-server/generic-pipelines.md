@@ -39,6 +39,27 @@ Worked example: `project-architecture`
   (`BackendCallbackSink`, `NoOpCallbackSink`). A custom tracer or sink only
   implements the protocol.
 
+## Live token usage callbacks
+
+`CallbackSink.progress(execution_id, ExecutionProgress)` sends cumulative
+provider-reported `inputTokens` and `outputTokens`, with separate
+`estimatedTokens`, to backend `POST /api/agent-executions/:id/progress`.
+The model gateway's awaited `on_usage` hook fires after recording a completed,
+failed or cancelled model call. Reporting has no prompt/source payload and
+callback transport failures do not discard the generated result.
+
+The project adapter binds each gateway to its stage ID; counters remain
+cumulative across corrections, diagrams and architectural revisions. Architecture
+completion is deferred until the graph finishes, followed by semantic completion,
+so internal model work is included and semantic validation remains the final
+successful closing callback. Success/failure completion also sends final usage.
+Failure callbacks retain any available stage result cached by the adapter.
+
+Single-agent execution uses a transparent `ReportingModel` decorator to retain
+the original model response while recording usage. No execution ID means no
+callback. Custom callback sinks should implement `progress` in addition to
+`mark_running`, `complete` and `aclose`.
+
 ## Architectural review routing
 
 `ProjectArchitecturePipeline` explicitly routes

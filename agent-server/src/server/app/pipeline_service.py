@@ -16,10 +16,11 @@ from pydantic import BaseModel
 
 from ..api.schemas import ExecutionConfig
 from ..config.logs import get_logger
-from ..infrastructure.callback.schemas import ExecutionOutcome
+from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
 from .callback_port import CallbackSink, default_callback_sink
 from .execution_service import AgentExecutionService, InvalidConfigError
 from .tracing_port import LangSmithTracingBackend, TracingBackend
+from .usage_reporting import report_progress
 
 logger = get_logger("pipeline-service")
 
@@ -51,9 +52,28 @@ class GenericReportingHooks:
         self._order = list(stage_order)
         self.open_rows: set[int] = set()
         self.completed: set[str] = set()
+        self.started: set[str] = set()
+        self.usage_sources: dict[int, Callable] = {}
+        self.partial_results: dict[int, BaseModel] = {}
 
     async def on_stage_start(self, stage: str) -> None:
+        if stage in self.started or stage in self.completed:
+            return
         await self._mark_running(self._ids[stage])
+        self.started.add(stage)
+
+    def usage(self, execution_id: int) -> dict:
+        source = self.usage_sources.get(execution_id)
+        return source().model_dump() if source is not None else {}
+
+    def register_usage(self, stage: str, source: Callable) -> None:
+        self.usage_sources[self._ids[stage]] = source
+
+    async def on_stage_progress(self, stage: str, usage: ExecutionProgress) -> None:
+        await report_progress(self._callbacks, self._ids[stage], usage)
+
+    def retain_partial(self, stage: str, result: BaseModel) -> None:
+        self.partial_results[self._ids[stage]] = result
 
     async def on_stage_result(self, stage: str, result: BaseModel) -> None:
         await self._report(self._ids[stage], result)
@@ -94,7 +114,7 @@ class GenericReportingHooks:
             return
         await self._callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Completed", result=result.model_dump_json()),
+            ExecutionOutcome(status="Completed", result=result.model_dump_json(), **self.usage(execution_id)),
         )
         self.open_rows.discard(execution_id)
 
@@ -103,7 +123,12 @@ class GenericReportingHooks:
             return
         await self._callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Failed", error=error),
+            ExecutionOutcome(
+                status="Failed", error=error,
+                result=self.partial_results[execution_id].model_dump_json()
+                if execution_id in self.partial_results else None,
+                **self.usage(execution_id),
+            ),
         )
         self.open_rows.discard(execution_id)
 

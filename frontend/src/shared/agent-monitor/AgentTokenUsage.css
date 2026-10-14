@@ -1,0 +1,46 @@
+.agent-token-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.5rem;
+  font-size: 12px;
+  color: #334155;
+}
+
+.agent-token-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-token-bar {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: #e2e8f0;
+  accent-color: #059669;
+}
+
+.agent-token-bar::-webkit-progress-bar { background: #e2e8f0; }
+.agent-token-bar::-webkit-progress-value { background: #059669; }
+.agent-token-bar::-moz-progress-bar { background: #059669; }
+.agent-token-tolerance .agent-token-bar { accent-color: #b45309; }
+.agent-token-tolerance .agent-token-bar::-webkit-progress-value { background: #b45309; }
+.agent-token-tolerance .agent-token-bar::-moz-progress-bar { background: #b45309; }
+.agent-token-exhausted .agent-token-bar { accent-color: #be123c; }
+.agent-token-exhausted .agent-token-bar::-webkit-progress-value { background: #be123c; }
+.agent-token-exhausted .agent-token-bar::-moz-progress-bar { background: #be123c; }
+.agent-token-state { font-weight: 600; color: #047857; }
+.agent-token-tolerance .agent-token-state { color: #b45309; }
+.agent-token-exhausted .agent-token-state { color: #be123c; }
+.agent-token-note, .agent-token-breakdown { color: #64748b; }
+.agent-token-breakdown summary { cursor: pointer; }
+.agent-token-breakdown dl { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; }
+.agent-token-breakdown dd { margin: 0; font-variant-numeric: tabular-nums; }
