@@ -34,7 +34,6 @@ export interface AgentExecutionCompletion {
   inputTokens: number | null
   outputTokens: number | null
   estimatedTokens?: number | null
-  accountedTokens?: number | null
   interruptionReason?: string | null
 }
 
@@ -43,7 +42,6 @@ export interface AgentExecutionUsage {
   inputTokens: number | null
   outputTokens: number | null
   estimatedTokens: number
-  accountedTokens: number
 }
 
 export interface StoredAgentExecution {
@@ -56,7 +54,6 @@ export interface StoredAgentExecution {
   inputTokens: number | null
   outputTokens: number | null
   estimatedTokens: number | null
-  accountedTokens: number | null
   interruptionReason: string | null
   createdAt: Date
   startedAt: Date | null
@@ -116,22 +113,25 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution> {
-    const execution = await this.db.agentExecution.update({
-      where: { id },
-      data: {
-        status: data.status,
-        result: data.result,
-        error: data.error,
-        ...(data.inputTokens === null ? {} : { inputTokens: data.inputTokens }),
-        ...(data.outputTokens === null ? {} : { outputTokens: data.outputTokens }),
-        ...(data.estimatedTokens == null ? {} : { estimatedTokens: data.estimatedTokens }),
-        ...(data.accountedTokens == null ? {} : { accountedTokens: data.accountedTokens }),
-        ...(data.interruptionReason === undefined ? {} : { interruptionReason: data.interruptionReason }),
-        finishedAt: new Date(),
-      },
-    })
+    return this.db.$transaction(async (tx) => {
+      const existing = await tx.agentExecution.findUniqueOrThrow({ where: { id } })
+      if (existing.status === "Completed" || existing.status === "Failed") return this.toStored(existing)
+      const execution = await tx.agentExecution.update({
+        where: { id },
+        data: {
+          status: data.status,
+          result: data.result,
+          error: data.error,
+          ...(data.inputTokens === null ? {} : { inputTokens: Math.max(existing.inputTokens ?? 0, data.inputTokens) }),
+          ...(data.outputTokens === null ? {} : { outputTokens: Math.max(existing.outputTokens ?? 0, data.outputTokens) }),
+          ...(data.estimatedTokens == null ? {} : { estimatedTokens: Math.max(existing.estimatedTokens ?? 0, data.estimatedTokens) }),
+          ...(data.interruptionReason === undefined ? {} : { interruptionReason: data.interruptionReason }),
+          finishedAt: new Date(),
+        },
+      })
 
-    return this.toStored(execution)
+      return this.toStored(execution)
+    })
   }
 
   /** Generic row creation shared by every pipeline: version row is saved (or
@@ -163,12 +163,12 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async markRunning(id: number): Promise<StoredAgentExecution> {
-    const execution = await this.db.agentExecution.update({
-      where: { id },
+    await this.db.agentExecution.updateMany({
+      where: { id, status: "Waiting" },
       data: { status: "Running", startedAt: new Date() },
     })
 
-    return this.toStored(execution)
+    return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
   }
 
   async patchResult(id: number, result: string): Promise<StoredAgentExecution> {
@@ -186,20 +186,21 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         throw new RangeError("Token usage must contain non-negative 32-bit integers or null provider counts")
       }
     }
-    if (usage.accountedTokens !== (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) + usage.estimatedTokens) {
-      throw new RangeError("Accounted tokens must equal reported input, reported output and estimated tokens")
-    }
     // Atomic guard: duplicate/stale progress cannot reduce usage or reopen a run.
     await this.db.agentExecution.updateMany({
       where: {
         id, status: "Running",
         AND: [
-          { OR: [{ accountedTokens: null }, { accountedTokens: { lte: usage.accountedTokens } }] },
+          { OR: [{ estimatedTokens: null }, { estimatedTokens: { lte: usage.estimatedTokens } }] },
           { OR: [{ inputTokens: null }, { inputTokens: { lte: usage.inputTokens ?? 0 } }] },
           { OR: [{ outputTokens: null }, { outputTokens: { lte: usage.outputTokens ?? 0 } }] },
         ],
       },
-      data: usage,
+      data: {
+        estimatedTokens: usage.estimatedTokens,
+        ...(usage.inputTokens === null ? {} : { inputTokens: usage.inputTokens }),
+        ...(usage.outputTokens === null ? {} : { outputTokens: usage.outputTokens }),
+      },
     })
     return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
   }
@@ -224,7 +225,6 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     inputTokens: number | null
     outputTokens: number | null
     estimatedTokens: number | null
-    accountedTokens: number | null
     interruptionReason: string | null
     createdAt: Date
     startedAt: Date | null
@@ -241,7 +241,6 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       inputTokens: execution.inputTokens,
       outputTokens: execution.outputTokens,
       estimatedTokens: execution.estimatedTokens,
-      accountedTokens: execution.accountedTokens,
       interruptionReason: execution.interruptionReason,
       createdAt: execution.createdAt,
       startedAt: execution.startedAt,
