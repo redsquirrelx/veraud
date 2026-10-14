@@ -3,8 +3,7 @@
 `POST /api/projects/:id/architecture` runs the `project-architecture`
 pipeline (orientation, then architecture, then semantic_validation) on a
 checked-out version. `GET /api/projects/:id/versions` lists versions with all
-three pipeline runs. The legacy `POST /api/projects/:id/analyze`
-(analyzer + architect) is unchanged; see `project-analyze.md`.
+three pipeline runs.
 
 Source of truth: `backend/src/modules/project/` (service, controller),
 `backend/src/modules/agent-execution/agent-execution.service.ts`

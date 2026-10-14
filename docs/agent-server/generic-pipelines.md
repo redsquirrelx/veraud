@@ -7,8 +7,7 @@ Source of truth: `agent-server/src/server/app/pipeline_service.py`
 (`GenericPipelineService`, `PipelineDefinition`, `GenericReportingHooks`),
 `agent-server/src/server/app/tracing_port.py` (`TracingBackend`),
 `agent-server/src/server/app/callback_port.py` (`CallbackSink`).
-Worked examples: `architecture-audit` (inside `pipeline_service.py`),
-`project-architecture`
+Worked example: `project-architecture`
 (`agent-server/src/server/app/project_architecture_definition.py`).
 
 ## Concepts

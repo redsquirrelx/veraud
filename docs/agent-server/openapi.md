@@ -40,7 +40,7 @@ network calls. It checks:
 - Exact method/path coverage against registered routes and the baseline in the
   test, including metadata and unique operation IDs.
 - Documented response examples and actual response payloads against JSON Schema.
-- Named dummy/analyzer request examples against the selected agent's input schema.
+- Named dummy request examples against the selected agent's input schema.
 - Published agent schemas against their Pydantic models.
 - Successful status/list/schema/execution responses, including nested, nullable
   and arbitrary result data, to detect serialization field loss.

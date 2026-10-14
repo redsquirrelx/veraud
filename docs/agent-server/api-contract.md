@@ -91,15 +91,23 @@ class, assigns it the base config from `dev_agents_config` (overridden by
 | `422` | Bad config or payload (unsupported provider, missing `model.name`, `timeout_seconds <= 0`) |
 | `504` | Execution timed out |
 
-## `POST /api/pipelines/architecture-audit/run`
+## `GET /api/pipelines`
 
-Runs the analyzer then the architect as one pipeline: what kind of project
-it is, then how it is put together. The architect's input is derived
-server-side from the analyzer's output, so the caller only sends the
-repository root.
+```json
+["project-architecture"]
+```
+
+## `POST /api/pipelines/{name}/run`
+
+Runs a registered pipeline by name under a shared deadline. The only
+registered pipeline is `project-architecture`: orientation, then
+architecture, then semantic validation over one retained snapshot. Later
+stage inputs are derived server-side, so the caller only sends the
+repository root plus budgets and flags.
 
 Source of truth: `agent-server/src/server/api/pipelines.py`,
-`agent-server/src/server/app/pipeline_service.py`.
+`agent-server/src/server/app/pipeline_service.py`,
+`agent-server/src/server/app/project_architecture_definition.py`.
 
 ### Request
 
@@ -107,60 +115,68 @@ Source of truth: `agent-server/src/server/api/pipelines.py`,
 {
   "input": {
     "root_path": "/path/to/checkout",
-    "max_files": 500,
-    "max_depth": 8,
-    "max_read_rounds": 3,
-    "max_files_per_round": 8
+    "max_files": 5000,
+    "max_depth": 30,
+    "include_orientation": true,
+    "validate_semantics": true,
+    "allow_return": true,
+    "include_diagram": false
   },
   "config": {},
-  "execution_ids": { "analyzer": 11, "architect": 12 },
+  "stage_configs": {
+    "orientation": {},
+    "architecture": {},
+    "semantic_validation": {}
+  },
+  "execution_ids": { "orientation": 11, "architecture": 12, "semantic_validation": 13 },
   "timeout_seconds": 600
 }
 ```
 
-- `input.root_path` (string, required): repository root to audit.
-- `input.max_files` / `max_depth` / `max_read_rounds` / `max_files_per_round`: collection and reading budgets. `max_read_rounds` (default `3`) bounds both agents' re-read loops: the analyzer's confirm loop and the architect's coverage loop.
-- `config` (object, optional): same per-request model overrides as `/api/agents/run`; missing fields fall back to `agent-server/config/dev-agents.yaml`.
-- `stage_configs` (object, optional): `{ "analyzer": ExecutionConfig, "architect": ExecutionConfig }`.
-  The backend supplies both saved configurations explicitly, including credentials
-  and generation parameters. Each stage uses its own entry instead of `config`.
-  Both entries are required when the object is present. The shared `config` remains
-  available to existing callers that omit it. Swagger publishes this contract under
-  **Pipelines**, including the domain/request-validation union for `422` and `504`.
-- `execution_ids` (object, optional): rows the backend created for this run. When present each stage reports its own progress back to its row (`running`, then `Completed`/`Failed`); absent means nobody is listening and nothing is reported, like the dev runners.
-- `timeout_seconds` (int > 0, default `600`): deadline for the whole pipeline, enforced around the graph. There are no per-stage timeouts: a slow stage consumes the shared budget.
+- `input.root_path` (string, required): checkout directly inside the shared
+  workspace (see `WORKSPACE_ROOT`). Budgets (`max_model_calls`,
+  `max_tool_calls`, `max_total_tokens`, ...) and flags mirror the
+  `run_project_architecture` CLI defaults.
+- `config` (object, optional): shared model/credential overrides.
+- `stage_configs` (object, optional): per-stage `ExecutionConfig` entries.
+  The backend supplies every saved stage configuration explicitly, including
+  credentials. Each stage uses its own entry instead of `config`.
+- `execution_ids` (object, optional): rows the backend created for this run.
+  When present each stage reports its own progress back to its row
+  (`running`, then `Completed`/`Failed`, or `Failed` with a `Skipped:`
+  error when the graph does not run it); absent means nobody is listening
+  and nothing is reported, like the dev runners.
+- `timeout_seconds` (int > 0, default `600`): deadline for the whole
+  pipeline, enforced around the graph. There are no per-stage timeouts.
 
 ### Reporting
 
 ```
-mark_running(analyzer) -> analyzer.run() -> complete(analyzer, Completed)
-mark_running(architect) -> architect.run() -> complete(architect, Completed)
+mark_running(orientation) -> orientation.run() -> complete(orientation, Completed)
+mark_running(architecture) -> architecture.run() -> complete(architecture, Completed)
+mark_running(semantic_validation) -> ... -> complete(semantic_validation, Completed)
 ```
 
-- The analyzer closing as `Completed` is what feeds the architect; the backend never builds the architect input itself.
-- The architect re-reads until every key component carries a responsibility line, up to `max_read_rounds`, stopping early when coverage stalls. Earlier descriptions survive later rounds.
-- The architect groups files into at most 5 `containers` (C4 level 2) from what it read; invented members and empty containers are dropped. Third-party dependencies are grouped by architectural role into at most 6 `externals` (a single "third-party" group when no roles emerge); invented members are dropped.
-- `diagram_containers` and `diagram_components` are derived Mermaid blocks: names and membership are model judgment, every arrow is a real import (container to container, or container to external group via member imports), provided interfaces are collected top-level symbols, cycles render red, ungrouped externals collapse into one floating box. Capped at 40 nodes / 60 edges with a `truncated` comment.
-- Analyzer fails → its row closes as `Failed` and the architect row closes as `Failed` with a `Skipped:` error, so no row hangs in `Waiting`.
-- Architect fails → the analyzer row stays `Completed`, the architect row closes as `Failed`.
+- A stage that the graph skips (e.g. semantic review without an
+  architecture report) closes as `Failed` with a `Skipped:` error, so no row
+  hangs in `Waiting`. The internal `diagram_composition` node has no row.
+- A stage fails → its row closes as `Failed`, later stages close as `Failed`
+  with a `Skipped:` error.
 - A pipeline timeout fails every row still open with a timeout error.
-- Callback delivery failures never fail the run: they are logged with `acknowledged: false`, same as single-agent runs.
+- Callback delivery failures never fail the run: they are logged with
+  `acknowledged: false`, same as single-agent runs.
 
 ### Response `200`
 
-```json
-{
-  "analysis": { "kind": "library", "confidence": "high", "...": "..." },
-  "description": { "style": "layered", "...": "..." }
-}
-```
-
-Both outputs opaque here, matching each agent's own output schema.
+The pipeline result as plain JSON (`orientation`, `architecture`,
+`semantic_validation`, `diagram`, `stages`, ...). Every stage output is
+opaque here, matching each agent's own output schema.
 
 ### Errors
 
 | Code | Meaning |
 |---|---|
+| `404` | Unknown pipeline `name` |
 | `422` | Bad config, bad input, or an unreadable `root_path` |
 | `504` | Pipeline timed out |
 
@@ -171,11 +187,10 @@ each responsibility and quality note is `supported`, `contradicted`, or
 `unverifiable`. Blind by design — it never sees the run's confidence.
 
 Source of truth: `agent-server/src/server/agents/judge/`,
-`agent-server/src/server/run_judge.py`.
-
-The judge is also registered for individual HTTP execution. Inspect
-`GET /api/agents/judge/schema`; its input requires a repository root and an existing
-architecture description. It is not automatically part of the audit pipeline.
+`agent-server/src/server/run_judge.py`. The judge is a CLI/benchmark agent
+only; it is not registered for HTTP execution.
+Inspect its schemas in code; its input requires a repository root and an existing
+architecture description. It is not part of any HTTP pipeline.
 
 ```bash
 uv run --no-sync python -m server.run_judge <root> <description.json> --json

@@ -38,12 +38,12 @@ backend                        agent-server                  row
 | `Failed` | Finished with an error; `error` is required |
 
 `result` is the serialized agent output and is **opaque** to the backend: each
-agent defines its own shape (e.g. the analyzer returns a project description),
-so the backend stores and returns it without inspecting its fields.
+agent defines its own shape, so the backend stores and returns it without
+inspecting its fields.
 
 The backend writes `Failed` in exactly two cases: the agent-server could not be
-reached, or the run never started — plus the pipeline's `Skipped` close of the
-architect row when the analyzer failed first. Everything else is reported by
+reached, or the run never started — plus the pipeline's `Skipped` close of
+stages whose predecessor failed first. Everything else is reported by
 the agent.
 
 ## Starting the agent
@@ -61,34 +61,35 @@ progress against. Without it the agent still runs, it just reports nowhere.
 
 ## Starting a pipeline
 
-Project analysis calls `openPipelineForProject()`: both configurations are verified
-before a transaction creates the version/evaluation and two rows, `analyzer` +
-`architect`. Each row captures its own immutable public configuration. The service
-broadcasts one `opened` per row and dispatches the architecture-audit pipeline in
-the background with both captured transport configurations:
+Project analysis calls `openProjectArchitecturePipelineForProject()`: all stage
+configurations are verified before a transaction creates the version/evaluation
+and one row per stage (`orientation`, `architecture`, `semantic_validation`).
+Each row captures its own immutable public configuration. The service
+broadcasts one `opened` per row and dispatches the project-architecture
+pipeline in the background with every captured transport configuration:
 
 ```
 backend                        agent-server                  rows
    |
-   |-- POST /api/pipelines/architecture-audit/run -------->  |
-   |    { input: { root_path },                                |-- POST analyzer/running      -> "Running"
-   |      execution_ids: { analyzer, architect },              |-- analyze -> POST analyzer/completion
-   |      stage_configs: { analyzer, architect } }             |
-   |                                                          |-- POST architect/running     -> "Running"
-   |                                                          |-- describe -> POST architect/completion
+   |-- POST /api/pipelines/project-architecture/run ------>  |
+   |    { input: { root_path },                                |-- POST orientation/running    -> "Running"
+   |      execution_ids: { orientation, ... },                |-- orientation -> POST orientation/completion
+   |      stage_configs: { orientation, ... } }               |
+   |                                                          |-- POST architecture/running   -> "Running"
+   |                                                          |-- architecture -> POST architecture/completion
+   |                                                          |-- ... same for semantic_validation
    |
-   |<- websocket agent-execution.updated (each transition, both rows)
+   |<- websocket agent-execution.updated (each transition, every row)
 ```
 
-The pipeline derives the architect input server-side from the analyzer output,
-so the backend never parses one agent's result to feed another. There is no
-chaining in `complete()`: both rows exist before the pipeline starts.
+Stage inputs after the first are derived server-side, so the backend never
+parses one agent's result to feed another. There is no chaining in
+`complete()`: every row exists before the pipeline starts.
 
-- Analyzer fails → its row closes as `Failed`, the architect row closes as
+- A stage fails → its row closes as `Failed`, later stages close as
   `Failed` with a `Skipped:` error. No row hangs in `Waiting`.
-- Architect fails → the analyzer row stays `Completed`.
 - The pipeline request itself fails to start (unreachable agent-server, missing
-  checkout, no pipeline support in the invoker) → both rows close as `Failed`
+  checkout, no pipeline support in the invoker) → every row closes as `Failed`
   with the same error.
 - Pipeline timeout (600s) → every row still open closes as `Failed`.
 
@@ -103,7 +104,7 @@ Request:
 
 ```json
 {
-  "agentType": "analyzer",
+  "agentType": "dummy",
   "evaluationId": 12
 }
 ```
@@ -126,7 +127,7 @@ escaping it returns `422` before creation. A missing checkout fails the created
 execution in the background. Other input fields pass through to the agent.
 
 ```json
-{ "agentType": "analyzer", "input": { "root_path": "project-1-owner-repo" } }
+{ "agentType": "dummy", "input": { "code": "def add(a, b): return a + b" } }
 ```
 
 ## Running callback: `POST /api/agent-executions/:id/running`
@@ -191,8 +192,8 @@ HTTP response. The UI keys off `execution.id`.
   result. Local use only until a shared secret or signature is added.
 - `agent_settings` must have a row for the `agentType`; both it and
   `evaluationId` are foreign keys, and a missing one is reported as `422`.
-  A pipeline needs rows for **both** `analyzer` and `architect`: a missing
-  `architect` row fails `POST /api/projects/:id/analyze` with `422`.
+  A pipeline needs one row per stage: a missing stage row fails
+  `POST /api/projects/:id/architecture` with `422`.
   `agent_settings` rows are inserted manually (tests seed them); there is no
   admin endpoint for them yet.
 - The agent-server derives where to report from `PORT_BACKEND`. If it is not
