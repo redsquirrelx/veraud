@@ -1,11 +1,5 @@
 """Shared accounting contract, independent of any audit dimension."""
 
-from config.agents import ConfigContract
+from ...agents.schemes.base import Consumption
 
-
-class Consumption(ConfigContract):
-    model_calls: int = 0
-    tool_calls: int = 0
-    accounted_tokens: int = 0
-    estimated_tokens: int = 0
-    model_calls_estimated: bool = False
+__all__ = ["Consumption"]

@@ -13,6 +13,12 @@ configuration and services. Runtimes must not import concrete agents, their
 registries, prompts or specialized contracts. Agents provide those through hooks
 and retain their domain-specific graph topology and policies.
 
+The data-only module `server.agents.schemes.base` is the shared contract boundary
+and may be imported by runtimes. It has no agent or runtime dependencies.
+`server.agents.schemes.investigator`, `coordinator` and `manager` own category
+contracts and maintainability specializations; runtimes must not import those.
+Previous `schemas.py` paths re-export canonical classes for compatibility.
+
 Shared configuration belongs to `config.agents`; exclusive configuration remains
 in each agent's `config.py`. See [coordination/README.md](coordination/README.md)
 for the shared orchestration contract.
