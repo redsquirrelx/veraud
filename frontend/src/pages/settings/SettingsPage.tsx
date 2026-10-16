@@ -1,4 +1,6 @@
 import { useId, useState, type FormEvent, type KeyboardEvent } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { Button, Card, ItemList, ItemSelector, Modal, PlusIcon, TextInput, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
 import { useToasts } from "../../app/use-toasts.ts"
@@ -6,19 +8,43 @@ import { useAiProviders } from "../../features/llm-management/useAiProviders.ts"
 import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../shared/task-manager/index.ts"
 import { ModelListItem } from "./ModelListItem.tsx"
 import { CredentialListItem } from "./CredentialListItem.tsx"
+import { LanguageSelector } from "./LanguageSelector.tsx"
 import { AgentsSettings } from "./AgentsSettings.tsx"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./SettingsPage.css"
 
 const settingsTabs = [
-  { id: "agents", label: "Agents" },
-  { id: "models", label: "Models & credentials" },
-  { id: "preferences", label: "Preferences" },
+  { id: "agents", labelKey: "tabs.agents" },
+  { id: "models", labelKey: "tabs.models" },
+  { id: "preferences", labelKey: "tabs.preferences" },
 ] as const
 type SettingsTab = typeof settingsTabs[number]["id"]
 const settingsTabStorageKey = "settings.activeTab"
 
+// Task-kind labels live in the settings namespace (translated at render so
+// they follow language changes). Unknown kinds fall back to the raw
+// TASK_KIND_OPTIONS text, which stays in English.
+const taskKindTextKeys = {
+  "clone": { labelKey: "preferences.taskKinds.clone.label", hintKey: "preferences.taskKinds.clone.hint" },
+  "pull": { labelKey: "preferences.taskKinds.pull.label", hintKey: "preferences.taskKinds.pull.hint" },
+  "fetch": { labelKey: "preferences.taskKinds.fetch.label", hintKey: "preferences.taskKinds.fetch.hint" },
+  "checkout-branch": { labelKey: "preferences.taskKinds.checkoutBranch.label", hintKey: "preferences.taskKinds.checkoutBranch.hint" },
+  "checkout-detach": { labelKey: "preferences.taskKinds.checkoutDetach.label", hintKey: "preferences.taskKinds.checkoutDetach.hint" },
+  "list-branches": { labelKey: "preferences.taskKinds.listBranches.label", hintKey: "preferences.taskKinds.listBranches.hint" },
+  "rev-parse": { labelKey: "preferences.taskKinds.revParse.label", hintKey: "preferences.taskKinds.revParse.hint" },
+  "log-commits": { labelKey: "preferences.taskKinds.logCommits.label", hintKey: "preferences.taskKinds.logCommits.hint" },
+} as const
+
+// Frontend-owned errors are stored as translation keys (plus the backend
+// detail, when any) so they follow language changes instead of freezing the
+// language active when the failure happened.
+interface SettingsFormError {
+  key: ParseKeys<"settings">
+  detail?: string
+}
+
 export function SettingsPage() {
+  const { t } = useTranslation("settings")
   const tabsId = useId()
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     const saved = localStorage.get<unknown>(settingsTabStorageKey, "models")
@@ -38,11 +64,21 @@ export function SettingsPage() {
   const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null)
   const [modelProvider, setModelProvider] = useState<string | null>(null)
   const [modelName, setModelName] = useState("")
-  const [modelError, setModelError] = useState("")
+  const [modelError, setModelError] = useState<SettingsFormError | null>(null)
   const [credentialProvider, setCredentialProvider] = useState<string | null>(null)
   const [credentialName, setCredentialName] = useState("")
   const [credentialKey, setCredentialKey] = useState("")
-  const [credentialError, setCredentialError] = useState("")
+  const [credentialError, setCredentialError] = useState<SettingsFormError | null>(null)
+
+  // useAiProviders reports the backend message verbatim. That hook always
+  // throws the fixed "Could not load AI providers" string, so any loadError
+  // matching the translated generic is shown as-is; anything else is kept as
+  // technical detail alongside the translated generic message.
+  const providersLoadError = loadError === ""
+    ? ""
+    : loadError === t("models.loadFailed")
+      ? t("models.loadFailed")
+      : `${t("models.loadFailed")}: ${loadError}`
 
   const models = providers.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id, provider: provider.name })))
   const credentials = providers.flatMap((provider) => provider.credentials.map((credential) => ({ ...credential, providerId: provider.id, provider: provider.name })))
@@ -55,7 +91,7 @@ export function SettingsPage() {
     setEditingModelId(null)
     setModelProvider(null)
     setModelName("")
-    setModelError("")
+    setModelError(null)
     setModal("model")
   }
 
@@ -64,7 +100,7 @@ export function SettingsPage() {
     setCredentialProvider(null)
     setCredentialName("")
     setCredentialKey("")
-    setCredentialError("")
+    setCredentialError(null)
     setModal("credential")
   }
 
@@ -72,7 +108,7 @@ export function SettingsPage() {
     setEditingModelId(id)
     setModelProvider(String(providerId))
     setModelName(name)
-    setModelError("")
+    setModelError(null)
     setModal("model")
   }
 
@@ -81,7 +117,7 @@ export function SettingsPage() {
     setCredentialProvider(String(providerId))
     setCredentialName(name)
     setCredentialKey("")
-    setCredentialError("")
+    setCredentialError(null)
     setModal("credential")
   }
 
@@ -93,18 +129,24 @@ export function SettingsPage() {
     try {
       if (editingModelId === null) {
         await addModel(Number(modelProvider), modelName.trim())
-        pushToast("success", `Model ${modelName.trim()} registered`)
+        pushToast("success", t("models.registered", { name: modelName.trim() }))
       } else {
         await editModel(Number(modelProvider), editingModelId, modelName.trim())
-        pushToast("success", `Model ${modelName.trim()} updated`)
+        pushToast("success", t("models.updated", { name: modelName.trim() }))
       }
       setModelName("")
-      setModelError("")
+      setModelError(null)
       setModal(null)
     } catch (failure) {
-      const message = failure instanceof ApiError ? failure.message : editingModelId === null ? "Could not register the model" : "Could not update the model"
-      setModelError(message)
-      pushToast("error", message)
+      // Backend details are kept verbatim (the English template renders the
+      // detail unchanged so it stays findable); other failures use the
+      // translated generic message.
+      const key = failure instanceof ApiError
+        ? editingModelId === null ? "models.registerFailedWithDetail" : "models.updateFailedWithDetail"
+        : editingModelId === null ? "models.registerFailed" : "models.updateFailed"
+      const detail = failure instanceof ApiError ? failure.message : undefined
+      setModelError(detail === undefined ? { key } : { key, detail })
+      pushToast("error", detail === undefined ? t(key) : t(key, { detail }))
     }
   }
 
@@ -116,19 +158,22 @@ export function SettingsPage() {
     try {
       if (editingCredentialId === null) {
         await addCredential(Number(credentialProvider), credentialName.trim(), credentialKey.trim())
-        pushToast("success", `Credential ${credentialName.trim()} registered`)
+        pushToast("success", t("credentials.registered", { name: credentialName.trim() }))
       } else {
         await editCredential(Number(credentialProvider), editingCredentialId, credentialName.trim(), credentialKey.trim() || undefined)
-        pushToast("success", `Credential ${credentialName.trim()} updated`)
+        pushToast("success", t("credentials.updated", { name: credentialName.trim() }))
       }
       setCredentialName("")
       setCredentialKey("")
-      setCredentialError("")
+      setCredentialError(null)
       setModal(null)
     } catch (failure) {
-      const message = failure instanceof ApiError ? failure.message : editingCredentialId === null ? "Could not register the credential" : "Could not update the credential"
-      setCredentialError(message)
-      pushToast("error", message)
+      const key = failure instanceof ApiError
+        ? editingCredentialId === null ? "credentials.registerFailedWithDetail" : "credentials.updateFailedWithDetail"
+        : editingCredentialId === null ? "credentials.registerFailed" : "credentials.updateFailed"
+      const detail = failure instanceof ApiError ? failure.message : undefined
+      setCredentialError(detail === undefined ? { key } : { key, detail })
+      pushToast("error", detail === undefined ? t(key) : t(key, { detail }))
     }
   }
 
@@ -136,9 +181,9 @@ export function SettingsPage() {
     try {
       await removeModel(providerId, id)
       setModelId((current) => current.filter((entry) => entry !== String(id)))
-      pushToast("success", `Model ${name} deleted`)
+      pushToast("success", t("models.deleted", { name }))
     } catch (failure) {
-      pushToast("error", failure instanceof ApiError ? failure.message : "Could not delete the model")
+      pushToast("error", failure instanceof ApiError ? t("models.deleteFailedWithDetail", { detail: failure.message }) : t("models.deleteFailed"))
     }
   }
 
@@ -146,9 +191,9 @@ export function SettingsPage() {
     try {
       await removeCredential(providerId, id)
       setCredentialId((current) => current.filter((entry) => entry !== String(id)))
-      pushToast("success", `Credential ${name} deleted`)
+      pushToast("success", t("credentials.deleted", { name }))
     } catch (failure) {
-      pushToast("error", failure instanceof ApiError ? failure.message : "Could not delete the credential")
+      pushToast("error", failure instanceof ApiError ? t("credentials.deleteFailedWithDetail", { detail: failure.message }) : t("credentials.deleteFailed"))
     }
   }
 
@@ -163,14 +208,21 @@ export function SettingsPage() {
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
   }
 
+  function renderFormError(error: SettingsFormError | null) {
+    if (error === null) {
+      return null
+    }
+    return <p className="settings-error">{error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail })}</p>
+  }
+
   return (
     <section className="settings-page">
       <div className="home-heading">
         <div>
-          <h1>Settings</h1>
+          <h1>{t("title")}</h1>
         </div>
       </div>
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+      <div className="settings-tabs" role="tablist" aria-label={t("tabs.label")}>
         {settingsTabs.map((tab, index) => (
           <button
             key={tab.id}
@@ -183,31 +235,31 @@ export function SettingsPage() {
             onClick={() => selectTab(tab.id)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-agents`} aria-labelledby={`${tabsId}-tab-agents`} hidden={activeTab !== "agents"} tabIndex={0}>
-        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError} onAssignmentsSaved={(agent) => {
-          pushToast("success", `Configuration for ${agent.agentType} saved successfully`)
+        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={providersLoadError} onAssignmentsSaved={(agent) => {
+          pushToast("success", t("agents.assignmentsSaved", { agentType: agent.agentType }))
           void refresh()
         }} />}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
       <Card>
-        <span className="label">Models & credentials</span>
-        <p className="settings-hint">When editing a credential, leave the API key blank to keep the current key.</p>
-        {loadError !== "" ? (
-          <p className="settings-error">{loadError}</p>
+        <span className="label">{t("models.sectionTitle")}</span>
+        <p className="settings-hint">{t("credentials.editHint")}</p>
+        {providersLoadError !== "" ? (
+          <p className="settings-error">{providersLoadError}</p>
         ) : (
           <>
             <div className="settings-llm-row">
               <div className="settings-llm-group">
                 <div className="settings-llm-head">
-                  <Button variant="primary" square ariaLabel="Add model" title="Add model" onClick={openModelModal}>
+                  <Button variant="primary" square ariaLabel={t("models.add")} title={t("models.add")} onClick={openModelModal}>
                     <PlusIcon />
                   </Button>
-                  <span className="label">Models</span>
+                  <span className="label">{t("models.title")}</span>
                 </div>
                 <ItemList
                   items={models.map((model) => ({ id: String(model.id), name: model.name }))}
@@ -215,7 +267,7 @@ export function SettingsPage() {
                   onSelectionChange={setModelId}
                   mode="single"
                   loading={loading}
-                  emptyText="No models registered yet"
+                  emptyText={t("models.empty")}
                   renderItem={(entry) => {
                     const model = models.find((candidate) => String(candidate.id) === entry.id)
                     if (model === undefined) {
@@ -235,10 +287,10 @@ export function SettingsPage() {
               </div>
               <div className="settings-llm-group">
                 <div className="settings-llm-head">
-                  <Button variant="primary" square ariaLabel="Add credential" title="Add credential" onClick={openCredentialModal}>
+                  <Button variant="primary" square ariaLabel={t("credentials.add")} title={t("credentials.add")} onClick={openCredentialModal}>
                     <PlusIcon />
                   </Button>
-                  <span className="label">Credentials</span>
+                  <span className="label">{t("credentials.title")}</span>
                 </div>
                 <ItemList
                   items={credentials.map((credential) => ({ id: String(credential.id), name: credential.name }))}
@@ -246,7 +298,7 @@ export function SettingsPage() {
                   onSelectionChange={setCredentialId}
                   mode="single"
                   loading={loading}
-                  emptyText="No credentials registered yet"
+                  emptyText={t("credentials.empty")}
                   renderItem={(entry) => {
                     const credential = credentials.find((candidate) => String(candidate.id) === entry.id)
                     if (credential === undefined) {
@@ -272,24 +324,30 @@ export function SettingsPage() {
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={activeTab !== "preferences"} tabIndex={0}>
       <Card>
-        <span className="label">Task notifications</span>
-        <p className="settings-hint">Read-only tasks stay silent unless they fail. Failed tasks always show.</p>
+        <LanguageSelector />
+      </Card>
+      <Card>
+        <span className="label">{t("preferences.notifications.title")}</span>
+        <p className="settings-hint">{t("preferences.notifications.hint")}</p>
         <div className="settings-tasks">
-          {TASK_KIND_OPTIONS.map((option) => (
+          {TASK_KIND_OPTIONS.map((option) => {
+            const textKeys = taskKindTextKeys[option.kind as keyof typeof taskKindTextKeys]
+            return (
             <label key={option.kind} className="settings-task">
               <input
                 type="checkbox"
                 checked={visibility[option.kind] ?? true}
                 onChange={(event) => update(option.kind, event.target.checked)}
               />
-              <span className="mono">{option.label}</span>
-              <span className="label">{option.hint}</span>
+              <span className="mono">{textKeys ? t(textKeys.labelKey) : option.label}</span>
+              <span className="label">{textKeys ? t(textKeys.hintKey) : option.hint}</span>
             </label>
-          ))}
+            )
+          })}
         </div>
       </Card>
       </div>
-      <Modal open={modal === "model"} label={editingModelId === null ? "Add a model" : "Edit a model"} title={editingModelId === null ? "Add a model" : "Edit a model"} size="narrow" onClose={() => setModal(null)}>
+      <Modal open={modal === "model"} label={editingModelId === null ? t("models.addDialog") : t("models.editDialog")} title={editingModelId === null ? t("models.addDialog") : t("models.editDialog")} size="narrow" onClose={() => setModal(null)}>
         <form className="settings-modal-form" onSubmit={(event) => void submitModel(event)}>
           <ItemSelector
             items={providerOptions}
@@ -298,17 +356,17 @@ export function SettingsPage() {
             disabled={editingModelId !== null}
             hasMore={false}
             onLoadMore={() => {}}
-            label="Provider"
-            placeholder="Select a provider..."
+            label={t("form.provider")}
+            placeholder={t("form.providerPlaceholder")}
           />
-          <TextInput value={modelName} label="Model name" placeholder="Insert the model name..." onChange={setModelName} />
-          {modelError !== "" && <p className="settings-error">{modelError}</p>}
+          <TextInput value={modelName} label={t("models.form.name")} placeholder={t("models.form.namePlaceholder")} onChange={setModelName} />
+          {renderFormError(modelError)}
           <Button type="submit" disabled={!canSubmitModel}>
-            {editingModelId === null ? "Submit" : "Edit"}
+            {editingModelId === null ? t("form.submit") : t("form.edit")}
           </Button>
         </form>
       </Modal>
-      <Modal open={modal === "credential"} label={editingCredentialId === null ? "Add a credential" : "Edit a credential"} title={editingCredentialId === null ? "Add a credential" : "Edit a credential"} size="narrow" onClose={() => setModal(null)}>
+      <Modal open={modal === "credential"} label={editingCredentialId === null ? t("credentials.addDialog") : t("credentials.editDialog")} title={editingCredentialId === null ? t("credentials.addDialog") : t("credentials.editDialog")} size="narrow" onClose={() => setModal(null)}>
         <form className="settings-modal-form" onSubmit={(event) => void submitCredential(event)}>
           <ItemSelector
             items={providerOptions}
@@ -317,14 +375,14 @@ export function SettingsPage() {
             disabled={editingCredentialId !== null}
             hasMore={false}
             onLoadMore={() => {}}
-            label="Provider"
-            placeholder="Select a provider..."
+            label={t("form.provider")}
+            placeholder={t("form.providerPlaceholder")}
           />
-          <TextInput value={credentialName} label="Credential name" placeholder="Insert a name...." onChange={setCredentialName} />
-          <TextInput value={credentialKey} label="Api Key" type="password" onChange={setCredentialKey} />
-          {credentialError !== "" && <p className="settings-error">{credentialError}</p>}
+          <TextInput value={credentialName} label={t("credentials.form.name")} placeholder={t("credentials.form.namePlaceholder")} onChange={setCredentialName} />
+          <TextInput value={credentialKey} label={t("credentials.form.apiKey")} type="password" onChange={setCredentialKey} />
+          {renderFormError(credentialError)}
           <Button type="submit" disabled={!canSubmitCredential}>
-            {editingCredentialId === null ? "Submit" : "Edit"}
+            {editingCredentialId === null ? t("form.submit") : t("form.edit")}
           </Button>
         </form>
       </Modal>

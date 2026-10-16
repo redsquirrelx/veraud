@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, listAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Button, Panel, Spinner } from "../../shared/ui-kit/index.ts"
 import { AgentSettingsCard } from "./AgentSettingsCard.tsx"
@@ -11,10 +13,18 @@ interface AgentsSettingsProps {
   onAssignmentsSaved?: (agent: AgentSettings) => void
 }
 
+// Backend failures are stored as translation keys (plus the backend detail)
+// so the message follows language changes.
+interface AgentsLoadError {
+  key: ParseKeys<"settings">
+  detail?: string
+}
+
 export function AgentsSettings({ providers = [], providersLoading = false, providersError = "", onAssignmentsSaved }: AgentsSettingsProps) {
+  const { t } = useTranslation("settings")
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<AgentsLoadError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [selectedAgent, setSelectedAgent] = useState<AgentSettings | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -29,7 +39,9 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
       },
       (failure: unknown) => {
         if (controller.signal.aborted) return
-        setError(failure instanceof ApiError ? failure.message : "Could not load agent settings")
+        setError(failure instanceof ApiError
+          ? { key: "agents.loadFailedWithDetail", detail: failure.message }
+          : { key: "agents.loadFailed" })
         setLoading(false)
       },
     )
@@ -38,7 +50,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
 
   function retry() {
     setLoading(true)
-    setError("")
+    setError(null)
     setAttempt((current) => current + 1)
   }
 
@@ -56,17 +68,17 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
     <div className="settings-agents">
       <Panel>
         <div className="settings-agents-heading">
-          <h2>Agent configuration</h2>
-          <p className="settings-hint">Agent types declared in the backend and their saved configuration.</p>
+          <h2>{t("agents.title")}</h2>
+          <p className="settings-hint">{t("agents.subtitle")}</p>
           {providersError && <p className="settings-error" role="alert">{providersError}</p>}
         </div>
         {loading ? <Spinner /> : error ? (
           <div className="settings-agent-editor" role="alert">
-            <p className="settings-error">{error}</p>
-            <Button variant="secondary" onClick={retry}>Retry</Button>
+            <p className="settings-error">{error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail })}</p>
+            <Button variant="secondary" onClick={retry}>{t("agents.retry")}</Button>
           </div>
         ) : agents.length === 0 ? (
-          <p className="settings-hint">No agent types are declared in the backend.</p>
+          <p className="settings-hint">{t("agents.empty")}</p>
         ) : (
           <div className="settings-agents-grid">
             {agents.map((agent) => (

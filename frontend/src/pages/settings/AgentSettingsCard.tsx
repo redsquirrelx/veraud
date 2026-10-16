@@ -1,8 +1,11 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Card, ItemSelector } from "../../shared/ui-kit/index.ts"
 import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import { DEFAULT_TOKEN_BUDGET, DEFAULT_ABSOLUTE_TOKEN_LIMIT } from "../../shared/agent-monitor/tokenBudgets.ts"
+import { formatNumber } from "../../shared/i18n/format.ts"
 
 interface AgentSettingsCardProps {
   agent: AgentSettings
@@ -13,11 +16,17 @@ interface AgentSettingsCardProps {
   onVerified: (agent: AgentSettings) => void
 }
 
+interface AgentSaveError {
+  key: ParseKeys<"settings">
+  detail?: string
+}
+
 export function AgentSettingsCard({ agent, providers, providersLoading, onSaved, onConfigure, onVerified }: AgentSettingsCardProps) {
+  const { t } = useTranslation("settings")
   const [modelId, setModelId] = useState<number | null>(agent.configuration?.model.id ?? null)
   const [credentialId, setCredentialId] = useState<number | null>(agent.configuration?.credential.id ?? null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<AgentSaveError | null>(null)
   const [saved, setSaved] = useState(false)
   const savedModelId = agent.configuration?.model.id ?? null
   const savedCredentialId = agent.configuration?.credential.id ?? null
@@ -37,14 +46,14 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
     const next = models.find((entry) => entry.id === Number(id))
     if (next?.providerId !== model?.providerId) setCredentialId(null)
     setModelId(Number(id))
-    setError("")
+    setError(null)
     setSaved(false)
   }
 
   async function save() {
     if (!canSave || modelId === null || credentialId === null) return
     setSaving(true)
-    setError("")
+    setError(null)
     try {
       const updated = await saveAgentSettings(agent.agentType, modelId, credentialId)
       setModelId(updated.configuration?.model.id ?? null)
@@ -52,26 +61,36 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       onSaved(updated)
       setSaved(true)
     } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : "Could not save agent settings")
+      setError(failure instanceof ApiError
+        ? { key: "agents.saveFailedWithDetail", detail: failure.message }
+        : { key: "agents.saveFailed" })
     } finally {
       setSaving(false)
     }
   }
+
+  const statusKey = dirty
+    ? "agents.status.unsavedChanges"
+    : agent.configured
+      ? "agents.status.configured"
+      : agent.configuration
+        ? "agents.status.needsAttention"
+        : "agents.status.notConfigured"
 
   return (
     <Card>
       <div className="settings-agent-heading">
         <h3>{agent.agentType}</h3>
         <Badge tone={dirty ? "info" : agent.configured ? "success" : "info"}>
-          {dirty ? "Unsaved changes" : agent.configured ? "Configured" : agent.configuration ? "Needs attention" : "Not configured"}
+          {t(statusKey)}
         </Badge>
       </div>
       <ItemSelector
-        label="Model"
+        label={t("agents.form.model")}
         items={models.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.providerName }))}
         selectedId={modelId === null ? null : String(modelId)}
-        placeholder="Select a model..."
-        emptyText="No models registered"
+        placeholder={t("agents.form.selectModel")}
+        emptyText={t("agents.form.noModels")}
         onSelect={selectModel}
         hasMore={false}
         onLoadMore={() => {}}
@@ -79,23 +98,23 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
         disabled={saving}
       />
       <ItemSelector
-        label="Credential"
+        label={t("agents.form.credential")}
         items={credentials.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.apiKeyPreview }))}
         selectedId={credentialId === null ? null : String(credentialId)}
-        placeholder={model ? "Select a credential..." : "Select a model first"}
-        emptyText="No credentials registered for this provider"
-        onSelect={(id) => { setCredentialId(Number(id)); setError(""); setSaved(false) }}
+        placeholder={model ? t("agents.form.selectCredential") : t("agents.form.selectModelFirst")}
+        emptyText={t("agents.form.noCredentialsForProvider")}
+        onSelect={(id) => { setCredentialId(Number(id)); setError(null); setSaved(false) }}
         hasMore={false}
         onLoadMore={() => {}}
         disabled={!model || providersLoading || saving}
       />
-      {error && <p className="settings-error" role="alert">{error}</p>}
-      {saved && !dirty && <p className="settings-hint" role="status">Configuration saved.</p>}
+      {error && <p className="settings-error" role="alert">{error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail })}</p>}
+      {saved && !dirty && <p className="settings-hint" role="status">{t("agents.card.saved")}</p>}
       <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading} onUpdated={onVerified} />
-      <p className="settings-hint">Initial budget: {(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET).toLocaleString()} · Absolute limit: {(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT).toLocaleString()}</p>
+      <p className="settings-hint">{t("agents.card.tokenSummary", { budget: formatNumber(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET), limit: formatNumber(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</p>
       <div className="settings-agent-footer">
-        <Button variant="secondary" ariaLabel={`Configure ${agent.agentType}`} onClick={onConfigure}>Configure</Button>
-        <Button disabled={!canSave} loading={saving} loadingText="Saving..." onClick={() => void save()}>Save changes</Button>
+        <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: agent.agentType })} onClick={onConfigure}>{t("agents.card.configure")}</Button>
+        <Button disabled={!canSave} loading={saving} loadingText={t("agents.card.saving")} onClick={() => void save()}>{t("agents.card.saveChanges")}</Button>
       </div>
     </Card>
   )

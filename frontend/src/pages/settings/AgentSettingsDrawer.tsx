@@ -1,8 +1,11 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Drawer, ItemSelector } from "../../shared/ui-kit/index.ts"
 import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import { DEFAULT_TOKEN_BUDGET, DEFAULT_ABSOLUTE_TOKEN_LIMIT } from "../../shared/agent-monitor/tokenBudgets.ts"
+import { formatNumber } from "../../shared/i18n/format.ts"
 
 interface Props {
   agent: AgentSettings
@@ -16,6 +19,7 @@ interface Props {
 }
 
 export function AgentSettingsDrawer({ agent, open, providers, providersLoading, providersError, onClose, onSaved, onVerified }: Props) {
+  const { t } = useTranslation("settings")
   const [modelId, setModelId] = useState<number | null>(agent.configuration?.model.id ?? null)
   const [credentialId, setCredentialId] = useState<number | null>(agent.configuration?.credential.id ?? null)
   const [temperature, setTemperature] = useState(String(agent.configuration?.temperature ?? ""))
@@ -23,7 +27,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
   const [tokenBudget, setTokenBudget] = useState(String(agent.configuration?.tokenBudget ?? ""))
   const [absoluteTokenLimit, setAbsoluteTokenLimit] = useState(String(agent.configuration?.absoluteTokenLimit ?? ""))
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<{ key: ParseKeys<"settings">, detail?: string } | null>(null)
 
   const [previous, setPrevious] = useState({ open, agent })
   if (previous.open !== open || previous.agent !== agent) {
@@ -35,7 +39,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
       setMaxTokens(String(agent.configuration?.maxTokens ?? ""))
       setTokenBudget(String(agent.configuration?.tokenBudget ?? ""))
       setAbsoluteTokenLimit(String(agent.configuration?.absoluteTokenLimit ?? ""))
-      setError("")
+      setError(null)
     }
   }
 
@@ -66,7 +70,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
   async function save() {
     if (!canSave || modelId === null || credentialId === null) return
     setSaving(true)
-    setError("")
+    setError(null)
     try {
       const updated = await saveAgentSettings(agent.agentType, modelId, credentialId, {
         temperature: numericTemperature, maxTokens: numericMaxTokens,
@@ -75,104 +79,111 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
       onSaved(updated)
       onClose()
     } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : "Could not save agent settings")
+      setError(failure instanceof ApiError
+        ? { key: "agents.saveFailedWithDetail", detail: failure.message }
+        : { key: "agents.saveFailed" })
     } finally {
       setSaving(false)
     }
   }
 
+  const statusKey = dirty
+    ? "agents.status.unsavedChanges"
+    : agent.configured
+      ? "agents.status.configured"
+      : "agents.status.notConfigured"
+
   return <Drawer
     open={open}
-    title={`Configure ${agent.agentType}`}
-    description="Choose model access and generation parameters."
+    title={t("agents.drawer.title", { agentType: agent.agentType })}
+    description={t("agents.drawer.description")}
     onClose={() => { if (!saving) onClose() }}
     footer={<>
-      <Button variant="secondary" disabled={saving} onClick={onClose}>Cancel</Button>
-      <Button disabled={!canSave} loading={saving} loadingText="Saving..." onClick={() => void save()}>Save changes</Button>
+      <Button variant="secondary" disabled={saving} onClick={onClose}>{t("agents.drawer.cancel")}</Button>
+      <Button disabled={!canSave} loading={saving} loadingText={t("agents.drawer.saving")} onClick={() => void save()}>{t("agents.drawer.saveChanges")}</Button>
     </>}
   >
     <form className="settings-agent-editor" onSubmit={(event) => { event.preventDefault(); void save() }}>
       <div className="settings-agent-drawer-summary">
         <span className="settings-agent-drawer-name">{agent.agentType}</span>
-        <Badge tone={dirty ? "info" : agent.configured ? "success" : "info"}>{dirty ? "Unsaved changes" : agent.configured ? "Configured" : "Not configured"}</Badge>
+        <Badge tone={dirty ? "info" : agent.configured ? "success" : "info"}>{t(statusKey)}</Badge>
       </div>
-      {(error || providersError) && <p className="settings-error" role="alert">{error || providersError}</p>}
+      {(error || providersError) && <p className="settings-error" role="alert">{error ? error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail }) : providersError}</p>}
       <section className="settings-agent-editor-section">
-        <h3>Model & access</h3>
-        <p className="settings-hint">The model and credential must belong to the same provider.</p>
-        <ItemSelector label="Model" items={models.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.providerName }))}
-          selectedId={modelId === null ? null : String(modelId)} placeholder="Select a model..." emptyText="No models registered"
+        <h3>{t("agents.drawer.modelAccess")}</h3>
+        <p className="settings-hint">{t("agents.drawer.modelAccessHint")}</p>
+        <ItemSelector label={t("agents.form.model")} items={models.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.providerName }))}
+          selectedId={modelId === null ? null : String(modelId)} placeholder={t("agents.form.selectModel")} emptyText={t("agents.form.noModels")}
           onSelect={(id) => {
             const next = models.find((entry) => entry.id === Number(id))
             if (next?.providerId !== model?.providerId) setCredentialId(null)
-            setModelId(Number(id)); setError("")
+            setModelId(Number(id)); setError(null)
           }} hasMore={false} onLoadMore={() => {}} loading={providersLoading} disabled={saving || !!providersError} />
-        <ItemSelector label="Credential" items={credentials.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.apiKeyPreview }))}
-          selectedId={credentialId === null ? null : String(credentialId)} placeholder={model ? "Select a credential..." : "Select a model first"}
-          emptyText="No credentials registered for this provider" onSelect={(id) => { setCredentialId(Number(id)); setError("") }}
+        <ItemSelector label={t("agents.form.credential")} items={credentials.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.apiKeyPreview }))}
+          selectedId={credentialId === null ? null : String(credentialId)} placeholder={model ? t("agents.form.selectCredential") : t("agents.form.selectModelFirst")}
+          emptyText={t("agents.form.noCredentialsForProvider")} onSelect={(id) => { setCredentialId(Number(id)); setError(null) }}
           hasMore={false} onLoadMore={() => {}} disabled={!model || providersLoading || saving || !!providersError} />
         <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading || !!providersError} onUpdated={onVerified} />
       </section>
       <section className="settings-agent-editor-section">
-        <h3>Generation parameters</h3>
-        <p className="settings-hint">Leave a field empty to use the default value.</p>
+        <h3>{t("agents.drawer.generation")}</h3>
+        <p className="settings-hint">{t("agents.drawer.generationHint")}</p>
         <div className="settings-agent-parameters">
           <div className="settings-agent-parameter">
             <label className="ui-text-input">
-            <span className="ui-item-legend">Temperature</span>
-            <input className="ui-input" type="number" min="0" max="2" step="any" value={temperature} placeholder="Default" disabled={saving}
-              aria-invalid={!temperatureValid} onChange={(event) => { setTemperature(event.target.value); setError("") }} />
+            <span className="ui-item-legend">{t("agents.drawer.temperature")}</span>
+            <input className="ui-input" type="number" min="0" max="2" step="any" value={temperature} placeholder={t("agents.drawer.defaultPlaceholder")} disabled={saving}
+              aria-invalid={!temperatureValid} onChange={(event) => { setTemperature(event.target.value); setError(null) }} />
             </label>
-            <span className="settings-hint">0ΓÇô2 ┬╖ Lower values produce more consistent results.</span>
+            <span className="settings-hint">{t("agents.drawer.temperatureHint")}</span>
           </div>
           <div className="settings-agent-parameter">
             <label className="ui-text-input">
-             <span className="ui-item-legend">Maximum output tokens per call</span>
-             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={maxTokens} placeholder="Default: 1,000" disabled={saving}
-              aria-invalid={!tokensValid} onChange={(event) => { setMaxTokens(event.target.value); setError("") }} />
+             <span className="ui-item-legend">{t("agents.drawer.maxTokens")}</span>
+             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={maxTokens} placeholder={t("agents.drawer.maxTokensPlaceholder", { default: formatNumber(1000) })} disabled={saving}
+              aria-invalid={!tokensValid} onChange={(event) => { setMaxTokens(event.target.value); setError(null) }} />
             </label>
-             <span className="settings-hint">Limits the output of each model call. The backend default is 1,000 tokens.</span>
+             <span className="settings-hint">{t("agents.drawer.maxTokensHint", { default: formatNumber(1000) })}</span>
           </div>
         </div>
-        {!temperatureValid && <p className="settings-error" role="alert">Temperature must be between 0 and 2.</p>}
-        {!tokensValid && <p className="settings-error" role="alert">Maximum tokens must be a positive integer, up to 2147483647.</p>}
+        {!temperatureValid && <p className="settings-error" role="alert">{t("agents.drawer.temperatureInvalid")}</p>}
+        {!tokensValid && <p className="settings-error" role="alert">{t("agents.drawer.maxTokensInvalid")}</p>}
       </section>
       <section className="settings-agent-editor-section">
-        <h3>Execution token budget</h3>
-        <p className="settings-hint">Counts input and output across all model calls. Leave a field empty to clear its override.</p>
+        <h3>{t("agents.drawer.tokenBudget")}</h3>
+        <p className="settings-hint">{t("agents.drawer.tokenBudgetHint")}</p>
         <div className="settings-agent-parameters">
           <div className="settings-agent-parameter">
           <label className="ui-text-input">
-            <span className="ui-item-legend">Initial token budget</span>
-             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={tokenBudget} placeholder={`Default: ${DEFAULT_TOKEN_BUDGET.toLocaleString()}`} disabled={saving}
-              aria-invalid={!budgetValid || !limitsValid} onChange={(event) => { setTokenBudget(event.target.value); setError("") }} />
+            <span className="ui-item-legend">{t("agents.drawer.initialBudget")}</span>
+             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={tokenBudget} placeholder={t("agents.drawer.initialBudgetPlaceholder", { default: formatNumber(DEFAULT_TOKEN_BUDGET) })} disabled={saving}
+              aria-invalid={!budgetValid || !limitsValid} onChange={(event) => { setTokenBudget(event.target.value); setError(null) }} />
           </label>
-          <span className="settings-hint">Default initial budget: {DEFAULT_TOKEN_BUDGET.toLocaleString()} tokens.</span>
+          <span className="settings-hint">{t("agents.drawer.initialBudgetHint", { default: formatNumber(DEFAULT_TOKEN_BUDGET) })}</span>
           </div>
           <div className="settings-agent-parameter">
           <label className="ui-text-input">
-            <span className="ui-item-legend">Absolute token limit</span>
-             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={absoluteTokenLimit} placeholder={`Default: ${DEFAULT_ABSOLUTE_TOKEN_LIMIT.toLocaleString()}`} disabled={saving}
-              aria-invalid={!absoluteValid || !limitsValid} onChange={(event) => { setAbsoluteTokenLimit(event.target.value); setError("") }} />
+            <span className="ui-item-legend">{t("agents.drawer.absoluteLimit")}</span>
+             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={absoluteTokenLimit} placeholder={t("agents.drawer.absoluteLimitPlaceholder", { default: formatNumber(DEFAULT_ABSOLUTE_TOKEN_LIMIT) })} disabled={saving}
+              aria-invalid={!absoluteValid || !limitsValid} onChange={(event) => { setAbsoluteTokenLimit(event.target.value); setError(null) }} />
           </label>
-          <span className="settings-hint">Default absolute limit: {DEFAULT_ABSOLUTE_TOKEN_LIMIT.toLocaleString()} tokens.</span>
+          <span className="settings-hint">{t("agents.drawer.absoluteLimitHint", { default: formatNumber(DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</span>
           </div>
         </div>
-        {(!budgetValid || !absoluteValid) && <p className="settings-error" role="alert">Token limits must be positive integers, up to 2147483647.</p>}
-        {budgetValid && absoluteValid && !limitsValid && <p className="settings-error" role="alert">The absolute limit must be greater than or equal to the initial budget.</p>}
+        {(!budgetValid || !absoluteValid) && <p className="settings-error" role="alert">{t("agents.drawer.tokenLimitsInvalid")}</p>}
+        {budgetValid && absoluteValid && !limitsValid && <p className="settings-error" role="alert">{t("agents.drawer.limitsOrderInvalid")}</p>}
         {budgetValid && absoluteValid && limitsValid && <p className="settings-hint">
-          Tolerance margin: {(effectiveAbsolute - effectiveBudget).toLocaleString()} tokens ({new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format((effectiveAbsolute - effectiveBudget) / effectiveBudget * 100)}%).
-          {effectiveAbsolute === effectiveBudget && " Strict budget: no additional margin."}
+          {t(effectiveAbsolute === effectiveBudget ? "agents.drawer.toleranceMarginStrict" : "agents.drawer.toleranceMargin", { margin: formatNumber(effectiveAbsolute - effectiveBudget), percent: formatNumber((effectiveAbsolute - effectiveBudget) / effectiveBudget * 100, { maximumFractionDigits: 1 }) })}
         </p>}
       </section>
       <section className="settings-agent-editor-section">
         <div className="settings-agent-options-heading">
-          <h3>Agent-specific options</h3>
-          <Badge tone="info">Coming soon</Badge>
+          <h3>{t("agents.drawer.agentOptions")}</h3>
+          <Badge tone="info">{t("agents.drawer.comingSoon")}</Badge>
         </div>
         <div className="settings-agent-options-placeholder">
-          <p>Custom settings for {agent.agentType}</p>
-          <p className="settings-hint">Additional options specific to this agent will appear here when available.</p>
+          <p>{t("agents.drawer.customSettings", { agentType: agent.agentType })}</p>
+          <p className="settings-hint">{t("agents.drawer.agentOptionsHint")}</p>
         </div>
       </section>
     </form>
