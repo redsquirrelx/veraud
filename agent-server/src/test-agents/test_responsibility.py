@@ -31,13 +31,15 @@ from server.agents.maintainability.modularity.responsibility import (
     ResponsibilityConfig,
     ResponsibilityRequest,
 )
-from server.agents.maintainability.modularity.responsibility.schemas import ResponsibilityResult
+from server.agents.maintainability.modularity.responsibility.schemas import (
+    ResponsibilityResult,
+)
+from server.app.tracing_port import NoOpTracingBackend
+from server.config.schemas import ModelSettings
 from server.runtimes.investigation.agent import (
     InvestigationAgent,
     InvestigationExecution,
 )
-from server.app.tracing_port import NoOpTracingBackend
-from server.config.schemas import ModelSettings
 
 PLAN = {"objectives": ["Investigate independent change reasons"], "components": ["OrderService"],
         "hypotheses": [{"id": "h1", "question": "Does OrderService mix ordering and reporting?",

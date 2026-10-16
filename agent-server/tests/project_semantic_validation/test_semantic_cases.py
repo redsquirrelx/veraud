@@ -4,9 +4,9 @@ from server.agents.project_analysis.project_semantic_validation.context import (
     review_targets,
     validate_input,
 )
-from server.runtimes.repository import ExecutionBudget
 from server.benchmark.semantic_cases import build_semantic_cases
 from server.repository_runner import make_tools
+from server.runtimes.repository import ExecutionBudget
 
 
 def test_six_cases_have_accessible_source_and_stable_targets(tmp_path):

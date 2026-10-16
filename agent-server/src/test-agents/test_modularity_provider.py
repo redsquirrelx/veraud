@@ -22,8 +22,13 @@ from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.coordinator import ModularityConfig, ModularityRequest
-from server.agents.maintainability.modularity.coordinator.agent import _Execution
+from server.agents.maintainability.modularity.coordinator import (
+    ModularityConfig,
+    ModularityRequest,
+)
+from server.agents.maintainability.modularity.coordinator.agent import (
+    ModularityExecution,
+)
 from server.agents.maintainability.modularity.coordinator.schemas import SynthesisDraft
 from server.runtimes.investigation.provider import (
     lean_schema,
@@ -163,7 +168,7 @@ def test_synthesis_google_real_adapter_receives_lean_schema(repo, monkeypatch):
                 prompt_token_count=100, candidates_token_count=30, total_token_count=130))
     monkeypatch.setattr(model.async_client.models, "generate_content", generate_content)
     agent = type("Agent", (), {"model": model, "config": ModularityConfig()})()
-    run = _Execution(agent, toolset(repo), ModularityRequest())
+    run = ModularityExecution(agent, toolset(repo), ModularityRequest())
     result = asyncio.run(run.synth.call("synthesize_findings", {"messages": [], "compact_context": {}}, SynthesisDraft))
     assert result.summary == "Scoped synthesis"
     assert len(requests) == run.synth.calls == 1
@@ -176,7 +181,7 @@ def test_synthesis_can_recover_on_a_later_round(repo):
     model = NativeStructuredModel([rate_limit("0s"), {"summary": "Recovered synthesis"}])
     config = ModularityConfig(max_provider_retries=0, provider_retry_backoff_seconds=0)
     agent = type("Agent", (), {"model": model, "config": config})()
-    run = _Execution(agent, toolset(repo), ModularityRequest())
+    run = ModularityExecution(agent, toolset(repo), ModularityRequest())
     state = run.initial_state()
     state.update(run.plan_assessment(state))
     first = asyncio.run(run.synthesize_findings(state))

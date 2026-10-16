@@ -42,12 +42,12 @@ from server.agents.maintainability.modularity.coordinator import (
     ModularityRequest,
 )
 from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
+from server.app.tracing_port import LangSmithTracingBackend
 from server.runtimes.investigation.schemas import (
     Criterion,
     InvestigationConfig,
     ProviderRateLimits,
 )
-from server.app.tracing_port import LangSmithTracingBackend
 
 FOLLOW_UP = "Follow-up: does report formatting change independently of persistence?"
 

@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.modularity.coordinator.agent import _Execution
 from server.agents.maintainability.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
@@ -24,8 +23,9 @@ from server.agents.maintainability.reusability.coordinator.agent import (
 )
 from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
 from server.agents.maintainability.reusability.coordinator.schemas import Route
-from server.runtimes.investigation.schemas import InvestigationConfig
 from server.app.tracing_port import NoOpTracingBackend
+from server.runtimes.coordination.execution import CoordinatorExecution
+from server.runtimes.investigation.schemas import InvestigationConfig
 
 TARGET = "Offline processing with an injected backend."
 FOLLOW_UP = "Inspect whether the backend can be supplied through the public construction boundary."
@@ -54,7 +54,7 @@ def request():
 
 def fake_result(key, child, args, *, finding=True, status="completed"):
     snapshot = child.accessible_snapshot
-    refs = _Execution.references(child)
+    refs = CoordinatorExecution.references(child)
     criterion = args.criteria[0]
     value = {"repository_id": snapshot.repository.name, "commit": snapshot.repository.commit,
         "snapshot_hash": snapshot.repository.snapshot_hash, "objective": args.objective,
@@ -433,4 +433,3 @@ def test_real_three_investigator_graphs_models_only_simulated(repo):
     assert result.invocations[0].result.findings[0].category == "useful_abstraction"
     assert ReusabilityAssessment.model_validate_json(result.model_dump_json()) == result
     assert fingerprints(repo) == before
-

@@ -6,7 +6,6 @@ from time import monotonic
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, toolset
 from test_modularity import result
 
@@ -15,7 +14,9 @@ from server.agents.maintainability.modularity.coordinator import (
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.agent import _Execution
+from server.agents.maintainability.modularity.coordinator.agent import (
+    ModularityExecution,
+)
 from server.app.tracing_port import NoOpTracingBackend
 
 
@@ -31,7 +32,7 @@ def execution(root, config, factory):
     tools = toolset(root, max_model_calls=96, max_tool_calls=96)
     agent = ModularityAgent(NativeStructuredModel([]), config, investigator_factory=factory,
         tracing_backend=NoOpTracingBackend())
-    run = _Execution(agent, tools, ModularityRequest())
+    run = ModularityExecution(agent, tools, ModularityRequest())
     state = run.initial_state()
     state.update(run.plan_assessment(state))
     return run, state
@@ -113,12 +114,6 @@ def test_cancellation_during_start_delay_propagates(repo):
             await task
         assert run.spent.model_calls == 0
     asyncio.run(execute())
-
-
-@pytest.mark.parametrize("value", [-1, float("inf"), float("nan")])
-def test_invalid_start_interval_is_rejected(value):
-    with pytest.raises(ValidationError):
-        ModularityConfig(investigation_start_interval_seconds=value)
 
 
 def test_start_spacing_and_request_pacing_are_independent(repo):

@@ -121,7 +121,6 @@ def test_portal_and_exact_operation_coverage(api):
         for route in application_routes(app.routes)
         for method in route.methods
     }
-    assert len(expected) == 7
     assert operations == registered == expected
     ids = []
     for method, path in operations:

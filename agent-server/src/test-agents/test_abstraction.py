@@ -27,9 +27,9 @@ from server.agents.maintainability.reusability.abstraction import (
     AbstractionResult,
 )
 from server.agents.maintainability.reusability.abstraction.discovery import discover
-from server.runtimes.investigation.agent import InvestigationExecution
 from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
+from server.runtimes.investigation.agent import InvestigationExecution
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ def test_pass_through_requires_actual_consumer_and_delegate(repo):
     assert result.findings[0].validation_status == "accepted"
 
 
-def test_single_implementation_with_valid_contract_is_not_overengineering(repo):
+def test_model_justified_boundary_preserves_discarded_hypothesis_without_findings(repo):
     result, _, _ = normal(repo, primary="port.py", category="justified_boundary",
         roles=[("checkout.py", "consumer"), ("adapter.py", "implementation")], finding=False)
     assert result.status == "completed" and not result.findings
@@ -230,14 +230,21 @@ def test_host_gap_drives_another_inspection(repo):
     assert "actual_consumer_required" in json.loads(model.history[4][1].content)["missing_information"][0]
 
 
-@pytest.mark.parametrize("limit", ["tools", "tokens", "context", "models"])
+# Zero-tool admission is covered by test_zero_tool_allowance_and_provider_failure
+# in test_architecture_boundary.py, using valid evaluation/review responses.
+@pytest.mark.parametrize("limit", ["tokens", "context", "models"])
 def test_execution_limits_are_explicit(repo, limit):
-    config = {"max_tool_calls": 0} if limit == "tools" else {"max_total_tokens": 1000} if limit == "tokens" else {
+    config = {"max_total_tokens": 1000} if limit == "tokens" else {
         "max_context_characters": 4000} if limit == "context" else {"max_model_calls": 4}
     result, _, _ = normal(repo, **config)
     assert result.status in {"partial", "failed"}
     assert not any(f.validation_status == "accepted" for f in result.findings)
-    assert result.termination_reason
+    assert result.termination_reason == {
+        "tokens": "token_limit",
+        "context": "context_limit", "models": "model_call_limit",
+    }[limit]
+    assert result.model_calls <= config.get("max_model_calls", 16)
+    assert result.tool_calls <= config.get("max_tool_calls", 24)
 
 
 def test_tool_failure_does_not_fabricate_source(repo):

@@ -13,8 +13,13 @@ from server.agents.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
     ValidationLimits,
 )
-from server.agents.project_analysis.project_semantic_validation.context import review_targets
-from server.agents.project_analysis.project_semantic_validation.schemas import SemanticFinding
+from server.agents.project_analysis.project_semantic_validation.context import (
+    review_targets,
+)
+from server.agents.project_analysis.project_semantic_validation.schemas import (
+    SemanticFinding,
+)
+from server.pipelines.semantic_validation import validate_architecture_pipeline
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
@@ -23,7 +28,6 @@ from server.runtimes.repository import (
 )
 from server.runtimes.repository.schemas import BudgetUsage
 from server.runtimes.repository.telemetry import ExecutionTelemetry
-from server.pipelines.semantic_validation import validate_architecture_pipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
 

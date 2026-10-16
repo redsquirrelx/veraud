@@ -9,14 +9,19 @@ from server.agents.project_analysis.project_architecture import ProjectArchitect
 from server.agents.project_analysis.project_architecture.context import (
     validate_report,
 )
-from server.agents.project_analysis.project_architecture.projection import representation_view
+from server.agents.project_analysis.project_architecture.projection import (
+    representation_view,
+)
 from server.agents.project_analysis.project_architecture.schemas import (
     ArchitectureLimits,
     ArchitectureReport,
     ArchitectureTurn,
 )
 from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
-from server.agents.project_analysis.project_orientation.smoke import OrientationSmokeModel
+from server.agents.project_analysis.project_orientation.smoke import (
+    OrientationSmokeModel,
+)
+from server.run_project_architecture import main
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
@@ -24,7 +29,6 @@ from server.runtimes.repository import (
     RepositoryToolset,
     ToolLimits,
 )
-from server.run_project_architecture import main
 from server.services.repository_analysis import RepositoryAnalysisService
 
 

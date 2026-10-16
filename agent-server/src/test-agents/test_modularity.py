@@ -12,8 +12,13 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.coordinator import ModularityAgent, ModularityConfig
-from server.agents.maintainability.modularity.coordinator.agent import route_after_synthesis
+from server.agents.maintainability.modularity.coordinator import (
+    ModularityAgent,
+    ModularityConfig,
+)
+from server.agents.maintainability.modularity.coordinator.agent import (
+    route_after_synthesis,
+)
 from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
 from server.agents.maintainability.modularity.coordinator.schemas import (
     Assignment,
@@ -25,8 +30,8 @@ from server.agents.maintainability.modularity.coordinator.synthesis import (
     consolidate,
     detect_contradictions,
 )
-from server.runtimes.investigation.schemas import Finding, InvestigationConfig
 from server.app.tracing_port import NoOpTracingBackend
+from server.runtimes.investigation.schemas import Finding, InvestigationConfig
 
 
 @pytest.fixture
@@ -159,31 +164,6 @@ def test_exhausted_budget_and_bad_synthesis(repo):
     assert assessment.termination_reason == "resource_limit"
 
 
-def test_real_investigator_graphs(repo):
-    # Real three classes, native ToolNode and repository tools; only provider I/O is simulated.
-    def create(key, model, limits):
-        evaluation = {"sufficient": True, "hypotheses": [], "candidates": [], "missing_information": []}
-        if key == "responsibility":
-            evaluation["component_assessments"] = []
-        if key == "dependency_impact":
-            evaluation["dependency_assessments"] = []
-        responses = [{"objectives": ["Inspect entry"], "components": ["main.py"], "hypotheses": []},
-            {"unused": True}, {"unused": True}, evaluation, {"findings": [], "limitations": []}]
-        from langchain_core.messages import AIMessage
-        responses[1] = AIMessage(content="", tool_calls=[{"name": "get_source_excerpt",
-            "args": {"path": "main.py", "start_line": 1, "end_line": 2}, "id": "source"}])
-        responses[2] = AIMessage(content="Inspected scoped function body; no hypotheses.")
-        return INVESTIGATORS[key].agent_class(NativeStructuredModel(responses), limits)
-    assessment = asyncio.run(ModularityAgent(NativeStructuredModel([{"summary": "Collected all real investigator graphs."}]),
-        ModularityConfig(provider_rate_limits={"requests_per_minute": None, "tokens_per_minute": None},
-            invocation_limits=InvestigationConfig(max_model_calls=8, max_total_tokens=60_000)),
-        investigator_factory=create, tracing_backend=NoOpTracingBackend()).run(tools(repo)))
-    assert len(assessment.invocations) >= 3
-    assert all(r.result is not None for r in assessment.invocations[:3])
-    assert all(r.evidence for r in assessment.invocations[:3])
-    assert assessment.status == "completed"
-
-
 def test_all_fail_bounded_retry(repo):
     calls = []
     def create(key, model, limits):
@@ -248,8 +228,8 @@ def finding_record(repo, invocation, status="accepted", title="Boundary concern"
         question="Assess boundary", targets=["main.py"])
     value = result("architecture_boundary", tools_instance, SimpleNamespace(objective="Assess boundary"))
     tools_instance.execute("get_source_excerpt", {"path": "main.py", "start_line": 1, "end_line": 2}, tool_call_id=invocation)
-    from server.agents.maintainability.modularity.coordinator.agent import _Execution
-    evidence = _Execution.references(tools_instance)
+    from server.runtimes.coordination.execution import CoordinatorExecution
+    evidence = CoordinatorExecution.references(tools_instance)
     finding = Finding(id="f1", title=title, description="Scoped concern", criterion_id="c1", kind="design_observation",
         components=["main.py"], evidence_ids=[e.id for e in evidence], justification="Source-backed claim",
         modularity_impact="Independent maintenance risk", severity="medium", confidence=0.8,

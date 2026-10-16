@@ -35,9 +35,9 @@ from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactResult,
 )
 from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
-from server.runtimes.investigation.agent import InvestigationExecution
 from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
+from server.runtimes.investigation.agent import InvestigationExecution
 
 PLAN = {"objectives": ["Assess provider replacement costs"], "components": ["OrderService", "PaymentGateway"],
         "hypotheses": [{"id": "h1", "question": "Does provider-specific response handling couple order processing to a gateway?",

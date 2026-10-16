@@ -9,7 +9,42 @@ import pytest
 from server.runtimes.repository.model_runtime import (
     ModelGateway,
     close_model_clients,
+    create_project_model,
 )
+
+
+@pytest.mark.parametrize("provider", ["google", "gemini"])
+def test_project_gemini_factory_uses_adapter_and_bounds_json_output(monkeypatch, provider):
+    from server.config.schemas import ModelCredentials, ModelSettings
+    from server.infrastructure.llm import gemini
+
+    requests = []
+    keys = []
+    response = SimpleNamespace(text='{"ok":true}')
+
+    async def generate_content(**kwargs):
+        requests.append(kwargs)
+        return response
+
+    def client(**kwargs):
+        keys.append(kwargs["api_key"])
+        return SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content)))
+
+    monkeypatch.setattr(gemini.genai, "Client", client)
+    model = create_project_model(
+        ModelSettings(provider=provider, name="gemini-test", temperature=0.3, max_tokens=1200),
+        ModelCredentials(api_key="fake-key"),
+    )
+    assert isinstance(model, gemini.GeminiModel)
+    assert keys == ["fake-key"]
+    assert asyncio.run(model.generate("first")) is response
+    assert asyncio.run(model.generate_with_output_limit("second", max_output_tokens=200)) is response
+    assert asyncio.run(model.generate_with_output_limit("third", max_output_tokens=2000)) is response
+    assert [request["contents"] for request in requests] == ["first", "second", "third"]
+    assert [request["config"].max_output_tokens for request in requests] == [1200, 200, 1200]
+    assert all(request["model"] == "gemini-test" for request in requests)
+    assert all(request["config"].temperature == 0.3 for request in requests)
+    assert all(request["config"].response_mime_type == "application/json" for request in requests)
 
 
 def test_retry_requires_token_admission_and_counts_only_submitted_attempts():

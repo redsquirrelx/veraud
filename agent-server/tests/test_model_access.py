@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from server.infrastructure.llm import anthropic, gemini, openrouter
 from server.api import executions
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app import execution_service
 from server.config.schemas import ModelCredentials, ModelSettings
+from server.infrastructure.llm import anthropic, gemini, openrouter
 from server.main import app
 
 

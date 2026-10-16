@@ -6,7 +6,10 @@ import json
 import pytest
 
 from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
-from server.agents.project_analysis.project_orientation.context import representation_view
+from server.agents.project_analysis.project_orientation.context import (
+    representation_view,
+)
+from server.run_project_orientation import main
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
@@ -14,7 +17,6 @@ from server.runtimes.repository import (
     RepositoryToolset,
     ToolLimits,
 )
-from server.run_project_orientation import main
 from server.services.repository_analysis import RepositoryAnalysisService
 
 

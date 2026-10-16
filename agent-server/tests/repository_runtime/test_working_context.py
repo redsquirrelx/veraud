@@ -301,7 +301,9 @@ def test_rejected_request_reports_sizes_and_budget_without_submitting(
     events = []
     options = {}
     if agent_type is ProjectArchitectureAgent:
-        from server.agents.project_analysis.project_architecture.schemas import ArchitectureLimits
+        from server.agents.project_analysis.project_architecture.schemas import (
+            ArchitectureLimits,
+        )
 
         options["limits"] = ArchitectureLimits(soft_token_budgets=False)
     result = asyncio.run(

@@ -9,8 +9,12 @@ from server.agents.project_analysis.project_architecture.context import (
     retain_valid_sections,
     validate_report,
 )
-from server.agents.project_analysis.project_architecture.projection import representation_view
-from server.agents.project_analysis.project_architecture.schemas import ArchitectureReport
+from server.agents.project_analysis.project_architecture.projection import (
+    representation_view,
+)
+from server.agents.project_analysis.project_architecture.schemas import (
+    ArchitectureReport,
+)
 from server.runtimes.repository import (
     RepositoryContext,
     RepositoryInput,

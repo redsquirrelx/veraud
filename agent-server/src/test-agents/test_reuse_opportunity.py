@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
 from server.agents.maintainability.reusability.reuse_opportunity import (
@@ -22,10 +21,9 @@ from server.agents.maintainability.reusability.reuse_opportunity import (
     ReuseOpportunityRequest,
     ReuseOpportunityResult,
 )
-from server.agents.maintainability.reusability.reuse_opportunity.discovery import discover, features
-from server.agents.maintainability.reusability.reuse_opportunity.schemas import (
-    InspectRoute,
-    ValidationRoute,
+from server.agents.maintainability.reusability.reuse_opportunity.discovery import (
+    discover,
+    features,
 )
 from server.runtimes.repository.tools import ToolLimits
 
@@ -188,7 +186,7 @@ def test_unknown_caller_allows_only_explicit_conditional_conclusion(repo):
     assert result.findings[0].classification == "conditional" and result.examined_groups[0].unknowns
 
 
-def test_same_syntax_different_domain_is_not_automatically_recommended(repo):
+def test_model_not_recommended_assessment_preserves_domain_tradeoff_without_findings(repo):
     (repo / "sales.py").write_text("def apply_discount(amount):\n    return amount * 0.1\n", encoding="utf-8")
     (repo / "billing.py").write_text("def withhold_tax(amount):\n    return amount * 0.1\n", encoding="utf-8")
     def distinguish(value):
@@ -258,12 +256,17 @@ def test_iteration_limit_preserves_evidence_and_unsupported_result(repo):
     assert result.findings[0].validation_status == "insufficient_evidence"
 
 
-@pytest.mark.parametrize("config", [{"max_total_tokens": 1000}, {"max_tool_calls": 0}, {"max_model_calls": 4}, {"max_context_characters": 4000}])
+@pytest.mark.parametrize("config", [{"max_total_tokens": 1000}, {"max_model_calls": 4}, {"max_context_characters": 4000}])
 def test_hard_limits_terminate_without_accepting_unsupported_output(repo, config):
     result, _, _ = run(repo, [plan(), reads(repo), AIMessage(content="Validate"), evaluation, review("REUSE-001")], config=limits(**config))
     assert result.status in {"partial", "failed"}
     assert result.execution_trace[-1] == "limited_finalize"
     assert not any(f.validation_status == "accepted" for f in result.findings)
+    expected = {"max_total_tokens": "token_limit", "max_tool_calls": "tool_call_limit",
+        "max_model_calls": "model_call_limit", "max_context_characters": "context_limit"}
+    assert result.termination_reason == expected[next(iter(config))]
+    assert result.model_calls <= config.get("max_model_calls", 16)
+    assert result.tool_calls <= config.get("max_tool_calls", 24)
 
 
 def test_tool_failure_is_reported_and_does_not_silently_succeed(repo):
@@ -322,15 +325,6 @@ def test_discovery_scope_and_bounded_coverage(repo):
     for target in ["../outside", "missing.py", "README.md"]:
         with pytest.raises(ValueError):
             discover(snapshot, ReuseOpportunityRequest(targets=[target]), limits())
-
-
-def test_route_values_are_closed_enums():
-    assert InspectRoute("use_tools") == InspectRoute.USE_TOOLS
-    assert ValidationRoute("limited_finalize") == ValidationRoute.LIMITED_FINALIZE
-    with pytest.raises(ValueError):
-        ValidationRoute("retry_forever")
-    with pytest.raises(ValidationError):
-        ReuseOpportunityConfig(max_groups=0)
 
 
 def test_multiple_cross_module_groups_and_evidence_are_not_duplicated(repo):

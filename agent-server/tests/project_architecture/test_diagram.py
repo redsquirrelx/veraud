@@ -32,6 +32,7 @@ from server.agents.project_analysis.project_semantic_validation.schemas import (
     SemanticFinding,
     SemanticValidationResult,
 )
+from server.pipelines import ProjectArchitecturePipeline
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
@@ -40,7 +41,6 @@ from server.runtimes.repository import (
 )
 from server.runtimes.repository.schemas import BudgetUsage
 from server.runtimes.repository.telemetry import ExecutionTelemetry
-from server.pipelines import ProjectArchitecturePipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -928,7 +928,9 @@ def test_runner_checkpoints_before_503_and_resumes_without_investigation(
     fixture, tmp_path, monkeypatch
 ):
     from server import repository_runner
-    from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
+    from server.agents.project_analysis.project_semantic_validation import (
+        ProjectSemanticValidationAgent,
+    )
 
     _, fresh, original, _, workspace = fixture
     checkpoint = tmp_path / "saved-report.json"

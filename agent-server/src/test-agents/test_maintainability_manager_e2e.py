@@ -21,19 +21,21 @@ from test_maintainability_manager import BASE, Events
 from test_modularity_e2e import ProviderScenario
 from test_reusability_e2e import SimulatedProvider
 
-from server.agents.maintainability.reusability.abstraction import AbstractionRequest
-from server.agents.maintainability.reusability.component_adaptability import (
-    ComponentAdaptabilityRequest,
-)
 from server.agents.maintainability.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityReport,
     MaintainabilityRequest,
 )
-from server.agents.maintainability.reusability.reuse_opportunity import ReuseOpportunityRequest
-from server.runtimes.investigation.schemas import Criterion, InvestigationConfig
+from server.agents.maintainability.reusability.abstraction import AbstractionRequest
+from server.agents.maintainability.reusability.component_adaptability import (
+    ComponentAdaptabilityRequest,
+)
+from server.agents.maintainability.reusability.reuse_opportunity import (
+    ReuseOpportunityRequest,
+)
 from server.app.tracing_port import LangSmithTracingBackend
+from server.runtimes.investigation.schemas import Criterion, InvestigationConfig
 
 
 @pytest.fixture

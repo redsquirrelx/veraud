@@ -9,8 +9,10 @@ from test_architecture_boundary import ScriptedModel, toolset
 from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
 )
-from server.agents.maintainability.modularity.dependency_impact import DependencyImpactAgent
 from server.agents.maintainability.modularity.coordinator import ModularityConfig
+from server.agents.maintainability.modularity.dependency_impact import (
+    DependencyImpactAgent,
+)
 from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
 from server.runtimes.investigation.schemas import Review
 

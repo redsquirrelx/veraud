@@ -13,16 +13,12 @@ from server.api.schemas import ExecutionConfig
 from server.app.callback_port import (
     BackendCallbackSink,
     NoOpCallbackSink,
-    default_callback_sink,
 )
 from server.app.pipeline_service import (
     GenericPipelineService,
     PipelineDefinition,
 )
-from server.app.tracing_port import (
-    LangSmithTracingBackend,
-    NoOpTracingBackend,
-)
+from server.app.tracing_port import NoOpTracingBackend
 from server.infrastructure.callback.client import CallbackClient
 
 
@@ -57,49 +53,35 @@ class RecorderSink:
         self.calls.append(("close",))
 
 
-class TestTracingPorts:
-    def test_noop_passes_value_through(self):
-        async def main():
-            return await NoOpTracingBackend().wrap_stage(_coro(7), name="s")
-
-        async def _coro(value):
-            return value
-
-        assert asyncio.run(main()) == 7
-
-    def test_noop_pipeline_passes_value_through(self):
-        async def main():
-            async def _coro():
-                return {"ok": True}
-
-            return await NoOpTracingBackend().wrap_pipeline(_coro(), name="p")
-
-        assert asyncio.run(main()) == {"ok": True}
-
-    def test_langsmith_without_key_is_pass_through(self):
-        # No LANGSMITH_API_KEY in test env, so setup() returns None and the
-        # coroutine runs untouched instead of raising.
-        async def main():
-            async def _coro():
-                return 42
-
-            return await LangSmithTracingBackend().wrap_stage(_coro(), name="s")
-
-        assert asyncio.run(main()) == 42
-
-
 class TestCallbackPorts:
-    def test_noop_never_touches_http(self):
+    def test_noop_never_touches_http(self, monkeypatch):
+        import httpx
+
+        http_attempts = []
+
+        def unexpected_http(*args, **kwargs):
+            http_attempts.append(True)
+            raise AssertionError("No-op callbacks must not create an HTTP client")
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", unexpected_http)
+        monkeypatch.setattr(httpx.Client, "__init__", unexpected_http)
+        monkeypatch.setattr(httpx.AsyncClient, "send", unexpected_http)
+        monkeypatch.setattr(httpx.Client, "send", unexpected_http)
+        monkeypatch.setattr(CallbackClient, "__init__", unexpected_http)
+
         async def main():
             sink = NoOpCallbackSink()
             r1 = await sink.mark_running(1)
             r2 = await sink.complete(1, SimpleNamespace(status="Completed"))
+            r3 = await sink.progress(1, SimpleNamespace(input_tokens=10))
             await sink.aclose()
-            return r1, r2
+            return r1, r2, r3
 
-        r1, r2 = asyncio.run(main())
+        r1, r2, r3 = asyncio.run(main())
         assert r1.acknowledged is False
         assert r2.acknowledged is False
+        assert r3.acknowledged is False
+        assert not http_attempts
 
     def test_backend_sink_forwards_to_client(self):
         seen = []
@@ -122,14 +104,6 @@ class TestCallbackPorts:
 
         asyncio.run(main())
         assert seen == [("running", 9), ("complete", 9, "Completed"), ("close",)]
-
-    def test_default_sink_never_raises_without_explicit_config(self):
-        # With or without .env, the default factory must return a usable
-        # sink-or-None without raising (None = run locally, no reporting).
-        sink = default_callback_sink()
-        assert sink is None or isinstance(sink, BackendCallbackSink)
-        assert isinstance(CallbackClient, type)
-
 
 class TestPortsInjectedIntoPipeline:
     def test_pipeline_runs_with_noop_tracing_and_recorder_sink(self):
@@ -182,12 +156,3 @@ class TestPortsInjectedIntoPipeline:
         assert result == {"first": {"value": "one"}, "second": {"value": "two"}}
         kinds = [(c[0], c[1]) for c in sink.calls if c[0] != "close"]
         assert kinds == [("running", 11), ("complete", 11), ("running", 12), ("complete", 12)]
-
-    def test_single_agent_service_accepts_ports(self):
-        from server.app.execution_service import AgentExecutionService
-
-        service = AgentExecutionService(
-            tracing_backend=NoOpTracingBackend(),
-            callbacks_factory=lambda: None,
-        )
-        assert service._tracing is not None

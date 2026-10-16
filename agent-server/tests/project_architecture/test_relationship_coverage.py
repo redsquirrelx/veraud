@@ -20,7 +20,9 @@ from server.agents.project_analysis.project_semantic_validation.context import (
     review_targets,
     validate_finding,
 )
-from server.agents.project_analysis.project_semantic_validation.schemas import SemanticFinding
+from server.agents.project_analysis.project_semantic_validation.schemas import (
+    SemanticFinding,
+)
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,

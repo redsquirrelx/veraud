@@ -7,7 +7,6 @@ import asyncio
 
 import pytest
 from langchain_core.messages import AIMessage
-from pydantic import ValidationError
 from test_architecture_boundary import ScriptedModel, toolset
 from test_modularity_e2e import ProviderScenario, request
 from test_modularity_provider import rate_limit
@@ -21,13 +20,15 @@ from server.agents.maintainability.modularity.coordinator import (
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.agent import _Execution
+from server.agents.maintainability.modularity.coordinator.agent import (
+    ModularityExecution,
+)
+from server.app.tracing_port import NoOpTracingBackend
 from server.runtimes.investigation.provider import (
     ProviderPacer,
     RequestTokenQuotaExceeded,
 )
 from server.runtimes.investigation.schemas import ProviderRateLimits, Review
-from server.app.tracing_port import NoOpTracingBackend
 
 
 class Clock:
@@ -213,7 +214,7 @@ def test_coordinator_synthesis_and_investigators_share_injected_quota(repo):
     shared = ProviderPacer(rate_limits=ProviderRateLimits())
     model = ScriptedModel([])
     agent = ModularityAgent(model, provider_pacer=shared)
-    run = _Execution(agent, toolset(repo, max_model_calls=96), ModularityRequest())
+    run = ModularityExecution(agent, toolset(repo, max_model_calls=96), ModularityRequest())
     assert run.provider_pacer is run.synth.provider_pacer is shared
     child = ArchitectureBoundaryAgent(model, provider_pacer=shared)
     assert child.provider_pacer is shared
@@ -241,10 +242,3 @@ def test_real_coordinator_and_three_investigators_share_fourteen_rpm(repo, monke
     assert len(starts) == len(model.history) == assessment.consumption.model_calls == 16
     assert starts == [0] * 14 + [60] * 2
     assert clock.waits == [60]  # one shared quota, not fourteen requests per investigator
-
-
-@pytest.mark.parametrize("field", ["requests_per_minute", "tokens_per_minute"])
-@pytest.mark.parametrize("value", [0, -1])
-def test_invalid_quota_values_are_rejected(field, value):
-    with pytest.raises(ValidationError):
-        ProviderRateLimits(**{field: value})

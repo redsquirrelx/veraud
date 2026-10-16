@@ -43,8 +43,8 @@ from server.agents.maintainability.reusability.coordinator import (
     ReusabilityRequest,
 )
 from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
-from server.runtimes.investigation.schemas import InvestigationConfig
 from server.app.tracing_port import LangSmithTracingBackend
+from server.runtimes.investigation.schemas import InvestigationConfig
 
 FOLLOW_UP = "Inspect the external construction seam and its effect on the scoped abstraction judgment."
 TARGET = "Offline processing with a supplied backend, without changing the component source."

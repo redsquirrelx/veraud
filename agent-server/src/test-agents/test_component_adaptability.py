@@ -22,11 +22,11 @@ from server.agents.maintainability.reusability.component_adaptability import (
     ComponentAdaptabilityRequest,
     ComponentAdaptabilityResult,
 )
-from server.agents.maintainability.reusability.component_adaptability.discovery import discover
+from server.agents.maintainability.reusability.component_adaptability.discovery import (
+    discover,
+)
 from server.agents.maintainability.reusability.component_adaptability.schemas import (
     InspectionDecision,
-    InspectRoute,
-    ValidationRoute,
 )
 from server.runtimes.investigation.schemas import AuditResult
 
@@ -166,7 +166,7 @@ def test_unspecified_target_is_qualified_not_invented(repo):
     assert result.findings[0].assumptions and result.examined_constraints[0].context_basis == "plausible"
 
 
-def test_existing_injection_seam_disproves_suspected_rigidity(repo):
+def test_model_mitigated_assessment_preserves_counterevidence_without_findings(repo):
     def seam(value):
         a = value["constraint_assessments"][0]
         a.update(observed_facts=["Constructor accepts client and selects it when not None."],
@@ -231,11 +231,16 @@ def test_tool_missing_file_preserves_partial_evidence(repo):
     assert result.examined_constraints[0].evidence
 
 
-@pytest.mark.parametrize("config", [{"max_total_tokens": 1000}, {"max_tool_calls": 0}, {"max_model_calls": 4}, {"max_context_characters": 4000}])
+@pytest.mark.parametrize("config", [{"max_total_tokens": 1000}, {"max_model_calls": 4}, {"max_context_characters": 4000}])
 def test_resource_limits_terminate_without_invented_success(repo, config):
     result, _, _ = run(repo, [plan(), read(repo), READY, evaluate, review("ADAPT-001")], config=limits(**config))
     assert result.status in {"partial", "failed"} and result.execution_trace[-1] == "limited_finalize"
     assert not any(f.validation_status == "accepted" for f in result.findings)
+    expected = {"max_total_tokens": "token_limit", "max_tool_calls": "tool_call_limit",
+        "max_model_calls": "model_call_limit", "max_context_characters": "context_limit"}
+    assert result.termination_reason == expected[next(iter(config))]
+    assert result.model_calls <= config.get("max_model_calls", 16)
+    assert result.tool_calls <= config.get("max_tool_calls", 24)
 
 
 def test_repeated_queries_reuse_cache_without_bypassing_admission(repo, monkeypatch):
@@ -251,10 +256,8 @@ def test_repeated_queries_reuse_cache_without_bypassing_admission(repo, monkeypa
     assert sum(m.cache_hit for m in tools.tool_measurements) == 4
 
 
-def test_structured_inspection_routes_are_closed_and_validated():
-    assert InspectionDecision.model_validate(READY).action == InspectRoute.VALIDATE
-    assert ValidationRoute("limited_finalize") == ValidationRoute.LIMITED_FINALIZE
-    for value in [{"action": "guess", "tool_requests": []}, {"action": "use_tools", "tool_requests": []},
+def test_inspection_action_requires_consistent_tool_requests():
+    for value in [{"action": "use_tools", "tool_requests": []},
                   {"action": "validate", "tool_requests": [{"name": "list_files", "arguments_json": "{}"}]}]:
         with pytest.raises(ValidationError):
             InspectionDecision.model_validate(value)

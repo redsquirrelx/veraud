@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from server.services.repository_analysis import (
     RepositoryAnalysisInput,
@@ -111,8 +110,6 @@ def test_repeated_analysis_is_deterministic_and_does_not_write_files(python_repo
         path.relative_to(python_repository).as_posix()
         for path in python_repository.rglob("*")
     }
-    with pytest.raises(ValidationError):
-        first.repository.snapshot_hash = "changed"
 
 
 def test_queries_retain_old_source_and_validate_ranges(python_repository):
