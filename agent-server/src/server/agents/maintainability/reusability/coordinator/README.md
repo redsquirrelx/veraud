@@ -26,11 +26,11 @@ Paths below are relative to `agent-server/src/`.
 
 | Existing extension point | Integration |
 | --- | --- |
-| `server/agents/maintainability/modularity/agent.py`: `_Execution` | Reuses dispatch, semaphore/start pacing, deadlines, per-invocation envelope reservation, collection/accounting and synthesis recovery. Small contract/registry/request/validation/context hooks allow sibling specialization; modularity's graph and default behavior remain unchanged. |
-| Same file: `_SynthesisExecution` | Existing budgeted native structured-output calls, lean schema, retries, usage reconciliation, diagnostics and shared `ProviderPacer`. |
-| `modularity/schemas.py`, `modularity/synthesis.py` | Specializes existing assignment/invocation/gap/assessment contracts and reuses namespacing, grouping, conflict, resolution and request-key helpers through configurable types/keys. |
-| `abstraction/`, `reuse_opportunity/`, `component_adaptability/` | Registry points directly to the real classes and their request/result models. Public invocation remains `await agent.run(fresh_toolset, typed_request)`. No duplicated analysis or investigator delegation. |
-| `server/agents/repository_runtime/` | Each invocation has a fresh context/toolset on the same immutable snapshot and access policy; only investigators inspect code. Collection checks the actual retrieved ledger and source provenance. |
+| `server/runtimes/coordination/execution.py`: `CoordinatorExecution` | Shared dispatch, semaphore/start pacing, deadlines, per-invocation envelope reservation, collection/accounting and synthesis recovery. Contract/registry/request/validation/context hooks allow independent dimension specialization. |
+| Same file: `CoordinatorSynthesisExecution` | Existing budgeted native structured-output calls, lean schema, retries, usage reconciliation, diagnostics and shared `ProviderPacer`. |
+| `server/agents/maintainability/modularity/coordinator/schemas.py`, `synthesis.py` in the same directory | Specializes existing assignment/invocation/gap/assessment contracts and reuses namespacing, grouping, conflict, resolution and request-key helpers through configurable types/keys. |
+| `server/agents/maintainability/reusability/abstraction/`, `reuse_opportunity/` and `component_adaptability/` in the same parent directory | Registry points directly to the real classes and their request/result models. Public invocation remains `await agent.run(fresh_toolset, typed_request)`. No duplicated analysis or investigator delegation. |
+| `server/runtimes/repository/` | Each invocation has a fresh context/toolset on the same immutable snapshot and access policy; only investigators inspect code. Collection checks the actual retrieved ledger and source provenance. |
 | `test-agents/run_architecture_boundary.py` | Shared YAML/`.env` model loader, snapshot/budget harness and existing LangSmith tracing. |
 
 The contracts differ in important ways: specialized findings/coverage must survive

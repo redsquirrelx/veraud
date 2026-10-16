@@ -2,7 +2,7 @@
 
 Investiga si las dependencias crean acoplamiento perjudicial para el mantenimiento,
 dentro de modularidad de ISO/IEC 25010:2023. Reutiliza íntegramente el grafo LangGraph
-de `agents/modularity_runtime/`, sin coordinadores, persistencia ni otro analizador.
+de `runtimes/investigation/`, sin coordinadores, persistencia ni otro analizador.
 
 ## Ejecución (desde agent-server)
 

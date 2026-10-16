@@ -1,6 +1,6 @@
 # Reuse-opportunity runtime notes
 
-- `ReuseOpportunityAgent` lives in `maintainability/reuse_opportunity/`; its prompts
+- `ReuseOpportunityAgent` lives in `maintainability/reusability/reuse_opportunity/`; its prompts
   are local. It extends the existing investigator interface, not `BaseAgent`/HTTP
   pipelines. No reusability coordinator currently exists; modularity dispatch is unchanged.
 - Python AST and JS/TS/TSX Tree-sitter symbols support bounded function/method pair

@@ -28,7 +28,7 @@ Las pruebas usan modelos simulados y fixtures: no requieren claves ni consumen A
 
 ## Diseño y reutilización
 
-El grafo compartido está en `agents/modularity_runtime/`: planificación, ReAct con
+El grafo compartido está en `runtimes/investigation/`: planificación, ReAct con
 `ToolNode`, evaluación, enrutamiento determinístico, revisión interna y finalización.
 Se extrajo del agente de límites sin cambiar su flujo, defaults, validaciones ni
 prompts; los imports públicos previos se mantienen compatibles. No hay un framework

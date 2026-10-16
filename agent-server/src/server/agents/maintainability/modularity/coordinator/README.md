@@ -1,6 +1,6 @@
 # ModularityAgent
 
-Coordinador LangGraph de solo lectura en `maintainability/modularity/`. No
+Coordinador LangGraph de solo lectura en `maintainability/modularity/coordinator/`. No
 reimplementa investigadores ni introduce persistencia o un framework adicional.
 
 ## Integración verificada
@@ -9,12 +9,12 @@ Los tres contratos existentes son:
 
 | Implementación (relativa a `src/server/agents/`) | Entrada | Salida |
 | --- | --- | --- |
-| `maintainability/architecture_boundary/agent.py`: `ArchitectureBoundaryAgent` | `AuditRequest` | `AuditResult` |
-| `maintainability/responsibility/agent.py`: `ResponsibilityAgent` | `ResponsibilityRequest` | `ResponsibilityResult` |
-| `maintainability/dependency_impact/agent.py`: `DependencyImpactAgent` | `DependencyImpactRequest` | `DependencyImpactResult` |
+| `maintainability/modularity/architecture_boundary/agent.py`: `ArchitectureBoundaryAgent` | `AuditRequest` | `AuditResult` |
+| `maintainability/modularity/responsibility/agent.py`: `ResponsibilityAgent` | `ResponsibilityRequest` | `ResponsibilityResult` |
+| `maintainability/modularity/dependency_impact/agent.py`: `DependencyImpactAgent` | `DependencyImpactRequest` | `DependencyImpactResult` |
 
 Todos exponen `await agent.run(repository_toolset, request)` y comparten
-`modularity_runtime/`. `registry.py` mantiene sus clases, capacidades y tipos;
+`runtimes/investigation/`. `registry.py` mantiene sus clases, capacidades y tipos;
 no es el registro HTTP `app/agent_registry.py`, cuyo contrato exige `BaseAgent`.
 No se registra una integración HTTP incompatible ni se modifica su infraestructura.
 
@@ -124,7 +124,7 @@ cuota independiente para cada subagente delegado. `null` desactiva explícitamen
 límite (usado en pruebas offline); la prueba live los mantiene activos. Las cuotas
 locales no conocen otros procesos o clientes usando el mismo proyecto de Google.
 Para compartir entre evaluaciones del mismo proyecto/modelo, inyectar la misma
-instancia de `modularity_runtime.provider.ProviderPacer` mediante `provider_pacer`
+instancia de `server.runtimes.investigation.provider.ProviderPacer` mediante `provider_pacer`
 en agentes/coordinadores del mismo event loop. No hay persistencia entre procesos,
 consultas a la cuota real del proveedor ni límite RPD. Las estimaciones de tokens
 y diferencias de contabilidad del proveedor no garantizan eliminar todos los 429.

@@ -14,10 +14,10 @@ Paths below are relative to `agent-server/src/`:
 
 | Existing extension point | Integration |
 | --- | --- |
-| `server/agents/modularity_runtime/agent.py`: `InvestigationAgent` | Established `await agent.run(fresh_toolset, request)` interface; injected model/wrapper and optional shared `provider_pacer`. |
+| `server/runtimes/investigation/agent.py`: `InvestigationAgent` | Established `await agent.run(fresh_toolset, request)` interface; injected model/wrapper and optional shared `provider_pacer`. |
 | Same file: `InvestigationExecution` | Inherited native `StateGraph`/`ToolNode`, structured output, bounded corrections/retries, logs, token accounting, cancellation, time/tool/context guards and commit verification. |
-| `server/agents/modularity_runtime/schemas.py` | Extends `AuditRequest`, `InvestigationConfig`, `Evaluation`, `Finding` and `AuditResult`; preserves provenance and original rejected/unsupported candidates. |
-| `server/agents/repository_runtime/tools.py` | Reuses all seven existing bounded, read-only inspection tools and evidence ledger. |
+| `server/runtimes/investigation/schemas.py` | Extends `AuditRequest`, `InvestigationConfig`, `Evaluation`, `Finding` and `AuditResult`; preserves provenance and original rejected/unsupported candidates. |
+| `server/runtimes/repository/tools.py` | Reuses all seven existing bounded, read-only inspection tools and evidence ledger. |
 | `server/services/repository_analysis/schemas.py` | Existing symbol, inheritance/base-name and relationship indexes provide deterministic candidate navigation; no new parser or graph service. |
 | `server/app/tracing_port.py` | Standalone harness wraps execution with existing tracing; native graph/model calls inherit tracing. |
 | `test-agents/run_architecture_boundary.py` | Shared YAML/`.env` loader, snapshot creation, execution budgets, LangSmith span and caller-owned client cleanup. |

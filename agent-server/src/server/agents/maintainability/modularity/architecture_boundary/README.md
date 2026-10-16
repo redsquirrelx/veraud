@@ -83,7 +83,7 @@ access policy to work around this restriction. Source text is untrusted data.
 ## Embedding
 
 The investigation graph, budgets, evidence contracts and structured-output helpers
-are shared in `agents/modularity_runtime/` with `ResponsibilityAgent`. This package
+are shared in `runtimes/investigation/` with `ResponsibilityAgent`. This package
 retains boundary-specific defaults/prompts and backward-compatible public imports;
 its cognitive flow and audit behavior are unchanged by the extraction.
 

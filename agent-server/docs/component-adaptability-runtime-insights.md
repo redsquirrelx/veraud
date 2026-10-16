@@ -1,6 +1,6 @@
 # Component adaptability: runtime notes
 
-- `maintainability/component_adaptability/` extends the established investigator
+- `maintainability/reusability/component_adaptability/` extends the established investigator
   interface, not a new framework. No reusability parent coordinator currently exists;
   public exports and the shared YAML/live harness provide the callable integration.
 - Bounded index/lexical discovery prioritizes adaptation hypotheses, not defects.

@@ -1,6 +1,6 @@
 # Shared Repository Runtime
 
-`server.agents.repository_runtime` provides only the execution primitives used by
+`server.runtimes.repository` provides only the execution primitives used by
 project orientation, project architecture, and semantic validation. It has no dependency on any role.
 The deterministic snapshot/query service remains in `services/repository_analysis`.
 
@@ -28,11 +28,11 @@ usage accounting for initial review and revalidation, with independent source le
 ## Library use
 
 ```python
-from server.agents.repository_runtime import (
+from server.runtimes.repository import (
     ExecutionBudget, RepositoryContext, RepositoryInput, RepositoryToolset,
 )
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
 
 def fresh_tools(snapshot, workspace_root):
     return RepositoryToolset(
@@ -82,7 +82,7 @@ Provider usage stays unknown when an attempt omits token counts.
 
 ```powershell
 uv run pytest tests/repository_runtime tests/project_orientation tests/project_architecture -q
-uv run ruff check src/server/agents/repository_runtime src/server/agents/project_orientation src/server/agents/project_architecture src/server/repository_runner.py src/server/repository_progress.py
+uv run ruff check src/server/runtimes/repository src/server/agents/project_analysis/project_orientation src/server/agents/project_analysis/project_architecture src/server/repository_runner.py src/server/repository_progress.py
 ```
 
 These checks cover access isolation, source ranges, provenance, retries,

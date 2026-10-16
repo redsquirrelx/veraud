@@ -13,10 +13,10 @@ All paths below are relative to `agent-server/src/`.
 
 | Established extension point | Reuse |
 | --- | --- |
-| `server/agents/modularity_runtime/agent.py`: `InvestigationAgent` | `await ReuseOpportunityAgent(model, config).run(fresh_toolset, request)`; wrapper `.llm` and optional injected `provider_pacer` supported. |
+| `server/runtimes/investigation/agent.py`: `InvestigationAgent` | `await ReuseOpportunityAgent(model, config).run(fresh_toolset, request)`; wrapper `.llm` and optional injected `provider_pacer` supported. |
 | Same file: `InvestigationExecution` | All cognitive nodes, model calls, native structured output, retries, token/deadline/call budgets, provenance and critical review. Only graph wiring and domain evaluation/finalization are specialized. |
-| `server/agents/modularity_runtime/schemas.py`, `state.py` | Extends existing request/config/evaluation/finding/result contracts; reuses `InvestigationState`, including evidence, hypotheses, unresolved gaps and resource counters. |
-| `server/agents/repository_runtime/tools.py` | Seven existing read-only tools; compact serialization, identical-query cache, evidence registry, access policy and measurements. |
+| `server/runtimes/investigation/schemas.py`, `state.py` | Extends existing request/config/evaluation/finding/result contracts; reuses `InvestigationState`, including evidence, hypotheses, unresolved gaps and resource counters. |
+| `server/runtimes/repository/tools.py` | Seven existing read-only tools; compact serialization, identical-query cache, evidence registry, access policy and measurements. |
 | `server/services/repository_analysis/` | Existing symbols, source ranges, retained source and static relationships; no parser, embedding service or alternative framework added. |
 | `test-agents/run_architecture_boundary.py` | Shared YAML/`.env` configuration, snapshot construction, budgets and tracing via `run_audit(..., agent_class=ReuseOpportunityAgent)`. |
 

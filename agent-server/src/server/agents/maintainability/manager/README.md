@@ -6,7 +6,7 @@
   and compile native LangGraph state machines. They are snapshot-bound runnables, not
   `BaseAgent` HTTP services. The manager uses the same interface and a compiled graph;
   `docs/agent-server/generic-pipelines.md` describes a different application contract.
-- `modularity/agent.py::_Execution` already implements concurrent bounded dispatch,
+- `runtimes/coordination/execution.py::CoordinatorExecution` implements concurrent bounded dispatch,
   child repository contexts, whole-envelope reservations, deadlines and sanitized failures.
   Its registry/request/config hooks can be reused at the next hierarchy level.
 - Coordinator results use `status=completed|partial|failed`, `consumption`, `invocations`
@@ -61,7 +61,7 @@ evidence expectations and explicit success criteria. Each assignment has a logic
 criteria and constraints go to the existing typed public coordinator requests. No fake
 coordinators are used by default. The test injection seam is `coordinator_factory`.
 
-The shared dispatch implementation (`modularity/agent.py::_Execution`) handles semaphore
+The shared dispatch implementation (`runtimes/coordination/execution.py::CoordinatorExecution`) handles semaphore
 admission, optional staggering, child contexts, timeouts and whole-child resource
 reservations. Small configuration/evidence/correlation hooks allow nesting without
 duplicating its scheduler. Actual coordinators retain their own cognitive workflows and

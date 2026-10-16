@@ -14,10 +14,10 @@ Paths are relative to `agent-server/src/` unless otherwise stated.
 
 | Existing extension point | Integration |
 | --- | --- |
-| `server/agents/modularity_runtime/agent.py`: `InvestigationAgent` | Public package export and `await ComponentAdaptabilityAgent(model, config).run(fresh_toolset, request)`; accepts existing `.llm` wrappers and optional shared `provider_pacer`. |
+| `server/runtimes/investigation/agent.py`: `InvestigationAgent` | Public package export and `await ComponentAdaptabilityAgent(model, config).run(fresh_toolset, request)`; accepts existing `.llm` wrappers and optional shared `provider_pacer`. |
 | Same file: `InvestigationExecution` | Inherited planning/evaluation/review, native structured output, bounded schema/provider retries, token/deadline/tool/model limits and Git provenance. Specialized inspection returns typed decisions; only native graph wiring/domain checks are added. |
-| `server/agents/modularity_runtime/schemas.py`, `state.py` | Extends existing request/config/evaluation/finding/result contracts and reuses the established graph state. Snapshot argument supplies repository/revision/index; no competing repository service or state framework. |
-| `server/agents/repository_runtime/tools.py` | Seven existing read-only tools, policy, compact serializer, cache, source/evidence registry and telemetry. |
+| `server/runtimes/investigation/schemas.py`, `state.py` | Extends existing request/config/evaluation/finding/result contracts and reuses the established graph state. Snapshot argument supplies repository/revision/index; no competing repository service or state framework. |
+| `server/runtimes/repository/tools.py` | Seven existing read-only tools, policy, compact serializer, cache, source/evidence registry and telemetry. |
 | `server/services/repository_analysis/` | Existing Python/JS/TS symbol/import indexes and retained source provide bounded deterministic navigation. |
 | `test-agents/run_architecture_boundary.py` | Shared `run_audit(..., agent_class=ComponentAdaptabilityAgent)` and YAML/`.env` model loading; tracing and client ownership are unchanged. |
 

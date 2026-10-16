@@ -1,6 +1,6 @@
 # Hierarchical maintainability manager
 
-- `maintainability/maintainability_manager/` exposes a native LangGraph runnable on the
+- `maintainability/manager/` exposes a native LangGraph runnable on the
   existing fresh-toolset/request protocol. The exact seven-node workflow has one coverage
   conditional edge and refinement returns directly to delegation. Forced finalization
   uses `yes` with `sufficient=false`; it cannot certify coverage through budget exhaustion.

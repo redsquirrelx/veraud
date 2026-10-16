@@ -1,6 +1,6 @@
 # Reusability coordinator: integration notes
 
-- `maintainability/reusability/` coordinates exactly the three implemented reusability
+- `maintainability/reusability/coordinator/` coordinates exactly the three implemented reusability
   investigators. It has five executable nodes plus the decision edge from synthesis:
   yes returns directly to delegation; no finalizes. No additional planner/reviewer/
   limited-finalizer node exists. Synthesis prepares follow-ups and limit reasons.
