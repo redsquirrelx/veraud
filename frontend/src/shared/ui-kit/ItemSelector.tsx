@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import "./ItemSelector.css"
@@ -32,14 +33,18 @@ export function ItemSelector({
   hasMore,
   loadingMore = false,
   onLoadMore,
-  emptyText = "No items yet",
-  loadMoreText = "Load more...",
-  placeholder = "Select an item",
+  emptyText,
+  loadMoreText,
+  placeholder,
   label = "",
   loading = false,
   disabled = false,
   onOpen,
 }: ItemSelectorProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.itemSelector.empty")
+  const resolvedLoadMoreText = loadMoreText ?? t("ui.itemSelector.loadMore")
+  const resolvedPlaceholder = placeholder ?? t("ui.itemSelector.selectItem")
   const [open, setOpen] = useState(false)
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
@@ -124,20 +129,20 @@ export function ItemSelector({
         {loading ? (
           <span className="ui-item-loading">
             <Spinner size={12} />
-            <span>Loading</span>
+            <span>{t("ui.itemSelector.loading")}</span>
           </span>
         ) : (
           <>
-            <span className={selected === null ? "ui-item-placeholder" : "mono"}>{selected?.label ?? placeholder}</span>
+            <span className={selected === null ? "ui-item-placeholder" : "mono"}>{selected?.label ?? resolvedPlaceholder}</span>
             {open ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </>
         )}
       </button>
       <div id={`${id}-panel`} className={open ? "ui-item-panel ui-item-panel-open" : "ui-item-panel"} aria-hidden={!open} inert={!open}>
         {items.length === 0 && !hasMore ? (
-          <p className="label">{emptyText}</p>
+          <p className="label">{resolvedEmptyText}</p>
         ) : (
-          <ul className="ui-item-list" role="listbox" aria-label={label || "Items"}>
+          <ul className="ui-item-list" role="listbox" aria-label={label || t("ui.itemSelector.items")}>
             {items.map((item) => (
               <li key={item.id} className="ui-item-enter">
                 <button
@@ -162,7 +167,7 @@ export function ItemSelector({
             disabled={loadingMore}
             onClick={onLoadMore}
           >
-            {loadingMore ? "Loading" : loadMoreText}
+            {loadingMore ? t("ui.itemSelector.loading") : resolvedLoadMoreText}
           </button>
         )}
       </div>

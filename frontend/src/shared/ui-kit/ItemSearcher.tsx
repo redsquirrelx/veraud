@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "react"
+import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import type { ItemSelectorItem } from "./ItemSelector.tsx"
@@ -26,13 +27,17 @@ export function ItemSearcher({
   hasMore,
   loadingMore = false,
   onLoadMore,
-  emptyText = "No matches",
-  loadMoreText = "Load more...",
-  placeholder = "Type an id to select it directly",
+  emptyText,
+  loadMoreText,
+  placeholder,
   label = "",
   loading = false,
   disabled = false,
 }: ItemSearcherProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.itemSearcher.noMatches")
+  const resolvedLoadMoreText = loadMoreText ?? t("ui.itemSearcher.loadMore")
+  const resolvedPlaceholder = placeholder ?? t("ui.itemSearcher.typeToSelect")
   const selected = items.find((item) => item.id === selectedId) ?? null
   const id = useId()
   const [text, setText] = useState(selected?.label ?? selectedId ?? "")
@@ -99,7 +104,7 @@ export function ItemSearcher({
         <button type="button" className="ui-item-button" disabled>
           <span className="ui-item-loading">
             <Spinner size={12} />
-            <span>Loading</span>
+            <span>{t("ui.itemSearcher.loading")}</span>
           </span>
         </button>
       </div>
@@ -127,8 +132,8 @@ export function ItemSearcher({
             ref={field}
             className="ui-input ui-item-search-input"
             value={text}
-            placeholder={placeholder}
-            aria-label="Search items"
+            placeholder={resolvedPlaceholder}
+            aria-label={t("ui.itemSearcher.searchItems")}
             aria-describedby={label !== "" ? `${id}-label` : undefined}
             disabled={disabled}
             onChange={(event) => {
@@ -148,7 +153,7 @@ export function ItemSearcher({
             <button
               type="button"
               className="ui-item-clear"
-              aria-label="Clear search"
+              aria-label={t("ui.itemSearcher.clearSearch")}
               onClick={clearText}
             >
               <XIcon size={12} />
@@ -158,7 +163,7 @@ export function ItemSearcher({
         <button
           type="button"
           className="ui-item-search-toggle"
-          aria-label={open ? "Close items" : "Open items"}
+          aria-label={open ? t("ui.itemSearcher.closeItems") : t("ui.itemSearcher.openItems")}
           aria-expanded={open}
           disabled={disabled}
           onClick={() => setOpen((value) => !value)}
@@ -170,12 +175,12 @@ export function ItemSearcher({
         {loading && visible.length === 0 && !hasMore ? (
           <span className="ui-item-loading">
             <Spinner size={12} />
-            <span className="label">Loading</span>
+            <span className="label">{t("ui.itemSearcher.loading")}</span>
           </span>
         ) : visible.length === 0 && !hasMore ? (
-          <p className="label">{emptyText}</p>
+          <p className="label">{resolvedEmptyText}</p>
         ) : (
-          <ul className="ui-item-list" role="listbox" aria-label="Items">
+          <ul className="ui-item-list" role="listbox" aria-label={t("ui.itemSearcher.items")}>
             {visible.map((item) => (
               <li key={item.id} className="ui-item-enter">
                 <button
@@ -199,7 +204,7 @@ export function ItemSearcher({
             disabled={loadingMore}
             onClick={onLoadMore}
           >
-            {loadingMore ? "Loading" : loadMoreText}
+            {loadingMore ? t("ui.itemSearcher.loading") : resolvedLoadMoreText}
           </button>
         )}
       </div>

@@ -1,0 +1,193 @@
+{
+  "title": "Configuración",
+  "tabs": {
+    "agents": "Agentes",
+    "models": "Modelos y credenciales",
+    "preferences": "Preferencias",
+    "label": "Secciones de configuración"
+  },
+  "form": {
+    "provider": "Proveedor",
+    "providerPlaceholder": "Selecciona un proveedor…",
+    "submit": "Enviar",
+    "edit": "Editar"
+  },
+  "models": {
+    "sectionTitle": "Modelos y credenciales",
+    "title": "Modelos",
+    "add": "Añadir modelo",
+    "addDialog": "Añadir un modelo",
+    "editDialog": "Editar un modelo",
+    "empty": "Aún no hay modelos registrados",
+    "inUse": "En uso",
+    "editItem": "Editar {{name}}",
+    "removeItem": "Eliminar {{name}}",
+    "loadFailed": "No se pudieron cargar los proveedores de IA",
+    "registered": "Modelo {{name}} registrado.",
+    "updated": "Modelo {{name}} actualizado.",
+    "deleted": "Modelo {{name}} eliminado.",
+    "registerFailed": "No se pudo registrar el modelo.",
+    "registerFailedWithDetail": "No se pudo registrar el modelo: {{detail}}",
+    "updateFailed": "No se pudo actualizar el modelo.",
+    "updateFailedWithDetail": "No se pudo actualizar el modelo: {{detail}}",
+    "deleteFailed": "No se pudo eliminar el modelo.",
+    "deleteFailedWithDetail": "No se pudo eliminar el modelo: {{detail}}",
+    "form": {
+      "name": "Nombre del modelo",
+      "namePlaceholder": "Introduce el nombre del modelo…"
+    }
+  },
+  "credentials": {
+    "title": "Credenciales",
+    "add": "Añadir credencial",
+    "addDialog": "Añadir una credencial",
+    "editDialog": "Editar una credencial",
+    "empty": "Aún no hay credenciales registradas",
+    "editHint": "Al editar una credencial, deja la clave de API en blanco para conservar la actual.",
+    "apiKeyLabel": "Clave de API",
+    "inUse": "En uso",
+    "editItem": "Editar {{name}}",
+    "removeItem": "Eliminar {{name}}",
+    "registered": "Credencial {{name}} registrada.",
+    "updated": "Credencial {{name}} actualizada.",
+    "deleted": "Credencial {{name}} eliminada.",
+    "registerFailed": "No se pudo registrar la credencial.",
+    "registerFailedWithDetail": "No se pudo registrar la credencial: {{detail}}",
+    "updateFailed": "No se pudo actualizar la credencial.",
+    "updateFailedWithDetail": "No se pudo actualizar la credencial: {{detail}}",
+    "deleteFailed": "No se pudo eliminar la credencial.",
+    "deleteFailedWithDetail": "No se pudo eliminar la credencial: {{detail}}",
+    "form": {
+      "name": "Nombre de la credencial",
+      "namePlaceholder": "Introduce un nombre…",
+      "apiKey": "Clave de API"
+    }
+  },
+  "agents": {
+    "title": "Configuración de agentes",
+    "subtitle": "Tipos de agentes declarados en el backend y su configuración guardada.",
+    "empty": "No hay tipos de agentes declarados en el backend.",
+    "retry": "Reintentar",
+    "loadFailed": "No se pudo cargar la configuración de agentes.",
+    "loadFailedWithDetail": "No se pudo cargar la configuración de agentes: {{detail}}",
+    "saveFailed": "No se pudo guardar la configuración del agente.",
+    "saveFailedWithDetail": "No se pudo guardar la configuración del agente: {{detail}}",
+    "assignmentsSaved": "Configuración de {{agentType}} guardada correctamente.",
+    "status": {
+      "unsavedChanges": "Cambios sin guardar",
+      "configured": "Configurado",
+      "needsAttention": "Requiere atención",
+      "notConfigured": "Sin configurar"
+    },
+    "form": {
+      "model": "Modelo",
+      "credential": "Credencial",
+      "selectModel": "Selecciona un modelo…",
+      "selectCredential": "Selecciona una credencial…",
+      "selectModelFirst": "Selecciona primero un modelo",
+      "noModels": "No hay modelos registrados",
+      "noCredentialsForProvider": "No hay credenciales registradas para este proveedor"
+    },
+    "card": {
+      "saved": "Configuración guardada.",
+      "tokenSummary": "Presupuesto inicial: {{budget}} · Límite absoluto: {{limit}}",
+      "configure": "Configurar",
+      "configureAgent": "Configurar {{agentType}}",
+      "saveChanges": "Guardar cambios",
+      "saving": "Guardando…"
+    },
+    "drawer": {
+      "title": "Configurar {{agentType}}",
+      "description": "Elige el acceso al modelo y los parámetros de generación.",
+      "cancel": "Cancelar",
+      "saveChanges": "Guardar cambios",
+      "saving": "Guardando…",
+      "modelAccess": "Modelo y acceso",
+      "modelAccessHint": "El modelo y la credencial deben pertenecer al mismo proveedor.",
+      "generation": "Parámetros de generación",
+      "generationHint": "Deja un campo vacío para usar el valor predeterminado.",
+      "temperature": "Temperatura",
+      "temperatureHint": "0–2 · Los valores bajos producen resultados más consistentes.",
+      "temperatureInvalid": "La temperatura debe estar entre 0 y 2.",
+      "maxTokens": "Máximo de tokens de salida por llamada",
+      "maxTokensHint": "Limita la salida de cada llamada al modelo. El valor predeterminado del backend es {{default}} tokens.",
+      "maxTokensPlaceholder": "Predeterminado: {{default}}",
+      "maxTokensInvalid": "El máximo de tokens debe ser un entero positivo, hasta 2147483647.",
+      "defaultPlaceholder": "Predeterminado",
+      "tokenBudget": "Presupuesto de tokens de ejecución",
+      "tokenBudgetHint": "Cuenta la entrada y la salida de todas las llamadas al modelo. Deja un campo vacío para quitar su valor personalizado.",
+      "initialBudget": "Presupuesto inicial de tokens",
+      "initialBudgetPlaceholder": "Predeterminado: {{default}}",
+      "initialBudgetHint": "Presupuesto inicial predeterminado: {{default}} tokens.",
+      "absoluteLimit": "Límite absoluto de tokens",
+      "absoluteLimitPlaceholder": "Predeterminado: {{default}}",
+      "absoluteLimitHint": "Límite absoluto predeterminado: {{default}} tokens.",
+      "tokenLimitsInvalid": "Los límites de tokens deben ser enteros positivos, hasta 2147483647.",
+      "limitsOrderInvalid": "El límite absoluto debe ser mayor o igual que el presupuesto inicial.",
+      "toleranceMargin": "Margen de tolerancia: {{margin}} tokens ({{percent}}%).",
+      "toleranceMarginStrict": "Margen de tolerancia: {{margin}} tokens ({{percent}}%). Presupuesto estricto: sin margen adicional.",
+      "agentOptions": "Opciones específicas del agente",
+      "comingSoon": "Próximamente",
+      "customSettings": "Configuración personalizada de {{agentType}}",
+      "agentOptionsHint": "Las opciones adicionales específicas de este agente aparecerán aquí cuando estén disponibles."
+    },
+    "verification": {
+      "verified": "Verificado",
+      "needsAttention": "Requiere atención",
+      "notVerified": "Sin verificar",
+      "verify": "Verificar acceso",
+      "verifying": "Verificando…",
+      "lastChecked": "Última comprobación: {{date}}",
+      "verifyFailed": "No se pudo verificar el acceso del modelo.",
+      "verifyFailedWithDetail": "No se pudo verificar el acceso del modelo: {{detail}}",
+      "hint": "Comprueba el acceso guardado del modelo con una solicitud mínima al proveedor. Cada ejecución vuelve a comprobarlo antes de empezar.",
+      "saveFirst": "Guarda los cambios antes de verificar el acceso."
+    }
+  },
+  "preferences": {
+    "language": "Idioma",
+    "languageHint": "Se aplica de inmediato y se guarda en este dispositivo.",
+    "languages": {
+      "es": "Español",
+      "en": "English"
+    },
+    "notifications": {
+      "title": "Notificaciones de tareas",
+      "hint": "Las tareas de solo lectura permanecen en silencio salvo que fallen. Las tareas fallidas siempre se muestran."
+    },
+    "taskKinds": {
+      "clone": {
+        "label": "Clonar",
+        "hint": "Descarga inicial del repositorio"
+      },
+      "pull": {
+        "label": "Pull",
+        "hint": "Sincroniza una copia vinculada"
+      },
+      "fetch": {
+        "label": "Fetch",
+        "hint": "Sincroniza una copia separada"
+      },
+      "checkoutBranch": {
+        "label": "Cambiar de rama",
+        "hint": "Cambia de rama"
+      },
+      "checkoutDetach": {
+        "label": "Ir a un commit",
+        "hint": "Va a un commit específico"
+      },
+      "listBranches": {
+        "label": "Listar ramas",
+        "hint": "Solo lectura"
+      },
+      "revParse": {
+        "label": "Resolver rama",
+        "hint": "Solo lectura"
+      },
+      "logCommits": {
+        "label": "Listar commits",
+        "hint": "Solo lectura"
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { XIcon } from "./icons.tsx"
 import "./Drawer.css"
 
@@ -16,6 +17,7 @@ export interface DrawerProps {
 
 /** Modal right-side panel with isolated scrolling and keyboard focus. */
 export function Drawer({ open, title, description, size = "default", closeOnOverlay = true, onClose, children, footer }: DrawerProps) {
+  const { t } = useTranslation("common")
   const id = useId()
   const [present, setPresent] = useState(open)
   // Mount before opening; keep the panel mounted until its exit finishes.
@@ -157,7 +159,7 @@ export function Drawer({ open, title, description, size = "default", closeOnOver
             <h2 id={`${id}-title`}>{title}</h2>
             {description && <p id={`${id}-description`}>{description}</p>}
           </div>
-          <button type="button" className="ui-drawer-close" aria-label="Close" onClick={onClose}>
+          <button type="button" className="ui-drawer-close" aria-label={t("ui.close")} onClick={onClose}>
             <XIcon size={16} />
           </button>
         </header>

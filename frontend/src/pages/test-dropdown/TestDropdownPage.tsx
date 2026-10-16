@@ -1,28 +1,29 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { Card, DropdownMenu, type DropdownMenuItem } from "../../shared/ui-kit/index.ts"
 import "./TestDropdownPage.css"
 
-const pipelineItems: DropdownMenuItem[] = [
-  { id: "architecture-audit", label: "Classic audit", description: "Analyzer then architect" },
-  { id: "project-architecture", label: "Project architecture", description: "Orientation, architecture and semantic validation" },
-  { id: "coming-soon", label: "Coming soon", description: "Not available yet", disabled: true },
-]
-
 export function TestDropdownPage() {
+  const { t } = useTranslation("common")
+  const pipelineItems: DropdownMenuItem[] = [
+    { id: "architecture-audit", label: t("testPages.dropdown.pipelines.classic.title"), description: t("testPages.dropdown.pipelines.classic.description") },
+    { id: "project-architecture", label: t("testPages.dropdown.pipelines.projectArchitecture.title"), description: t("testPages.dropdown.pipelines.projectArchitecture.description") },
+    { id: "coming-soon", label: t("testPages.dropdown.pipelines.comingSoon.title"), description: t("testPages.dropdown.pipelines.comingSoon.description"), disabled: true },
+  ]
   const [selectedId, setSelectedId] = useState<string | null>("architecture-audit")
   const [lastChosen, setLastChosen] = useState<string | null>(null)
 
   return (
     <section className="test-dropdown-page">
-      <h1>Dropdown playground</h1>
+      <h1>{t("testPages.dropdown.title")}</h1>
       <p className="label">
-        <Link to="/test">All playgrounds</Link>
+        <Link to="/test">{t("testPages.allPlaygrounds")}</Link>
       </p>
       <Card>
-        <span className="label">Action menu with a selected option</span>
+        <span className="label">{t("testPages.dropdown.actionMenu")}</span>
         <DropdownMenu
-          label="Analyze"
+          label={t("testPages.dropdown.analyze")}
           items={pipelineItems}
           selectedId={selectedId}
           onSelect={(id) => {
@@ -32,18 +33,18 @@ export function TestDropdownPage() {
         />
       </Card>
       <Card>
-        <span className="label">Last chosen option</span>
-        <p className="mono">{lastChosen ?? "none"}</p>
+        <span className="label">{t("testPages.dropdown.lastChosen")}</span>
+        <p className="mono">{lastChosen ?? t("testPages.none")}</p>
       </Card>
       <Card>
-        <span className="label">Loading trigger</span>
-        <DropdownMenu label="Analyze" items={pipelineItems} loading loadingText="Analyzing" onSelect={() => {}} />
+        <span className="label">{t("testPages.dropdown.loadingTrigger")}</span>
+        <DropdownMenu label={t("testPages.dropdown.analyze")} items={pipelineItems} loading loadingText={t("testPages.dropdown.analyzing")} onSelect={() => {}} />
       </Card>
       <Card>
-        <span className="label">Disabled trigger and empty menu</span>
+        <span className="label">{t("testPages.dropdown.disabledEmpty")}</span>
         <div className="test-dropdown-row">
-          <DropdownMenu label="Disabled" items={pipelineItems} disabled onSelect={() => {}} />
-          <DropdownMenu label="Empty" items={[]} emptyText="No pipelines registered" onSelect={() => {}} />
+          <DropdownMenu label={t("testPages.dropdown.disabled")} items={pipelineItems} disabled onSelect={() => {}} />
+          <DropdownMenu label={t("testPages.dropdown.emptyMenu")} items={[]} emptyText={t("testPages.dropdown.noPipelines")} onSelect={() => {}} />
         </div>
       </Card>
     </section>

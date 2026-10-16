@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { Card, CodeExplanations, CodeViewer } from "../../shared/ui-kit/index.ts"
 import "./TestFileViewerPage.css"
 
@@ -70,6 +71,7 @@ short line
 `
 
 export function TestFileViewerPage() {
+  const { t } = useTranslation("common")
   const lines = sample.replace(/\n$/, "").split("\n").length
   const longSample = Array.from({ length: 120 }, (_, index) => {
     const line = index + 1
@@ -85,13 +87,13 @@ export function TestFileViewerPage() {
 
   return (
     <section className="test-file-viewer-page">
-      <h1>File viewer playground</h1>
+      <h1>{t("testPages.fileViewer.title")}</h1>
       <Card>
-        <span className="label">payment-gateway-v2/src/modules/settlement.ts ({lines} lines)</span>
+        <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/modules/settlement.ts", count: lines })}</span>
         <CodeViewer code={sample} />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/modules/settlement.ts with agent marks</span>        <CodeViewer
+        <span className="label">{t("testPages.fileViewer.withMarks", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>        <CodeViewer
           code={sample}
           language="ts"
           highlight
@@ -110,7 +112,7 @@ export function TestFileViewerPage() {
         />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/modules/settlement.ts grouped by finding</span>
+        <span className="label">{t("testPages.fileViewer.groupedByFinding", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>
         <CodeViewer
           code={sample}
           language="ts"
@@ -127,35 +129,35 @@ export function TestFileViewerPage() {
         />
       </Card>
       <Card>
-        <span className="label">Empty file</span>
+        <span className="label">{t("testPages.fileViewer.emptyFile")}</span>
         <CodeViewer code="" />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/generated/ledger-entries.ts ({longLines} lines)</span>
+        <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/generated/ledger-entries.ts", count: longLines })}</span>
         <CodeViewer code={longSample} />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/settle.py (highlighted)</span>
+        <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/settle.py" })}</span>
         <CodeViewer code={pythonSample} language="py" highlight />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/modules/settlement.highlighted.ts (highlighted)</span>
+        <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/modules/settlement.highlighted.ts" })}</span>
         <CodeViewer code={sample} language="ts" highlight />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/src/charge.js (highlighted)</span>
+        <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/charge.js" })}</span>
         <CodeViewer code={jsSample} language="js" highlight />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/config.json (highlighted)</span>
+        <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/config.json" })}</span>
         <CodeViewer code={jsonSample} language="json" highlight />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/scripts/deploy.sh (highlighted)</span>
+        <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/scripts/deploy.sh" })}</span>
         <CodeViewer code={shellSample} language="sh" highlight />
       </Card>
       <Card>
-        <span className="label">payment-gateway-v2/dist/bundle.min.json (long lines)</span>
+        <span className="label">{t("testPages.fileViewer.longLinesFile", { file: "payment-gateway-v2/dist/bundle.min.json" })}</span>
         <CodeViewer code={longLinesSample} language="json" highlight />
       </Card>
     </section>

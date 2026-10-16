@@ -1,8 +1,10 @@
 import { act, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { createMemoryRouter, RouterProvider } from "react-router-dom"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { I18nextProvider } from "react-i18next"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { router } from "./router.tsx"
+import { i18n, initializeI18n } from "../shared/i18n/index.ts"
 
 vi.mock("./useBackendStatus.ts", () => ({ useBackendStatus: () => ({ backend: "online", agent: "offline" }) }))
 vi.mock("./dock.tsx", () => ({ Dock: () => <div data-testid="dock" /> }))
@@ -11,8 +13,12 @@ const project = { id: 2, repositoryOwner: "acme", repositoryName: "Demo", cloneP
 
 function renderRoute(path: string) {
   const memoryRouter = createMemoryRouter(router.routes, { initialEntries: [path] })
-  return { ...render(<RouterProvider router={memoryRouter} />), router: memoryRouter }
+  return { ...render(<I18nextProvider i18n={i18n}><RouterProvider router={memoryRouter} /></I18nextProvider>), router: memoryRouter }
 }
+
+beforeAll(async () => {
+  await initializeI18n("en")
+})
 
 beforeEach(() => {
   window.localStorage.clear()

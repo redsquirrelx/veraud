@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ApiError, listProjectFiles } from "../../infrastructure/http-client/httpClient.ts"
 import { treeFromPaths, type DirectoryTreeNode } from "../../shared/ui-kit/index.ts"
 
@@ -8,6 +9,7 @@ interface LoadedTree {
 }
 
 export function useProjectTree(projectId: number | null, rootName: string) {
+  const { t } = useTranslation("projects")
   const [loaded, setLoaded] = useState<LoadedTree | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -43,11 +45,11 @@ export function useProjectTree(projectId: number | null, rootName: string) {
           return
         }
         setLoaded(null)
-        setError(failure instanceof ApiError ? failure.message : "Could not load the project files")
+        setError(failure instanceof ApiError ? failure.message : t("detail.files.errors.loadFailed"))
         setLoading(false)
       }
     )
-  }, [projectId, rootName])
+  }, [projectId, rootName, t])
 
   // the tree of another project is never shown, and leaving the page drops it
   const tree = loaded !== null && loaded.key === key ? loaded.tree : null

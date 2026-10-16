@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ApiError, getAgentExecution, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
@@ -25,6 +26,7 @@ function isFinished(execution: AgentExecution | null): boolean {
 }
 
 export function useAnalysis(projectId: number | null, options?: { pollIntervalMs?: number }) {
+  const { t } = useTranslation("projects")
   const live = useAgentExecutions()
   const pollIntervalMs = options?.pollIntervalMs ?? POLL_INTERVAL_MS
   const [trackedProject, setTrackedProject] = useState<number | null>(projectId)
@@ -130,7 +132,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
       localStorage.set(lastExecutionKey(projectId), trackedRow.id)
       setSeed(trackedRow)
     } catch (error) {
-      setFailure(describeFailure(error, "Could not analyze the project"))
+      setFailure(describeFailure(error, t("analysis.errors.startFailed")))
     } finally {
       setStarting(false)
     }

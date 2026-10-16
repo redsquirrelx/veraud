@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { CodeIcon, DatabaseIcon, ListIcon, LockIcon, TypeIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import {
@@ -56,21 +57,24 @@ const CodeLine = memo(function CodeLine({ line, number, grammar, mark }: CodeLin
 })
 
 function FileBar({ code, grammar }: { code: string, grammar: string | null }) {
+  const { t } = useTranslation("common")
   const bytes = new TextEncoder().encode(code).length
   const lines = splitLines(code).length
 
   return (
-    <div className="ui-code-bar" role="status" aria-label="File info">
+    <div className="ui-code-bar" role="status" aria-label={t("ui.codeViewer.fileInfo")}>
       <span className="ui-code-meta"><DatabaseIcon size={12} />{formatSize(bytes)}</span>
-      <span className="ui-code-meta"><ListIcon size={12} />{lines} {lines === 1 ? "line" : "lines"}</span>
-      <span className="ui-code-meta"><CodeIcon size={12} />{languageLabel(grammar)}</span>
+      <span className="ui-code-meta"><ListIcon size={12} />{t("ui.codeViewer.line", { count: lines })}</span>
+      <span className="ui-code-meta"><CodeIcon size={12} />{grammar === null ? t("ui.codeViewer.plainText") : languageLabel(grammar)}</span>
       <span className="ui-code-meta"><TypeIcon size={12} />UTF-8</span>
-      <span className="ui-code-meta ui-code-readonly"><LockIcon size={12} />Read-only</span>
+      <span className="ui-code-meta ui-code-readonly"><LockIcon size={12} />{t("ui.codeViewer.readOnly")}</span>
     </div>
   )
 }
 
-export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText = "No content to show" }: CodeViewerProps) {
+export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText }: CodeViewerProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.codeViewer.noContent")
   const grammar = useMemo(() => resolveGrammar(language, highlight), [language, highlight])
   const marked = useMemo(() => buildMarkIndex(marks), [marks])
   const lines = useMemo(() => splitLines(code), [code])
@@ -118,7 +122,7 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
     return (
       <div className="ui-code-viewer">
         <FileBar code={code} grammar={grammar} />
-        <p className="label ui-code-empty">{emptyText}</p>
+        <p className="label ui-code-empty">{resolvedEmptyText}</p>
       </div>
     )
   }
@@ -128,7 +132,7 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
   return (
     <div className="ui-code-viewer">
       <FileBar code={code} grammar={grammar} />
-      <pre className="ui-code-body" aria-label="File content">
+      <pre className="ui-code-body" aria-label={t("ui.codeViewer.fileContent")}>
         <code>
           {visible.map((line, index) => (
             // index keys are safe: lines never reorder, insert or delete
@@ -143,7 +147,7 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
         </code>
       </pre>
       {rendered !== null && (
-        <div className="ui-code-progress" role="status" aria-label="Loading file content">
+        <div className="ui-code-progress" role="status" aria-label={t("ui.codeViewer.loadingFile")}>
           <Spinner size={12} tone="light" />
           <span>{Math.round((rendered / lines.length) * 100)}%</span>
         </div>

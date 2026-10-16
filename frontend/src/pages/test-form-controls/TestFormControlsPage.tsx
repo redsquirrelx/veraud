@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { Card, Checkbox, Combobox, RadioButton, Switch } from "../../shared/ui-kit/index.ts"
 import "./TestFormControlsPage.css"
 
@@ -7,10 +8,16 @@ const providers = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
-  { value: "unavailable", label: "Unavailable provider", disabled: true },
-]
+  { value: "unavailable", labelKey: "testPages.formControls.unavailableProvider", disabled: true },
+] as const
 
 export function TestFormControlsPage() {
+  const { t } = useTranslation("common")
+  const providerOptions = providers.map((provider) => ({
+    value: provider.value,
+    label: "labelKey" in provider ? t(provider.labelKey) : provider.label,
+    disabled: "disabled" in provider ? provider.disabled : undefined,
+  }))
   const [checked, setChecked] = useState(false)
   const [mixed, setMixed] = useState(true)
   const [mixedChecked, setMixedChecked] = useState(false)
@@ -24,51 +31,51 @@ export function TestFormControlsPage() {
 
   return (
     <section className="page form-controls-page">
-      <Link to="/test">ΓåÉ All playgrounds</Link>
-      <h1>Form controls</h1>
-      <p className="form-controls-intro">Interactive, selected, indeterminate, disabled, and validation states. Use Tab to focus, Space to toggle, and arrow keys to navigate options.</p>
+      <Link to="/test">{t("testPages.formControls.back", { label: t("testPages.allPlaygrounds") })}</Link>
+      <h1>{t("testPages.formControls.title")}</h1>
+      <p className="form-controls-intro">{t("testPages.formControls.intro")}</p>
       <div className="form-controls-grid">
         <Card>
-          <h2>Checkboxes</h2>
-          <Checkbox label="Include dependencies" checked={checked} onChange={setChecked} description="Click or press Space to toggle." />
-          <Checkbox label="Select all files" checked={mixedChecked} indeterminate={mixed} onChange={(value) => { setMixed(false); setMixedChecked(value) }} description="Starts in an indeterminate state." />
-          <Checkbox label="Disabled unchecked" checked={false} disabled onChange={() => {}} />
-          <Checkbox label="Disabled checked" checked disabled onChange={() => {}} />
-          <Checkbox label="Accept the terms" checked={invalidChecked} onChange={setInvalidChecked} error={invalidChecked ? undefined : "Please accept the terms to continue."} />
+          <h2>{t("testPages.formControls.checkboxes")}</h2>
+          <Checkbox label={t("testPages.formControls.includeDeps")} checked={checked} onChange={setChecked} description={t("testPages.formControls.includeDepsHint")} />
+          <Checkbox label={t("testPages.formControls.selectAll")} checked={mixedChecked} indeterminate={mixed} onChange={(value) => { setMixed(false); setMixedChecked(value) }} description={t("testPages.formControls.selectAllHint")} />
+          <Checkbox label={t("testPages.formControls.disabledUnchecked")} checked={false} disabled onChange={() => {}} />
+          <Checkbox label={t("testPages.formControls.disabledChecked")} checked disabled onChange={() => {}} />
+          <Checkbox label={t("testPages.formControls.acceptTerms")} checked={invalidChecked} onChange={setInvalidChecked} error={invalidChecked ? undefined : t("testPages.formControls.acceptTermsError")} />
         </Card>
         <Card>
-          <h2>Comboboxes</h2>
-          <Combobox label="AI provider" value={provider} options={providers} onChange={setProvider} description="Arrow keys, Home/End, Enter, Escape, and type-ahead are supported." />
-          <Combobox label="Disabled empty" value="" options={providers} disabled onChange={() => {}} />
-          <Combobox label="Disabled selected" value="openai" options={providers} disabled onChange={() => {}} />
-          <Combobox label="Required provider" value={invalidProvider} options={providers} onChange={setInvalidProvider} error={invalidProvider ? undefined : "Select a provider to continue."} />
-          <Combobox label="No available options" value="" options={[]} onChange={() => {}} />
+          <h2>{t("testPages.formControls.comboboxes")}</h2>
+          <Combobox label={t("testPages.formControls.aiProvider")} value={provider} options={providerOptions} onChange={setProvider} description={t("testPages.formControls.comboboxHint")} />
+          <Combobox label={t("testPages.formControls.disabledEmpty")} value="" options={providerOptions} disabled onChange={() => {}} />
+          <Combobox label={t("testPages.formControls.disabledSelected")} value="openai" options={providerOptions} disabled onChange={() => {}} />
+          <Combobox label={t("testPages.formControls.requiredProvider")} value={invalidProvider} options={providerOptions} onChange={setInvalidProvider} error={invalidProvider ? undefined : t("testPages.formControls.requiredProviderError")} />
+          <Combobox label={t("testPages.formControls.noAvailableOptions")} value="" options={[]} onChange={() => {}} />
         </Card>
         <Card>
-          <h2>Radio buttons</h2>
+          <h2>{t("testPages.formControls.radios")}</h2>
           <fieldset className="form-controls-group">
-            <legend>Clone protocol</legend>
+            <legend>{t("testPages.formControls.cloneProtocol")}</legend>
             <RadioButton label="HTTPS" name="playground-protocol" value="https" checked={protocol === "https"} onChange={setProtocol} />
-            <RadioButton label="SSH" name="playground-protocol" value="ssh" checked={protocol === "ssh"} onChange={setProtocol} description="Uses your existing SSH configuration." />
+            <RadioButton label="SSH" name="playground-protocol" value="ssh" checked={protocol === "ssh"} onChange={setProtocol} description={t("testPages.formControls.sshHint")} />
           </fieldset>
-          <RadioButton label="Disabled unselected" name="disabled-off" value="off" checked={false} disabled onChange={() => {}} />
-          <RadioButton label="Disabled selected" name="disabled-on" value="on" checked disabled onChange={() => {}} />
+          <RadioButton label={t("testPages.formControls.disabledUnselected")} name="disabled-off" value="off" checked={false} disabled onChange={() => {}} />
+          <RadioButton label={t("testPages.formControls.disabledSelected")} name="disabled-on" value="on" checked disabled onChange={() => {}} />
           <fieldset className="form-controls-group">
-            <legend>Required choice</legend>
-            <RadioButton label="Manual review" name="review" value="manual" checked={invalidRadio === "manual"} onChange={setInvalidRadio} error={invalidRadio ? undefined : "Choose a review mode."} />
-            <RadioButton label="Automatic review" name="review" value="auto" checked={invalidRadio === "auto"} onChange={setInvalidRadio} />
+            <legend>{t("testPages.formControls.requiredChoice")}</legend>
+            <RadioButton label={t("testPages.formControls.manualReview")} name="review" value="manual" checked={invalidRadio === "manual"} onChange={setInvalidRadio} error={invalidRadio ? undefined : t("testPages.formControls.reviewModeError")} />
+            <RadioButton label={t("testPages.formControls.automaticReview")} name="review" value="auto" checked={invalidRadio === "auto"} onChange={setInvalidRadio} />
           </fieldset>
         </Card>
         <Card>
-          <h2>Switches</h2>
-          <Switch label="Task notifications" checked={notifications} onChange={setNotifications} description="Enable or disable notifications." />
-          <Switch label="Disabled off" checked={false} disabled onChange={() => {}} />
-          <Switch label="Disabled on" checked disabled onChange={() => {}} />
-          <Switch label="Enable audit logging" checked={invalidSwitch} onChange={setInvalidSwitch} error={invalidSwitch ? undefined : "Audit logging is required for this example."} />
+          <h2>{t("testPages.formControls.switches")}</h2>
+          <Switch label={t("testPages.formControls.taskNotifications")} checked={notifications} onChange={setNotifications} description={t("testPages.formControls.notificationsHint")} />
+          <Switch label={t("testPages.formControls.disabledOff")} checked={false} disabled onChange={() => {}} />
+          <Switch label={t("testPages.formControls.disabledOn")} checked disabled onChange={() => {}} />
+          <Switch label={t("testPages.formControls.enableAudit")} checked={invalidSwitch} onChange={setInvalidSwitch} error={invalidSwitch ? undefined : t("testPages.formControls.auditRequiredError")} />
         </Card>
       </div>
       <Card>
-        <h2>Live values</h2>
+        <h2>{t("testPages.formControls.liveValues")}</h2>
         <pre className="form-controls-values">{JSON.stringify({ includeDependencies: checked, selectAll: mixed ? "indeterminate" : mixedChecked, provider: provider || null, protocol, notifications }, null, 2)}</pre>
       </Card>
     </section>

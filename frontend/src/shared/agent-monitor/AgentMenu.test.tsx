@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { AgentMenu } from "./AgentMenu.tsx"
+import { AgentTokenUsage } from "./AgentTokenUsage.tsx"
+import { changeLanguage } from "../i18n/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 
 const running: AgentExecution = {
@@ -93,5 +95,55 @@ describe("AgentMenu", () => {
     rerender(<AgentMenu executions={[running, waiting]} />)
 
     expect(screen.getByText("analyzer run #11")).toBeDefined()
+  })
+})
+
+describe("AgentMenu Spanish", () => {
+  afterEach(async () => {
+    await changeLanguage("en")
+  })
+
+  it("translates menu chrome and token usage while keeping content ids", async () => {
+    await changeLanguage("es")
+
+    expect(document.documentElement.lang).toBe("es")
+
+    render(<AgentMenu executions={[running]} />)
+
+    expect(screen.getByRole("status", { name: "Ejecuciones de agentes" })).toBeDefined()
+    expect(screen.getByText("Ejecuciones de agentes (1)")).toBeDefined()
+    expect(screen.getByRole("button", { name: "Expandir agentes" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Cerrar el menú de agentes" })).toBeDefined()
+    // Agent type names stay untranslated inside a reordered translated sentence.
+    expect(screen.getByText("Ejecución n.º 11 de analyzer")).toBeDefined()
+    expect(screen.getByText("En ejecución")).toBeDefined()
+    expect(screen.getByText("Uso de tokens no informado")).toBeDefined()
+    expect(screen.getByText("Sin límite absoluto registrado")).toBeDefined()
+    expect(screen.getByText("Sin presupuesto inicial registrado")).toBeDefined()
+  })
+
+  it("translates token budget states and breakdown labels", async () => {
+    await changeLanguage("es")
+
+    const budgeted: AgentExecution = {
+      ...running,
+      inputTokens: 1000,
+      outputTokens: 500,
+      estimatedTokens: null,
+      configuration: {
+        model: { id: 1, name: "model", providerId: 2, providerName: "provider" },
+        credential: { id: 3, name: "credential", providerId: 2, providerName: "provider" },
+        temperature: null,
+        maxTokens: null,
+        tokenBudget: 1000,
+        absoluteTokenLimit: 2000,
+      },
+    }
+    render(<AgentTokenUsage execution={budgeted} />)
+
+    expect(screen.getByText("Dentro de la tolerancia")).toBeDefined()
+    expect(screen.getByText("Límite absoluto: 2000 tokens")).toBeDefined()
+    expect(screen.getByText("Desglose de tokens")).toBeDefined()
+    expect(screen.getByText("Entrada (informada)")).toBeDefined()
   })
 })

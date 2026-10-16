@@ -1,0 +1,388 @@
+{
+  "actions": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar"
+  },
+  "navigation": {
+    "brand": "Veraud",
+    "home": "Inicio",
+    "settings": "Configuración",
+    "main": "Navegación principal",
+    "apiDocs": "Docs de API",
+    "docs": {
+      "backend": "Docs del backend",
+      "websocket": "Docs de WebSocket",
+      "agentServer": "Docs del agent-server"
+    },
+    "services": {
+      "backend": "Backend",
+      "agentsServer": "Servidor de agentes"
+    },
+    "serviceStatus": "{{label}}: {{status}}",
+    "status": {
+      "online": "En línea",
+      "unknown": "Desconocido",
+      "offline": "Sin conexión"
+    }
+  },
+  "ui": {
+    "close": "Cerrar",
+    "loading": "Cargando",
+    "refresh": "Actualizar",
+    "items": "Elementos",
+    "sortAscending": "Orden ascendente",
+    "sortDescending": "Orden descendente",
+    "pages": "Páginas",
+    "pagination": {
+      "pages": "Páginas",
+      "previousPage": "Página anterior",
+      "nextPage": "Página siguiente",
+      "pageOf": "Página {{page}} de {{pageCount}}"
+    },
+    "toast": {
+      "showMore": "Mostrar más",
+      "showLess": "Mostrar menos",
+      "close": "Cerrar"
+    },
+    "itemList": {
+      "empty": "Aún no hay elementos",
+      "items": "Elementos"
+    },
+    "itemSelector": {
+      "empty": "Aún no hay elementos",
+      "loadMore": "Cargar más…",
+      "selectItem": "Seleccionar un elemento",
+      "loading": "Cargando",
+      "items": "Elementos"
+    },
+    "itemSearcher": {
+      "noMatches": "Sin coincidencias",
+      "typeToSelect": "Escribe un id para seleccionarlo directamente",
+      "searchItems": "Buscar elementos",
+      "clearSearch": "Limpiar búsqueda",
+      "openItems": "Abrir elementos",
+      "closeItems": "Cerrar elementos",
+      "loadMore": "Cargar más…",
+      "loading": "Cargando",
+      "items": "Elementos"
+    },
+    "combobox": {
+      "selectOption": "Selecciona una opción…",
+      "noOptions": "No hay opciones disponibles"
+    },
+    "dropdownMenu": {
+      "noOptions": "No hay opciones disponibles"
+    },
+    "dropdownLinks": {
+      "noLinks": "No hay enlaces disponibles",
+      "newTab": "{{label}} (se abre en una pestaña nueva)"
+    },
+    "directoryTree": {
+      "filter": "Filtro",
+      "namePlaceholder": "Nombre de archivo o carpeta",
+      "extension": "Extensión",
+      "all": "Todas",
+      "noExtensions": "Sin extensiones",
+      "clear": "Limpiar",
+      "moreFilters": "Más filtros",
+      "breadcrumb": "Ruta de navegación",
+      "noFileSelected": "Ningún archivo seleccionado",
+      "noEntriesMatch": "Ningún elemento coincide con el filtro",
+      "flagged": "marcado",
+      "visibleCount": "{{visible}} de {{total}}"
+    },
+    "codeViewer": {
+      "noContent": "No hay contenido para mostrar",
+      "fileInfo": "Información del archivo",
+      "fileContent": "Contenido del archivo",
+      "loadingFile": "Cargando el contenido del archivo",
+      "readOnly": "Solo lectura",
+      "plainText": "Texto sin formato",
+      "line_one": "{{count}} línea",
+      "line_other": "{{count}} líneas"
+    },
+    "codeExplanations": {
+      "label": "Explicaciones del código"
+    },
+    "mermaid": {
+      "rendering": "Generando el diagrama"
+    },
+    "splitView": {
+      "resize": "Redimensionar paneles"
+    }
+  },
+  "testPages": {
+    "playgrounds": "Zona de pruebas",
+    "allPlaygrounds": "Toda la zona de pruebas",
+    "none": "ninguno",
+    "index": {
+      "title": "Zona de pruebas",
+      "subtitle": "Elige un entorno para revisar sus componentes e interacciones.",
+      "navLabel": "Zona de pruebas",
+      "pages": {
+        "components": {
+          "title": "Componentes",
+          "description": "Explora el kit de UI y ejemplos combinados de componentes."
+        },
+        "selectors": {
+          "title": "Selectores",
+          "description": "Revisa los controles de selección y búsqueda."
+        },
+        "dropdowns": {
+          "title": "Desplegables",
+          "description": "Revisa los menús de acciones con opciones seleccionables."
+        },
+        "stageShowcase": {
+          "title": "Muestra de etapas",
+          "description": "Revisa las vistas compactas de etapas con datos realistas."
+        },
+        "controls": {
+          "title": "Controles",
+          "description": "Revisa los controles interactivos y sus estados."
+        },
+        "formControls": {
+          "title": "Controles de formulario",
+          "description": "Explora casillas, comboboxes, botones de radio e interruptores."
+        },
+        "directory": {
+          "title": "Directorio",
+          "description": "Explora árboles de directorios y navegación de archivos."
+        },
+        "fileViewer": {
+          "title": "Visor de archivos",
+          "description": "Revisa previsualizaciones de archivos y código."
+        },
+        "sidebar": {
+          "title": "Barra lateral",
+          "description": "Revisa la navegación lateral y los layouts."
+        }
+      }
+    },
+    "components": {
+      "title": "Zona de componentes",
+      "containers": "Contenedores",
+      "cardSurface": "Card / superficie blanca",
+      "panelSurface": "Panel / superficie con tinta",
+      "button": "Botón",
+      "registerProject": "Registrar proyecto",
+      "disabled": "Deshabilitado",
+      "registering": "Registrando",
+      "textInput": "TextInput",
+      "empty": "Vacío",
+      "toast": "Toast",
+      "projectRegistered": "Proyecto registrado",
+      "repositoryNotAccessible": "El repositorio no es accesible",
+      "combined": "Combinado",
+      "toolbarStrip": "Barra de herramientas",
+      "cloneAndIngest": "Clonar e ingerir",
+      "projectRow": "Fila de proyecto",
+      "inspect": "Inspeccionar",
+      "auditFinished": "Auditoría terminada",
+      "cardNestingPanel": "Card que contiene un panel",
+      "filterByRepository": "Filtrar por repositorio",
+      "cloneFailed": "Falló la clonación",
+      "panelNestingCards": "Panel que contiene cards",
+      "auditing": "Auditando",
+      "cveFound": "CVE-2024-38819 encontrado",
+      "filterBar": "Barra de filtros",
+      "filterByRepoTags": "Filtrar por repositorio, lenguaje o tags",
+      "filters": {
+        "all": "Todas",
+        "running": "En ejecución",
+        "approved": "Aprobadas",
+        "vulnerable": "Vulnerables"
+      },
+      "loading": "Cargando",
+      "statusLabels": "Etiquetas de estado",
+      "syncingRepository": "Sincronizando repositorio",
+      "auditInProgress": "Auditoría en curso",
+      "asyncButtons": "Botones asíncronos",
+      "save1s": "Guardar (1s)",
+      "notify": "Notificar",
+      "hang3s": "Colgar (timeout de 3s)",
+      "typography": "Tipografía",
+      "headlineLabel": "Geist / titular",
+      "bodyLabel": "Geist / cuerpo",
+      "repoNameLabel": "JetBrains Mono / nombre de repositorio",
+      "commitLabel": "JetBrains Mono / commit"
+    },
+    "directory": {
+      "title": "Zona de directorio",
+      "projectStructure": "Estructura del proyecto",
+      "grouped": "Directorios agrupados",
+      "groupsPlusFindings": "Grupos más hallazgos de agentes ({{count}} marcados)",
+      "flaggedOnly": "Solo marcados ({{count}} marcados, sin grupos)",
+      "reloading": "Recargando el directorio (revisión {{revision}})"
+    },
+    "fileViewer": {
+      "title": "Zona del visor de archivos",
+      "fileLines_one": "{{file}} ({{count}} línea)",
+      "fileLines_other": "{{file}} ({{count}} líneas)",
+      "highlightedFile": "{{file}} (resaltado)",
+      "longLinesFile": "{{file}} (líneas largas)",
+      "withMarks": "{{file}} con marcas de agentes",
+      "groupedByFinding": "{{file}} agrupado por hallazgo",
+      "emptyFile": "Archivo vacío"
+    },
+    "selector": {
+      "title": "Zona de selectores",
+      "branches": "Ramas ({{visible}} de {{total}})",
+      "selectedBranch": "Rama seleccionada",
+      "findById": "Buscar una rama por id",
+      "foundBranch": "Rama encontrada",
+      "branchDefault": "rama por defecto",
+      "commitsAhead_one": "{{count}} commit por delante",
+      "commitsAhead_other": "{{count}} commits por delante"
+    },
+    "dropdown": {
+      "title": "Zona de desplegables",
+      "actionMenu": "Menú de acciones con opción seleccionada",
+      "analyze": "Analizar",
+      "lastChosen": "Última opción elegida",
+      "loadingTrigger": "Disparador en carga",
+      "analyzing": "Analizando",
+      "disabledEmpty": "Disparador deshabilitado y menú vacío",
+      "disabled": "Deshabilitado",
+      "emptyMenu": "Menú vacío",
+      "noPipelines": "No hay pipelines registrados",
+      "pipelines": {
+        "classic": {
+          "title": "Auditoría clásica",
+          "description": "Primero analyzer, luego architect"
+        },
+        "projectArchitecture": {
+          "title": "Arquitectura del proyecto",
+          "description": "Orientación, arquitectura y validación semántica"
+        },
+        "comingSoon": {
+          "title": "Próximamente",
+          "description": "Aún no disponible"
+        }
+      }
+    },
+    "stageShowcase": {
+      "title": "Muestra de etapas",
+      "subtitle": "vistas compactas de etapas con datos realistas de varios elementos",
+      "failedRun": "Ejecución fallida sin informe",
+      "architectureTitle": "Arquitectura"
+    },
+    "controls": {
+      "title": "Zona de controles",
+      "docsExternal": "Enlaces desplegables · documentación externa",
+      "docsHint": "Los enlaces se abren en una pestaña nueva. El disparador conserva su etiqueta tras navegar.",
+      "navAlign": "Enlaces desplegables · navegación interna y alineación derecha",
+      "navigate": "Navegar",
+      "rightAligned": "Alineado a la derecha",
+      "disabledEmptyState": "Enlaces desplegables · elemento deshabilitado, control deshabilitado y estado vacío",
+      "availablePages": "Páginas disponibles",
+      "reports": "Informes",
+      "comingSoon": "Próximamente",
+      "disabled": "Deshabilitado",
+      "emptyMenu": "Menú vacío",
+      "noDocs": "No hay documentación registrada",
+      "textInputs": "Campos de texto con leyenda flotante",
+      "noLabel": "Sin etiqueta aquí",
+      "modelName": "Nombre del modelo",
+      "disabledLabel": "Deshabilitado",
+      "selectorsLegend": "Los selectores comparten la misma leyenda",
+      "provider": "Proveedor",
+      "findProvider": "Buscar un proveedor",
+      "registerForm": "Formulario de registro de modelo",
+      "addModel": "Agregar modelo",
+      "squareButtons": "Botones cuadrados",
+      "decrease": "Disminuir",
+      "increase": "Aumentar",
+      "defaultTemplate": "Lista con la plantilla por defecto ({{count}} seleccionados)",
+      "customTemplate": "Lista con plantilla personalizada",
+      "picked": "elegido",
+      "singleSelect": "Lista de selección única (favorito: {{favorite}})",
+      "modalDemo": "Demo de modal",
+      "openModal": "Abrir modal",
+      "demoModal": "Modal de demo",
+      "dismiss": "Descartar"
+    },
+    "drawerExamples": {
+      "basic": "Drawer · panel básico",
+      "basicHint": "Se desliza desde la derecha. Ciérralo con Escape, la cruz o un clic en el fondo.",
+      "openBasic": "Abrir drawer básico",
+      "scrollable": "Drawer · contenido desplazable con acciones fijas",
+      "scrollableHint": "El encabezado y el pie permanecen visibles mientras el contenido se desplaza.",
+      "openLong": "Abrir drawer largo",
+      "wideForm": "Drawer · formulario ancho con guardado local y cancelación",
+      "wideFormHint": "El cierre desde el fondo está deshabilitado en este ejemplo. Cancelar descarta los cambios; al reabrir se carga el último nombre guardado.",
+      "savedName": "Nombre guardado: {{name}}",
+      "openForm": "Abrir drawer de formulario",
+      "savedMessage": "Guardado localmente en esta sesión de pruebas. No se hizo ninguna petición API.",
+      "basicTitle": "Drawer básico",
+      "basicDescription": "Un panel lateral reutilizable para detalles y configuración.",
+      "basicBody1": "Este contenido se muestra sobre la página. El fondo no se puede usar hasta cerrar el drawer.",
+      "basicBody2": "El foco del teclado permanece dentro del drawer y vuelve a su botón de apertura al cerrarlo.",
+      "scrollableTitle": "Drawer desplazable",
+      "scrollableDescription": "Desplazamiento independiente con encabezado y pie persistentes.",
+      "done": "Listo",
+      "sectionTitle": "Sección de configuración {{index}}",
+      "sectionBody1": "Contenido de ejemplo para un ajuste de agente, con su propósito, valores disponibles y detalles.",
+      "sectionBody2": "Desplázate por las secciones para comprobar que las acciones siguen accesibles al final del drawer.",
+      "formTitle": "Configuración del agente demo",
+      "formDescription": "Un drawer ancho con datos de demostración editables.",
+      "cancel": "Cancelar",
+      "saveChanges": "Guardar cambios",
+      "agentName": "Nombre del agente",
+      "agentNamePlaceholder": "Ingresa un nombre de agente…",
+      "formHint": "Este formulario solo demuestra layout y estado local. No configura un agente real."
+    },
+    "formControls": {
+      "back": "← {{label}}",
+      "title": "Controles de formulario",
+      "intro": "Estados interactivos, seleccionados, indeterminados, deshabilitados y de validación. Usa Tab para enfocar, Espacio para alternar y flechas para navegar opciones.",
+      "checkboxes": "Casillas",
+      "includeDeps": "Incluir dependencias",
+      "includeDepsHint": "Clic o Espacio para alternar.",
+      "selectAll": "Seleccionar todos los archivos",
+      "selectAllHint": "Comienza en estado indeterminado.",
+      "disabledUnchecked": "Deshabilitada sin marcar",
+      "disabledChecked": "Deshabilitada marcada",
+      "acceptTerms": "Aceptar los términos",
+      "acceptTermsError": "Acepta los términos para continuar.",
+      "comboboxes": "Comboboxes",
+      "aiProvider": "Proveedor de IA",
+      "comboboxHint": "Se admiten flechas, Inicio/Fin, Enter, Escape y búsqueda por texto.",
+      "disabledEmpty": "Vacío deshabilitado",
+      "disabledSelected": "Seleccionado deshabilitado",
+      "requiredProvider": "Proveedor requerido",
+      "requiredProviderError": "Selecciona un proveedor para continuar.",
+      "noAvailableOptions": "Sin opciones disponibles",
+      "unavailableProvider": "Proveedor no disponible",
+      "radios": "Botones de radio",
+      "cloneProtocol": "Protocolo de clonación",
+      "sshHint": "Usa tu configuración SSH existente.",
+      "disabledUnselected": "Deshabilitado sin seleccionar",
+      "requiredChoice": "Elección requerida",
+      "manualReview": "Revisión manual",
+      "automaticReview": "Revisión automática",
+      "reviewModeError": "Elige un modo de revisión.",
+      "switches": "Interruptores",
+      "taskNotifications": "Notificaciones de tareas",
+      "notificationsHint": "Activa o desactiva las notificaciones.",
+      "disabledOff": "Apagado deshabilitado",
+      "disabledOn": "Encendido deshabilitado",
+      "enableAudit": "Activar registro de auditoría",
+      "auditRequiredError": "El registro de auditoría es requerido para este ejemplo.",
+      "liveValues": "Valores en vivo"
+    },
+    "sidebar": {
+      "title": "Zona de barra lateral",
+      "workspace": "Espacio de trabajo",
+      "sections": {
+        "projects": "Proyectos",
+        "audits": "Auditorías",
+        "reports": "Informes"
+      },
+      "activeSection": "Sección activa",
+      "searchPlaceholder": "Buscar en la sección",
+      "apply": "Aplicar",
+      "sidebarReady": "La barra lateral está lista"
+    }
+  }
+}

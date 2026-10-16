@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ExternalIcon } from "./icons.tsx"
 import "./DropdownLinks.css"
 
@@ -22,7 +23,9 @@ interface DropdownLinksProps {
 }
 
 /** Navigation disclosure: real links, without a persistent selected value. */
-export function DropdownLinks({ label, items, icon, disabled = false, align = "start", emptyText = "No links available", iconOnly = false }: DropdownLinksProps) {
+export function DropdownLinks({ label, items, icon, disabled = false, align = "start", emptyText, iconOnly = false }: DropdownLinksProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.dropdownLinks.noLinks")
   const id = useId()
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -95,7 +98,7 @@ export function DropdownLinks({ label, items, icon, disabled = false, align = "s
       </button>
       {expanded && (
         <nav id={`${id}-links`} className="ui-dropdown-links-panel" data-align={align} aria-labelledby={`${id}-trigger`}>
-          {items.length === 0 ? <p className="ui-dropdown-links-empty">{emptyText}</p> : (
+          {items.length === 0 ? <p className="ui-dropdown-links-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {
                 const content = <>
@@ -110,7 +113,7 @@ export function DropdownLinks({ label, items, icon, disabled = false, align = "s
                     {item.disabled ? (
                       <span className="ui-dropdown-links-item" aria-disabled="true">{content}</span>
                     ) : item.external ? (
-                      <a className="ui-dropdown-links-item" href={item.href} target="_blank" rel="noopener noreferrer" aria-label={`${item.label} (opens in a new tab)`} onClick={() => close(true)}>{content}</a>
+                      <a className="ui-dropdown-links-item" href={item.href} target="_blank" rel="noopener noreferrer" aria-label={t("ui.dropdownLinks.newTab", { label: item.label })} onClick={() => close(true)}>{content}</a>
                     ) : (
                       <Link className="ui-dropdown-links-item" to={item.href} onClick={() => close(true)}>{content}</Link>
                     )}

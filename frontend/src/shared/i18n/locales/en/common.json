@@ -1,0 +1,388 @@
+{
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "navigation": {
+    "brand": "Veraud",
+    "home": "Home",
+    "settings": "Settings",
+    "main": "Main navigation",
+    "apiDocs": "API docs",
+    "docs": {
+      "backend": "Backend docs",
+      "websocket": "WebSocket docs",
+      "agentServer": "Agent-server docs"
+    },
+    "services": {
+      "backend": "Backend",
+      "agentsServer": "Agents Server"
+    },
+    "serviceStatus": "{{label}}: {{status}}",
+    "status": {
+      "online": "Online",
+      "unknown": "Unknown",
+      "offline": "Offline"
+    }
+  },
+  "ui": {
+    "close": "Close",
+    "loading": "Loading",
+    "refresh": "Refresh",
+    "items": "Items",
+    "sortAscending": "Sort ascending",
+    "sortDescending": "Sort descending",
+    "pages": "Pages",
+    "pagination": {
+      "pages": "Pages",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "pageOf": "Page {{page}} of {{pageCount}}"
+    },
+    "toast": {
+      "showMore": "Show more",
+      "showLess": "Show less",
+      "close": "Close"
+    },
+    "itemList": {
+      "empty": "No items yet",
+      "items": "Items"
+    },
+    "itemSelector": {
+      "empty": "No items yet",
+      "loadMore": "Load more...",
+      "selectItem": "Select an item",
+      "loading": "Loading",
+      "items": "Items"
+    },
+    "itemSearcher": {
+      "noMatches": "No matches",
+      "typeToSelect": "Type an id to select it directly",
+      "searchItems": "Search items",
+      "clearSearch": "Clear search",
+      "openItems": "Open items",
+      "closeItems": "Close items",
+      "loadMore": "Load more...",
+      "loading": "Loading",
+      "items": "Items"
+    },
+    "combobox": {
+      "selectOption": "Select an option...",
+      "noOptions": "No options available"
+    },
+    "dropdownMenu": {
+      "noOptions": "No options available"
+    },
+    "dropdownLinks": {
+      "noLinks": "No links available",
+      "newTab": "{{label}} (opens in a new tab)"
+    },
+    "directoryTree": {
+      "filter": "Filter",
+      "namePlaceholder": "File or folder name",
+      "extension": "Extension",
+      "all": "All",
+      "noExtensions": "No extensions",
+      "clear": "Clear",
+      "moreFilters": "More filters",
+      "breadcrumb": "Breadcrumb",
+      "noFileSelected": "No file selected",
+      "noEntriesMatch": "No entries match the filter",
+      "flagged": "flagged",
+      "visibleCount": "{{visible}} of {{total}}"
+    },
+    "codeViewer": {
+      "noContent": "No content to show",
+      "fileInfo": "File info",
+      "fileContent": "File content",
+      "loadingFile": "Loading file content",
+      "readOnly": "Read-only",
+      "plainText": "Plain text",
+      "line_one": "{{count}} line",
+      "line_other": "{{count}} lines"
+    },
+    "codeExplanations": {
+      "label": "Code explanations"
+    },
+    "mermaid": {
+      "rendering": "Rendering diagram"
+    },
+    "splitView": {
+      "resize": "Resize panes"
+    }
+  },
+  "testPages": {
+    "playgrounds": "Playgrounds",
+    "allPlaygrounds": "All playgrounds",
+    "none": "none",
+    "index": {
+      "title": "Test playgrounds",
+      "subtitle": "Choose a playground to review its components and interactions.",
+      "navLabel": "Test playgrounds",
+      "pages": {
+        "components": {
+          "title": "Components",
+          "description": "Explore the UI kit and combined component examples."
+        },
+        "selectors": {
+          "title": "Selectors",
+          "description": "Review item selection and search controls."
+        },
+        "dropdowns": {
+          "title": "Dropdowns",
+          "description": "Review action menus with selectable options."
+        },
+        "stageShowcase": {
+          "title": "Stage showcase",
+          "description": "Review the compact stage views with realistic payloads."
+        },
+        "controls": {
+          "title": "Controls",
+          "description": "Review interactive controls and their states."
+        },
+        "formControls": {
+          "title": "Form controls",
+          "description": "Explore checkboxes, comboboxes, radio buttons, and switches."
+        },
+        "directory": {
+          "title": "Directory",
+          "description": "Explore directory trees and file navigation."
+        },
+        "fileViewer": {
+          "title": "File viewer",
+          "description": "Review file previews and code rendering."
+        },
+        "sidebar": {
+          "title": "Sidebar",
+          "description": "Review sidebar navigation and layouts."
+        }
+      }
+    },
+    "components": {
+      "title": "Component playground",
+      "containers": "Containers",
+      "cardSurface": "Card / white surface",
+      "panelSurface": "Panel / tinted surface",
+      "button": "Button",
+      "registerProject": "Register project",
+      "disabled": "Disabled",
+      "registering": "Registering",
+      "textInput": "TextInput",
+      "empty": "Empty",
+      "toast": "Toast",
+      "projectRegistered": "Project registered",
+      "repositoryNotAccessible": "Repository is not accessible",
+      "combined": "Combined",
+      "toolbarStrip": "Toolbar strip",
+      "cloneAndIngest": "Clone and ingest",
+      "projectRow": "Project row",
+      "inspect": "Inspect",
+      "auditFinished": "Audit finished",
+      "cardNestingPanel": "Card nesting a panel",
+      "filterByRepository": "Filter by repository",
+      "cloneFailed": "Clone failed",
+      "panelNestingCards": "Panel nesting cards",
+      "auditing": "Auditing",
+      "cveFound": "CVE-2024-38819 found",
+      "filterBar": "Filter bar",
+      "filterByRepoTags": "Filter by repository, language, or tags",
+      "filters": {
+        "all": "All",
+        "running": "Running",
+        "approved": "Approved",
+        "vulnerable": "Vulnerable"
+      },
+      "loading": "Loading",
+      "statusLabels": "Status labels",
+      "syncingRepository": "Syncing repository",
+      "auditInProgress": "Audit in progress",
+      "asyncButtons": "Async buttons",
+      "save1s": "Save (1s)",
+      "notify": "Notify",
+      "hang3s": "Hang (3s timeout)",
+      "typography": "Typography",
+      "headlineLabel": "Geist / headline",
+      "bodyLabel": "Geist / body",
+      "repoNameLabel": "JetBrains Mono / repository name",
+      "commitLabel": "JetBrains Mono / commit"
+    },
+    "directory": {
+      "title": "Directory playground",
+      "projectStructure": "Project Structure",
+      "grouped": "Grouped directories",
+      "groupsPlusFindings": "Groups plus agent findings ({{count}} flagged)",
+      "flaggedOnly": "Flagged only ({{count}} flagged, no groups)",
+      "reloading": "Reloading the directory (revision {{revision}})"
+    },
+    "fileViewer": {
+      "title": "File viewer playground",
+      "fileLines_one": "{{file}} ({{count}} line)",
+      "fileLines_other": "{{file}} ({{count}} lines)",
+      "highlightedFile": "{{file}} (highlighted)",
+      "longLinesFile": "{{file}} (long lines)",
+      "withMarks": "{{file}} with agent marks",
+      "groupedByFinding": "{{file}} grouped by finding",
+      "emptyFile": "Empty file"
+    },
+    "selector": {
+      "title": "Selector playground",
+      "branches": "Branches ({{visible}} of {{total}})",
+      "selectedBranch": "Selected branch",
+      "findById": "Find a branch by id",
+      "foundBranch": "Found branch",
+      "branchDefault": "default branch",
+      "commitsAhead_one": "{{count}} commit ahead",
+      "commitsAhead_other": "{{count}} commits ahead"
+    },
+    "dropdown": {
+      "title": "Dropdown playground",
+      "actionMenu": "Action menu with a selected option",
+      "analyze": "Analyze",
+      "lastChosen": "Last chosen option",
+      "loadingTrigger": "Loading trigger",
+      "analyzing": "Analyzing",
+      "disabledEmpty": "Disabled trigger and empty menu",
+      "disabled": "Disabled",
+      "emptyMenu": "Empty menu",
+      "noPipelines": "No pipelines registered",
+      "pipelines": {
+        "classic": {
+          "title": "Classic audit",
+          "description": "Analyzer then architect"
+        },
+        "projectArchitecture": {
+          "title": "Project architecture",
+          "description": "Orientation, architecture and semantic validation"
+        },
+        "comingSoon": {
+          "title": "Coming soon",
+          "description": "Not available yet"
+        }
+      }
+    },
+    "stageShowcase": {
+      "title": "Stage showcase",
+      "subtitle": "compact stage views with realistic multi-item payloads",
+      "failedRun": "Failed run without a report",
+      "architectureTitle": "Architecture"
+    },
+    "controls": {
+      "title": "Controls playground",
+      "docsExternal": "Dropdown links · external documentation",
+      "docsHint": "Links open in a new tab. The trigger keeps its label after navigation.",
+      "navAlign": "Dropdown links · internal navigation and right alignment",
+      "navigate": "Navigate",
+      "rightAligned": "Right-aligned",
+      "disabledEmptyState": "Dropdown links · disabled item, disabled control and empty state",
+      "availablePages": "Available pages",
+      "reports": "Reports",
+      "comingSoon": "Coming soon",
+      "disabled": "Disabled",
+      "emptyMenu": "Empty menu",
+      "noDocs": "No documentation registered",
+      "textInputs": "Text inputs with floating legend",
+      "noLabel": "No label here",
+      "modelName": "Model name",
+      "disabledLabel": "Disabled",
+      "selectorsLegend": "Selectors share the same legend",
+      "provider": "Provider",
+      "findProvider": "Find a provider",
+      "registerForm": "Register model form",
+      "addModel": "Add model",
+      "squareButtons": "Square buttons",
+      "decrease": "Decrease",
+      "increase": "Increase",
+      "defaultTemplate": "Item list with the default template ({{count}} selected)",
+      "customTemplate": "Item list with a custom template",
+      "picked": "picked",
+      "singleSelect": "Single-select list (favorite: {{favorite}})",
+      "modalDemo": "Modal demo",
+      "openModal": "Open modal",
+      "demoModal": "Demo modal",
+      "dismiss": "Dismiss"
+    },
+    "drawerExamples": {
+      "basic": "Drawer · basic panel",
+      "basicHint": "Slides from the right. Close with Escape, the cross or a click on the backdrop.",
+      "openBasic": "Open basic drawer",
+      "scrollable": "Drawer · scrollable content with fixed actions",
+      "scrollableHint": "The header and footer remain visible while the content scrolls.",
+      "openLong": "Open long-content drawer",
+      "wideForm": "Drawer · wide form with local save and cancel",
+      "wideFormHint": "Backdrop closing is disabled in this example. Cancel discards edits; reopening loads the last saved name.",
+      "savedName": "Saved name: {{name}}",
+      "openForm": "Open form drawer",
+      "savedMessage": "Saved locally for this playground session. No API request was made.",
+      "basicTitle": "Basic drawer",
+      "basicDescription": "A reusable side panel for details and configuration.",
+      "basicBody1": "This content is rendered above the page. The background cannot be interacted with until the drawer closes.",
+      "basicBody2": "Keyboard focus stays inside the drawer and returns to its opening button when you close it.",
+      "scrollableTitle": "Scrollable drawer",
+      "scrollableDescription": "Independent content scrolling with a persistent header and footer.",
+      "done": "Done",
+      "sectionTitle": "Configuration section {{index}}",
+      "sectionBody1": "Example content for an agent setting, including its purpose, available values and explanatory details.",
+      "sectionBody2": "Scroll through the sections to check that the actions remain accessible at the bottom of the drawer.",
+      "formTitle": "Demo agent configuration",
+      "formDescription": "A wide drawer with editable demonstration data.",
+      "cancel": "Cancel",
+      "saveChanges": "Save changes",
+      "agentName": "Agent name",
+      "agentNamePlaceholder": "Enter an agent name...",
+      "formHint": "This form demonstrates layout and local state only. It does not configure a real agent."
+    },
+    "formControls": {
+      "back": "← {{label}}",
+      "title": "Form controls",
+      "intro": "Interactive, selected, indeterminate, disabled, and validation states. Use Tab to focus, Space to toggle, and arrow keys to navigate options.",
+      "checkboxes": "Checkboxes",
+      "includeDeps": "Include dependencies",
+      "includeDepsHint": "Click or press Space to toggle.",
+      "selectAll": "Select all files",
+      "selectAllHint": "Starts in an indeterminate state.",
+      "disabledUnchecked": "Disabled unchecked",
+      "disabledChecked": "Disabled checked",
+      "acceptTerms": "Accept the terms",
+      "acceptTermsError": "Please accept the terms to continue.",
+      "comboboxes": "Comboboxes",
+      "aiProvider": "AI provider",
+      "comboboxHint": "Arrow keys, Home/End, Enter, Escape, and type-ahead are supported.",
+      "disabledEmpty": "Disabled empty",
+      "disabledSelected": "Disabled selected",
+      "requiredProvider": "Required provider",
+      "requiredProviderError": "Select a provider to continue.",
+      "noAvailableOptions": "No available options",
+      "unavailableProvider": "Unavailable provider",
+      "radios": "Radio buttons",
+      "cloneProtocol": "Clone protocol",
+      "sshHint": "Uses your existing SSH configuration.",
+      "disabledUnselected": "Disabled unselected",
+      "requiredChoice": "Required choice",
+      "manualReview": "Manual review",
+      "automaticReview": "Automatic review",
+      "reviewModeError": "Choose a review mode.",
+      "switches": "Switches",
+      "taskNotifications": "Task notifications",
+      "notificationsHint": "Enable or disable notifications.",
+      "disabledOff": "Disabled off",
+      "disabledOn": "Disabled on",
+      "enableAudit": "Enable audit logging",
+      "auditRequiredError": "Audit logging is required for this example.",
+      "liveValues": "Live values"
+    },
+    "sidebar": {
+      "title": "Sidebar playground",
+      "workspace": "Workspace",
+      "sections": {
+        "projects": "Projects",
+        "audits": "Audits",
+        "reports": "Reports"
+      },
+      "activeSection": "Active section",
+      "searchPlaceholder": "Search in section",
+      "apply": "Apply",
+      "sidebarReady": "Sidebar is ready"
+    }
+  }
+}

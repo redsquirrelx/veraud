@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react"
+import { useTranslation } from "react-i18next"
 import type mermaidApi from "mermaid"
 import "./MermaidDiagram.css"
 
@@ -22,6 +23,7 @@ async function loadMermaid(): Promise<typeof mermaidApi> {
  * instead of a blank box, so it stays inspectable either way.
  */
 export function MermaidDiagram({ chart, label }: { chart: string; label: string }) {
+  const { t } = useTranslation("common")
   const rawId = useId()
   const [rendered, setRendered] = useState<{ chart: string; svg: string } | null>(null)
   const [failedFor, setFailedFor] = useState<string | null>(null)
@@ -56,5 +58,5 @@ export function MermaidDiagram({ chart, label }: { chart: string; label: string 
     return <div className="ui-mermaid" role="img" aria-label={label} dangerouslySetInnerHTML={{ __html: rendered.svg }} />
   }
 
-  return <p className="label">Rendering diagram</p>
+  return <p className="label">{t("ui.mermaid.rendering")}</p>
 }

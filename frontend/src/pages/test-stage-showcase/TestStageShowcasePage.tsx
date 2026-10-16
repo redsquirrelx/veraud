@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { Card } from "../../shared/ui-kit/index.ts"
 import {
   OrientationResultView,
@@ -104,11 +105,12 @@ function parsed<T>(parse: (result: string | null) => T | null, result: string): 
 }
 
 export function TestStageShowcasePage() {
+  const { t } = useTranslation("common")
   return (
     <section className="test-stage-showcase-page">
-      <h1>Stage showcase</h1>
+      <h1>{t("testPages.stageShowcase.title")}</h1>
       <p className="label">
-        <Link to="/test">All playgrounds</Link> · compact stage views with realistic multi-item payloads
+        <Link to="/test">{t("testPages.allPlaygrounds")}</Link> · {t("testPages.stageShowcase.subtitle")}
       </p>
       <Card>
         <OrientationResultView summary={parsed(parseOrientationResult, orientationJson)} />
@@ -120,9 +122,9 @@ export function TestStageShowcasePage() {
         <SemanticValidationResultView summary={parsed(parseSemanticValidationResult, validationJson)} />
       </Card>
       <Card>
-        <span className="label">Failed run without a report</span>
+        <span className="label">{t("testPages.stageShowcase.failedRun")}</span>
         <StageStatusView
-          title="Architecture"
+          title={t("testPages.stageShowcase.architectureTitle")}
           result={JSON.stringify({
             completion_status: "failed",
             architecture: null,

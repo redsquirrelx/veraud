@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ChevronRightIcon, DotsIcon, FolderIcon } from "./icons.tsx"
 import { ItemSelector } from "./ItemSelector.tsx"
 import { Panel } from "./Panel.tsx"
@@ -50,6 +51,7 @@ export function DirectoryTree({
   onRefresh,
   onSelectFile,
 }: DirectoryTreeProps) {
+  const { t } = useTranslation("common")
   const [expanded, setExpanded] = useState<string[]>([tree.name, ...initialExpanded])
   const [selected, setSelected] = useState<string | null>(initialSelected)
   const [nameFilter, setNameFilter] = useState("")
@@ -132,53 +134,53 @@ export function DirectoryTree({
     <div className="directory-tree-view" aria-busy={refreshing}>
       <Panel>
         <div className="directory-filters" ref={filtersRef}>
-          <span className="label">Filter</span>
-          <TextInput value={nameFilter} placeholder="File or folder name" disabled={refreshing} onChange={setNameFilter} />
-          <span className="label">Extension</span>
+          <span className="label">{t("ui.directoryTree.filter")}</span>
+          <TextInput value={nameFilter} placeholder={t("ui.directoryTree.namePlaceholder")} disabled={refreshing} onChange={setNameFilter} />
+          <span className="label">{t("ui.directoryTree.extension")}</span>
           <ItemSelector
             items={[
-              { id: ALL_EXTENSIONS, label: "All" },
+              { id: ALL_EXTENSIONS, label: t("ui.directoryTree.all") },
               ...extensions.map((value) => ({ id: value, label: value })),
             ]}
             selectedId={extension}
             onSelect={setExtension}
             hasMore={false}
             onLoadMore={() => {}}
-            emptyText="No extensions"
-            placeholder="All"
+            emptyText={t("ui.directoryTree.noExtensions")}
+            placeholder={t("ui.directoryTree.all")}
             disabled={refreshing}
           />
           {visible.length === 0 ? (
-            <button type="button" className="directory-reset" onClick={resetFilters}>Clear</button>
+            <button type="button" className="directory-reset" onClick={resetFilters}>{t("ui.directoryTree.clear")}</button>
           ) : (
-            <span className="label">{visible.length} of {rows.length}</span>
+            <span className="label">{t("ui.directoryTree.visibleCount", { visible: visible.length, total: rows.length })}</span>
           )}
           {onRefresh !== undefined && <RefreshButton loading={refreshing} onClick={() => void refresh()} />}
           <button
             type="button"
             className="directory-overflow"
-            aria-label="More filters"
+            aria-label={t("ui.directoryTree.moreFilters")}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((value) => !value)}
           >
             <DotsIcon size={14} />
           </button>
           {menuOpen && (
-            <div className="directory-overflow-panel" role="menu" aria-label="More filters">
-              <span className="label">Filter</span>
-              <TextInput value={nameFilter} placeholder="File or folder name" disabled={refreshing} onChange={setNameFilter} />
-              <span className="label">Extension</span>
+            <div className="directory-overflow-panel" role="menu" aria-label={t("ui.directoryTree.moreFilters")}>
+              <span className="label">{t("ui.directoryTree.filter")}</span>
+              <TextInput value={nameFilter} placeholder={t("ui.directoryTree.namePlaceholder")} disabled={refreshing} onChange={setNameFilter} />
+              <span className="label">{t("ui.directoryTree.extension")}</span>
               <ItemSelector
                 items={[
-                  { id: ALL_EXTENSIONS, label: "All" },
+                  { id: ALL_EXTENSIONS, label: t("ui.directoryTree.all") },
                   ...extensions.map((value) => ({ id: value, label: value })),
                 ]}
                 selectedId={extension}
                 onSelect={setExtension}
                 hasMore={false}
                 onLoadMore={() => {}}
-                emptyText="No extensions"
-                placeholder="All"
+                emptyText={t("ui.directoryTree.noExtensions")}
+                placeholder={t("ui.directoryTree.all")}
                 disabled={refreshing}
               />
               {onRefresh !== undefined && <RefreshButton loading={refreshing} onClick={() => void refresh()} />}
@@ -186,9 +188,9 @@ export function DirectoryTree({
           )}
         </div>
       </Panel>
-      <nav className="directory-breadcrumbs" aria-label="Breadcrumb">
+      <nav className="directory-breadcrumbs" aria-label={t("ui.directoryTree.breadcrumb")}>
         {breadcrumb.length === 0 ? (
-          <span className="label">No file selected</span>
+          <span className="label">{t("ui.directoryTree.noFileSelected")}</span>
         ) : (
           breadcrumb.map((part, index) => (
             <span key={part} className="directory-crumb">
@@ -199,7 +201,7 @@ export function DirectoryTree({
         )}
       </nav>
       {visible.length === 0 ? (
-        <p className="label directory-empty">No entries match the filter</p>
+        <p className="label directory-empty">{t("ui.directoryTree.noEntriesMatch")}</p>
       ) : (
         <ul className="directory-tree" role="tree">
           {visible.map((row) => (
@@ -228,6 +230,7 @@ export function DirectoryTree({
 }
 
 function DirectoryTreeItem({ row, isSelected, isFlagged, isOpen, group, onToggle, onSelect }: DirectoryTreeItemProps) {
+  const { t } = useTranslation("common")
   return (
     <li
       role="treeitem"
@@ -251,7 +254,7 @@ function DirectoryTreeItem({ row, isSelected, isFlagged, isOpen, group, onToggle
           {group !== null && (
             <span className={`directory-tag directory-tag-${group.tone}`}>{group.label}</span>
           )}
-          {isFlagged && <span className="directory-tag directory-tag-flagged">flagged</span>}
+          {isFlagged && <span className="directory-tag directory-tag-flagged">{t("ui.directoryTree.flagged")}</span>}
         </span>
       </button>
     </li>
