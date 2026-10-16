@@ -6,6 +6,7 @@ import {
   isTaskVisible,
   loadTaskVisibility,
   saveTaskVisibility,
+  TASK_KIND_OPTIONS,
   useTaskVisibility,
 } from "./taskVisibility.ts"
 
@@ -73,5 +74,18 @@ describe("taskVisibility", () => {
     expect(first.result.current[0]["pull"]).toBe(false)
     expect(second.result.current[0]["pull"]).toBe(false)
     expect(loadTaskVisibility()["pull"]).toBe(false)
+  })
+
+  it("keeps stable kind ids for persisted visibility", () => {
+    expect(TASK_KIND_OPTIONS.map((option) => option.kind)).toEqual([
+      "clone",
+      "pull",
+      "fetch",
+      "checkout-branch",
+      "checkout-detach",
+      "list-branches",
+      "rev-parse",
+      "log-commits",
+    ])
   })
 })
