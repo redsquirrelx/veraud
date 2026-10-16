@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Card, DirectoryTree, type DirectoryGroup, type DirectoryTreeNode } from "../../shared/ui-kit/index.ts"
 import "./TestDirectoryPage.css"
 
@@ -71,6 +72,7 @@ const openNested = [
 ]
 
 export function TestDirectoryPage() {
+  const { t } = useTranslation("common")
   const [revision, setRevision] = useState(0)
 
   async function reload() {
@@ -82,9 +84,9 @@ export function TestDirectoryPage() {
 
   return (
     <section className="test-directory-page">
-      <h1>Directory playground</h1>
+      <h1>{t("testPages.directory.title")}</h1>
       <Card>
-        <span className="label">Project Structure</span>
+        <span className="label">{t("testPages.directory.projectStructure")}</span>
         <DirectoryTree
           tree={mockTree}
           initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
@@ -92,7 +94,7 @@ export function TestDirectoryPage() {
         />
       </Card>
       <Card>
-        <span className="label">Grouped directories</span>
+        <span className="label">{t("testPages.directory.grouped")}</span>
         <DirectoryTree
           tree={mockTree}
           groups={groups}
@@ -101,7 +103,7 @@ export function TestDirectoryPage() {
         />
       </Card>
       <Card>
-        <span className="label">Groups plus agent findings ({flagged.length} flagged)</span>
+        <span className="label">{t("testPages.directory.groupsPlusFindings", { count: flagged.length })}</span>
         <DirectoryTree
           tree={mockTree}
           groups={groups}
@@ -111,7 +113,7 @@ export function TestDirectoryPage() {
         />
       </Card>
       <Card>
-        <span className="label">Flagged only ({flagged.length} flagged, no groups)</span>
+        <span className="label">{t("testPages.directory.flaggedOnly", { count: flagged.length })}</span>
         <DirectoryTree
           tree={mockTree}
           flaggedPaths={flagged}
@@ -120,7 +122,7 @@ export function TestDirectoryPage() {
         />
       </Card>
       <Card>
-        <span className="label">Reloading the directory (revision {revision})</span>
+        <span className="label">{t("testPages.directory.reloading", { revision })}</span>
         <DirectoryTree
           tree={buildTree(revision)}
           groups={groups}
