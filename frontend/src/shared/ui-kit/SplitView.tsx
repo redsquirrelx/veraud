@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import "./SplitView.css"
 
 interface SplitViewProps {
@@ -19,7 +20,9 @@ function clampRatio(value: number, minRatio: number): number {
   return value
 }
 
-export function SplitView({ left, right, initialRatio = 0.5, minRatio = 0.2, label = "Resize panes" }: SplitViewProps) {
+export function SplitView({ left, right, initialRatio = 0.5, minRatio = 0.2, label }: SplitViewProps) {
+  const { t } = useTranslation("common")
+  const resolvedLabel = label ?? t("ui.splitView.resize")
   const [ratio, setRatio] = useState(() => clampRatio(initialRatio, minRatio))
   const root = useRef<HTMLDivElement | null>(null)
   const dragging = useRef(false)
@@ -75,7 +78,7 @@ export function SplitView({ left, right, initialRatio = 0.5, minRatio = 0.2, lab
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label={label}
+        aria-label={resolvedLabel}
         aria-valuenow={Math.round(ratio * 100)}
         aria-valuemin={Math.round(minRatio * 100)}
         aria-valuemax={Math.round((1 - minRatio) * 100)}

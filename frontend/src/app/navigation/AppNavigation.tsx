@@ -1,44 +1,57 @@
 import { NavLink } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
 import type { ServiceStatus } from "../useBackendStatus.ts"
 import "./AppNavigation.css"
 
 const backendDocsUrl = `${(import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")}/docs`
 const agentServerDocsUrl = `${(import.meta.env.VITE_AGENT_SERVER_URL ?? "http://localhost:7502").replace(/\/+$/, "")}/docs`
-const documentationLinks: DropdownLinkItem[] = [
-  { label: "Backend docs", href: backendDocsUrl, external: true },
-  { label: "WebSocket docs", href: `${backendDocsUrl}/ws`, external: true },
-  { label: "Agent-server docs", href: agentServerDocsUrl, external: true },
-]
 
 export function AppBrand({ compact = false }: { compact?: boolean }) {
-  return <NavLink to="/" className="app-brand" aria-label="Veraud" title="Veraud">
+  const { t } = useTranslation("common")
+  return <NavLink to="/" className="app-brand" aria-label={t("navigation.brand")} title={t("navigation.brand")}>
     <ShieldIcon size={18} />
-    {!compact && "Veraud"}
+    {!compact && t("navigation.brand")}
   </NavLink>
 }
 
 export function AppMainNavigation({ compact = false }: { compact?: boolean }) {
-  return <nav className="app-nav" aria-label="Main navigation">
-    <NavLink to="/" end aria-label="Home" title="Home" className={({ isActive }) => isActive ? "app-nav-active" : ""}>
+  const { t } = useTranslation("common")
+  return <nav className="app-nav" aria-label={t("navigation.main")}>
+    <NavLink to="/" end aria-label={t("navigation.home")} title={t("navigation.home")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <GridIcon />
-      {!compact && "Home"}
+      {!compact && t("navigation.home")}
     </NavLink>
-    <NavLink to="/settings" aria-label="Settings" title="Settings" className={({ isActive }) => isActive ? "app-nav-active" : ""}>
+    <NavLink to="/settings" aria-label={t("navigation.settings")} title={t("navigation.settings")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <SlidersIcon />
-      {!compact && "Settings"}
+      {!compact && t("navigation.settings")}
     </NavLink>
   </nav>
 }
 
 export function AppDocumentationLinks({ align = "end", compact = false }: { align?: "start" | "end", compact?: boolean }) {
-  return <DropdownLinks label="API docs" icon={<ExternalIcon size={14} />} items={documentationLinks} align={align} iconOnly={compact} />
+  const { t } = useTranslation("common")
+  const documentationLinks: DropdownLinkItem[] = [
+    { label: t("navigation.docs.backend"), href: backendDocsUrl, external: true },
+    { label: t("navigation.docs.websocket"), href: `${backendDocsUrl}/ws`, external: true },
+    { label: t("navigation.docs.agentServer"), href: agentServerDocsUrl, external: true },
+  ]
+  return <DropdownLinks label={t("navigation.apiDocs")} icon={<ExternalIcon size={14} />} items={documentationLinks} align={align} iconOnly={compact} />
 }
 
-function StatusBadge({ label, status, compact }: { label: string, status: ServiceStatus, compact: boolean }) {
+const serviceLabelKeys = {
+  backend: "navigation.services.backend",
+  agentsServer: "navigation.services.agentsServer",
+} as const
+
+function StatusBadge({ service, status, compact }: { service: keyof typeof serviceLabelKeys, status: ServiceStatus, compact: boolean }) {
+  const { t } = useTranslation("common")
   const online = status === "online"
   const unknown = status === "unknown"
-  const text = `${label}: ${online ? "Online" : unknown ? "Unknown" : "Offline"}`
+  const text = t("navigation.serviceStatus", {
+    label: t(serviceLabelKeys[service]),
+    status: t(online ? "navigation.status.online" : unknown ? "navigation.status.unknown" : "navigation.status.offline"),
+  })
   return <span title={text} aria-label={text} className={online ? "app-status" : unknown ? "app-status app-status-unknown" : "app-status app-status-offline"}>
     <span
       className={online ? "app-status-dot" : unknown ? "app-status-dot app-status-dot-unknown" : "app-status-dot app-status-dot-offline"}
@@ -51,7 +64,7 @@ function StatusBadge({ label, status, compact }: { label: string, status: Servic
 /** Presentational only: the containing layout owns the single status poll. */
 export function AppServiceIndicators({ backend, agent, compact = false }: { backend: ServiceStatus, agent: ServiceStatus, compact?: boolean }) {
   return <>
-    <StatusBadge label="Backend" status={backend} compact={compact} />
-    <StatusBadge label="Agents Server" status={agent} compact={compact} />
+    <StatusBadge service="backend" status={backend} compact={compact} />
+    <StatusBadge service="agentsServer" status={agent} compact={compact} />
   </>
 }

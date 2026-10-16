@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { XIcon } from "./icons.tsx"
 import "./Toast.css"
 
@@ -12,6 +13,7 @@ interface ToastProps {
 const LONG_MESSAGE_CHARS = 120
 
 export function Toast({ kind, message, durationMs = 5000, onClose }: ToastProps) {
+  const { t } = useTranslation("common")
   const [closing, setClosing] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const remaining = useRef(durationMs)
@@ -78,14 +80,14 @@ export function Toast({ kind, message, durationMs = 5000, onClose }: ToastProps)
         <button
           type="button"
           className="ui-toast-toggle"
-          aria-label={expanded ? "Show less" : "Show more"}
+          aria-label={expanded ? t("ui.toast.showLess") : t("ui.toast.showMore")}
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? "Show less" : "Show more"}
+          {expanded ? t("ui.toast.showLess") : t("ui.toast.showMore")}
         </button>
       )}
       {onClose && (
-        <button type="button" className="ui-toast-close" aria-label="Close" onClick={() => close()}>
+        <button type="button" className="ui-toast-close" aria-label={t("ui.toast.close")} onClick={() => close()}>
           <XIcon size={13} />
         </button>
       )}

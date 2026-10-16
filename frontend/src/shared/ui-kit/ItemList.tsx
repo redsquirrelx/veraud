@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import "./ItemList.css"
 
 export interface ItemListEntry {
@@ -17,10 +18,12 @@ interface ItemListProps {
   emptyText?: string
 }
 
-export function ItemList({ items, selectedIds, onSelectionChange, mode = "multiple", loading = false, renderItem = defaultRender, emptyText = "No items yet" }: ItemListProps) {
+export function ItemList({ items, selectedIds, onSelectionChange, mode = "multiple", loading = false, renderItem = defaultRender, emptyText }: ItemListProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.itemList.empty")
   if (loading && items.length === 0) {
     return (
-      <ul className="ui-item-list-rows" aria-label="Items" aria-busy="true">
+      <ul className="ui-item-list-rows" aria-label={t("ui.itemList.items")} aria-busy="true">
         {[0, 1, 2].map((index) => (
           <li key={index} className="ui-item-list-skeleton" aria-hidden="true" />
         ))}
@@ -29,7 +32,7 @@ export function ItemList({ items, selectedIds, onSelectionChange, mode = "multip
   }
 
   if (items.length === 0) {
-    return <p className="label">{emptyText}</p>
+    return <p className="label">{resolvedEmptyText}</p>
   }
 
   function pick(id: string) {
@@ -41,7 +44,7 @@ export function ItemList({ items, selectedIds, onSelectionChange, mode = "multip
   }
 
   return (
-    <ul className="ui-item-list-rows" role="listbox" aria-label="Items" aria-multiselectable={mode === "multiple"}>
+    <ul className="ui-item-list-rows" role="listbox" aria-label={t("ui.itemList.items")} aria-multiselectable={mode === "multiple"}>
       {items.map((item) => {
         const selected = selectedIds.includes(item.id)
         return (
