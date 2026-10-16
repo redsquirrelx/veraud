@@ -19,15 +19,19 @@ from .coordinator import (
 )
 from .investigator import DependencyImpactResult, ResponsibilityResult
 
+# Data-only lookup used to restore nested modularity result types without importing agent registries.
 _MODULARITY_RESULTS = {
     "architecture_boundary": AuditResult,
     "responsibility": ResponsibilityResult,
     "dependency_impact": DependencyImpactResult,
 }
 
+# Maintainability dimensions with implemented coordinators; unsupported requested names are reported in scope.
 Dimension = Literal["modularity", "reusability"]
 
 
+# Manager input: combines common scope/context with requested dimensions, depth and per-dimension targets.
+# MaintainabilityManagerAgent.run() normalizes the scope; the validator deduplicates dimension names.
 class MaintainabilityRequest(ScopedAuditRequest, TargetContext):
     objective: str = "Audit the requested maintainability dimensions using source-backed subordinate assessments."
     dimensions: list[str] = Field(default_factory=lambda: ["modularity", "reusability"], min_length=1, max_length=12)
@@ -43,6 +47,8 @@ class MaintainabilityRequest(ScopedAuditRequest, TargetContext):
         return values
 
 
+# Coordinator assignment: adds assignment/attempt identity, requested evidence and explicit success criteria.
+# The manager creates it in plan_audit or follow-up planning when delegating to a dimension coordinator.
 class AuditAssignment(shared.DelegationAssignment[Dimension]):
     assignment_id: str
     attempt: int = Field(ge=1)
@@ -50,6 +56,8 @@ class AuditAssignment(shared.DelegationAssignment[Dimension]):
     success_criteria: list[str]
 
 
+# Manager-side adapter for a modularity assessment: restores concrete investigator results/findings from JSON.
+# Used while validating nested coordinator responses so specialized fields survive report round trips.
 class NestedModularityAssessment(shared.ModularityAssessment):
     @field_validator("consolidated_findings", mode="before")
     @classmethod
@@ -82,6 +90,8 @@ class NestedModularityAssessment(shared.ModularityAssessment):
         return restored
 
 
+# Collected coordinator execution: combines a typed assessment with evidence sufficiency and coverage issues.
+# The manager builds it in collect_assessments after validating the delegated result and its provenance.
 class CoordinatorAssessment(shared.AgentInvocation[
     AuditAssignment, SerializeAsAny[ReusabilityAssessment | NestedModularityAssessment],
 ]):
@@ -89,10 +99,14 @@ class CoordinatorAssessment(shared.AgentInvocation[
     coverage_issues: list[str] = Field(default_factory=list)
 
 
+# Raw coordinator response: associates an unvalidated value or failure with the manager's assignment.
+# Passed from delegation to collect_assessments before conversion into CoordinatorAssessment.
 class RawAssessment(shared.RawAgentInvocation[AuditAssignment]):
     """Unvalidated coordinator response associated with a manager assignment."""
 
 
+# Resolved audit scope: separates requested, assessable and unsupported dimensions within a repository snapshot.
+# Created by the manager's analyze_audit_scope step and retained in the final report.
 class ScopeAssessment(Contract):
     repository_id: str
     commit: str | None
@@ -104,6 +118,8 @@ class ScopeAssessment(Contract):
     depth: str
 
 
+# Manager-level gap: records missing coverage, contradictions or failures, with references and blocking status.
+# Maintained during synthesis/follow-up decisions and included as unresolved_gaps in the final report.
 class CoverageGap(Contract):
     id: str
     coordinator: Dimension | None
@@ -115,6 +131,8 @@ class CoverageGap(Contract):
     blocking: bool = True
 
 
+# Cross-assessment relationship: links findings by overlap, trade-off or contradiction with a rationale.
+# Proposed in manager synthesis and retained with resolution status to explain interactions between dimensions.
 class AssessmentLink(Contract):
     kind: Literal["overlap", "tradeoff", "contradiction"]
     finding_refs: list[str] = Field(min_length=2, max_length=12)
@@ -122,6 +140,8 @@ class AssessmentLink(Contract):
     status: Literal["observed", "unresolved", "resolved"] = "observed"
 
 
+# Manager-level resolution proposal: cites the coordinator invocation and evidence supporting closure of a gap.
+# Returned in AssessmentSynthesis and checked by the host before marking a coverage gap as resolved.
 class GapResolution(Contract):
     gap_id: str
     invocation_id: str
@@ -129,6 +149,8 @@ class GapResolution(Contract):
     rationale: str = Field(min_length=1, max_length=2000)
 
 
+# Manager synthesis draft: combines an overall summary, cross-assessment links, gaps and resolution proposals.
+# The model returns it in synthesize_assessments; the manager validates references before updating state.
 class AssessmentSynthesis(Contract):
     summary: str = Field(max_length=3000)
     links: list[AssessmentLink] = Field(default_factory=list, max_length=24)
@@ -136,6 +158,8 @@ class AssessmentSynthesis(Contract):
     resolutions: list[GapResolution] = Field(default_factory=list, max_length=16)
 
 
+# Coverage/routing decision: records sufficiency, covered/required dimensions and actionable follow-up gaps.
+# Calculated by the manager after synthesis; yes finalizes the audit and no routes to follow-up planning.
 class CoverageDecision(Contract):
     route: Literal["yes", "no"]
     sufficient: bool
@@ -146,6 +170,8 @@ class CoverageDecision(Contract):
     can_follow_up: bool
 
 
+# Manager round history: preserves the draft, coverage decision and gap state for one synthesis round.
+# Accumulated in synthesis_history so the final report explains why delegation continued or stopped.
 class SynthesisRound(Contract):
     round: int
     draft: AssessmentSynthesis | None
@@ -153,6 +179,8 @@ class SynthesisRound(Contract):
     gaps: list[CoverageGap] = Field(default_factory=list)
 
 
+# General manager output: parameterizes scope, coverage, child assessments, links, gaps, limits and history.
+# Retains indexed findings/evidence and accounting; concrete managers bind the hierarchy-specific types.
 class ManagerResult[
     ScopeT: Contract,
     CoverageT: Contract,
@@ -193,6 +221,8 @@ class ManagerResult[
     ignored_responses: list[str]
 
 
+# Final maintainability report: binds the manager envelope to modularity/reusability scope and assessments.
+# finalize_audit returns it from MaintainabilityManagerAgent.run(), preserving provenance and partial failures.
 class MaintainabilityReport(ManagerResult[
     ScopeAssessment, CoverageDecision, AuditAssignment, CoordinatorAssessment,
     AssessmentLink, CoverageGap, MaintainabilityConfig, SynthesisRound,

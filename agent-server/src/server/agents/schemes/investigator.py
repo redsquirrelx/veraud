@@ -18,9 +18,11 @@ from .base import (
     TargetContext,
 )
 
+# Public names for the shared investigator envelope; each denotes the same class.
 InvestigatorResult = AuditResult
 
 
+# Default design-principle criteria for the responsibility investigator's request.
 def responsibility_criteria():
     return [Criterion(
         id=identifier, description=description, origin="design_principle",
@@ -33,11 +35,15 @@ def responsibility_criteria():
     )]
 
 
+# Responsibility investigation input: supplies the objective and cohesion/separation/placement criteria.
+# Consumed by agents/maintainability/modularity/responsibility/ when investigating scoped components.
 class ResponsibilityRequest(AuditRequest):
     objective: str = "Do components group coherent responsibilities or mix incompatible functionality?"
     criteria: list[Criterion] = Field(default_factory=responsibility_criteria, max_length=40)
 
 
+# Observed responsibility: groups behaviors and possible reasons to change, with evidence on both sides.
+# The responsibility investigator uses these records inside each ComponentAssessment.
 class Responsibility(Contract):
     id: str = Field(min_length=1)
     description: str = Field(min_length=1)
@@ -47,12 +53,16 @@ class Responsibility(Contract):
     contradicting_evidence_ids: list[str] = Field(default_factory=list)
 
 
+# Conflict between responsibilities: explains independent change reasons and the resulting maintenance risk.
+# Included in ComponentAssessment when the responsibility investigator identifies incompatible concerns.
 class ResponsibilityConflict(Contract):
     responsibility_ids: list[str] = Field(min_length=2)
     independent_change_rationale: str = Field(min_length=1)
     maintenance_risk: str = Field(min_length=1)
 
 
+# Technical component analysis: associates responsibilities and conflicts with a real repository component ID.
+# Produced in ResponsibilityEvaluation, then source-validated into InvestigatedComponent during finalization.
 class ComponentAssessment(Contract):
     id: str = Field(min_length=1)
     component_id: str = Field(min_length=1, description="An actual file or symbol ID returned by repository tools.")
@@ -63,21 +73,29 @@ class ComponentAssessment(Contract):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+# Proposed responsibility finding: cites the analyses behind it and identifies its evidential basis.
+# Emitted by the responsibility investigator's evaluate_evidence before review and host validation.
 class ResponsibilityCandidate(CandidateFinding):
     assessment_ids: list[str] = Field(min_length=1)
     basis: Literal["behavioral", "metrics_only", "names_only"]
 
 
+# Responsibility iteration output: combines typed finding candidates with component-level analyses.
+# evaluate_evidence returns it to the shared investigator runtime for review or further investigation.
 class ResponsibilityEvaluation(Evaluation):
     candidates: list[ResponsibilityCandidate]
     component_assessments: list[ComponentAssessment]
 
 
+# Final responsibility finding: retains the reviewed judgment, analysis IDs and the claim's basis.
+# Returned in ResponsibilityResult and preserved as a contribution by the modularity coordinator.
 class ResponsibilityFinding(Finding):
     assessment_ids: list[str]
     basis: Literal["behavioral", "metrics_only", "names_only"]
 
 
+# Host-enriched component analysis: resolves file/symbol location and evidence, recording validation issues.
+# Built by the responsibility investigator's finalize step and retained even when evidence is insufficient.
 class InvestigatedComponent(ComponentAssessment):
     path: str
     file_id: str
@@ -87,6 +105,8 @@ class InvestigatedComponent(ComponentAssessment):
     validation_issues: list[str]
 
 
+# Responsibility investigator output: extends the common report with inspected components and uncertainties.
+# Returned by ResponsibilityAgent.run() and validated by the modularity coordinator during collection.
 class ResponsibilityResult(AuditResult):
     findings: list[ResponsibilityFinding]
     components_investigated: list[InvestigatedComponent] = Field(default_factory=list)
@@ -94,6 +114,8 @@ class ResponsibilityResult(AuditResult):
     inconclusive_investigations: list[str] = Field(default_factory=list)
 
 
+# Architectural-boundary input: supplies the boundary objective and default design-principle criterion.
+# Consumed by agents/maintainability/modularity/architecture_boundary/; its output uses AuditResult directly.
 class ArchitectureBoundaryRequest(AuditRequest):
     model_config = ConfigDict(title="AuditRequest")
 
@@ -105,13 +127,16 @@ class ArchitectureBoundaryRequest(AuditRequest):
     )], max_length=40)
 
 
+# Separates demonstrated dependency harm from plausible risk, no observed impact or uncertainty.
 ImpactKind = Literal["demonstrated", "plausible_risk", "none", "inconclusive"]
+# Records the basis of a dependency finding so metrics or graph shape are not treated as consequences.
 FindingBasis = Literal[
     "consequence_evidence", "metrics_only", "cycle_only", "transitivity_only",
     "interface_shape_only", "dependency_existence_only",
 ]
 
 
+# Default criteria for concrete coupling, change propagation and justified dependency relationships.
 def dependency_impact_criteria():
     return [Criterion(
         id=identifier, description=description, origin="design_principle",
@@ -126,11 +151,15 @@ def dependency_impact_criteria():
     )]
 
 
+# Dependency-impact input: defines the investigation objective and maintenance-consequence criteria.
+# Consumed by agents/maintainability/modularity/dependency_impact/ before inspecting graph and source evidence.
 class DependencyImpactRequest(AuditRequest):
     objective: str = "Do identified dependencies create coupling harmful to independent maintenance?"
     criteria: list[Criterion] = Field(default_factory=dependency_impact_criteria, max_length=40)
 
 
+# Observed dependency: names actual source/target IDs and the indexed relationship when it is resolved.
+# Used within dependency-impact analyses to distinguish graph facts from inferred runtime behavior.
 class DependencyLink(Contract):
     id: str = Field(min_length=1)
     source_id: str = Field(min_length=1, description="Actual source file/symbol ID, not its name.")
@@ -140,6 +169,8 @@ class DependencyLink(Contract):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+# Technical impact analysis: connects dependency paths to change scenarios, consequences and counterevidence.
+# The dependency-impact investigator produces it during evaluation; finalize resolves its references.
 class DependencyAssessment(Contract):
     id: str = Field(min_length=1)
     hypothesis_id: str = Field(min_length=1)
@@ -159,21 +190,29 @@ class DependencyAssessment(Contract):
     limitations: list[str] = Field(default_factory=list)
 
 
+# Proposed dependency-impact finding: references the supporting analyses and labels the claim's basis.
+# Emitted in DependencyImpactEvaluation, then reviewed and checked against retained repository evidence.
 class DependencyImpactCandidate(CandidateFinding):
     assessment_ids: list[str] = Field(min_length=1)
     basis: FindingBasis
 
 
+# Dependency-impact iteration output: carries typed candidates alongside their causal analyses.
+# Used by evaluate_evidence and the shared runtime to decide whether investigation can conclude.
 class DependencyImpactEvaluation(Evaluation):
     candidates: list[DependencyImpactCandidate]
     dependency_assessments: list[DependencyAssessment]
 
 
+# Reviewed dependency-impact finding: retains analysis references and whether its basis supports the claim.
+# Returned in DependencyImpactResult and consumed by modularity coordination and manager consolidation.
 class DependencyImpactFinding(Finding):
     assessment_ids: list[str]
     basis: FindingBasis
 
 
+# Resolved endpoint location: identifies a repository component, file and optional symbol.
+# The dependency-impact finalizer attaches it to both endpoints of an InvestigatedDependency.
 class DependencyComponentReference(Contract):
     model_config = ConfigDict(title="ComponentReference")
 
@@ -183,6 +222,8 @@ class DependencyComponentReference(Contract):
     symbol_name: str | None = None
 
 
+# Host-enriched dependency: resolves both endpoint locations, evidence references and validation problems.
+# Included in InvestigatedImpact so dependency-impact reports expose what was actually verified.
 class InvestigatedDependency(DependencyLink):
     source: DependencyComponentReference
     target: DependencyComponentReference
@@ -191,6 +232,8 @@ class InvestigatedDependency(DependencyLink):
     validation_issues: list[str]
 
 
+# Finalized impact analysis: adds verified dependencies, evidence, cycle information and validation status.
+# Built during dependency-impact finalization and retained in DependencyImpactResult.dependency_assessments.
 class InvestigatedImpact(DependencyAssessment):
     dependencies: list[InvestigatedDependency] = Field(default_factory=list)
     evidence: list[EvidenceReference]
@@ -199,6 +242,8 @@ class InvestigatedImpact(DependencyAssessment):
     validation_issues: list[str]
 
 
+# Dependency-impact report: extends the shared output with resolved endpoints, analyses and uncertainty.
+# Returned by DependencyImpactAgent.run() for validation and consolidation by the modularity coordinator.
 class DependencyImpactResult(AuditResult):
     findings: list[DependencyImpactFinding]
     components_investigated: list[DependencyComponentReference] = Field(default_factory=list)
@@ -207,10 +252,14 @@ class DependencyImpactResult(AuditResult):
     inconclusive_investigations: list[str] = Field(default_factory=list)
 
 
+# Categories of abstraction findings; a useful abstraction may be reported as a design observation.
 Category = Literal["useful_abstraction", "unnecessary_abstraction", "coupling", "missed_reuse"]
+# Basis of an abstraction claim, distinguishing usage evidence from structural or naming-only signals.
 Basis = Literal["usage_evidence", "structure_only", "metrics_only", "names_only"]
 
 
+# Abstraction investigation input: scopes the concrete reuse benefits and costs of abstraction boundaries.
+# Consumed by agents/maintainability/reusability/abstraction/ with optional file/component targets.
 class AbstractionRequest(AuditRequest):
     objective: str = "Do abstractions facilitate reuse, or introduce unnecessary complexity and coupling?"
     targets: list[str] = Field(default_factory=list, max_length=20)
@@ -221,6 +270,8 @@ class AbstractionRequest(AuditRequest):
     )], max_length=40)
 
 
+# Indexed abstraction candidate: records a declaration's location and available relationship IDs.
+# Discovery supplies it to the abstraction investigator and records selected candidates in coverage.
 class AbstractionCandidateTarget(Contract):
     component_id: str
     path: str
@@ -231,6 +282,8 @@ class AbstractionCandidateTarget(Contract):
     relationship_ids: list[str]
 
 
+# Abstraction participant: explains a component's role and its evidence-backed relationship to a declaration.
+# Used in AbstractionAssessment to connect contracts, implementations, consumers, tests and alternatives.
 class Participant(Contract):
     component_id: str
     role: Literal["consumer", "implementation", "delegate", "contract", "duplicate", "composition", "test"]
@@ -239,6 +292,8 @@ class Participant(Contract):
     usage_explanation: str = Field(min_length=1, max_length=2000)
 
 
+# Technical abstraction analysis: weighs observed use, variation, indirection, coupling and counterevidence.
+# Produced by the abstraction investigator's evaluation step; it is not a coordinator-level assessment.
 class AbstractionAssessment(Contract):
     id: str
     hypothesis_id: str
@@ -260,17 +315,23 @@ class AbstractionAssessment(Contract):
     limitations: list[str] = Field(default_factory=list, max_length=16)
 
 
+# Proposed abstraction finding: binds a category and evidential basis to the relevant technical analyses.
+# Appears in AbstractionEvaluation before shared review and abstraction-specific host checks.
 class AbstractionCandidate(CandidateFinding):
     category: Category
     assessment_ids: list[str] = Field(min_length=1, max_length=12)
     basis: Basis
 
 
+# Abstraction iteration output: pairs proposed findings with the technical assessments supporting them.
+# Returned by the abstraction investigator's evaluate_evidence and retained for review/finalization.
 class AbstractionEvaluation(Evaluation):
     candidates: list[AbstractionCandidate]
     abstraction_assessments: list[AbstractionAssessment] = Field(max_length=40)
 
 
+# Resolved abstraction location: carries the component/file IDs, path and nullable symbol name.
+# Used by the abstraction finalizer to locate declarations and inspected participants in the report.
 class AbstractionComponentReference(Contract):
     model_config = ConfigDict(title="ComponentReference")
 
@@ -280,12 +341,16 @@ class AbstractionComponentReference(Contract):
     symbol_name: str | None
 
 
+# Host-enriched participant: adds its resolved component, actual evidence and reference-validation issues.
+# Included in InvestigatedAbstraction when the abstraction investigator finalizes an assessment.
 class InspectedParticipant(Participant):
     component: AbstractionComponentReference
     evidence: list[EvidenceReference]
     validation_issues: list[str]
 
 
+# Finalized abstraction analysis: resolves the declaration and participants and records evidence sufficiency.
+# Retained in AbstractionResult to preserve technical reasoning even when it cannot support a finding.
 class InvestigatedAbstraction(AbstractionAssessment):
     declaration: AbstractionComponentReference | None
     participants: list[InspectedParticipant]
@@ -294,6 +359,8 @@ class InvestigatedAbstraction(AbstractionAssessment):
     validation_issues: list[str]
 
 
+# Reviewed abstraction finding: preserves category, analysis IDs, basis and any duplicate-of relationship.
+# Returned in AbstractionResult and used as a typed contribution by the reusability coordinator.
 class AbstractionFinding(Finding):
     category: Category
     assessment_ids: list[str]
@@ -301,6 +368,8 @@ class AbstractionFinding(Finding):
     duplicate_of: str | None = None
 
 
+# Abstraction coverage record: distinguishes selected/assessed declarations from omitted or unassessed ones.
+# The abstraction investigator attaches it to its result so bounded inspection is not mistaken for exhaustiveness.
 class AbstractionCoverage(Contract):
     targets: list[str] = Field(default_factory=list)
     selected_candidates: list[AbstractionCandidateTarget] = Field(default_factory=list)
@@ -312,6 +381,8 @@ class AbstractionCoverage(Contract):
     exhaustive: bool = False
 
 
+# Abstraction investigator output: includes reviewed findings, technical analyses, coverage and tool failures.
+# Returned by AbstractionAgent.run(); its investigator discriminator selects this type in reusability collection.
 class AbstractionResult(AuditResult):
     findings: list[AbstractionFinding]
     investigator: Literal["AbstractionAgent"] = "AbstractionAgent"
@@ -323,20 +394,27 @@ class AbstractionResult(AuditResult):
     tool_failures: list[str] = Field(default_factory=list)
 
 
+# Qualifies whether a shared implementation is advisable, conditional or unsuitable for an examined group.
 Classification = Literal["recommended", "conditional", "not_recommended"]
 
 
+# Reuse-opportunity inspection routes: request more tool interaction or proceed to validation.
+# Used by the reuse-opportunity graph while examining discovered implementation groups.
 class ReuseInspectRoute(StrEnum):
     USE_TOOLS = "use_tools"
     VALIDATE = "validate"
 
 
+# Reuse-opportunity validation routes: inspect again, finalize normally or finalize with limitations.
+# Used after evidence checks to bound investigation and make incomplete termination explicit.
 class ReuseValidationRoute(StrEnum):
     INSPECT = "inspect"
     FINALIZE = "finalize"
     LIMITED_FINALIZE = "limited_finalize"
 
 
+# Reuse-opportunity input: asks whether similar responsibilities can share an implementation safely.
+# Consumed by agents/maintainability/reusability/reuse_opportunity/ to scope discovery and comparison.
 class ReuseOpportunityRequest(AuditRequest):
     objective: str = "Do conceptually similar functionalities exist that could share an implementation?"
     targets: list[str] = Field(default_factory=list, max_length=20)
@@ -347,6 +425,8 @@ class ReuseOpportunityRequest(AuditRequest):
     )], max_length=40)
 
 
+# Indexed implementation location: identifies component/file IDs, symbol, language and source range.
+# Reuse discovery groups these records so later analysis can retrieve the exact candidate implementations.
 class CandidateLocation(Contract):
     component_id: str
     file_id: str
@@ -357,12 +437,16 @@ class CandidateLocation(Contract):
     language: str
 
 
+# Discovery group: associates candidate implementations with the signals that made them worth comparing.
+# Supplied to reuse-opportunity inspection and preserved in DiscoveryCoverage.selected_groups.
 class ReuseGroup(Contract):
     id: str
     members: list[CandidateLocation]
     discovery_signals: list[str]
 
 
+# Implementation semantics: records purpose, contracts, effects, failure behavior and dependencies with evidence.
+# Two such records form the core comparison inside a reuse-opportunity ReuseAssessment.
 class ImplementationComparison(Contract):
     component_id: str
     evidence_ids: list[str] = Field(max_length=24)
@@ -375,6 +459,8 @@ class ImplementationComparison(Contract):
     invariants: str = Field(min_length=1, max_length=1500)
 
 
+# Caller constraints: links an implementation to an actual caller/relationship and supporting evidence.
+# The reuse-opportunity investigator uses it to check whether sharing would preserve real usage constraints.
 class CallerInspection(Contract):
     implementation_id: str
     caller_id: str
@@ -383,6 +469,8 @@ class CallerInspection(Contract):
     constraints: str = Field(min_length=1, max_length=1500)
 
 
+# Technical reuse comparison: weighs exactly two implementations, their callers, benefits, differences and risks.
+# Produced during reuse-opportunity evaluation; it is a local analysis rather than a coordinator report.
 class ReuseAssessment(Contract):
     group_id: str
     hypothesis_id: str
@@ -402,16 +490,22 @@ class ReuseAssessment(Contract):
     limitations: list[str] = Field(default_factory=list, max_length=16)
 
 
+# Proposed reuse finding: references the examined group and qualifies whether sharing is advisable.
+# Included in ReuseEvaluation, then reviewed and checked against the group's technical assessment.
 class ReuseCandidate(CandidateFinding):
     group_id: str
     classification: Classification
 
 
+# Reuse-opportunity iteration output: combines typed candidates with the implementation-group assessments.
+# Returned by evaluate_evidence to guide validation, further inspection and finalization.
 class ReuseEvaluation(Evaluation):
     candidates: list[ReuseCandidate]
     group_assessments: list[ReuseAssessment] = Field(max_length=20)
 
 
+# Host-enriched group analysis: attaches candidate locations, resolved evidence and validation outcomes.
+# Built by the reuse-opportunity finalizer and retained in ReuseOpportunityResult.examined_groups.
 class ExaminedGroup(ReuseAssessment):
     members: list[CandidateLocation]
     evidence: list[EvidenceReference]
@@ -419,6 +513,8 @@ class ExaminedGroup(ReuseAssessment):
     validation_status: Literal["source_backed", "insufficient_evidence"]
 
 
+# Reviewed reuse finding: preserves group classification, stable identity and duplicate-of relationships.
+# Included in ReuseOpportunityResult and consolidated by the reusability coordinator.
 class ReuseFinding(Finding):
     group_id: str
     classification: Classification
@@ -426,6 +522,8 @@ class ReuseFinding(Finding):
     duplicate_of: str | None = None
 
 
+# Reuse discovery coverage: counts eligible/shortlisted symbols, comparisons, omissions and unassessed groups.
+# Included in the reuse-opportunity result to expose the limits of the search and inspected scope.
 class DiscoveryCoverage(Contract):
     indexed_eligible_symbols: int
     shortlisted_symbols: int
@@ -439,6 +537,8 @@ class DiscoveryCoverage(Contract):
     exhaustive: bool = False
 
 
+# Reuse-opportunity output: retains findings, examined groups, coverage, tool failures and execution trace.
+# Returned by ReuseOpportunityAgent.run() and discriminated by investigator during reusability collection.
 class ReuseOpportunityResult(AuditResult):
     investigator: Literal["ReuseOpportunityAgent"] = "ReuseOpportunityAgent"
     quality_attribute: Literal["reusability"] = "reusability"
@@ -450,33 +550,44 @@ class ReuseOpportunityResult(AuditResult):
     execution_trace: list[str] = Field(default_factory=list)
 
 
+# Root categories used to classify concrete component-adaptation constraints.
 ConstraintType = Literal[
     "infrastructure", "environment", "global_state", "framework", "configuration",
     "side_effects", "interface", "dependency_injection", "platform", "data_schema",
 ]
+# Separates verified obstacles and context-qualified risks from mitigated or unresolved constraints.
 Conclusion = Literal["verified_obstacle", "context_dependent_risk", "mitigated", "unknown"]
+# Repository tools allowed in structured inspection requests from the adaptability investigator.
 ToolName = Literal[
     "list_files", "find_symbols", "list_relationships", "get_source_excerpt",
     "search_repository_text", "get_evidence", "get_infrastructure",
 ]
 
 
+# Adaptability inspection routes: request repository tools or proceed to evidence validation.
+# InspectionDecision uses these values to control the component-adaptability inspection node.
 class AdaptabilityInspectRoute(StrEnum):
     USE_TOOLS = "use_tools"
     VALIDATE = "validate"
 
 
+# Adaptability validation routes: inspect further, finalize or finalize with explicit limitations.
+# Consumed by the adaptability graph after checking current evidence and investigation blockers.
 class AdaptabilityValidationRoute(StrEnum):
     INSPECT = "inspect"
     FINALIZE = "finalize"
     LIMITED_FINALIZE = "limited_finalize"
 
 
+# Structured tool request: restricts the tool name and carries its arguments as bounded JSON text.
+# The adaptability investigator emits it inside InspectionDecision for host-side tool execution.
 class InspectionToolRequest(Contract):
     name: ToolName
     arguments_json: str = Field(min_length=2, max_length=4000)
 
 
+# Inspection-step decision: requires tool requests for use_tools and forbids them when choosing validate.
+# Produced by the adaptability investigator's investigate step before tool execution or validation.
 class InspectionDecision(Contract):
     action: AdaptabilityInspectRoute
     tool_requests: list[InspectionToolRequest] = Field(default_factory=list, max_length=8)
@@ -488,6 +599,8 @@ class InspectionDecision(Contract):
         return self
 
 
+# Adaptability input: combines component/file targets with an optional explicitly supplied destination context.
+# Consumed by agents/maintainability/reusability/component_adaptability/ without inheriting another domain's request.
 class ComponentAdaptabilityRequest(AuditRequest, TargetContext):
     objective: str = "Which constraints make a component difficult to reuse in another context?"
     targets: list[str] = Field(default_factory=list, max_length=20)
@@ -499,12 +612,16 @@ class ComponentAdaptabilityRequest(AuditRequest, TargetContext):
     )], max_length=40)
 
 
+# Indexed adaptation signal: records a constraint category, source line and discovery rule.
+# Discovery attaches these hints to ComponentTarget; later source inspection determines their significance.
 class DiscoverySignal(Contract):
     constraint_type: ConstraintType
     line: int
     rule: str
 
 
+# Inspectable adaptability target: locates a component's source range and the signals selecting it.
+# Used by component-adaptability discovery, inspection and the finalized constraint report.
 class ComponentTarget(Contract):
     component_id: str
     file_id: str
@@ -515,6 +632,8 @@ class ComponentTarget(Contract):
     signals: list[DiscoverySignal]
 
 
+# Observed component usage: links a caller/relationship to instantiation or configuration evidence.
+# Included in ConstraintAssessment to test how a proposed adaptation obstacle affects actual consumers.
 class UsageInspection(Contract):
     caller_id: str
     relationship_id: str
@@ -522,6 +641,8 @@ class UsageInspection(Contract):
     instantiation_configuration: str = Field(min_length=1, max_length=2000)
 
 
+# Technical adaptation analysis: relates a root constraint to a stated context, impact, seams and counterevidence.
+# Produced in adaptability evaluation; explicit/plausible context and unknowns qualify the interpretation.
 class ConstraintAssessment(Contract):
     id: str
     component_id: str
@@ -546,12 +667,16 @@ class ConstraintAssessment(Contract):
     limitations: list[str] = Field(default_factory=list, max_length=16)
 
 
+# Proposed adaptation finding: cites constraint analyses and distinguishes verified obstacles from contextual risks.
+# Produced in AdaptabilityEvaluation before review and context/evidence validation by the host.
 class AdaptabilityCandidate(CandidateFinding):
     assessment_ids: list[str] = Field(min_length=1, max_length=16)
     constraint_type: ConstraintType
     classification: Literal["verified_obstacle", "context_dependent_risk"]
 
 
+# Adaptability iteration output: carries candidates, constraint analyses, cleared components and coverage rationale.
+# evaluate_evidence returns it; its validator requires a concrete reason when further investigation is blocked.
 class AdaptabilityEvaluation(Evaluation):
     candidates: list[AdaptabilityCandidate]
     constraint_assessments: list[ConstraintAssessment] = Field(max_length=40)
@@ -567,6 +692,8 @@ class AdaptabilityEvaluation(Evaluation):
         return self
 
 
+# Host-enriched constraint analysis: attaches the resolved target, evidence and validation issues/status.
+# Built during adaptability finalization and preserved in ComponentAdaptabilityResult.examined_constraints.
 class ExaminedConstraint(ConstraintAssessment):
     component: ComponentTarget | None
     evidence: list[EvidenceReference]
@@ -574,6 +701,8 @@ class ExaminedConstraint(ConstraintAssessment):
     validation_status: Literal["source_backed", "insufficient_evidence"]
 
 
+# Reviewed adaptation finding: retains context-qualified impact/effort, assumptions, mitigations and duplicate identity.
+# Returned in ComponentAdaptabilityResult and used by the reusability coordinator without losing context.
 class AdaptabilityFinding(Finding):
     assessment_ids: list[str]
     constraint_type: ConstraintType
@@ -587,6 +716,8 @@ class AdaptabilityFinding(Finding):
     mitigation_options: list[str] = Field(default_factory=list)
 
 
+# Adaptability coverage: records eligible/selected/omitted components, file-scan truncation and unassessed targets.
+# Included in the investigator's result to distinguish bounded inspection from exhaustive coverage.
 class AdaptabilityCoverage(Contract):
     selected_components: list[ComponentTarget]
     eligible_components: int
@@ -599,6 +730,8 @@ class AdaptabilityCoverage(Contract):
     exhaustive: bool = False
 
 
+# Tool telemetry entry: records a call ID, tool, outcome, elapsed time and cache use.
+# The adaptability investigator adds these entries to its final output to explain inspection activity.
 class ToolActivity(Contract):
     call_id: str
     tool: str
@@ -607,6 +740,8 @@ class ToolActivity(Contract):
     cache_hit: bool
 
 
+# Adaptability output: retains context, findings, examined constraints, coverage, blockers and execution telemetry.
+# Returned by ComponentAdaptabilityAgent.run() and validated as a concrete investigator result by reusability coordination.
 class ComponentAdaptabilityResult(AuditResult):
     investigator: Literal["ComponentAdaptabilityAgent"] = "ComponentAdaptabilityAgent"
     quality_attribute: Literal["reusability"] = "reusability"
