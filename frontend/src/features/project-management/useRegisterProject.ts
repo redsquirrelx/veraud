@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ApiError, registerProject, type RegisteredProject } from "../../infrastructure/http-client/httpClient.ts"
 
 export type RegisterState = "idle" | "loading" | "success" | "error"
@@ -11,6 +12,7 @@ function isTimeout(error: unknown): boolean {
 const SUBMIT_COOLDOWN_MS = 2000
 
 export function useRegisterProject(options?: { onRegistered?: () => void; shallowClone?: boolean }) {
+  const { t } = useTranslation("projects")
   const [url, setUrl] = useState("")
   const [cooling, setCooling] = useState(false)
   const [state, setState] = useState<RegisterState>("idle")
@@ -60,7 +62,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
         return
       }
       setProject(created)
-      setMessage(`Project ${created.repositoryOwner}/${created.repositoryName} registered`)
+      setMessage(t("registration.registered", { name: `${created.repositoryOwner}/${created.repositoryName}` }))
       setState("success")
       options?.onRegistered?.()
     } catch (error) {
@@ -71,12 +73,12 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
       if (error instanceof ApiError) {
         setMessage(error.message)
       } else if (isTimeout(error)) {
-        setMessage("The request took too long and was cancelled")
+        setMessage(t("registration.errors.timeout"))
       } else if (error instanceof TypeError) {
-        setMessage("Could not connect to the backend")
+        setMessage(t("registration.errors.network"))
       } else {
         console.log(error)
-        setMessage("Unexpected error")
+        setMessage(t("registration.errors.unexpected"))
       }
       setState("error")
     } finally {

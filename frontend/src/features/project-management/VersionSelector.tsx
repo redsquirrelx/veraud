@@ -1,6 +1,7 @@
+import { useTranslation } from "react-i18next"
 import { FilterTabs, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
 import type { VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
-import { analyzedLabel } from "./useAnalyzedVersions.ts"
+import { analyzedLabel, derivedStatusLabelKey } from "./useAnalyzedVersions.ts"
 import type { useVersionSelector } from "./useVersionSelector.ts"
 import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import "./VersionSelector.css"
@@ -25,11 +26,12 @@ export interface AnalyzedSelection {
 }
 
 export function VersionLocation({ selection }: { selection: Selection }) {
+  const { t } = useTranslation("projects")
   if (selection.detached !== null) {
-    return <span className="label version-state">(HEAD detached at {selection.detached}) - select a branch to re-attach</span>
+    return <span className="label version-state">{t("version.detachedNotice", { hash: selection.detached })}</span>
   }
   return selection.applied === null ? null : <span className="label version-state">
-    On {selection.applied.branch} at {selection.applied.commitHash.slice(0, 7)}
+    {t("version.appliedNotice", { branch: selection.applied.branch, shortHash: selection.applied.commitHash.slice(0, 7) })}
   </span>
 }
 
@@ -41,27 +43,32 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
   analyzed?: AnalyzedSelection
   showLocation?: boolean
 }) {
+  const { t } = useTranslation("projects")
   const current = mode ?? "git"
   const analyzeButton = analysis === undefined ? null : (
     <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
   )
+  const translateDerivedStatus = (status: string) => {
+    const key = derivedStatusLabelKey(status)
+    return key === null ? status : t(key)
+  }
 
   return (
     <div className="version-selector">
       {analyzed !== undefined && (
         <FilterTabs
-          label="Version source"
+          label={t("version.sourceLabel")}
           options={[
-            { id: "git", label: "Git", count: 0 },
-            { id: "analyzed", label: "Analyzed", count: analyzed.versions.length },
+            { id: "git", label: t("version.git"), count: 0 },
+            { id: "analyzed", label: t("version.analyzed"), count: analyzed.versions.length },
           ]}
           value={current}
           onChange={(id) => onModeChange?.(id as VersionMode)}
         />
       )}
       {(selection.loadingBranches || selection.applying || selection.error !== "" || (showLocation && (selection.detached !== null || selection.applied !== null))) && <div className="version-row version-state-row">
-      {selection.loadingBranches && <span className="label version-state">Loading branches</span>}
-      {selection.applying && <span className="label version-state">Applying version</span>}
+      {selection.loadingBranches && <span className="label version-state">{t("version.loadingBranches")}</span>}
+      {selection.applying && <span className="label version-state">{t("version.applying")}</span>}
       {selection.error !== "" && <span className="label version-state">{selection.error}</span>}
 
         {showLocation && <VersionLocation selection={selection} />}
@@ -70,14 +77,14 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
       {current === "analyzed" && analyzed !== undefined ? (
         <div className="version-row">
           <ItemSelector
-            items={analyzed.versions.map((version) => ({ id: String(version.id), label: analyzedLabel(version) }))}
+            items={analyzed.versions.map((version) => ({ id: String(version.id), label: analyzedLabel(version, translateDerivedStatus) }))}
             selectedId={analyzed.selectedId === null ? null : String(analyzed.selectedId)}
             onSelect={(id) => analyzed.onSelect(Number(id))}
             hasMore={false}
             onLoadMore={() => {}}
-            emptyText="No analyzed versions yet"
-            placeholder="Select an analyzed version"
-            label="Analyzed version"
+            emptyText={t("version.analyzedEmpty")}
+            placeholder={t("version.analyzedPlaceholder")}
+            label={t("version.analyzedLabel")}
             loading={analyzed.loading}
             onOpen={() => analyzed.onRefresh()}
           />
@@ -91,9 +98,9 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           onSelect={(name) => void selection.changeBranch(name)}
           hasMore={false}
           onLoadMore={() => {}}
-          emptyText="No branches found"
-          placeholder={selection.detached === null ? "Select a branch" : `(HEAD detached at ${selection.detached})`}
-          label="Branch"
+          emptyText={t("version.branchesEmpty")}
+          placeholder={selection.detached === null ? t("version.branchPlaceholder") : t("version.branchDetachedPlaceholder", { hash: selection.detached })}
+          label={t("version.branchLabel")}
           loading={selection.loadingBranches}
           onOpen={() => void selection.refreshBranches()}
         />
@@ -108,9 +115,9 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           onSelect={(hash) => void selection.stageCommit(hash)}
           hasMore={false}
           onLoadMore={() => {}}
-          emptyText="No commits found"
+          emptyText={t("version.commitsEmpty")}
           placeholder=""
-          label="Commit"
+          label={t("version.commitLabel")}
           loading={selection.loadingCommits}
           disabled={selection.detached !== null || selection.applying}
         />

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useTranslation, Trans } from "react-i18next"
 import { Checkbox, Panel } from "../../shared/ui-kit/index.ts"
 import { ProjectList } from "../../features/project-management/ProjectList.tsx"
 import { ProjectRegistrationForm } from "../../features/project-management/ProjectRegistrationForm.tsx"
@@ -11,6 +12,7 @@ import "./HomePage.css"
 const SHALLOW_CLONE_KEY = "projects.shallowClone"
 
 export function HomePage() {
+  const { t } = useTranslation("projects")
   const [shallowClone, setShallowClone] = useState(() => {
     const stored = localStorage.get<unknown>(SHALLOW_CLONE_KEY, null)
     if (typeof stored === "boolean") return stored
@@ -47,17 +49,16 @@ export function HomePage() {
     <section className="page">
       <div className="home-heading">
         <div>
-          <h1>Projects and repositories</h1>
+          <h1>{t("home.title")}</h1>
           <p>
-            Continuous autonomous supervision of quality attributes under <strong>ISO/IEC 25010</strong>:
-            Performance, Maintainability, Operational Security and Functional Adequacy.
+            <Trans ns="projects" i18nKey="home.description" components={{ strong: <strong /> }} />
           </p>
         </div>
       </div>
       <Panel>
         <ProjectRegistrationForm registration={registration} />
         <div className="home-clone-options">
-          <Checkbox label="Shallow clone" checked={shallowClone} onChange={setShallowClone} />
+          <Checkbox label={t("home.shallowClone")} checked={shallowClone} onChange={setShallowClone} />
         </div>
       </Panel>
       <ProjectList listing={listing} />
