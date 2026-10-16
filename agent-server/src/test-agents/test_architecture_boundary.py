@@ -16,15 +16,15 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from server.agents.maintainability.architecture_boundary import (
+from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,
     Criterion,
 )
-from server.agents.repository_runtime.context import RepositoryContext
-from server.agents.repository_runtime.schemas import ExecutionBudget, RepositoryInput
-from server.agents.repository_runtime.tools import RepositoryToolset
+from server.runtimes.repository.context import RepositoryContext
+from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput
+from server.runtimes.repository.tools import RepositoryToolset
 from server.services.repository_analysis import RepositoryAnalysisService
 
 PLAN = {"objectives": ["Inspect domain boundary"], "components": ["domain", "storage"],

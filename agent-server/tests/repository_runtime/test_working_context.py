@@ -5,16 +5,16 @@ import json
 
 import pytest
 
-from server.agents.project_architecture import ProjectArchitectureAgent
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.agents.repository_runtime.working_context import (
+from server.runtimes.repository.working_context import (
     WorkingContext,
     source_arguments,
     source_view,
@@ -52,12 +52,12 @@ def test_large_metadata_does_not_hide_source_or_repeat_initial_prompt(
     tools, monkeypatch, role
 ):
     if role == "orientation":
-        import server.agents.project_orientation.agent as module
+        import server.agents.project_analysis.project_orientation.agent as module
 
         agent_type = ProjectOrientationAgent
         marker = "\nORIENTATION_DATA\n"
     else:
-        import server.agents.project_architecture.agent as module
+        import server.agents.project_analysis.project_architecture.agent as module
 
         agent_type = ProjectArchitectureAgent
         marker = "\nARCHITECTURE_DATA\n"
@@ -301,7 +301,7 @@ def test_rejected_request_reports_sizes_and_budget_without_submitting(
     events = []
     options = {}
     if agent_type is ProjectArchitectureAgent:
-        from server.agents.project_architecture.schemas import ArchitectureLimits
+        from server.agents.project_analysis.project_architecture.schemas import ArchitectureLimits
 
         options["limits"] = ArchitectureLimits(soft_token_budgets=False)
     result = asyncio.run(

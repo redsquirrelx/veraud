@@ -5,8 +5,8 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from server.agents.repository_runtime.model_runtime import ModelGateway
-from server.agents.repository_runtime.schemas import ExecutionBudget
+from server.runtimes.repository.model_runtime import ModelGateway
+from server.runtimes.repository.schemas import ExecutionBudget
 from server.api.schemas import ExecutionConfig
 from server.app.execution_service import AgentExecutionService
 from server.app.pipeline_service import GenericPipelineService, GenericReportingHooks
@@ -170,8 +170,8 @@ def test_retry_usage_keeps_unknown_attempts_separate_from_reported_counts():
 
 
 def test_real_project_pipeline_reports_each_stage_and_closes_validation_last(tmp_path, monkeypatch):
-    from server.agents.project_architecture.smoke import ArchitectureSmokeModel
-    from server.agents.project_semantic_validation.smoke import (
+    from server.agents.project_analysis.project_architecture.smoke import ArchitectureSmokeModel
+    from server.agents.project_analysis.project_semantic_validation.smoke import (
         SemanticValidationSmokeModel,
     )
     from server.app import project_architecture_definition as definition

@@ -1,1 +1,1 @@
-"""Specialized maintainability auditors (no coordination layer)."""
+"""Hierarchical maintainability manager, coordinators and investigators."""

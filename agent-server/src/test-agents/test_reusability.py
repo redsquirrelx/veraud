@@ -11,20 +11,20 @@ from types import SimpleNamespace
 import pytest
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.modularity.agent import _Execution
-from server.agents.maintainability.reusability import (
+from server.agents.maintainability.modularity.coordinator.agent import _Execution
+from server.agents.maintainability.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
     ReusabilityConfig,
     ReusabilityRequest,
 )
-from server.agents.maintainability.reusability.agent import (
+from server.agents.maintainability.reusability.coordinator.agent import (
     ReusabilityExecution,
     route_after_synthesis,
 )
-from server.agents.maintainability.reusability.registry import INVESTIGATORS
-from server.agents.maintainability.reusability.schemas import Route
-from server.agents.modularity_runtime.schemas import InvestigationConfig
+from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
+from server.agents.maintainability.reusability.coordinator.schemas import Route
+from server.runtimes.investigation.schemas import InvestigationConfig
 from server.app.tracing_port import NoOpTracingBackend
 
 TARGET = "Offline processing with an injected backend."
@@ -385,8 +385,8 @@ def test_real_three_investigator_graphs_models_only_simulated(repo):
     from test_abstraction import reads as abstraction_reads
     from test_abstraction import review as abstraction_review
 
-    from server.agents.modularity_runtime.provider import ProviderPacer
-    from server.agents.modularity_runtime.schemas import ProviderRateLimits
+    from server.runtimes.investigation.provider import ProviderPacer
+    from server.runtimes.investigation.schemas import ProviderRateLimits
 
     for path, text in {
         "policy.py": "class PricePolicy:\n    def total(self, amounts):\n        return sum(amounts)\n",

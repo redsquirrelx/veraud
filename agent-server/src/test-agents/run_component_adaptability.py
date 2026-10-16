@@ -15,12 +15,12 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.component_adaptability import (
+from server.agents.maintainability.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
     ComponentAdaptabilityConfig,
     ComponentAdaptabilityRequest,
 )
-from server.agents.repository_runtime.model_runtime import close_model_clients
+from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):

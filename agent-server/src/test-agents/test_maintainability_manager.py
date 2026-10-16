@@ -12,20 +12,20 @@ from test_architecture_boundary import NativeStructuredModel, fingerprints, tool
 from test_modularity import factory as modularity_factory
 from test_reusability import factory as reusability_factory
 
-from server.agents.maintainability.maintainability_manager import (
+from server.agents.maintainability.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityReport,
     MaintainabilityRequest,
 )
-from server.agents.maintainability.maintainability_manager.agent import (
+from server.agents.maintainability.manager.agent import (
     MaintainabilityManagerExecution,
     coverage_router,
 )
-from server.agents.maintainability.maintainability_manager.registry import COORDINATORS
-from server.agents.maintainability.maintainability_manager.schemas import RawAssessment
-from server.agents.maintainability.modularity.schemas import Consumption
-from server.agents.modularity_runtime.schemas import InvestigationConfig
+from server.agents.maintainability.manager.registry import COORDINATORS
+from server.agents.maintainability.manager.schemas import RawAssessment
+from server.agents.maintainability.modularity.coordinator.schemas import Consumption
+from server.runtimes.investigation.schemas import InvestigationConfig
 from server.app.tracing_port import NoOpTracingBackend
 
 BASE = ["analyze_audit_scope", "plan_audit", "delegate_auditors", "collect_assessments", "synthesize_assessments"]

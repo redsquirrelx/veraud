@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from server.agents.functional_adequacy.agent import FunctionalAdequacyAgent
+from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
 from server.agents.functional_adequacy.schemas import FunctionalAdequacyInput
 
 
@@ -16,6 +17,7 @@ class FakeModel:
 def build_agent():
     agent = FunctionalAdequacyAgent.__new__(FunctionalAdequacyAgent)
     agent.model = FakeModel()
+    agent.config = FunctionalAdequacyConfig()
     agent._graph = agent._build_graph()
     return agent
 
@@ -72,7 +74,7 @@ def test_sbert_retrieves_expected_fragments():
     async def run_mapping():
         state = {"input_data": data}
         state.update(await FunctionalAdequacyAgent._prepare(None, state))
-        return await FunctionalAdequacyAgent._code_mapping(None, state)
+        return await FunctionalAdequacyAgent._code_mapping(build_agent(), state)
 
     result = asyncio.run(run_mapping())
     candidates = result["candidates"]

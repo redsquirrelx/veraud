@@ -2,9 +2,10 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
 
+from config.agents.model import AgentSettings
+
 from ..config.prompts import load_prompt, render_prompt
-from ..config.schemas import AgentSettings
-from .models.base import Model
+from ..infrastructure.llm.base import Model
 
 
 class BaseAgent[AgentInput: BaseModel, AgentOutput: BaseModel](ABC):

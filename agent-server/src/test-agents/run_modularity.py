@@ -14,12 +14,12 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.modularity import (
+from server.agents.maintainability.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.repository_runtime.model_runtime import close_model_clients
+from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):

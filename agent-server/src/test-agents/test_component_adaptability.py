@@ -16,19 +16,19 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.component_adaptability import (
+from server.agents.maintainability.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
     ComponentAdaptabilityConfig,
     ComponentAdaptabilityRequest,
     ComponentAdaptabilityResult,
 )
-from server.agents.maintainability.component_adaptability.discovery import discover
-from server.agents.maintainability.component_adaptability.schemas import (
+from server.agents.maintainability.reusability.component_adaptability.discovery import discover
+from server.agents.maintainability.reusability.component_adaptability.schemas import (
     InspectionDecision,
     InspectRoute,
     ValidationRoute,
 )
-from server.agents.modularity_runtime.schemas import AuditResult
+from server.runtimes.investigation.schemas import AuditResult
 
 SEED = Path(__file__).parent / "fixtures" / "component_adaptability"
 TARGET = "Reuse with a supplied offline backend and no fixed production endpoint."
@@ -521,7 +521,7 @@ def test_google_native_adapter_structured_decisions_and_usage_offline(repo, monk
     from google.genai import types
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    from server.agents.modularity_runtime.agent import InvestigationExecution
+    from server.runtimes.investigation.agent import InvestigationExecution
 
     tools, config = toolset(repo), limits(max_output_tokens=512)
     model = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", api_key="offline-test-key", max_tokens=2048, max_retries=0)
@@ -567,7 +567,7 @@ def test_google_native_adapter_structured_decisions_and_usage_offline(repo, monk
 def test_live_seeded_model_evaluation(repo, capsys):
     from run_architecture_boundary import load_test_model, run_audit
 
-    from server.agents.repository_runtime.model_runtime import close_model_clients
+    from server.runtimes.repository.model_runtime import close_model_clients
 
     model, settings = load_test_model(os.getenv("COMPONENT_ADAPTABILITY_AGENT_CONFIG", "dummy"))
     async def live():

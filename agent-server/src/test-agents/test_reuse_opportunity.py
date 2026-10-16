@@ -16,18 +16,18 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.reuse_opportunity import (
+from server.agents.maintainability.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
     ReuseOpportunityConfig,
     ReuseOpportunityRequest,
     ReuseOpportunityResult,
 )
-from server.agents.maintainability.reuse_opportunity.discovery import discover, features
-from server.agents.maintainability.reuse_opportunity.schemas import (
+from server.agents.maintainability.reusability.reuse_opportunity.discovery import discover, features
+from server.agents.maintainability.reusability.reuse_opportunity.schemas import (
     InspectRoute,
     ValidationRoute,
 )
-from server.agents.repository_runtime.tools import ToolLimits
+from server.runtimes.repository.tools import ToolLimits
 
 SEED = Path(__file__).parent / "fixtures" / "reuse_opportunity"
 
@@ -484,7 +484,7 @@ def test_google_native_adapter_lean_schema_and_usage_with_mocked_transport(repo,
     from google.genai import types
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    from server.agents.modularity_runtime.agent import InvestigationExecution
+    from server.runtimes.investigation.agent import InvestigationExecution
 
     tools = toolset(repo)
     config = limits(max_output_tokens=512)
@@ -532,7 +532,7 @@ def test_google_native_adapter_lean_schema_and_usage_with_mocked_transport(repo,
 def test_live_seeded_evaluation(repo, capsys):
     from run_architecture_boundary import load_test_model, run_audit
 
-    from server.agents.repository_runtime.model_runtime import close_model_clients
+    from server.runtimes.repository.model_runtime import close_model_clients
 
     model, settings = load_test_model(os.getenv("REUSE_OPPORTUNITY_AGENT_CONFIG", "dummy"))
     async def live():

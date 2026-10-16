@@ -36,13 +36,13 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity import (
+from server.agents.maintainability.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.registry import INVESTIGATORS
-from server.agents.modularity_runtime.schemas import (
+from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
+from server.runtimes.investigation.schemas import (
     Criterion,
     InvestigationConfig,
     ProviderRateLimits,
@@ -302,7 +302,7 @@ def test_e2e_progress_matches_actual_assessment(audit_repository, monkeypatch):
 def test_e2e_live_provider(audit_repository):
     from run_architecture_boundary import load_test_model
 
-    from server.agents.repository_runtime.model_runtime import close_model_clients
+    from server.runtimes.repository.model_runtime import close_model_clients
 
     async def execute():
         model, settings = load_test_model(os.getenv("MODULARITY_E2E_AGENT_CONFIG", "dummy"))

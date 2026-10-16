@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_orientation.context import representation_view
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_orientation.context import representation_view
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
@@ -229,8 +229,8 @@ def test_runner_mode_is_explicit_and_smoke_retains_uncertainty(tools, capsys):
 
 
 def test_representation_projection_is_compact_and_access_filtered(tools):
-    from server.agents.project_orientation.agent import ALLOWED_TOOLS
-    from server.agents.repository_runtime.tools import TOOL_SCHEMAS
+    from server.agents.project_analysis.project_orientation.agent import ALLOWED_TOOLS
+    from server.runtimes.repository.tools import TOOL_SCHEMAS
 
     assert ALLOWED_TOOLS <= TOOL_SCHEMAS.keys()
     view = representation_view(tools)

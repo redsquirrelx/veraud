@@ -23,18 +23,18 @@ from langchain.chat_models import init_chat_model
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from server.agents.maintainability.architecture_boundary import (
+from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,
 )
-from server.agents.repository_runtime.context import RepositoryContext
-from server.agents.repository_runtime.model_runtime import close_model_clients
-from server.agents.repository_runtime.schemas import ExecutionBudget, RepositoryInput
-from server.agents.repository_runtime.tools import RepositoryToolset, ToolLimits
 from server.app.tracing_port import LangSmithTracingBackend, TracingBackend
 from server.config.dev_agents_config import load_dev_agents_config
 from server.config.settings import ENV_FILE
+from server.runtimes.repository.context import RepositoryContext
+from server.runtimes.repository.model_runtime import close_model_clients
+from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput
+from server.runtimes.repository.tools import RepositoryToolset, ToolLimits
 from server.services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,

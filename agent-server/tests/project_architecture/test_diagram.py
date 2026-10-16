@@ -5,41 +5,41 @@ import json
 
 import pytest
 
-from server.agents.project_architecture import ProjectArchitectureAgent
-from server.agents.project_architecture.context import (
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_architecture.context import (
     retain_valid_sections,
     validate_report,
 )
-from server.agents.project_architecture.diagram import (
+from server.agents.project_analysis.project_architecture.diagram import (
     project_component_diagram,
     render_diagram,
     render_mermaid,
 )
-from server.agents.project_architecture.diagram_composition import (
+from server.agents.project_analysis.project_architecture.diagram_composition import (
     complete_views,
     missing_views,
 )
-from server.agents.project_architecture.schemas import (
+from server.agents.project_analysis.project_architecture.schemas import (
     ArchitectureDiagram,
     ArchitectureReport,
     ArchitectureResult,
 )
-from server.agents.project_semantic_validation.context import (
+from server.agents.project_analysis.project_semantic_validation.context import (
     report_hash,
     review_targets,
 )
-from server.agents.project_semantic_validation.schemas import (
+from server.agents.project_analysis.project_semantic_validation.schemas import (
     SemanticFinding,
     SemanticValidationResult,
 )
-from server.agents.repository_runtime import (
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
 )
-from server.agents.repository_runtime.schemas import BudgetUsage
-from server.agents.repository_runtime.telemetry import ExecutionTelemetry
+from server.runtimes.repository.schemas import BudgetUsage
+from server.runtimes.repository.telemetry import ExecutionTelemetry
 from server.pipelines import ProjectArchitecturePipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
@@ -564,7 +564,7 @@ def test_changed_projection_is_not_exempt_from_semantic_scope_review(fixture):
 
 
 def test_compact_composition_preserves_model_selection_and_native_output_limit(fixture):
-    from server.agents.repository_runtime.model_runtime import ModelGateway
+    from server.runtimes.repository.model_runtime import ModelGateway
 
     _, fresh, original, _, _ = fixture
     original = original.model_copy(
@@ -744,7 +744,7 @@ def test_empty_connection_report_has_explicit_dependency_and_flow_limits(fixture
 
 
 def test_pipeline_composes_original_and_revised_views_before_their_reviews(fixture):
-    from server.agents.repository_runtime.model_runtime import ModelGateway
+    from server.runtimes.repository.model_runtime import ModelGateway
 
     _, fresh, original, snapshot, workspace = fixture
     original = original.model_copy(
@@ -928,7 +928,7 @@ def test_runner_checkpoints_before_503_and_resumes_without_investigation(
     fixture, tmp_path, monkeypatch
 ):
     from server import repository_runner
-    from server.agents.project_semantic_validation import ProjectSemanticValidationAgent
+    from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
 
     _, fresh, original, _, workspace = fixture
     checkpoint = tmp_path / "saved-report.json"

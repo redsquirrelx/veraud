@@ -23,16 +23,16 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.architecture_boundary import (
+from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
 )
-from server.agents.maintainability.responsibility import (
+from server.agents.maintainability.modularity.responsibility import (
     ResponsibilityAgent,
     ResponsibilityConfig,
     ResponsibilityRequest,
 )
-from server.agents.maintainability.responsibility.schemas import ResponsibilityResult
-from server.agents.modularity_runtime.agent import (
+from server.agents.maintainability.modularity.responsibility.schemas import ResponsibilityResult
+from server.runtimes.investigation.agent import (
     InvestigationAgent,
     InvestigationExecution,
 )

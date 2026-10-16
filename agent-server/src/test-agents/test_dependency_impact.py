@@ -25,17 +25,17 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.architecture_boundary import (
+from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
 )
-from server.agents.maintainability.dependency_impact import (
+from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactAgent,
     DependencyImpactConfig,
     DependencyImpactRequest,
     DependencyImpactResult,
 )
-from server.agents.maintainability.responsibility import ResponsibilityAgent
-from server.agents.modularity_runtime.agent import InvestigationExecution
+from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
+from server.runtimes.investigation.agent import InvestigationExecution
 from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
 

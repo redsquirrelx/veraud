@@ -12,20 +12,20 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity import ModularityAgent, ModularityConfig
-from server.agents.maintainability.modularity.agent import route_after_synthesis
-from server.agents.maintainability.modularity.registry import INVESTIGATORS
-from server.agents.maintainability.modularity.schemas import (
+from server.agents.maintainability.modularity.coordinator import ModularityAgent, ModularityConfig
+from server.agents.maintainability.modularity.coordinator.agent import route_after_synthesis
+from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
+from server.agents.maintainability.modularity.coordinator.schemas import (
     Assignment,
     EvidenceGap,
     InvocationRecord,
 )
-from server.agents.maintainability.modularity.synthesis import (
+from server.agents.maintainability.modularity.coordinator.synthesis import (
     actionable,
     consolidate,
     detect_contradictions,
 )
-from server.agents.modularity_runtime.schemas import Finding, InvestigationConfig
+from server.runtimes.investigation.schemas import Finding, InvestigationConfig
 from server.app.tracing_port import NoOpTracingBackend
 
 
@@ -248,7 +248,7 @@ def finding_record(repo, invocation, status="accepted", title="Boundary concern"
         question="Assess boundary", targets=["main.py"])
     value = result("architecture_boundary", tools_instance, SimpleNamespace(objective="Assess boundary"))
     tools_instance.execute("get_source_excerpt", {"path": "main.py", "start_line": 1, "end_line": 2}, tool_call_id=invocation)
-    from server.agents.maintainability.modularity.agent import _Execution
+    from server.agents.maintainability.modularity.coordinator.agent import _Execution
     evidence = _Execution.references(tools_instance)
     finding = Finding(id="f1", title=title, description="Scoped concern", criterion_id="c1", kind="design_observation",
         components=["main.py"], evidence_ids=[e.id for e in evidence], justification="Source-backed claim",

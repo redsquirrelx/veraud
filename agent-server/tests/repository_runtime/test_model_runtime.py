@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.agents.repository_runtime.model_runtime import (
+from server.runtimes.repository.model_runtime import (
     ModelGateway,
     close_model_clients,
 )
 
 
 def test_retry_requires_token_admission_and_counts_only_submitted_attempts():
-    from server.agents.repository_runtime.schemas import ExecutionBudget
-    from server.agents.repository_runtime.telemetry import measured_prompt
-    from server.agents.repository_runtime.token_budget import (
+    from server.runtimes.repository.schemas import ExecutionBudget
+    from server.runtimes.repository.telemetry import measured_prompt
+    from server.runtimes.repository.token_budget import (
         TokenBudgetExceeded,
         account_tokens,
         admit_request,

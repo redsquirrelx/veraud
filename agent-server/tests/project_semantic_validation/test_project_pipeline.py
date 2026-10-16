@@ -5,14 +5,14 @@ import json
 
 import pytest
 
-from server.agents.project_architecture import ProjectArchitectureAgent
-from server.agents.project_architecture.smoke import ArchitectureSmokeModel
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_orientation.smoke import OrientationSmokeModel
-from server.agents.project_semantic_validation import ProjectSemanticValidationAgent
-from server.agents.project_semantic_validation.smoke import SemanticValidationSmokeModel
-from server.agents.repository_runtime import ExecutionBudget
-from server.agents.repository_runtime.model_runtime import ModelGateway
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_architecture.smoke import ArchitectureSmokeModel
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_orientation.smoke import OrientationSmokeModel
+from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
+from server.agents.project_analysis.project_semantic_validation.smoke import SemanticValidationSmokeModel
+from server.runtimes.repository import ExecutionBudget
+from server.runtimes.repository.model_runtime import ModelGateway
 from server.pipelines import ProjectArchitecturePipeline
 from server.services.repository_analysis import RepositoryAnalysisService
 
@@ -126,9 +126,9 @@ def test_pipeline_skip_stages_and_reuse_does_not_reuse_ledgers(tmp_path):
 
 
 def test_failed_revision_preserves_first_review_and_stops(tmp_path):
-    from server.agents.project_architecture.schemas import ArchitectureResult
-    from server.agents.repository_runtime.schemas import BudgetUsage
-    from server.agents.repository_runtime.telemetry import ExecutionTelemetry
+    from server.agents.project_analysis.project_architecture.schemas import ArchitectureResult
+    from server.runtimes.repository.schemas import BudgetUsage
+    from server.runtimes.repository.telemetry import ExecutionTelemetry
 
     pipeline, snapshot, workspace, _seen, hooks = setup_pipeline(tmp_path)
     original_run = pipeline.architect.run
@@ -169,7 +169,7 @@ def test_failed_revision_preserves_first_review_and_stops(tmp_path):
 
 
 def test_developed_report_reviews_findings_beyond_old_limit(tmp_path):
-    from server.agents.project_architecture.schemas import (
+    from server.agents.project_analysis.project_architecture.schemas import (
         ArchitecturalClaim,
         ArchitectureReport,
     )

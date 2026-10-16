@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from server.agents.models import groq
-from server.agents.models.groq import GroqModel
+from server.infrastructure.llm import groq
+from server.infrastructure.llm.groq import GroqModel
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app import execution_service
 from server.app.execution_service import (

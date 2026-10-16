@@ -6,11 +6,6 @@ from pydantic import BaseModel, ValidationError
 
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
-from ..agents.models.anthropic import AnthropicModel
-from ..agents.models.base import Model
-from ..agents.models.gemini import GeminiModel
-from ..agents.models.groq import GroqModel
-from ..agents.models.openrouter import OpenRouterModel
 from ..api.schemas import ExecutionConfig
 from ..config import tracing
 from ..config.dev_agents_config import load_dev_agents_config
@@ -21,6 +16,11 @@ from ..config.schemas import (
     ModelSettings,
 )
 from ..infrastructure.callback.schemas import ExecutionOutcome
+from ..infrastructure.llm.anthropic import AnthropicModel
+from ..infrastructure.llm.base import Model
+from ..infrastructure.llm.gemini import GeminiModel
+from ..infrastructure.llm.groq import GroqModel
+from ..infrastructure.llm.openrouter import OpenRouterModel
 from .agent_registry import AgentRegistry
 from .callback_port import (
     CallbackSink,

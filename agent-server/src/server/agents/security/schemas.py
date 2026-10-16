@@ -6,6 +6,8 @@ Garantiza interoperabilidad entre todos los agentes de la tubería.
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field, asdict
 
+from .config import SecurityConfig  # noqa: F401 - compatibility export
+
 @dataclass
 class Finding:
     finding_id: str

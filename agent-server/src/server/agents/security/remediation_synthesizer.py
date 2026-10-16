@@ -8,26 +8,13 @@ import os
 import json
 from typing import List
 from .schemas import Finding
-
-SYSTEM_PROMPT = """
-Eres un experto en DevSecOps y desarrollo seguro de software.
-Tu tarea es analizar un hallazgo de vulnerabilidad en código fuente y generar un parche defensivo.
-
-REGLAS OBLIGATORIAS:
-1. Reemplaza el patrón inseguro por código seguro según las mejores prácticas de OWASP.
-2. NO agregues explicaciones extensas de texto fuera del JSON.
-3. Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:
-{
-  "finding_id": "<ID_DEL_HALLAZGO>",
-  "patch_code": "<CÓDIGO_CORREGIDO_REPARADO>",
-  "explanation": "<EXPLICACIÓN_BREVE_DE_LA_REPARACIÓN>"
-}
-"""
+from .config import SecurityConfig
 
 class RemediationSynthesizerAgent:
-    def __init__(self, api_key: str = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str = None, model: str | None = None, *, config: SecurityConfig | None = None):
+        self.config = config or SecurityConfig()
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY")
-        self.model = model
+        self.model = model if model is not None else self.config.remediation_model.name
 
     def _call_llm(self, finding: Finding) -> dict:
         user_prompt = f"""
@@ -47,11 +34,12 @@ class RemediationSynthesizerAgent:
                 response = client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "system", "content": self.config.remediation_system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.2
+                    temperature=self.config.remediation_model.temperature,
+                    max_tokens=self.config.remediation_model.max_tokens,
                 )
                 return json.loads(response.choices[0].message.content)
             except Exception:

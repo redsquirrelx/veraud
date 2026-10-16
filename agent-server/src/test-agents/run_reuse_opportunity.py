@@ -14,12 +14,12 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.reuse_opportunity import (
+from server.agents.maintainability.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
     ReuseOpportunityConfig,
     ReuseOpportunityRequest,
 )
-from server.agents.repository_runtime.model_runtime import close_model_clients
+from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):

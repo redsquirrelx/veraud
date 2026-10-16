@@ -4,6 +4,7 @@ Integra el flujo completo para el Dispatcher del Agent Server.
 """
 
 from typing import List, Dict, Any
+from .config import SecurityConfig
 from .sast_scanner import SASTScannerAgent
 from .knowledge_enrichment import KnowledgeEnrichmentAgent
 from .dast_sandbox import DASTSandboxAgent
@@ -11,11 +12,14 @@ from .remediation_synthesizer import RemediationSynthesizerAgent
 from .patch_validator import PatchValidatorAgent
 
 class SecurityComponentAgent:
-    def __init__(self, db_path: str = "security_patterns.db"):
+    config_type = SecurityConfig
+
+    def __init__(self, db_path: str | None = None, *, config: SecurityConfig | None = None):
+        self.config = config or self.config_type()
         self.sast_agent = SASTScannerAgent()
-        self.enrichment_agent = KnowledgeEnrichmentAgent(db_path)
-        self.dast_agent = DASTSandboxAgent()
-        self.remediation_agent = RemediationSynthesizerAgent()
+        self.enrichment_agent = KnowledgeEnrichmentAgent(db_path, config=self.config)
+        self.dast_agent = DASTSandboxAgent(config=self.config)
+        self.remediation_agent = RemediationSynthesizerAgent(config=self.config)
         self.validator_agent = PatchValidatorAgent()
 
     def run_fast_path(self, target_path: str) -> List[Dict[str, Any]]:

@@ -10,12 +10,12 @@ from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, toolset
 from test_modularity import result
 
-from server.agents.maintainability.modularity import (
+from server.agents.maintainability.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.agent import _Execution
+from server.agents.maintainability.modularity.coordinator.agent import _Execution
 from server.app.tracing_port import NoOpTracingBackend
 
 

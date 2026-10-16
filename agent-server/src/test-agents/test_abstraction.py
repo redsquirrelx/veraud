@@ -20,14 +20,14 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.abstraction import (
+from server.agents.maintainability.reusability.abstraction import (
     AbstractionAgent,
     AbstractionConfig,
     AbstractionRequest,
     AbstractionResult,
 )
-from server.agents.maintainability.abstraction.discovery import discover
-from server.agents.modularity_runtime.agent import InvestigationExecution
+from server.agents.maintainability.reusability.abstraction.discovery import discover
+from server.runtimes.investigation.agent import InvestigationExecution
 from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
 

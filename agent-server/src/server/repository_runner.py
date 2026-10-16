@@ -11,33 +11,38 @@ import sys
 from pathlib import Path
 from time import monotonic
 
-from .agents.project_architecture import ArchitectureLimits, ProjectArchitectureAgent
-from .agents.project_architecture.diagram import render_diagram
-from .agents.project_architecture.smoke import ArchitectureSmokeModel
-from .agents.project_orientation import ProjectOrientationAgent
-from .agents.project_orientation.smoke import OrientationSmokeModel
-from .agents.project_semantic_validation import (
+from .agents.project_analysis.project_architecture import (
+    ArchitectureLimits,
+    ProjectArchitectureAgent,
+)
+from .agents.project_analysis.project_architecture.diagram import render_diagram
+from .agents.project_analysis.project_architecture.smoke import ArchitectureSmokeModel
+from .agents.project_analysis.project_orientation import ProjectOrientationAgent
+from .agents.project_analysis.project_orientation.smoke import OrientationSmokeModel
+from .agents.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
     ValidationLimits,
 )
-from .agents.project_semantic_validation.smoke import SemanticValidationSmokeModel
-from .agents.repository_runtime import (
+from .agents.project_analysis.project_semantic_validation.smoke import (
+    SemanticValidationSmokeModel,
+)
+from .config.settings import resolve_workspace_root
+from .pipelines import ProjectArchitecturePipeline
+from .repository_progress import ProgressReporter, with_progress
+from .repository_reports import ArchitectureCheckpoint, load_architecture_report
+from .runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from .agents.repository_runtime.access import RepositoryAccessError
-from .agents.repository_runtime.model_runtime import (
+from .runtimes.repository.access import RepositoryAccessError
+from .runtimes.repository.model_runtime import (
     ModelGateway,
     close_model_clients,
     create_project_model,
 )
-from .config.settings import resolve_workspace_root
-from .pipelines import ProjectArchitecturePipeline
-from .repository_progress import ProgressReporter, with_progress
-from .repository_reports import ArchitectureCheckpoint, load_architecture_report
 from .services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -229,10 +234,10 @@ def run_metadata(arguments, tools, model):
         server / "pipelines/semantic_validation.py",
     ]
     for relative in (
-        "agents/repository_runtime",
-        "agents/project_orientation",
-        "agents/project_architecture",
-        "agents/project_semantic_validation",
+        "runtimes/repository",
+        "agents/project_analysis/project_orientation",
+        "agents/project_analysis/project_architecture",
+        "agents/project_analysis/project_semantic_validation",
         "services/repository_analysis",
     ):
         files.extend(

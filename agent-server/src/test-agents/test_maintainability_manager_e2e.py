@@ -21,18 +21,18 @@ from test_maintainability_manager import BASE, Events
 from test_modularity_e2e import ProviderScenario
 from test_reusability_e2e import SimulatedProvider
 
-from server.agents.maintainability.abstraction import AbstractionRequest
-from server.agents.maintainability.component_adaptability import (
+from server.agents.maintainability.reusability.abstraction import AbstractionRequest
+from server.agents.maintainability.reusability.component_adaptability import (
     ComponentAdaptabilityRequest,
 )
-from server.agents.maintainability.maintainability_manager import (
+from server.agents.maintainability.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityReport,
     MaintainabilityRequest,
 )
-from server.agents.maintainability.reuse_opportunity import ReuseOpportunityRequest
-from server.agents.modularity_runtime.schemas import Criterion, InvestigationConfig
+from server.agents.maintainability.reusability.reuse_opportunity import ReuseOpportunityRequest
+from server.runtimes.investigation.schemas import Criterion, InvestigationConfig
 from server.app.tracing_port import LangSmithTracingBackend
 
 
@@ -147,7 +147,7 @@ def test_nested_refinement_recovers_only_incomplete_coordinator(audit_repository
 def test_live_nested_coordinators(audit_repository):
     from run_architecture_boundary import load_test_model
 
-    from server.agents.repository_runtime.model_runtime import close_model_clients
+    from server.runtimes.repository.model_runtime import close_model_clients
 
     async def execute():
         model, settings = load_test_model(os.getenv("MAINTAINABILITY_MANAGER_AGENT_CONFIG", "dummy"))

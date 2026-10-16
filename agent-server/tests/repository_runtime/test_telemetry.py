@@ -4,8 +4,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from server.agents.repository_runtime.model_runtime import ModelGateway
-from server.agents.repository_runtime.telemetry import (
+from server.runtimes.repository.model_runtime import ModelGateway
+from server.runtimes.repository.telemetry import (
     TextCallObserver,
     measure_json,
     measured_prompt,

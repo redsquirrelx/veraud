@@ -36,14 +36,14 @@ from test_reuse_opportunity import evaluation as reuse_evaluate
 from test_reuse_opportunity import plan as reuse_plan
 from test_reuse_opportunity import review as reuse_review
 
-from server.agents.maintainability.reusability import (
+from server.agents.maintainability.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
     ReusabilityConfig,
     ReusabilityRequest,
 )
-from server.agents.maintainability.reusability.registry import INVESTIGATORS
-from server.agents.modularity_runtime.schemas import InvestigationConfig
+from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
+from server.runtimes.investigation.schemas import InvestigationConfig
 from server.app.tracing_port import LangSmithTracingBackend
 
 FOLLOW_UP = "Inspect the external construction seam and its effect on the scoped abstraction judgment."
@@ -304,7 +304,7 @@ def test_e2e_zero_progress_does_not_repeat_initial_batch(audit_repository):
 def test_e2e_live_provider(audit_repository):
     from run_architecture_boundary import load_test_model
 
-    from server.agents.repository_runtime.model_runtime import close_model_clients
+    from server.runtimes.repository.model_runtime import close_model_clients
 
     async def live():
         model, settings = load_test_model(os.getenv("REUSABILITY_E2E_AGENT_CONFIG", "dummy"))

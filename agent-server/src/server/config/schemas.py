@@ -1,23 +1,5 @@
-from pydantic import BaseModel
+"""Compatibility exports; agent settings are owned by agent-server/config/agents/."""
 
+from config.agents.model import AgentSettings, ModelCredentials, ModelSettings
 
-class ModelSettings(BaseModel):
-    """Resolved model settings used to build a model client.
-
-    Complete on purpose, unlike the partial ModelConfig from the api.
-    Produced by merging ExecutionConfig over dev_agents_config.
-    """
-
-    provider: str
-    name: str
-    temperature: float
-    max_tokens: int
-
-
-class AgentSettings(BaseModel):
-    agent_id: str
-    timeout_seconds: int
-
-
-class ModelCredentials(BaseModel):
-    api_key: str
+__all__ = ["AgentSettings", "ModelCredentials", "ModelSettings"]

@@ -2,14 +2,17 @@
 
 from pathlib import Path
 
-from ..agents.project_architecture.schemas import ArchitectureReport, ArchitectureResult
-from ..agents.repository_runtime import (
+from ..agents.project_analysis.project_architecture.schemas import (
+    ArchitectureReport,
+    ArchitectureResult,
+)
+from ..runtimes.repository import (
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
 )
-from ..agents.repository_runtime.schemas import BudgetUsage
-from ..agents.repository_runtime.telemetry import ExecutionTelemetry
+from ..runtimes.repository.schemas import BudgetUsage
+from ..runtimes.repository.telemetry import ExecutionTelemetry
 from ..services.repository_analysis import RepositoryAnalysisService
 
 FILES = {

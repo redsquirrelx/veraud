@@ -4,14 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from server.agents.repository_runtime import (
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.agents.repository_runtime.access import RepositoryAccessError
+from server.runtimes.repository.access import RepositoryAccessError
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -298,7 +298,7 @@ def test_invalid_arguments_unknown_tools_and_replayed_call_ids_are_controlled(ch
 
 
 def test_time_budget_prevents_delivery(checkout, monkeypatch):
-    from server.agents.repository_runtime import context as context_module
+    from server.runtimes.repository import context as context_module
 
     tools = toolset(checkout, budget=ExecutionBudget(max_elapsed_seconds=1))
     monkeypatch.setattr(

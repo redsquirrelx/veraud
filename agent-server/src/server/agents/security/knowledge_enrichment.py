@@ -7,10 +7,12 @@ import sqlite3
 from pathlib import Path
 from typing import List
 from .schemas import Finding
+from .config import SecurityConfig
 
 class KnowledgeEnrichmentAgent:
-    def __init__(self, db_path: str = "security_patterns.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | None = None, *, config: SecurityConfig | None = None):
+        self.config = config or SecurityConfig()
+        self.db_path = Path(db_path if db_path is not None else self.config.knowledge_database_path)
 
     def enrich(self, findings: List[Finding]) -> List[Finding]:
         if not self.db_path.exists():

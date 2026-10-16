@@ -13,12 +13,12 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.maintainability_manager import (
+from server.agents.maintainability.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityRequest,
 )
-from server.agents.repository_runtime.model_runtime import close_model_clients
+from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):

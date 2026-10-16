@@ -2,8 +2,8 @@
 
 import warnings
 
-from server.agents.project_architecture.schemas import ArchitectureDiagram
-from server.agents.repository_runtime.responses import normalize_record_arrays
+from server.agents.project_analysis.project_architecture.schemas import ArchitectureDiagram
+from server.runtimes.repository.responses import normalize_record_arrays
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
