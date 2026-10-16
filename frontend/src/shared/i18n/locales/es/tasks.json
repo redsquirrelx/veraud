@@ -1,0 +1,57 @@
+{
+  "title": "Tareas",
+  "menu": {
+    "label": "Tareas activas",
+    "title": "Tareas activas ({{count}})",
+    "expand": "Expandir tareas",
+    "collapse": "Contraer tareas",
+    "close": "Cerrar el menú de tareas",
+    "empty": "No hay tareas en cola",
+    "showCommandFor": "Mostrar el comando de {{name}}",
+    "hideCommandFor": "Ocultar el comando de {{name}}",
+    "command": "Comando",
+    "commandUnavailable": "Comando no disponible",
+    "done": "Completada",
+    "failed": "Fallida"
+  },
+  "status": {
+    "running": "En ejecución",
+    "queued": "En cola",
+    "succeeded": "Completada",
+    "failed": "Fallida"
+  },
+  "kindOptions": {
+    "clone": {
+      "label": "Clonar",
+      "hint": "Descarga inicial del repositorio"
+    },
+    "pull": {
+      "label": "Pull",
+      "hint": "Sincronizar una copia vinculada"
+    },
+    "fetch": {
+      "label": "Fetch",
+      "hint": "Sincronizar una copia separada"
+    },
+    "checkoutBranch": {
+      "label": "Cambiar de rama",
+      "hint": "Cambiar de rama"
+    },
+    "checkoutDetach": {
+      "label": "Ir a un commit",
+      "hint": "Moverse a un commit específico"
+    },
+    "listBranches": {
+      "label": "Listar ramas",
+      "hint": "Solo lectura"
+    },
+    "revParse": {
+      "label": "Resolver rama",
+      "hint": "Solo lectura"
+    },
+    "logCommits": {
+      "label": "Listar commits",
+      "hint": "Solo lectura"
+    }
+  }
+}

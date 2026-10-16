@@ -1,0 +1,249 @@
+{
+  "home": {
+    "title": "Projects and repositories",
+    "description": "Continuous autonomous supervision of quality attributes under <strong>ISO/IEC 25010</strong>: Performance, Maintainability, Operational Security and Functional Adequacy.",
+    "shallowClone": "Shallow clone"
+  },
+  "list": {
+    "sectionLabel": "Projects",
+    "registeredCount_one": "{{count}} registered project",
+    "registeredCount_other": "{{count}} registered projects",
+    "searchPlaceholder": "Search by repository",
+    "loadingLabel": "Loading projects",
+    "loadError": "Could not load projects",
+    "empty": "No projects yet",
+    "sort": {
+      "title": "Title",
+      "date": "Date"
+    }
+  },
+  "card": {
+    "inspect": "Inspect",
+    "pin": "Pin project",
+    "unpin": "Unpin project",
+    "openOnGitHub": "Open on GitHub",
+    "openOnGitHubLabel": "Open {{repo}} on GitHub"
+  },
+  "registration": {
+    "title": "Register project",
+    "submit": "Register project",
+    "success": "Project {{name}} was registered successfully.",
+    "registered": "Project {{name}} registered",
+    "urlPlaceholder": "Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git",
+    "loadingText": "Wait",
+    "errors": {
+      "timeout": "The request took too long and was cancelled",
+      "network": "Could not connect to the backend",
+      "unexpected": "Unexpected error"
+    }
+  },
+  "version": {
+    "sourceLabel": "Version source",
+    "git": "Git",
+    "analyzed": "Analyzed",
+    "loadingBranches": "Loading branches",
+    "applying": "Applying version",
+    "detachedNotice": "(HEAD detached at {{hash}}) - select a branch to re-attach",
+    "appliedNotice": "On {{branch}} at {{shortHash}}",
+    "analyzedEmpty": "No analyzed versions yet",
+    "analyzedPlaceholder": "Select an analyzed version",
+    "analyzedLabel": "Analyzed version",
+    "branchesEmpty": "No branches found",
+    "branchPlaceholder": "Select a branch",
+    "branchDetachedPlaceholder": "(HEAD detached at {{hash}})",
+    "branchLabel": "Branch",
+    "commitsEmpty": "No commits found",
+    "commitLabel": "Commit",
+    "errors": {
+      "noBranches": "No branches found in the local checkout",
+      "loadBranches": "Could not load branches",
+      "loadCommits": "Could not load commits",
+      "checkoutBranch": "Could not check out the branch",
+      "checkoutCommit": "Could not check out the commit",
+      "invalidHash": "Commit hash must be 7 to 40 hex characters",
+      "loadAnalyzed": "Could not load analyzed versions"
+    }
+  },
+  "analyze": {
+    "label": "Analyze",
+    "loading": "Analyzing",
+    "pipelines": {
+      "projectArchitecture": {
+        "label": "Project architecture",
+        "description": "Orientation, architecture and semantic validation"
+      }
+    }
+  },
+  "analysis": {
+    "errors": {
+      "startFailed": "Could not analyze the project"
+    },
+    "completed": "Analysis completed",
+    "failed": "Analysis failed"
+  },
+  "pipeline": {
+    "runLabel": "{{agentType}} run #{{id}}",
+    "tokenBudgetExhausted": "Execution interrupted: token budget exhausted.",
+    "partialResults": "Partial results available — incomplete",
+    "orientationTitle": "Orientation",
+    "architectureTitle": "Architecture",
+    "semanticTitle": "Semantic validation",
+    "components": "Components ({{count}})",
+    "startingPoints": "Starting points ({{count}})",
+    "uncertainties": "Uncertainties ({{count}})",
+    "supportingFindings": "Supporting findings ({{count}})",
+    "organization": "Organization ({{count}})",
+    "connections": "Connections ({{count}})",
+    "relationshipCoverage": "Module relationship coverage ({{count}})",
+    "deviations": "Deviations ({{count}})",
+    "infrastructure": "Infrastructure ({{count}})",
+    "findings": "Findings ({{count}})",
+    "pending": "Pending ({{count}})",
+    "issues": "Issues ({{count}})",
+    "limitations": "Limitations ({{count}})",
+    "colorLegend": "Color legend",
+    "legendHint": "Fill shows the architect's certainty; the border shows the semantic review. Unreviewed does not mean rejected.",
+    "architectFill": "Architect — fill",
+    "semanticBorder": "Semantic — border / arrow",
+    "legendArrows": "Solid arrows: architect-supported relationships. Dashed arrows: hypothetical or unresolved relationships. Amber D1, D2… notes identify reported deviations, not automatic defects.",
+    "architecturalExplanation": "Architectural explanation",
+    "patternContrast": "Pattern contrast",
+    "scopeLabel": "Scope: {{scope}}",
+    "expectedLabel": "Expected: {{expectation}}",
+    "deviationDetail": "Expected: {{expectation}} · {{explanation}}",
+    "resolutionBlocker": "Resolution blocker: {{blocker}} — {{blockerReason}}",
+    "pendingEndpoints": "Pending endpoints ({{count}}): {{paths}}",
+    "diagram": "Diagram",
+    "diagramWithOrigin": "Diagram ({{origin}} report)",
+    "diagramFallback": "Diagram “{{title}}”: {{nodes}} node(s), {{edges}} edge(s)",
+    "proposedCorrection": "Proposed correction: {{correction}}"
+  },
+  "detail": {
+    "loading": "Loading project",
+    "loadError": "Could not load the project",
+    "notFound": "Project not found",
+    "contextLabel": "Project context",
+    "actionsLabel": "Project actions",
+    "syncLabel": "Sync",
+    "syncing": "Syncing",
+    "analyzingBadge": "Analyzing",
+    "sidebarTitle": "Project",
+    "serviceStatus": "Service status",
+    "sections": {
+      "overview": "Overview",
+      "analysis": "Analysis",
+      "audits": "Audits",
+      "files": "Files"
+    },
+    "overview": {
+      "title": "Overview",
+      "regionLabel": "Project overview",
+      "registeredAt": "Registered {{date}}",
+      "neverSynced": "Never synced",
+      "lastSynced": "Last synced {{date}}",
+      "openOnGitHub": "Open on GitHub",
+      "analyzing": "Analyzing the project",
+      "summary": "Summary",
+      "projectType": "Project type",
+      "pattern": "Pattern",
+      "review": "Review",
+      "viewFullAnalysis": "View full analysis"
+    },
+    "files": {
+      "resizeLabel": "Resize file preview and directories",
+      "loading": "Loading",
+      "loadingFile": "Loading file",
+      "selectFile": "Select a file to preview",
+      "loadingFiles": "Loading project files",
+      "noFiles": "No files to show",
+      "errors": {
+        "readFailed": "Could not read the file",
+        "loadFailed": "Could not load the project files"
+      }
+    },
+    "audits": {
+      "empty": "No analysis yet — pick a version and press Analyze",
+      "viewPartial": "View partial results",
+      "configuration": {
+        "title": "Configuration used",
+        "capturedFor": "Captured for {{agentType}} #{{id}}",
+        "model": "Model",
+        "provider": "Provider",
+        "credential": "Credential",
+        "credentialValue": "{{name}} (#{{id}})",
+        "temperature": "Temperature",
+        "maxTokens": "Maximum output tokens per call",
+        "tokenBudget": "Initial token budget",
+        "absoluteLimit": "Absolute token limit",
+        "notRecorded": "Not recorded",
+        "note": "Captured when this execution started. Later Settings changes apply to new executions."
+      }
+    },
+    "sync": {
+      "success": "Project {{name}} synced",
+      "errorFallback": "Could not sync the project"
+    },
+    "versionApplied": "Version {{branch}} at {{shortHash}} applied",
+    "reviewAgents": "Review agent configuration"
+  },
+  "status": {
+    "projectBadge": {
+      "queued": "QUEUED",
+      "ready": "READY",
+      "syncing": "SYNCING"
+    },
+    "projectFilter": {
+      "all": "All",
+      "queued": "Queued",
+      "ready": "Ready",
+      "syncing": "Syncing"
+    },
+    "execution": {
+      "waiting": "Waiting",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "completion": {
+      "complete": "complete",
+      "partial": "partial",
+      "failed": "failed"
+    },
+    "claim": {
+      "supported": "supported",
+      "hypothesis": "hypothesis",
+      "unresolved": "unresolved"
+    },
+    "review": {
+      "accepted": "accepted",
+      "revisionsNeeded": "revisions_needed",
+      "needsEvidence": "needs_evidence",
+      "inconclusive": "inconclusive"
+    },
+    "finding": {
+      "supported": "supported",
+      "overstated": "overstated",
+      "contradicted": "contradicted",
+      "insufficientEvidence": "insufficient_evidence"
+    },
+    "derived": {
+      "completed": "Completed",
+      "waiting": "Waiting",
+      "neverAnalyzed": "NeverAnalyzed"
+    },
+    "legendArchitect": {
+      "supported": "Supported",
+      "hypothesis": "Hypothesis",
+      "unresolved": "Unresolved"
+    },
+    "legendSemantic": {
+      "supported": "Supported",
+      "overstated": "Overstated",
+      "contradicted": "Contradicted",
+      "insufficientEvidence": "Insufficient evidence",
+      "notReviewed": "Not reviewed"
+    }
+  },
+  "selectedCount_one": "{{count}} project selected",
+  "selectedCount_other": "{{count}} projects selected"
+}

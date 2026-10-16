@@ -1,0 +1,48 @@
+{
+  "execution": {
+    "status": {
+      "running": "Running",
+      "waiting": "Waiting",
+      "completed": "Completed",
+      "failed": "Failed"
+    }
+  },
+  "menu": {
+    "label": "Agent runs",
+    "title": "Agent runs ({{count}})",
+    "expand": "Expand agents",
+    "collapse": "Collapse agents",
+    "close": "Close agent menu",
+    "empty": "No agent runs",
+    "runTitle": "{{agentType}} run #{{id}}",
+    "done": "Done",
+    "failed": "Failed"
+  },
+  "tokenUsage": {
+    "usageFor": "Token usage for {{agentType}} run {{id}}",
+    "budgetUsage": "Token budget usage",
+    "budgetUsageValue": "{{total}} tokens, {{percentage}}% of initial budget. {{state}}.",
+    "summary": {
+      "withBudget": "{{total}} / {{budget}} tokens",
+      "totalOnly": "{{total}} tokens",
+      "reportedWithBudget": "Reported: {{total}} / {{budget}} tokens",
+      "reportedTotalOnly": "Reported: {{total}} tokens"
+    },
+    "notReported": "Token usage not reported",
+    "state": {
+      "exhausted": "Absolute limit reached",
+      "inTolerance": "In tolerance",
+      "budgetExceeded": "Initial budget exceeded",
+      "withinBudget": "Within budget"
+    },
+    "absoluteLimit": "Absolute limit: {{value}} tokens",
+    "noAbsoluteLimit": "No absolute limit recorded",
+    "noBudget": "No initial budget recorded",
+    "includesEstimated": "Includes {{value}} estimated tokens",
+    "breakdown": "Token breakdown",
+    "input": "Input (reported)",
+    "output": "Output (reported)",
+    "estimated": "Estimated",
+    "notReportedValue": "Not reported"
+  }
+}
