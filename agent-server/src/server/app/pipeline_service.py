@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -23,6 +23,9 @@ from .tracing_port import LangSmithTracingBackend, TracingBackend
 from .usage_reporting import report_progress
 
 logger = get_logger("pipeline-service")
+
+if TYPE_CHECKING:
+    from ..blackboard.interface import Blackboard
 
 # The whole pipeline gets one deadline, like the dev runner's --timeout.
 DEFAULT_PIPELINE_TIMEOUT_SECONDS = 600
@@ -71,6 +74,10 @@ class GenericReportingHooks:
 
     async def on_stage_progress(self, stage: str, usage: ExecutionProgress) -> None:
         await report_progress(self._callbacks, self._ids[stage], usage)
+
+    async def on_audit_start(self, stage: str, run_id: str) -> None:
+        if self._callbacks is not None:
+            await self._callbacks.mark_running(self._ids[stage], run_id)
 
     def retain_partial(self, stage: str, result: BaseModel) -> None:
         self.partial_results[self._ids[stage]] = result
@@ -159,9 +166,11 @@ class PipelineDefinition:
 
 def default_pipeline_registry() -> dict[str, PipelineDefinition]:
     from .project_architecture_definition import project_architecture_definition
+    from .quality_audit_definition import quality_audit_definition
 
     return {
         "project-architecture": project_architecture_definition(),
+        "quality-audit": quality_audit_definition(),
     }
 
 
@@ -191,6 +200,9 @@ class GenericPipelineService:
         stage_configs: dict[str, ExecutionConfig] | None = None,
         execution_ids: dict[str, int] | None = None,
         timeout_seconds: int = DEFAULT_PIPELINE_TIMEOUT_SECONDS,
+        *,
+        blackboard: "Blackboard | None" = None,
+        audit_service=None,
     ) -> dict:
         """Run the named pipeline and return its stage outputs as plain dicts."""
         definition = self._registry.get(pipeline_name)
@@ -209,6 +221,14 @@ class GenericPipelineService:
         agents, ctx = await definition.build_agents(
             self._exec, config, stage_configs, parsed, timeout_seconds
         )
+        if audit_service is not None:
+            # Only audit-aware stages opt in; other pipelines keep their own scope.
+            for agent in agents.values():
+                if getattr(agent, "uses_audit_service", False):
+                    agent.audit_service = audit_service
+        if blackboard is not None:
+            for agent in agents.values():
+                agent.blackboard = blackboard
 
         callbacks = self._callbacks_factory() if execution_ids is not None else None
         if execution_ids is not None and callbacks is None:

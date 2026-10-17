@@ -78,7 +78,7 @@ class TestRegistry:
 
     def test_list_pipelines_sorted(self):
         service = GenericPipelineService(tracing_backend=NoOpTracingBackend())
-        assert service.list_pipelines() == ["project-architecture"]
+        assert service.list_pipelines() == ["project-architecture", "quality-audit"]
 
 
 class TestResolveModelSettings:
