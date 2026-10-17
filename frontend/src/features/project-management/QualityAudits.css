@@ -1,0 +1,10 @@
+.quality-audits { display: grid; gap: 1rem; }
+.quality-attribute { display: flex; align-items: center; gap: .5rem; margin-block: 1rem; }
+.quality-audit-run { border-top: 1px solid var(--border-color, #4444); padding-block: 1rem; }
+.quality-report { overflow-wrap: anywhere; }
+.quality-report > details { padding-block: .75rem; border-top: 1px solid var(--border-color, #4444); }
+.quality-report summary { cursor: pointer; font-weight: 600; }
+.quality-report dl > div { margin-block: .75rem; }
+.quality-report dt { font-weight: 600; }
+.quality-report dd { margin-inline-start: 1rem; }
+.quality-report pre { overflow: auto; max-height: 24rem; white-space: pre-wrap; }

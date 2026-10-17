@@ -375,14 +375,15 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
   })
 
-  it("keeps the files placeholder for the audits section", async () => {
+  it("shows quality audit selection independently of the file tree", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByText("No analysis yet — pick a version and press Analyze")).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeDefined()
+    expect(screen.getByRole("checkbox", { name: "Mantenibilidad" })).toBeDefined()
     expect(screen.queryByRole("tree")).toBeNull()
   })
 

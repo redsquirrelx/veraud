@@ -12,9 +12,10 @@ interface ProjectHeaderProps {
   analysis: AnalysisAction
   syncing: boolean
   onSync: () => void
+  onAudit?: () => void
 }
 
-export function ProjectHeader({ project, versionSelector, analysis, syncing, onSync }: ProjectHeaderProps) {
+export function ProjectHeader({ project, versionSelector, analysis, syncing, onSync, onAudit }: ProjectHeaderProps) {
   return <header className="project-context-header" aria-label="Project context">
     <div className="project-context-top-row">
       <div className="project-context-identity">
@@ -26,7 +27,7 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
       </div>
       <div className="project-context-actions" role="group" aria-label="Project actions">
         <Button onClick={onSync} disabled={syncing || analysis.analyzing} loading={syncing} loadingText="Syncing">Sync</Button>
-        <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
+        <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} onAudit={onAudit} />
       </div>
     </div>
     <div className="project-context-controls">

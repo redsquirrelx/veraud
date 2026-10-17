@@ -9,9 +9,16 @@ interface AgentsSettingsProps {
   providersLoading?: boolean
   providersError?: string
   onAssignmentsSaved?: (agent: AgentSettings) => void
+  agentTypes?: readonly string[]
+  heading?: string
+  description?: string
+  labels?: Record<string, string>
+  modelAccessOnly?: boolean
 }
 
-export function AgentsSettings({ providers = [], providersLoading = false, providersError = "", onAssignmentsSaved }: AgentsSettingsProps) {
+export function AgentsSettings({ providers = [], providersLoading = false, providersError = "", onAssignmentsSaved,
+  agentTypes, heading = "Agent configuration", description = "Agent types declared in the backend and their saved configuration.", labels = {}, modelAccessOnly = false,
+}: AgentsSettingsProps) {
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -56,8 +63,8 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
     <div className="settings-agents">
       <Panel>
         <div className="settings-agents-heading">
-          <h2>Agent configuration</h2>
-          <p className="settings-hint">Agent types declared in the backend and their saved configuration.</p>
+          <h2>{heading}</h2>
+          <p className="settings-hint">{description}</p>
           {providersError && <p className="settings-error" role="alert">{providersError}</p>}
         </div>
         {loading ? <Spinner /> : error ? (
@@ -69,10 +76,12 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
           <p className="settings-hint">No agent types are declared in the backend.</p>
         ) : (
           <div className="settings-agents-grid">
-            {agents.map((agent) => (
+            {agents.filter((agent) => !agentTypes || agentTypes.includes(agent.agentType)).map((agent) => (
               <AgentSettingsCard
                 key={agent.agentType}
                 agent={agent}
+                label={labels[agent.agentType]}
+                modelAccessOnly={modelAccessOnly}
                 providers={providers}
                 providersLoading={providersLoading || !!providersError}
                 onSaved={saved}

@@ -77,6 +77,44 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: "Models & credentials" })).toHaveAttribute("aria-selected", "true")
   })
 
+  it("opens the audit configuration tab and restores it after a reload", async () => {
+    renderSettings([{ status: 200, body: providers }, { status: 200, body: [] }])
+    await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
+    expect(screen.getByLabelText("Personal token allowance")).toHaveValue(500000)
+    expect(JSON.parse(window.localStorage.getItem("settings.activeTab")!)).toBe("audit")
+
+    window.localStorage.setItem("settings.activeTab", JSON.stringify("audit"))
+    renderSettings([{ status: 200, body: providers }, { status: 200, body: [] }])
+    expect(screen.getAllByRole("tab", { name: "Audit" })[1]).toHaveAttribute("aria-selected", "true")
+  })
+
+  it("reuses the agent card in Audit to save common maintainability model access", async () => {
+    const saved = { agentType: "maintainability_manager", configured: true,
+      configuration: {
+        model: { id: 10, name: "gpt-4o", providerId: 1, providerName: "OpenAI" },
+        credential: { id: 20, name: "prod", providerId: 1, providerName: "OpenAI" },
+        temperature: null, maxTokens: null,
+      } }
+    const calls = renderSettings([
+      { status: 200, body: providers },
+      { status: 200, body: [{ agentType: "maintainability_manager", configured: false, configuration: null },
+        { agentType: "architecture", configured: false, configuration: null }] },
+      { status: 200, body: saved }, { status: 200, body: providers },
+    ])
+    await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
+    expect(await screen.findByRole("heading", { name: "Mantenibilidad · todos los agentes" })).toBeDefined()
+    expect(screen.queryByRole("heading", { name: "architecture" })).toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: "Select a model..." }))
+    await userEvent.click(screen.getByRole("option", { name: /gpt-4o/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select a credential..." }))
+    await userEvent.click(screen.getByRole("option", { name: /prod/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT"
+      && call.url.endsWith("/api/agent-settings/maintainability_manager")
+      && call.body === JSON.stringify({ modelId: 10, credentialId: 20 }))).toBe(true))
+    expect(await screen.findByText("Configuration saved.")).toBeDefined()
+  })
+
   it("edits a model through its existing modal, keeping the provider fixed", async () => {
     const updated = [{ ...providers[0], models: [{ id: 10, name: "gpt-4.1", inUse: true }] }]
     const calls = renderSettings([

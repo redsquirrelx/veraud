@@ -16,6 +16,10 @@ export interface RegisteredProject {
 
 const baseUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501"
 
+export function backendHttpUrl(): string {
+  return baseUrl
+}
+
 export function backendWsUrl(): string {
   return `${baseUrl.replace(/^http/, "ws")}/ws`
 }

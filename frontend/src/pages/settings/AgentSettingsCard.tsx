@@ -11,9 +11,11 @@ interface AgentSettingsCardProps {
   onSaved: (agent: AgentSettings) => void
   onConfigure: () => void
   onVerified: (agent: AgentSettings) => void
+  label?: string
+  modelAccessOnly?: boolean
 }
 
-export function AgentSettingsCard({ agent, providers, providersLoading, onSaved, onConfigure, onVerified }: AgentSettingsCardProps) {
+export function AgentSettingsCard({ agent, providers, providersLoading, onSaved, onConfigure, onVerified, label, modelAccessOnly = false }: AgentSettingsCardProps) {
   const [modelId, setModelId] = useState<number | null>(agent.configuration?.model.id ?? null)
   const [credentialId, setCredentialId] = useState<number | null>(agent.configuration?.credential.id ?? null)
   const [saving, setSaving] = useState(false)
@@ -61,7 +63,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
   return (
     <Card>
       <div className="settings-agent-heading">
-        <h3>{agent.agentType}</h3>
+        <h3>{label ?? agent.agentType}</h3>
         <Badge tone={dirty ? "info" : agent.configured ? "success" : "info"}>
           {dirty ? "Unsaved changes" : agent.configured ? "Configured" : agent.configuration ? "Needs attention" : "Not configured"}
         </Badge>
@@ -92,9 +94,9 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       {error && <p className="settings-error" role="alert">{error}</p>}
       {saved && !dirty && <p className="settings-hint" role="status">Configuration saved.</p>}
       <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading} onUpdated={onVerified} />
-      <p className="settings-hint">Initial budget: {(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET).toLocaleString()} · Absolute limit: {(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT).toLocaleString()}</p>
+      {!modelAccessOnly && <p className="settings-hint">Initial budget: {(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET).toLocaleString()} · Absolute limit: {(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT).toLocaleString()}</p>}
       <div className="settings-agent-footer">
-        <Button variant="secondary" ariaLabel={`Configure ${agent.agentType}`} onClick={onConfigure}>Configure</Button>
+        {!modelAccessOnly && <Button variant="secondary" ariaLabel={`Configure ${agent.agentType}`} onClick={onConfigure}>Configure</Button>}
         <Button disabled={!canSave} loading={saving} loadingText="Saving..." onClick={() => void save()}>Save changes</Button>
       </div>
     </Card>

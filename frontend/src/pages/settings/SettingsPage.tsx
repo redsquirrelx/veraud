@@ -7,11 +7,13 @@ import { TASK_KIND_OPTIONS, useTaskVisibility } from "../../shared/task-manager/
 import { ModelListItem } from "./ModelListItem.tsx"
 import { CredentialListItem } from "./CredentialListItem.tsx"
 import { AgentsSettings } from "./AgentsSettings.tsx"
+import { AuditSettings } from "./AuditSettings.tsx"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./SettingsPage.css"
 
 const settingsTabs = [
   { id: "agents", label: "Agents" },
+  { id: "audit", label: "Audit" },
   { id: "models", label: "Models & credentials" },
   { id: "preferences", label: "Preferences" },
 ] as const
@@ -192,6 +194,18 @@ export function SettingsPage() {
           pushToast("success", `Configuration for ${agent.agentType} saved successfully`)
           void refresh()
         }} />}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-audit`} aria-labelledby={`${tabsId}-tab-audit`} hidden={activeTab !== "audit"} tabIndex={0}>
+        {activeTab === "audit" && <>
+          <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError}
+            agentTypes={["maintainability_manager"]}
+            modelAccessOnly
+            heading="Maintainability audit models"
+            description="One model and credential for all nine maintainability agents: the manager, both coordinators and all investigators. Each agent receives an explicit configuration when the audit starts."
+            labels={{ maintainability_manager: "Mantenibilidad · todos los agentes" }}
+            onAssignmentsSaved={() => { pushToast("success", "Maintainability audit configuration saved"); void refresh() }} />
+          <AuditSettings />
+        </>}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
       <Card>
