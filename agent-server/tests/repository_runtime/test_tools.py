@@ -61,6 +61,24 @@ def toolset(checkout, *, budget=None, limits=None):
     return RepositoryToolset(context, workspace_root=workspace, limits=limits)
 
 
+def test_descendants_share_actual_retrieval_usage_without_static_budget_division(checkout):
+    def read(child):
+        return child.execute("get_source_excerpt", {"path": "src/main.py", "start_line": 1, "end_line": 2}, tool_call_id="read")
+
+    sample = read(toolset(checkout))
+    assert sample.status == "ok"
+    size = len(sample.model_dump_json())
+    root = toolset(checkout, budget=ExecutionBudget(max_retrieved_characters=2 * size + 10))
+    children = [RepositoryToolset(root.context, workspace_root=checkout[0], retrieval_budget=root.retrieval_budget) for _ in range(3)]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(read, children))
+    delivered = [r for r in results if r.status == "ok"]
+    assert len(delivered) == 2
+    assert root.retrieval_budget.used == sum(len(r.model_dump_json()) for r in delivered) <= root.retrieval_budget.limit
+    assert [r.error.code for r in results if r.status != "ok"] == ["content_budget_exhausted"]
+    assert sum(len(child.retrieved_evidence) for child in children) == 2
+
+
 def call(tools, name, /, **arguments):
     return tools.execute(
         name, arguments, tool_call_id=f"call-{tools.budget_usage.tool_calls + 1}"

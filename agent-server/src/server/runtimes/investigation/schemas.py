@@ -8,6 +8,7 @@ from ...agents.schemes.base import (
     CandidateFinding,
     Contract,
     Criterion,
+    DeferredProviderStage,
     Evaluation,
     EvidenceReference,
     Finding,
@@ -18,6 +19,6 @@ from ...agents.schemes.base import (
 )
 
 __all__ = [
-    "AuditRequest", "AuditResult", "CandidateFinding", "Contract", "Criterion", "Evaluation", "EvidenceReference",
+    "AuditRequest", "AuditResult", "CandidateFinding", "Contract", "Criterion", "DeferredProviderStage", "Evaluation", "EvidenceReference",
     "Finding", "FindingReview", "Hypothesis", "InvestigationConfig", "InvestigationPlan", "ProviderRateLimits", "Review",
 ]

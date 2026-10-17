@@ -24,7 +24,9 @@ from .access import (
 )
 from .context import RepositoryContext
 from .schemas import BudgetUsage, RetrievedEvidence
+from .shared_tokens import SharedTokenBudget
 from .telemetry import ToolMeasurement
+from .timing import ActiveDeadline
 
 
 class ToolError(BaseModel):
@@ -148,6 +150,15 @@ class ToolRequestError(ValueError):
         self.code = code
 
 
+class RetrievalBudget:
+    """One character ledger shared by every descendant of a repository toolset."""
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.used = 0
+        self.lock = RLock()
+
+
 class RepositoryToolset:
     """Per-run tools, evidence registry, and tool-budget ledger.
 
@@ -162,8 +173,14 @@ class RepositoryToolset:
         *,
         workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
         limits: ToolLimits | None = None,
+        token_budget: "SharedTokenBudget | None" = None,
+        timing: ActiveDeadline | None = None,
+        retrieval_budget: RetrievalBudget | None = None,
     ):
         self.context = context
+        self.token_budget = token_budget
+        self.timing = timing
+        self.retrieval_budget = retrieval_budget or RetrievalBudget(context.input.budget.max_retrieved_characters)
         self.policy = RepositoryAccessPolicy.bind(context.snapshot, workspace_root)
         self.limits = limits or ToolLimits()
         self._snapshot = self.policy.filtered_snapshot(context.snapshot)
@@ -188,10 +205,13 @@ class RepositoryToolset:
             for record in collection
         }
         self._retrieved: dict[str, RetrievedEvidence] = {}
+        # Host-only attribution cache scoped to this immutable snapshot/toolset.
+        # Collection must use the same checks as the investigator's final result.
+        self.commit_verifications = {}
         self._call_ids: set[str] = set()
         self._tool_calls = 0
         self._retrieved_characters = 0
-        self._lock = RLock()
+        self._lock = self.retrieval_budget.lock
         self._tool_measurements: list[ToolMeasurement] = []
         self._request_signatures: set[str] = set()
         self._query_cache = {}
@@ -297,7 +317,8 @@ class RepositoryToolset:
                     "Use a fresh tool call ID.",
                 )
             budget = self.context.input.budget
-            if self.context.elapsed_seconds >= budget.max_elapsed_seconds:
+            if (self.timing.remaining <= 0 if self.timing is not None else
+                    self.context.elapsed_seconds >= budget.max_elapsed_seconds):
                 return self._error(
                     name,
                     tool_call_id,
@@ -331,13 +352,15 @@ class RepositoryToolset:
                     if self.limits.compact:
                         self._query_cache[cache_key] = deepcopy(result)
                 response = self._bounded_response(name, tool_call_id, result)
-                if self.context.elapsed_seconds >= budget.max_elapsed_seconds:
+                if (self.timing.remaining <= 0 if self.timing is not None else
+                        self.context.elapsed_seconds >= budget.max_elapsed_seconds):
                     raise ToolRequestError(
                         "time_budget_exhausted",
                         "The execution time budget is exhausted.",
                     )
                 serialized = response.model_dump_json()
                 self._retrieved_characters += len(serialized)
+                self.retrieval_budget.used += len(serialized)
                 for record in response.evidence:
                     self._retrieved[record.id] = record
                 return response
@@ -469,6 +492,7 @@ class RepositoryToolset:
             self.context.input.budget.max_retrieved_characters
             - self._retrieved_characters
         )
+        remaining = min(remaining, self.retrieval_budget.limit - self.retrieval_budget.used)
         cap = min(self.limits.max_response_characters, remaining)
         while True:
             evidence = self._provenance(data, call_id)

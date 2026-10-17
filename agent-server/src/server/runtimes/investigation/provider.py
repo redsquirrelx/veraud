@@ -1,13 +1,14 @@
 """Safe provider classification through adapter exception chains; no raw payload logging."""
 
 import asyncio
+import re
 from collections import deque
 from dataclasses import dataclass
 from time import monotonic
 
 from config.agents.provider import ProviderRetryConfig
 
-from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
+from ...benchmark.pacing import RequestPacer, http_status, retry_hints, retryable
 
 
 class RequestTokenQuotaExceeded(ValueError):
@@ -21,7 +22,7 @@ class QuotaReservation:
 
 
 class ProviderPacer(RequestPacer):
-    """Shared rolling-60-second admission, combined with pacing and cooldown.
+    """Shared rolling-60-second admission and local request pacing.
 
     Ledger timestamps belong to request starts, not calendar-minute boundaries.
     Failed/unknown attempts retain their token estimates. The caller owns scope:
@@ -63,13 +64,15 @@ class ProviderPacer(RequestPacer):
         return delays
 
     async def acquire(self, tokens, *, on_wait=None):
-        async with self.lock:
-            while True:
-                self.changed.clear()
+        while True:
+            # Only checking/reserving capacity is serialized. A sleeping request
+            # must not hold up smaller requests that fit the available TPM.
+            async with self.lock:
+                notification = self.changed
                 now = self.clock()
                 delays = self.quota_delay(tokens, now)
                 if self.next_allowed > now:
-                    delays["pacing_or_cooldown"] = self.next_allowed - now
+                    delays["pacing"] = self.next_allowed - now
                 delay = max(delays.values(), default=0)
                 if delay <= 0:
                     reservation = QuotaReservation(now, tokens)
@@ -78,23 +81,28 @@ class ProviderPacer(RequestPacer):
                     return reservation
                 if on_wait is not None:
                     on_wait(delay, sorted(delays))
-                sleeper = asyncio.create_task(self.sleep(delay))
-                changed = asyncio.create_task(self.changed.wait())
-                try:
-                    done, _ = await asyncio.wait((sleeper, changed), return_when=asyncio.FIRST_COMPLETED)
-                    for task in done:
-                        task.result()
-                finally:
-                    for task in (sleeper, changed):
-                        if not task.done():
-                            task.cancel()
-                    await asyncio.gather(sleeper, changed, return_exceptions=True)
+            sleeper = asyncio.create_task(self.sleep(delay))
+            changed = asyncio.create_task(notification.wait())
+            try:
+                done, _ = await asyncio.wait((sleeper, changed), return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    task.result()
+            finally:
+                for task in (sleeper, changed):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(sleeper, changed, return_exceptions=True)
 
     def settle(self, reservation, actual_tokens):
         # No await: atomic within the event loop, also while another caller waits.
         # An expired reservation no longer affects the current rolling window.
         reservation.tokens = actual_tokens
-        self.changed.set()
+        self._notify()
+
+    def _notify(self):
+        # Broadcast without clearing an event another waiter still needs to see.
+        notification, self.changed = self.changed, asyncio.Event()
+        notification.set()
 
 
 def causes(error):
@@ -113,8 +121,100 @@ def transient(error):
     return any(retryable(cause) for cause in causes(error))
 
 
+def retry_hint(error):
+    """Prefer the original provider response over duplicated/translated wrapper hints."""
+    for cause in reversed(list(causes(error))):
+        hints = retry_hints(cause)
+        if hints:
+            return max(hints, key=lambda hint: hint.seconds)
+    return None
+
+
 def retry_delay(error):
-    return max((retry_after(cause) for cause in causes(error)), default=0)
+    hint = retry_hint(error)
+    return hint.seconds if hint is not None else 0
+
+
+def quota_facts(error):
+    """Only protocol quota identifiers/classifications, never descriptions or project IDs."""
+    facts = []
+    for cause in reversed(list(causes(error))):
+        details = getattr(cause, "details", None)
+        if not isinstance(details, dict):
+            continue
+        payload = details.get("error", details)
+        if not isinstance(payload, dict):
+            continue
+        for detail in payload.get("details", []) or []:
+            if not isinstance(detail, dict) or not str(detail.get("@type", "")).endswith("google.rpc.QuotaFailure"):
+                continue
+            for violation in detail.get("violations", []) or []:
+                if not isinstance(violation, dict):
+                    continue
+                quota_id = violation.get("quotaId", "")
+                metric = violation.get("quotaMetric", "")
+                for name, value in (("quota_id", quota_id), ("quota_metric", metric)):
+                    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_./:-]{1,200}", value):
+                        facts.append(f"{name}={value}")
+                kind = (str(quota_id) + " " + str(metric)).lower().replace("_", "")
+                if "perday" in kind:
+                    facts.append("quota_window=day")
+                elif "perminute" in kind:
+                    facts.append("quota_window=minute")
+        if facts:
+            break
+    return list(dict.fromkeys(facts))
+
+
+def response_payload(cause):
+    """Read structured error bodies across SDK versions; callers allowlist output."""
+    for name in ("details", "body", "response_json"):
+        value = getattr(cause, name, None)
+        if isinstance(value, dict) and value:
+            return value.get("error", value)
+    response = getattr(cause, "response", None)
+    if callable(getattr(response, "json", None)):
+        try:
+            value = response.json()
+        except (ValueError, TypeError, RuntimeError):
+            return {}
+        if isinstance(value, dict):
+            return value.get("error", value)
+    return {}
+
+
+def request_facts(error):
+    """Allowlisted request field names from structured Google BadRequest details."""
+    aliases = {
+        "response_schema": "response_schema", "responseSchema": "response_schema",
+        "response_json_schema": "response_json_schema", "responseJsonSchema": "response_json_schema",
+        "max_output_tokens": "max_output_tokens", "maxOutputTokens": "max_output_tokens",
+        "temperature": "temperature", "tools": "tools", "contents": "contents",
+        "thinking_config": "thinking_config", "thinkingConfig": "thinking_config",
+        "tool_config": "tool_config", "toolConfig": "tool_config",
+        "response_mime_type": "response_mime_type", "responseMimeType": "response_mime_type",
+    }
+    facts = []
+    for cause in reversed(list(causes(error))):
+        payload = response_payload(cause)
+        if not isinstance(payload, dict) or not isinstance(payload.get("details", []), list):
+            continue
+        for detail in payload.get("details", [])[:8]:
+            if not isinstance(detail, dict) or not str(detail.get("@type", "")).endswith("google.rpc.BadRequest"):
+                continue
+            violations = detail.get("fieldViolations", [])
+            if not isinstance(violations, list):
+                continue
+            for violation in violations[:8]:
+                field = violation.get("field") if isinstance(violation, dict) else None
+                if isinstance(field, str):
+                    parts = re.split(r"[.\[\]]", field)
+                    # The first known request field is sufficient; nested schema
+                    # property names and violation descriptions must never escape.
+                    name = next((aliases[part] for part in parts if part in aliases), None)
+                    if name:
+                        facts.append(f"request_field={name}")
+    return list(dict.fromkeys(facts))
 
 
 def provider_diagnostic(error):
@@ -128,11 +228,17 @@ def provider_diagnostic(error):
         "invalid_argument": ("invalid_argument",),
         "quota_exhausted": ("resource_exhausted", "quota exceeded", "rate limit"),
         "authentication": ("unauthenticated", "api key not valid"),
+        "model_prefilling": ("does not support model prefilling",),
+        "unsupported_thinking": ("thinking is not supported", "thinking budget is not supported"),
     }
     facts.extend(name for name, patterns in categories.items() if any(p in text for p in patterns))
-    delay = retry_delay(error)
-    if delay:
-        facts.append(f"retry_after_seconds={delay:g}")
+    hint = retry_hint(error)
+    if hint is not None:
+        facts.extend((f"retry_after_seconds={hint.seconds:g}", f"retry_after_source={hint.source}"))
+    facts.extend(quota_facts(error))
+    facts.extend(request_facts(error))
+    if status == 400 and not any(fact.startswith("request_field=") for fact in facts):
+        facts.append("request_field=not_reported")
     return "; " + ", ".join(facts) if facts else ""
 
 
