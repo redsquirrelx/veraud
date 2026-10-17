@@ -32,6 +32,11 @@ class MemoryBlackboardRepository(BlackboardRepository):
     def get_evidence(self, audit_run_id: str, evidence_id: str) -> Evidence | None:
         return self._get(self._evidence, audit_run_id, evidence_id)
 
+    def query_evidence(
+        self, audit_run_id: str, agent_execution_id: str | None = None,
+    ) -> list[Evidence]:
+        return self._query(self._evidence, audit_run_id, agent_execution_id)
+
     def insert_assessment(self, assessment: Assessment) -> str:
         return self._insert(self._assessments, assessment)
 

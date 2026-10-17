@@ -75,6 +75,16 @@ class Blackboard(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def query_evidence(
+        self, audit_run_id: str, agent_execution_id: str | None = None,
+    ) -> list[Evidence]:
+        """List all evidence in this audit, optionally filtered by producing execution.
+
+        Includes records not yet referenced by a finding or assessment.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def publish_assessment(self, assessment: Assessment) -> str:
         """Publish in assessment.run_id; return its id under the shared retry policy."""
         raise NotImplementedError

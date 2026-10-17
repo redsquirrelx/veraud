@@ -42,6 +42,8 @@ class BlackboardRecord(BaseModel):
 
 
 class Evidence(BlackboardRecord):
+    commit_verification: Literal["exact", "line_endings_equivalent", "unverified"] | None = None
+    git_blob_id: str | None = None
     """Verifiable technical evidence published by an investigator."""
 
     kind: Literal["source", "metadata", "tool_result"]

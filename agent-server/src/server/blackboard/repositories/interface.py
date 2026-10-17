@@ -57,6 +57,13 @@ class BlackboardRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def query_evidence(
+        self, audit_run_id: str, agent_execution_id: str | None = None,
+    ) -> list[Evidence]:
+        """Return detached evidence scoped to the audit and optional execution."""
+        raise NotImplementedError
+
+    @abstractmethod
     def insert_assessment(self, assessment: Assessment) -> str:
         """Atomically retain an assessment or compare it with the existing record."""
         raise NotImplementedError

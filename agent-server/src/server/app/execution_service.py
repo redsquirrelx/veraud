@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
@@ -31,6 +32,9 @@ from .tracing_port import LangSmithTracingBackend, TracingBackend
 from .usage_reporting import ReportingModel
 
 logger = get_logger("execution-service")
+
+if TYPE_CHECKING:
+    from ..blackboard.interface import Blackboard
 
 
 class InvalidConfigError(ValueError):
@@ -213,6 +217,8 @@ class AgentExecutionService:
         config: ExecutionConfig,
         payload: dict,
         execution_id: int | None = None,
+        *,
+        blackboard: "Blackboard | None" = None,
     ) -> BaseModel:
         """Validate the payload against the agent's own input schema, then run it.
 
@@ -224,6 +230,7 @@ class AgentExecutionService:
         take part.
         """
         agent, timeout = self.build_agent(agent_type, config)
+        agent.blackboard = blackboard
 
         input_schema = type(agent).input_schema
         try:
