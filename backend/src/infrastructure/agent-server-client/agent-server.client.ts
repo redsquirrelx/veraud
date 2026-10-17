@@ -24,6 +24,8 @@ export interface AgentInvoker {
  *  derived server-side from previous stages. */
 export interface PipelineInput {
   root_path: string
+  attributes?: string[]
+  commit_hash?: string
 }
 
 export class AgentInvocationError extends Error {
@@ -130,6 +132,9 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
       `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")} at ${url}`,
     )
 
+    const qualityAudit = pipeline === "quality-audit"
+    // Keep the audit's native 30-minute wall deadline, plus report/cleanup headroom.
+    const pipelineTimeoutSeconds = qualityAudit ? 1860 : undefined
     let response: Response
 
     try {
@@ -142,8 +147,9 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
           input,
           stage_configs: configs,
           execution_ids: executionIds,
+          ...(pipelineTimeoutSeconds === undefined ? {} : { timeout_seconds: pipelineTimeoutSeconds }),
         }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(qualityAudit ? 1_920_000 : timeoutMs),
       })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)

@@ -202,6 +202,7 @@ export class ProjectRepository implements ProjectStore {
       orderBy: { id: "desc" },
       include: {
         evaluations: {
+          where: { type: "Analysis" },
           orderBy: { id: "desc" },
           take: 1,
           include: { agentExecutions: { orderBy: { id: "asc" } } },

@@ -6,7 +6,7 @@ import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, MAINTAINABILITY_AUDIT_AGENTS, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -129,6 +129,40 @@ export class AgentExecutionService {
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
+  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[]) {
+    const configurations = await this.settings.prepareExecution([MAINTAINABILITY_AGENT_TYPE])
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations, "QualityAudit")
+    const execution = result.executions[MAINTAINABILITY_AGENT_TYPE]!
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    void this.dispatchQualityAudit(execution, configurations[0]!.transport, commitHash, attributes)
+    return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
+  }
+
+  private async dispatchQualityAudit(execution: StoredAgentExecution, config: AgentRunConfig, commitHash: string, attributes: string[]) {
+    try {
+      if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
+      const input = await this.targets.resolve(execution.evaluationId)
+      await this.markRunning(execution.id)
+      const payload = await this.agents.runPipelineByName("quality-audit", {
+        root_path: String(input.root_path), commit_hash: commitHash, attributes,
+      }, { [MAINTAINABILITY_AGENT_TYPE]: execution.id },
+      Object.fromEntries(MAINTAINABILITY_AUDIT_AGENTS.map((agentType) => [agentType, config])))
+      const audit = payload["audit"]
+      if (!audit || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
+        throw new Error("Quality-audit pipeline returned no report")
+      }
+      // Completed means the pipeline delivered its artifacts. The independent
+      // quality status (including partial/failed) remains in the report/envelope.
+      await this.close(execution.id, {
+        status: "Completed", result: JSON.stringify(audit), error: null,
+        inputTokens: null, outputTokens: null,
+        interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
+      })
+    } catch (error) {
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
   /** Starts the agent and then gets out of the way. Never throws: a failure here
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
@@ -237,11 +271,11 @@ export class AgentExecutionService {
   }
 
   /** Marks an invocation as in flight. Optional: the agent-server may skip it. */
-  async markRunning(id: number): Promise<StoredAgentExecution> {
+  async markRunning(id: number, runId?: string): Promise<StoredAgentExecution> {
     const existing = await this.require(id)
     if (existing.status === "Completed" || existing.status === "Failed") return existing
 
-    return this.executions.markRunning(id)
+    return this.executions.markRunning(id, runId)
   }
 
   async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
@@ -318,7 +352,9 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     evaluationId: execution.evaluationId,
     agentType: execution.agentType,
     status: execution.status,
-    result: execution.result,
+    // Audit artifacts are retrieved through project-scoped report endpoints;
+    // avoid broadcasting source inventories and binary base64 to every client.
+    result: execution.agentType === MAINTAINABILITY_AGENT_TYPE ? null : execution.result,
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,

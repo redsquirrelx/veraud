@@ -155,6 +155,7 @@ export function registerAgentExecutionRoutes(
 
   /** Called by the agent-server once the run actually starts. Optional. */
   app.post("/api/agent-executions/:id/running", { schema: { params: idParams,
+    body: { type: ["object", "null"], properties: { runId: { type: "string", pattern: "^[a-f0-9]{32}$" } }, additionalProperties: false },
     tags: ["Agent Executions"], summary: "Report that an agent execution started",
     description: "Optional agent-server callback. Marks an open execution Running and publishes an update. Finished executions are not overwritten. No body is required.",
     response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404], "ExecutionError", false) },
@@ -162,7 +163,7 @@ export function registerAgentExecutionRoutes(
     const { id } = request.params as { id: string }
 
     try {
-      const execution = await service.markRunning(Number(id))
+      const execution = await service.markRunning(Number(id), (request.body as { runId?: string } | undefined)?.runId)
 
       broadcast(gateway, "agent-execution.updated", execution)
 

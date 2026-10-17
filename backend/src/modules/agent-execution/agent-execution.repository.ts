@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
+import { MAINTAINABILITY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
@@ -64,7 +65,7 @@ export interface StoredAgentExecution {
 export interface AgentExecutionStore {
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
-  markRunning(id: number): Promise<StoredAgentExecution>
+  markRunning(id: number, runId?: string): Promise<StoredAgentExecution>
   updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution>
   findById(id: number): Promise<StoredAgentExecution | null>
   /** Overwrites the stored result of a finished row without touching its
@@ -73,7 +74,7 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
+  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
@@ -137,7 +138,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   /** Generic row creation shared by every pipeline: version row is saved (or
    *  reused), it becomes the selected one, a fresh evaluation is created, and
    *  one Waiting execution per configuration is stored with its snapshot. */
-  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]) {
+  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
     if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
       const running = await tx.agentExecution.findFirst({ where: {
@@ -150,7 +151,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
       })
       await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
-      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
+      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: evaluationType } })
       const executions: Record<string, StoredAgentExecution> = {}
       for (const configuration of configurations) {
         executions[configuration.agentType] = this.toStored(await tx.agentExecution.create({ data: {
@@ -162,10 +163,15 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     })
   }
 
-  async markRunning(id: number): Promise<StoredAgentExecution> {
+  async markRunning(id: number, runId?: string): Promise<StoredAgentExecution> {
     await this.db.agentExecution.updateMany({
       where: { id, status: "Waiting" },
       data: { status: "Running", startedAt: new Date() },
+    })
+
+    if (runId) await this.db.agentExecution.updateMany({
+      where: { id, status: "Running", agentType: MAINTAINABILITY_AGENT_TYPE, result: null },
+      data: { result: JSON.stringify({ run_id: runId }) },
     })
 
     return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))

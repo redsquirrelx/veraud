@@ -82,6 +82,13 @@ test("generic pipeline dispatch posts stage maps to the named pipeline", async (
       path: "/api/pipelines/project-architecture/run",
       body: { input: { root_path: "checkout" }, execution_ids: ids, stage_configs: configs },
     }])
+    const auditInput = { root_path: "checkout", commit_hash: "a".repeat(40), attributes: ["maintainability"] }
+    await client.runPipelineByName("quality-audit", auditInput, { maintainability_manager: 24 }, { maintainability_manager: config })
+    assert.deepEqual(requests[1], {
+      path: "/api/pipelines/quality-audit/run",
+      body: { input: auditInput, execution_ids: { maintainability_manager: 24 },
+        stage_configs: { maintainability_manager: config }, timeout_seconds: 1860 },
+    }, "audit dispatch must preserve revision/attributes and not inherit the 600s architecture ceiling")
   } finally {
     await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()))
     await app.close()

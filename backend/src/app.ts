@@ -22,6 +22,9 @@ import {
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
+import { QualityAuditRepository } from "./modules/quality-audit/quality-audit.repository.js"
+import { QualityAuditService } from "./modules/quality-audit/quality-audit.service.js"
+import { registerQualityAuditRoutes } from "./modules/quality-audit/quality-audit.controller.js"
 import { AgentExecutionRepository } from "./modules/agent-execution/agent-execution.repository.js"
 import { AgentExecutionService } from "./modules/agent-execution/agent-execution.service.js"
 import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-execution.controller.js"
@@ -106,6 +109,7 @@ export async function buildApp(options: BuildAppOptions) {
   
   gateway.register(app)
   registerProjectRoutes(app, projectService)
+  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService))
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)

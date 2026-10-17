@@ -49,7 +49,7 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 31)
+      assert.equal(operations.length, 35)
       const expectedOperations = [
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
@@ -58,6 +58,9 @@ describe("OpenAPI portal", () => {
         "GET /api/ai-providers",
         "GET /api/ai-providers/{id}",
         "GET /api/projects",
+        "GET /api/projects/{id}/audits",
+        "GET /api/projects/{id}/audits/{auditId}/report",
+        "GET /api/projects/{id}/audits/{auditId}/report.docx",
         "GET /api/projects/{id}/versions",
         "GET /api/tasks/active",
         "GET /status",
@@ -73,6 +76,7 @@ describe("OpenAPI portal", () => {
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
         "POST /api/projects/{id}/architecture",
+        "POST /api/projects/{id}/audits",
         "POST /api/projects/{id}/file",
         "POST /api/projects/{id}/git/branches",
         "POST /api/projects/{id}/git/checkout",
