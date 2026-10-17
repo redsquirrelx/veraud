@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from pydantic import Field, model_validator
 
-from .budgets import CallBudgetConfig
+from .budgets import CallBudgetConfig, ExecutionTimingConfig
 from .provider import ProviderRetryConfig
 
 REPOSITORY_TOOLS = (
@@ -14,12 +14,14 @@ REPOSITORY_TOOLS = (
 INVESTIGATION_NODES = ("plan_investigation", "investigate", "evaluate_evidence", "review_findings")
 
 
-class AgentDeveloperConfig(CallBudgetConfig, ProviderRetryConfig):
+class AgentDeveloperConfig(CallBudgetConfig, ExecutionTimingConfig, ProviderRetryConfig):
     """Implementation bounds, transport tuning, enabled tools and cognitive prompts."""
 
     prompt_nodes: ClassVar[tuple[str, ...]] = ()
     bounds: ClassVar = {"max_model_calls": {"ge": 4, "le": 100}, "max_tool_calls": {"le": 200}}
     max_schema_retries: int = Field(default=1, ge=0, le=2, description="Additional structured-output correction attempts.")
+    max_schema_recovery_attempts: int = Field(default=2, ge=0, le=6,
+        description="Additional evaluate_evidence repair attempts after normal schema corrections. Existing call, token and active-time budgets still apply.")
     max_context_characters: int = Field(default=100_000, ge=4000,
         description="Serialized messages plus schema/tool overhead per model call, measured in characters.")
     max_output_tokens: int = Field(default=4000, ge=256,

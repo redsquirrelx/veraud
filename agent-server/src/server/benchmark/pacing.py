@@ -3,6 +3,7 @@
 import asyncio
 import math
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
@@ -21,7 +22,29 @@ def http_status(error: Exception) -> int | None:
     return None
 
 
+def daily_quota_exhausted(error: Exception) -> bool:
+    """An explicit daily quota rejection cannot recover through minute pacing."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        for name in ("details", "body", "response_json"):
+            value = getattr(error, name, None)
+            payload = value.get("error", value) if isinstance(value, dict) else {}
+            if not isinstance(payload, dict):
+                continue
+            for detail in payload.get("details", []) or []:
+                if not isinstance(detail, dict) or not str(detail.get("@type", "")).endswith("google.rpc.QuotaFailure"):
+                    continue
+                for violation in detail.get("violations", []) or []:
+                    if isinstance(violation, dict) and "perday" in str(violation.get("quotaId", "")).lower().replace("_", ""):
+                        return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 def retryable(error: Exception) -> bool:
+    if daily_quota_exhausted(error):
+        return False
     status = http_status(error)
     if status is not None:
         return status in (408, 429, 500, 502, 503, 504)
@@ -30,17 +53,23 @@ def retryable(error: Exception) -> bool:
     )
 
 
-def retry_after(error: Exception) -> float:
-    """Read HTTP retry hints and Gemini's structured google.rpc.RetryInfo."""
+@dataclass(frozen=True)
+class RetryHint:
+    seconds: float
+    source: str
+
+
+def retry_hints(error: Exception) -> list[RetryHint]:
+    """Parse provider retry hints with units and provenance, without raw payloads."""
     waits = []
 
-    def seconds(value, scale=1):
+    def seconds(value, source, scale=1):
         try:
             number = float(value) * scale
         except (TypeError, ValueError):
             return
         if math.isfinite(number) and number >= 0:
-            waits.append(number)
+            waits.append(RetryHint(number, source))
 
     response = getattr(error, "response", None)
     headers = getattr(response, "headers", {}) or {}
@@ -50,10 +79,10 @@ def retry_after(error: Exception) -> float:
             date = parsedate_to_datetime(value)
             if date.tzinfo is None:
                 date = date.replace(tzinfo=UTC)
-            seconds((date - datetime.now(UTC)).total_seconds())
+            seconds(max(0, (date - datetime.now(UTC)).total_seconds()), "retry-after.http-date")
         except (TypeError, ValueError, OverflowError):
-            seconds(value)
-    seconds(headers.get("retry-after-ms"), 0.001)
+            seconds(value, "retry-after.seconds")
+    seconds(headers.get("retry-after-ms"), "retry-after-ms", 0.001)
     details = getattr(error, "details", None)
     if isinstance(details, dict):
         payload = details.get("error", details)
@@ -64,8 +93,13 @@ def retry_after(error: Exception) -> float:
                 if str(detail.get("@type", "")).endswith("google.rpc.RetryInfo"):
                     delay = detail.get("retryDelay")
                     if isinstance(delay, str) and delay.endswith("s"):
-                        seconds(delay[:-1])
-    return max(waits, default=0.0)
+                        seconds(delay[:-1], "google.rpc.RetryInfo.retryDelay")
+    return waits
+
+
+def retry_after(error: Exception) -> float:
+    """Compatibility scalar for benchmark callers; all hints belong to this response."""
+    return max((hint.seconds for hint in retry_hints(error)), default=0.0)
 
 
 class RequestPacer:

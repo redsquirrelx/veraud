@@ -9,6 +9,26 @@ Configuration has two independent axes:
 
 ## Levels
 
+`POST /api/audits` admite `agent_defaults.max_model_calls`, junto a
+`max_context_characters` y `max_total_tokens`, como configuración de desarrollador.
+Por ejemplo: `"agent_defaults": {"max_model_calls": 30}` aplica el límite de
+llamadas al modelo a los investigadores. `agent_defaults.max_tool_calls` establece
+de igual forma las llamadas a herramientas de cada investigador. Los padres
+mantienen sus presupuestos agregados.
+Para editarlos explícitamente: `"call_limits": {"manager": {"max_model_calls": 400},
+"coordinator": {"max_model_calls": 160}, "investigator": {"max_model_calls": 40}}`.
+Cada nivel también acepta `max_tool_calls`, por ejemplo `"call_limits": {
+"manager": {"max_tool_calls": 400}, "coordinator": {"max_tool_calls": 180},
+"investigator": {"max_tool_calls": 50}}`. Los límites de herramientas incluyen
+intentos fallidos; cada padre debe poder reservar la primera ronda completa de
+hijos. La síntesis no requiere herramientas adicionales.
+Estos valores tienen precedencia sobre el valor común. Se valida antes de iniciar
+que cada padre pueda reservar la primera ronda de hijos y su síntesis. El consumo
+de descendientes sigue contando contra los límites del padre y del repositorio;
+las rondas posteriores dependen del presupuesto restante. Los campos omitidos
+mantienen sus valores efectivos originales. Contexto y tokens personales siguen
+aplicándose a todos los niveles mediante `agent_defaults`.
+
 | Level | Controls | Purpose |
 | --- | --- | --- |
 | `user` | `max_total_tokens`, `timeout_seconds` | Cost and duration of the requested execution |
@@ -18,6 +38,27 @@ Configuration has two independent axes:
 | `developer` | Schema/provider retries, retry backoff, request/start intervals | Transport and scheduling policy |
 | `developer` | Rounds, invocations, parallelism, child envelopes, attempts per dimension | Hierarchical orchestration |
 | `developer` | Dependency depth, candidates, groups, components, scans, excerpt sizes, claims and batching | Agent-specific investigation algorithms |
+
+Structured responses use `max_schema_retries` for ordinary corrections (default: 1).
+Investigator `evaluate_evidence` additionally uses `max_schema_recovery_attempts`
+(default: 2), allowing four total attempts with the default settings. Contract-defined
+validation feedback explains recoverable semantic errors without exposing provider
+payloads. Repairs retain the current plan and evidence and consume the existing
+model-call, token, context and active-time budgets. A valid evaluation can return to
+inspection through the agent's existing routes; exhausted evaluation repairs terminate
+with `schema_recovery_exhausted` and retain partial results.
+
+Critical review checks that every candidate is classified exactly once, with no
+unknown IDs. These semantic checks use the same bounded correction loop as schema
+validation (`1 + max_schema_retries` attempts); exhausted review corrections also
+report `schema_recovery_exhausted`. Investigation reserves an evaluation call and
+the initial review plus its configured corrections. Small explicit call envelopes
+reduce the review reserve to leave room for planning, inspection and evaluation;
+all attempts still obey the hard effective call cap.
+
+The default coordinator child envelope inherits the common investigator model-call
+limit (currently 16), rather than imposing a separate 12-call preset. Explicit child
+limits and the repository budget still cap execution through their minimum.
 
 New fields are **developer-owned by default**. An agent can explicitly extend its
 `user_fields` class policy when a new genuinely user-facing control is implemented.
@@ -166,6 +207,49 @@ verify the composed contracts against the established execution paths.
 | Three project-analysis stages | `config/agents/repository.py` and local stage-only specialization |
 | Repository execution and every snapshot-bound agent's tools | `config/agents/repository_execution.py` and `config/agents/tools.py` |
 | Both ProviderPacer and ModelGateway | `config/agents/provider.py`: ProviderRetryConfig; legacy explicit constructor overrides remain supported |
+
+`provider_max_retry_wait_seconds` es una política de desarrollador (120 segundos por
+defecto). Si un proveedor solicita una recuperación más larga, la etapa queda pendiente
+con `provider_retry_wait_limit` y conserva el diagnóstico y los resultados parciales;
+no se duerme durante horas ni se adelanta el reintento respecto a `Retry-After`.
+Las esperas cortas de recuperación y la admisión local RPM/TPM conservan sus reglas.
+
+`provider_recovery_budget_seconds` limita además la suma de esperas automáticas
+de recuperación por invocación (60 segundos por defecto), tanto para errores
+transitorios como para recuperación de cuota. Es independiente del tiempo activo
+y nunca extiende una fecha límite absoluta. `max_provider_retries` admite cuatro
+reintentos transitorios por defecto; las esperas exponenciales habituales son
+2, 4, 8 y 16 segundos. Se siguen respetando los presupuestos de llamadas y tokens.
+Los HTTP 503 se reintentan en la misma etapa, con el mismo estado y evidencia,
+sin volver a planificar ni repetir lecturas. Si se agota la recuperación, la etapa
+se conserva en `deferred_stages` con motivo `provider_recovery_exhausted` o
+`provider_recovery_budget`; no se confunde con un error de esquema ni se cancelan
+las investigaciones hermanas. No hay reanudación persistente después de reiniciar
+el servidor: el resultado parcial documenta lo pendiente.
+
+La ejecución jerárquica distingue tres límites de tiempo, todos declarados una sola
+vez y con los controles nuevos reservados al nivel desarrollador:
+
+- `timeout_seconds`: tiempo activo del agente; la admisión de cuota puede pausarlo.
+- `max_wall_time_seconds`: duración absoluta, incluidas todas las esperas (1800 segundos
+  por defecto). La auditoría HTTP siempre establece este límite y los hijos heredan
+  el más estricto entre su propio límite y el del padre.
+- `provider_request_timeout_seconds`: plazo por intento al proveedor (90 segundos por
+  defecto), acotado además por el tiempo restante. Se aplica al supervisor asíncrono,
+  al transporte nativo cuando lo admite y al gateway de modelos del repositorio.
+
+`cancellation_grace_seconds` limita la espera de confirmación de una cancelación
+(2 segundos por defecto). Una limpieza que no responde queda supervisada en segundo
+plano y no retiene indefinidamente al padre. Los ámbitos cancelados no pueden publicar
+resultados tardíos. El cierre de clientes y la parada del servicio también tienen
+esperas acotadas. Un intento que vence queda pendiente como `provider_request_timeout`;
+no inicia nuevas solicitudes sobre una petición posiblemente aún viva.
+
+El snapshot HTTP expone `activity`, `last_progress_at`, `active_seconds_remaining` y
+`wall_seconds_remaining`. La actividad identifica agente, invocación, etapa, comienzo,
+duración y cancelaciones pendientes; no incluye mensajes del proveedor ni credenciales.
+Los hijos completados se validan, contabilizan y publican antes de esperar al resto;
+la recopilación final conserva el orden de asignación y no vuelve a cobrar su consumo.
 | Functional adequacy retrieval | `functional_adequacy/config.py`: embedding model and candidate count, actually consumed by retrieval |
 | Security component, enrichment, DAST and remediation | One `security/config.py::SecurityConfig` instance; remediation uses the common ModelSettings; local prompt in `security/prompts/` |
 

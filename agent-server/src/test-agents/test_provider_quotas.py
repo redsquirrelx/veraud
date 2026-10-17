@@ -186,7 +186,7 @@ def test_retry_counts_against_rpm_and_respects_execution_deadline(repo):
     model = ScriptedModel([rate_limit("0s")])
     config = BoundaryConfig(timeout_seconds=0.05, provider_retry_backoff_seconds=0,
         provider_rate_limits=ProviderRateLimits(requests_per_minute=1))
-    run = ArchitectureBoundaryAgent.execution_type(model, config, toolset(repo), ArchitectureBoundaryAgent.request_type())
+    run = ArchitectureBoundaryAgent.execution_type(model, config, toolset(repo, max_elapsed_seconds=0.05), ArchitectureBoundaryAgent.request_type())
     value = asyncio.run(run.call("review_findings", run.initial_state(), Review))
     assert value is None and run.stop == "time_limit"
     assert run.calls == len(model.history) == len(run.provider_pacer.reservations) == 1
@@ -199,6 +199,106 @@ def test_runtime_reconciles_provider_reported_usage(repo):
     run = ArchitectureBoundaryAgent.execution_type(model, BoundaryConfig(), toolset(repo), ArchitectureBoundaryAgent.request_type())
     value = asyncio.run(run.call("review_findings", run.initial_state(), Review))
     assert value is not None and run.provider_pacer.reservations[0].tokens == run.tokens == 130
+
+
+def test_runtime_quota_recovery_does_not_consume_active_agent_time(repo):
+    async def execute():
+        now = [0.0]
+
+        async def quota_sleep(delay):
+            await asyncio.sleep(0.25)  # Exceeds the active timeout below.
+            now[0] += delay
+
+        limiter = ProviderPacer(rate_limits=ProviderRateLimits(requests_per_minute=1),
+            clock=lambda: now[0], sleep=quota_sleep)
+        await limiter.acquire(1)
+        model = ScriptedModel([{"findings": [], "limitations": []}])
+        run = ArchitectureBoundaryAgent.execution_type(model, BoundaryConfig(timeout_seconds=0.15),
+            toolset(repo, max_elapsed_seconds=2), ArchitectureBoundaryAgent.request_type())
+        run.provider_pacer = limiter
+        value = await run.call("review_findings", run.initial_state(), Review)
+        assert value is not None and not run.stop
+        assert run.calls == len(model.history) == 1
+        assert run.remaining_seconds() > 0
+
+    asyncio.run(execute())
+
+
+def test_large_waiting_request_does_not_block_other_agents_that_fit_tpm():
+    async def execute():
+        limiter = ProviderPacer(rate_limits=ProviderRateLimits(requests_per_minute=None, tokens_per_minute=1000))
+        first = await limiter.acquire(800)
+        waiting = asyncio.Event()
+        large = asyncio.create_task(limiter.acquire(1000, on_wait=lambda *args: waiting.set()))
+        try:
+            await asyncio.wait_for(waiting.wait(), 1)
+            small = await asyncio.wait_for(limiter.acquire(100), 0.2)
+            assert small.tokens == 100 and not large.done()
+            assert not limiter.lock.locked()
+            limiter.settle(first, 0)
+            limiter.settle(small, 0)
+            assert (await asyncio.wait_for(large, 1)).tokens == 1000
+        finally:
+            large.cancel()
+            await asyncio.gather(large, return_exceptions=True)
+
+    asyncio.run(execute())
+
+
+def test_usage_reconciliation_wakes_all_waiting_agents():
+    async def execute():
+        limiter = ProviderPacer(rate_limits=ProviderRateLimits(requests_per_minute=None, tokens_per_minute=1000))
+        first = await limiter.acquire(1000)
+        entered = [asyncio.Event() for _ in range(3)]
+        tasks = [asyncio.create_task(limiter.acquire(200, on_wait=lambda *args, event=event: event.set()))
+            for event in entered]
+        try:
+            await asyncio.wait_for(asyncio.gather(*(event.wait() for event in entered)), 0.2)
+            limiter.settle(first, 100)
+            records = await asyncio.wait_for(asyncio.gather(*tasks), 1)
+            assert len(records) == 3
+            assert sum(record.tokens for record in limiter.reservations) == 700
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(execute())
+
+
+def test_one_waiting_invocation_does_not_block_shared_local_admission():
+    async def execute():
+        clock = Clock()
+        release = asyncio.Event()
+
+        async def recover(delay):
+            await release.wait()
+            clock.now += delay
+
+        limiter = ProviderPacer(rate_limits=ProviderRateLimits(tokens_per_minute=1000),
+            clock=clock, sleep=recover)
+        waiting = asyncio.Event()
+
+        async def affected_request():
+            waiting.set()
+            await recover(71035)
+            return await limiter.acquire(200)
+
+        task = asyncio.create_task(affected_request())
+        try:
+            await asyncio.wait_for(waiting.wait(), 1)
+            assert not task.done() and not limiter.reservations
+            assert not limiter.lock.locked()
+            successful = await asyncio.wait_for(limiter.acquire(100), 0.2)
+            assert successful.tokens == 100 and not task.done()
+            release.set()
+            reservation = await asyncio.wait_for(task, 1)
+            assert reservation.tokens == 200 and reservation.started_at >= 71035
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(execute())
 
 
 def test_runtime_rejects_oversized_tpm_request_before_provider_call(repo):

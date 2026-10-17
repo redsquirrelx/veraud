@@ -116,6 +116,28 @@ def test_cancellation_during_start_delay_propagates(repo):
     asyncio.run(execute())
 
 
+def test_outer_agent_timers_and_tools_survive_quota_waits(repo):
+    async def execute():
+        def create(key, model, config):
+            async def invoke(tools, request):
+                with tools.timing.quota_wait():
+                    await asyncio.sleep(0.3)
+                # The tools must also use active time, not the former child wall cap.
+                response = tools.execute("list_files", {}, tool_call_id=key)
+                assert response.status == "ok"
+                return result(key, tools, request)
+            return SimpleNamespace(run=invoke)
+
+        run, state = execution(repo, ModularityConfig(timeout_seconds=0.15,
+            invocation_limits={"timeout_seconds": 0.15}), create)
+        update = await run.delegate_investigations(state)
+        assert len(update["execution_records"]) == 3
+        assert all(record.status == "received" for record in update["execution_records"])
+        assert not run.timing.children
+
+    asyncio.run(execute())
+
+
 def test_start_spacing_and_request_pacing_are_independent(repo):
     run, _ = execution(repo, ModularityConfig(investigation_start_interval_seconds=1,
         provider_request_interval_seconds=0.5, provider_retry_backoff_seconds=5), lambda *args: None)

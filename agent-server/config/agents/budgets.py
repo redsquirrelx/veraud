@@ -19,7 +19,14 @@ class CallBudgetConfig(ConfigContract):
 
 class TimeoutConfig(ConfigContract):
     timeout_seconds: float = Field(default=300, gt=0, allow_inf_nan=False,
-        description="Execution deadline in seconds, including quota waits and retries.")
+        description="Execution time allowance in seconds. Hierarchical agents pause active time during quota waits and also enforce max_wall_time_seconds.")
+
+
+class ExecutionTimingConfig(ConfigContract):
+    max_wall_time_seconds: float = Field(default=1800, gt=0, allow_inf_nan=False,
+        description="Absolute execution duration, including all quota waits. Never paused.")
+    cancellation_grace_seconds: float = Field(default=2, ge=0, le=30, allow_inf_nan=False,
+        description="Maximum wait for a cancelled asynchronous child to acknowledge cancellation.")
 
 
 class SourceReadConfig(ConfigContract):

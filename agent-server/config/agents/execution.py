@@ -27,7 +27,7 @@ class SourceExcerptConfig(InvestigationConfig, SourceReadConfig, SourceLineConfi
 
 
 def default_invocation_limits():
-    return InvestigationConfig(max_model_calls=12, max_total_tokens=60_000, max_tool_calls=16,
+    return InvestigationConfig(max_total_tokens=60_000, max_tool_calls=16,
         timeout_seconds=180, max_context_characters=100_000)
 
 
@@ -37,7 +37,7 @@ class CoordinatorConfig[ChildConfig: InvestigationConfig = InvestigationConfig](
     prompt_nodes: ClassVar[tuple[str, ...]] = ("synthesize_findings",)
     defaults: ClassVar = {"max_model_calls": 96, "max_total_tokens": 300_000,
         "max_tool_calls": 96, "timeout_seconds": 600, "tools": []}
-    bounds: ClassVar = {"max_invocations": {"ge": 3}}
+    bounds: ClassVar = {"max_invocations": {"ge": 3}, "max_model_calls": {"le": 1000}}
     max_rounds: int = Field(default=2, ge=1, le=6, description="Maximum coordinator delegation/collection rounds.")
     max_invocations: int = Field(default=6, ge=1, le=18, description="Maximum subordinate invocations across all rounds.")
     max_parallel: int = Field(default=3, ge=1, le=3, description="Maximum concurrent subordinate investigations.")

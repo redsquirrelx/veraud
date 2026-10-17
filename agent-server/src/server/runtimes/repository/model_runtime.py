@@ -10,6 +10,7 @@ from config.agents.provider import ProviderRetryConfig
 from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
 from ...benchmark.telemetry import response_usage
 from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
+from .timing import ActiveDeadline, within_deadline
 
 
 def extract_text(response: object) -> str:
@@ -66,6 +67,10 @@ class ModelGateway:
                 "Provider pacing/retry limits must be finite and nonnegative."
             )
         self.delegate = delegate
+        self.max_retry_wait_seconds = policy.provider_max_retry_wait_seconds
+        self.recovery_budget_seconds = policy.provider_recovery_budget_seconds
+        self.recovery_wait_seconds = 0.0
+        self.request_timeout_seconds = policy.provider_request_timeout_seconds
         self.pacer = RequestPacer(
             interval=interval, max_retries=max_retries, backoff=backoff
         )
@@ -155,12 +160,16 @@ class ModelGateway:
                         max_attempts=self.pacer.max_retries + 1,
                     )
                     try:
+                        request_timeout = self.request_timeout_seconds
+                        if self.remaining_seconds is not None:
+                            request_timeout = min(request_timeout, self.remaining_seconds())
+                        deadline = ActiveDeadline(request_timeout)
                         if self.trace:
                             from ...config.tracing import traced_generate
 
-                            response = await traced_generate(delegate, str(prompt))
+                            response = await within_deadline(traced_generate(delegate, str(prompt)), deadline)
                         else:
-                            response = await delegate.generate(str(prompt))
+                            response = await within_deadline(delegate.generate(str(prompt)), deadline)
                         metadata = getattr(response, "usage_metadata", None)
                         if metadata is not None and hasattr(
                             metadata, "prompt_token_count"
@@ -191,7 +200,7 @@ class ModelGateway:
                             error_type=type(error).__name__,
                             http_status=http_status(error),
                         )
-                        if index >= self.pacer.max_retries or not retryable(error):
+                        if isinstance(error, TimeoutError) or index >= self.pacer.max_retries or not retryable(error):
                             self.stopped = True
                             raise
                         provider_delay = retry_after(error)
@@ -206,6 +215,16 @@ class ModelGateway:
                             if self.remaining_seconds is not None
                             else None
                         )
+                        if requested_wait > self.max_retry_wait_seconds:
+                            self.stopped = True
+                            emit(
+                                "provider_retry_skipped",
+                                reason="provider_retry_wait_limit",
+                                requested_wait_seconds=requested_wait,
+                                max_wait_seconds=self.max_retry_wait_seconds,
+                                http_status=http_status(error),
+                            )
+                            raise
                         if remaining is not None and requested_wait >= remaining:
                             self.stopped = True
                             emit(
@@ -216,7 +235,16 @@ class ModelGateway:
                                 http_status=http_status(error),
                             )
                             raise
+                        if self.recovery_wait_seconds + requested_wait > self.recovery_budget_seconds:
+                            self.stopped = True
+                            emit("provider_retry_skipped", reason="provider_recovery_budget",
+                                requested_wait_seconds=requested_wait,
+                                recovery_wait_seconds=self.recovery_wait_seconds,
+                                recovery_budget_seconds=self.recovery_budget_seconds,
+                                http_status=http_status(error))
+                            raise
                         delay = self.pacer.cooldown(error, index)
+                        self.recovery_wait_seconds += delay
                         last_http_status = http_status(error)
                         wait_reason = (
                             "provider_retry_after"
@@ -319,11 +347,18 @@ async def close_model_clients(model):
             (
                 (getattr(llm, "root_async_client", None), "close"),
                 (getattr(llm, "root_client", None), "close"),
+                (getattr(llm, "async_client", None), "aclose"),
+                (getattr(llm, "client", None), "close"),
             )
         )
+    closed = set()
     for resource, name in operations:
         if resource is None or not hasattr(resource, name):
             continue
+        key = (id(resource), name)
+        if key in closed:
+            continue
+        closed.add(key)
         try:
             value = getattr(resource, name)()
             if hasattr(value, "__await__"):
