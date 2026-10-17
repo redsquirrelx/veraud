@@ -32,9 +32,40 @@ def finding_index(records, contribution_type):
     ) for r in records if r.result for f in r.result.findings}
 
 
+def terminal_provider_blocker(result):
+    """Retrying an unchanged schema/model cannot cure an explicit request rejection."""
+    if result is None:
+        return False
+    reason = result.termination_reason
+    if reason in {"provider_retry_wait_limit", "provider_tpm_request_limit", "provider_daily_quota_exhausted", "provider_request_timeout"}:
+        return True
+    if reason == "model_or_schema_error" and any("http_status=400" in line for line in result.limitations):
+        return True
+    children = getattr(result, "invocations", getattr(result, "assessments", []))
+    return any(terminal_provider_blocker(child.result) for child in children)
+
+
+def terminal_collection_blocker(record):
+    """A host contract/provenance failure needs repair, not another repository audit."""
+    failure = getattr(record, "failure", None)
+    if failure is not None and failure.stage in {"validate_result", "validate_assessment", "publish_result"}:
+        return True
+    result = record.result
+    return bool(result and any(terminal_collection_blocker(child)
+        for child in getattr(result, "invocations", [])))
+
+
 def actionable(gap, records):
     if not gap.material or gap.investigator_id is None or not gap.question.strip():
         return False
+    prior = [record for record in records if record.assignment.investigator_id == gap.investigator_id]
+    if prior and (terminal_provider_blocker(prior[-1].result) or terminal_collection_blocker(prior[-1])):
+        return False
+    if len(prior) >= 2 and all(record.status != "completed" for record in prior[-2:]):
+        known = {evidence_key(e) for record in prior[:-1] for e in record.evidence if e.kind == "source"}
+        latest = {evidence_key(e) for e in prior[-1].evidence if e.kind == "source"}
+        if not latest - known:
+            return False
     completed = [r for r in records if r.status == "completed" and request_key(
         r.assignment.investigator_id, r.assignment.question, r.assignment.targets,
     ) == request_key(gap.investigator_id, gap.question, gap.targets)]

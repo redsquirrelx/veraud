@@ -143,8 +143,8 @@ class ReusabilityExecution(CoordinatorExecution):
             return "partial"
         return super().result_status(result)
 
-    def collect_findings(self, state):
-        update = super().collect_findings(state)
+    def collect_findings(self, state, *, incremental=False):
+        update = super().collect_findings(state, incremental=incremental)
         # Invalid returned schemas cannot supply claims, but actual tool observations
         # from a failed/timed-out invocation remain useful, namespaced provenance.
         raw = {r.assignment.invocation_id: r for r in state["execution_records"]}
@@ -156,6 +156,7 @@ class ReusabilityExecution(CoordinatorExecution):
             unique = list({(e.id, e.tool_call_id): e for e in record.evidence}.values())
             verified, _ = self.synth.verify_references(unique)
             record = record.model_copy(update={"evidence": verified})
+            self._collected_records[record.assignment.invocation_id] = record
             records.append(record)
         update["investigation_results"] = records
         return update

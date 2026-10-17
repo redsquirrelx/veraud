@@ -1,9 +1,10 @@
 """Investigator request, analysis and output contracts, including maintainability specializations."""
 
 from enum import StrEnum
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from .base import (
     AuditRequest,
@@ -14,12 +15,67 @@ from .base import (
     Evaluation,
     EvidenceReference,
     Finding,
+    FindingReview,
     Hypothesis,
+    Review,
     TargetContext,
 )
 
 # Public names for the shared investigator envelope; each denotes the same class.
 InvestigatorResult = AuditResult
+
+
+class BoundarySupport(Contract):
+    evidence_id: str
+    role: Literal["declaration", "implementation", "usage", "composition", "dependency"]
+    observation: str = Field(min_length=1, max_length=2000)
+
+
+class BoundaryClaimCheck(Contract):
+    subject_type: Literal["candidate", "hypothesis"]
+    subject_id: str
+    claim_kind: Literal["declaration", "behavior", "dependency", "isolation", "absence_of_cycles"]
+    scope_paths: list[str] = Field(min_length=1, max_length=40)
+    support: list[BoundarySupport] = Field(min_length=1, max_length=80)
+    coverage_complete: bool = False
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+
+
+class BoundaryEvaluation(Evaluation):
+    claim_checks: list[BoundaryClaimCheck] = Field(default_factory=list, max_length=60)
+    validation_feedback: ClassVar[dict[str, str]] = Evaluation.validation_feedback | {
+        "boundary_check_structure_invalid": "Return exactly one claim_check for every candidate and every confirmed/discarded hypothesis. Use exact subject IDs and real FILE paths, not directories. Repair the listed structural issues using delivered evidence; do not invent inspections. If evidence is lacking, retain an honest scoped candidate or unresolved hypothesis with sufficient=false and precise missing_information.",
+        "too_short": "A required collection was empty. Every claim_check needs at least one scope_path and at least one support entry; every candidate needs at least one component and at least one evidence_id. An empty list is not a placeholder. If you did not inspect evidence that supports a subject, leave that hypothesis inconclusive and name the missing inspection in missing_information instead of asserting it.",
+    }
+
+
+class BoundaryFindingReview(FindingReview):
+    scope_supported: bool = False
+    checked_evidence_ids: list[str] = Field(default_factory=list, max_length=80)
+    unverified_claims: list[str] = Field(default_factory=list, max_length=20)
+
+
+class BoundaryReview(Review):
+    findings: list[BoundaryFindingReview]
+    validation_issues: list[str] = Field(default_factory=list)
+    validation_feedback: ClassVar[dict[str, str]] = Review.validation_feedback | {
+        "boundary_review_support_required": "An accepted boundary candidate requires scope_supported=true, no unverified_claims, and checked_evidence_ids covering every support item in its claim_check. Otherwise mark insufficient_evidence or rejected; do not invent verification.",
+    }
+
+
+class BoundaryFinding(Finding):
+    claim_check: BoundaryClaimCheck | None = None
+    validation_issues: list[str] = Field(default_factory=list)
+
+
+class BoundaryResult(AuditResult):
+    findings: list[BoundaryFinding]
+    investigation_coverage: dict = Field(default_factory=dict,
+        description="Host-derived indexed boundary coverage; navigation and inspected endpoints, not proof of isolation.")
+    claim_checks: list[BoundaryClaimCheck] = Field(default_factory=list)
+    critical_review: BoundaryReview | None = None
+    failed_evaluation_attempt: BoundaryEvaluation | None = None
+    evaluation_attempt_issues: list[dict[str, str]] = Field(default_factory=list)
 
 
 # Default design-principle criteria for the responsibility investigator's request.
@@ -678,6 +734,9 @@ class AdaptabilityCandidate(CandidateFinding):
 # Adaptability iteration output: carries candidates, constraint analyses, cleared components and coverage rationale.
 # evaluate_evidence returns it; its validator requires a concrete reason when further investigation is blocked.
 class AdaptabilityEvaluation(Evaluation):
+    validation_feedback: ClassVar[dict[str, str]] = Evaluation.validation_feedback | {
+        "investigation_blocker_required": "When can_investigate_further is false, continuation_reason must explain a concrete blocker. If more evidence can be obtained, use can_investigate_further=true and describe the missing information instead. Do not invent a blocker or claim sufficient evidence to pass validation.",
+    }
     candidates: list[AdaptabilityCandidate]
     constraint_assessments: list[ConstraintAssessment] = Field(max_length=40)
     cleared_components: list[str] = Field(default_factory=list, max_length=20)
@@ -688,7 +747,8 @@ class AdaptabilityEvaluation(Evaluation):
     @model_validator(mode="after")
     def explain_blocker(self):
         if not self.can_investigate_further and not self.continuation_reason.strip():
-            raise ValueError("An unverifiable investigation needs a concrete blocker")
+            raise PydanticCustomError("investigation_blocker_required",
+                self.validation_feedback["investigation_blocker_required"])
         return self
 
 

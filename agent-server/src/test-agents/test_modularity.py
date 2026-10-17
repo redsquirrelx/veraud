@@ -97,6 +97,48 @@ def test_complete_parallel_empty_results(repo):
     assert fingerprints(repo) == before
 
 
+def test_completed_child_is_collected_and_published_before_a_slow_sibling(repo):
+    from server.blackboard.impls.memory import MemoryBlackboard
+
+    release, published = asyncio.Event(), asyncio.Event()
+
+    class Board(MemoryBlackboard):
+        def publish_evidence(self, evidence):
+            value = super().publish_evidence(evidence)
+            if evidence.agent_id == "architecture_boundary":
+                published.set()
+            return value
+
+    board = Board()
+    original = factory([])
+
+    def make(key, model, limits):
+        worker = original(key, model, limits)
+
+        async def inspect(child, request):
+            if key == "responsibility":
+                await release.wait()
+            return await worker.run(child, request)
+        return SimpleNamespace(run=inspect)
+
+    async def execute():
+        agent = ModularityAgent(NativeStructuredModel([{"summary": "All children retained."}]), config(max_rounds=1),
+            investigator_factory=make, tracing_backend=NoOpTracingBackend(), blackboard=board)
+        task = asyncio.create_task(agent.run(tools(repo)))
+        try:
+            done, _ = await asyncio.wait({asyncio.create_task(published.wait())}, timeout=1)
+            assert done, "A completed child's output was withheld behind its sibling"
+            assert not task.done()
+        finally:
+            release.set()
+            assessment = await task
+        assert assessment.status == "completed"
+        assert assessment.consumption.model_calls == 13  # Early collection is never charged twice.
+        assert len(assessment.invocations) == 3
+
+    asyncio.run(execute())
+
+
 def test_two_round_targeted_followup(repo):
     calls, tracing = [], Trace()
     def resolution(messages):
@@ -155,12 +197,32 @@ def test_duplicate_completed_question():
     assert not actionable(gap, [record])
 
 
-def test_exhausted_budget_and_bad_synthesis(repo):
+def test_followup_does_not_retry_permanent_provider_failure_or_repeated_zero_progress():
+    assignment = Assignment(invocation_id="i", investigator_id="dependency_impact", round=1,
+        question="Inspect coupling", targets=["main.py"])
+    gap = EvidenceGap(id="g", kind="missing_evidence", investigator_id="dependency_impact",
+        question="Inspect further coupling", targets=["main.py"])
+    rejected = SimpleNamespace(assignment=assignment, status="failed", evidence=[], result=SimpleNamespace(
+        termination_reason="model_or_schema_error", limitations=["evaluate_evidence: provider_request: http_status=400"]))
+    assert not actionable(gap, [rejected])
+    transient = SimpleNamespace(assignment=assignment, status="failed", evidence=[], result=SimpleNamespace(
+        termination_reason="model_or_schema_error", limitations=["investigate: provider_request: http_status=503"]))
+    assert actionable(gap, [transient])  # One later recovery remains useful.
+    assert not actionable(gap, [transient, transient])  # No new source after two failed attempts.
+
+
+@pytest.mark.parametrize(("overrides", "resource"), [
+    ({"max_total_tokens": 1000}, "tokens"), ({"max_tool_calls": 0}, "tools"),
+])
+def test_exhausted_budget_and_bad_synthesis(repo, overrides, resource):
     assessment = asyncio.run(ModularityAgent(ScriptedModel([RuntimeError("provider error")]),
-        config(max_total_tokens=1000), investigator_factory=factory([]),
+        config(**overrides), investigator_factory=factory([]),
         tracing_backend=NoOpTracingBackend()).run(tools(repo)))
     assert assessment.status == "failed"
     assert all(r.status == "skipped" for r in assessment.invocations)
+    assert all(r.failure.code == "execution_budget_exhausted" for r in assessment.invocations)
+    assert all(any(s.resource == resource and s.available < s.required for s in r.failure.resources)
+        for r in assessment.invocations)
     assert assessment.termination_reason == "resource_limit"
 
 
@@ -249,6 +311,31 @@ def test_consolidation_retains_contributors_and_distinct_evidence(repo):
     assert {c.invocation_id for c in merged.contributions} == {"one", "two"}
     assert merged.confidence is None  # no fabricated combined confidence
     assert merged.id == consolidate(records[:2], [], [], set())[0].id
+
+
+def test_collected_finding_reuses_host_ledger_without_duplicate_references(repo):
+    from server.runtimes.coordination.execution import CoordinatorExecution
+
+    template = finding_record(repo, "template").result.findings[0]
+    original = factory([])
+
+    def make(key, model, limits):
+        worker = original(key, model, limits)
+
+        async def inspect(child, request):
+            value = await worker.run(child, request)
+            if key == "architecture_boundary":
+                evidence = CoordinatorExecution.references(child)
+                finding = template.model_copy(update={"evidence": evidence, "evidence_ids": [e.id for e in evidence]})
+                value = value.model_copy(update={"findings": [finding], "evidence": evidence})
+            return value
+        return SimpleNamespace(run=inspect)
+
+    assessment = asyncio.run(ModularityAgent(NativeStructuredModel([{"summary": "Collected source-backed finding."}]),
+        config(max_rounds=1), investigator_factory=make, tracing_backend=NoOpTracingBackend()).run(tools(repo)))
+    record = assessment.invocations[0]
+    assert record.result.findings[0].evidence == record.evidence == record.result.evidence
+    assert len(record.evidence) == 1
 
 
 def test_conflicting_findings_are_disputed(repo):

@@ -1,10 +1,16 @@
 """Public maintainability-manager lifecycle; hierarchy policy lives in execution.py."""
 
+from typing import TYPE_CHECKING
+
 from ....runtimes.coordination.execution import CoordinatorAgent
 from ....runtimes.repository.access import repository_relative_path
 from .config import MaintainabilityConfig
 from .execution import MaintainabilityManagerExecution, coverage_router
 from .schemas import MaintainabilityRequest
+
+if TYPE_CHECKING:
+    from ....blackboard.identity import AuditIdentity
+    from ....blackboard.interface import Blackboard
 
 __all__ = ["MaintainabilityManagerAgent", "MaintainabilityManagerExecution", "coverage_router"]
 
@@ -14,10 +20,12 @@ class MaintainabilityManagerAgent(CoordinatorAgent):
     trace_name = "maintainability-manager"
     agent_type = "maintainability_manager"
 
-    def __init__(self, model, config=None, *, tracing_backend=None, coordinator_factory=None, provider_pacer=None):
+    def __init__(self, model, config=None, *, tracing_backend=None, coordinator_factory=None, provider_pacer=None,
+                 blackboard: "Blackboard | None" = None, audit_identity: "AuditIdentity | None" = None):
         super().__init__(
             model, config, tracing_backend=tracing_backend,
             investigator_factory=coordinator_factory, provider_pacer=provider_pacer,
+            blackboard=blackboard, audit_identity=audit_identity,
         )
 
     async def run(self, tools, request=None):
@@ -32,8 +40,4 @@ class MaintainabilityManagerAgent(CoordinatorAgent):
             },
         })
         execution = MaintainabilityManagerExecution(self, tools, request)
-        state = await execution.graph.ainvoke(
-            execution.initial_state(),
-            {"recursion_limit": 8 * self.config.max_rounds + 16},
-        )
-        return state["result"]
+        return await execution.run(recursion_limit=8 * self.config.max_rounds + 16)

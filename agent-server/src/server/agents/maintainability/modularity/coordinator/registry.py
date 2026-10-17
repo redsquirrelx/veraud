@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from .....runtimes.investigation.schemas import AuditResult
 from ..architecture_boundary import ArchitectureBoundaryAgent, AuditRequest
+from ..architecture_boundary import AuditResult as BoundaryResult
 from ..dependency_impact import (
     DependencyImpactAgent,
     DependencyImpactRequest,
@@ -26,7 +26,7 @@ class InvestigatorSpec:
 
 
 INVESTIGATORS = {
-    "architecture_boundary": InvestigatorSpec(ArchitectureBoundaryAgent, AuditRequest, AuditResult,
+    "architecture_boundary": InvestigatorSpec(ArchitectureBoundaryAgent, AuditRequest, BoundaryResult,
         InvestigatorCapability(id="architecture_boundary", agent_name="ArchitectureBoundaryAgent",
             capability="Investigate whether component dependencies respect explicit architectural boundaries and scoped design principles.")),
     "responsibility": InvestigatorSpec(ResponsibilityAgent, ResponsibilityRequest, ResponsibilityResult,

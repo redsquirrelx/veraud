@@ -13,7 +13,7 @@ import json
 import subprocess
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from server.agents.maintainability.modularity.architecture_boundary import (
@@ -113,15 +113,34 @@ def evaluation(messages, sufficient=True, candidate=True):
                "evidence_ids": ids, "justification": "Import contradicts supplied rule.",
                "modularity_impact": "Storage changes affect domain.", "severity": "medium", "confidence": 0.9,
                "recommendation": "Inject a domain-owned abstraction."}
-    return {"sufficient": sufficient, "hypotheses": [dict(PLAN["hypotheses"][0],
+    context = json.loads(messages[1].content)
+    scope = list(dict.fromkeys(item["path"] for item in context["evidence"] if item["id"] in ids and item["path"] == "domain/service.py"))
+    support = [{"evidence_id": item["id"], "role": "dependency", "observation": "Direct import of storage.db"}
+        for item in context["evidence"] if item["id"] in ids and item["path"] == "domain/service.py" and item["kind"] == "source"]
+    checks = [{"subject_type": kind, "subject_id": identifier, "claim_kind": "dependency",
+        "scope_paths": scope, "support": support} for kind, identifier in
+        [("hypothesis", "h1"), *([("candidate", "f1")] if candidate else [])]] if support else []
+    return {"sufficient": sufficient, "hypotheses": [dict(PLAN["hypotheses"][0], evidence_ids=ids,
              status="confirmed" if sufficient else "inconclusive")],
             "candidates": [finding] if candidate else [],
-            "missing_information": [] if sufficient else ["Inspect storage endpoint"]}
+            "missing_information": [] if sufficient else ["Inspect storage endpoint"], "claim_checks": checks}
+
+
+class BoundaryReviewResponse(dict):
+    def __call__(self, messages):
+        value = json.loads(json.dumps(self))
+        evaluation = json.loads(messages[1].content)["evaluation"]
+        for finding in value["findings"]:
+            checks = [item for item in evaluation.get("claim_checks", [])
+                if item["subject_type"] == "candidate" and item["subject_id"] == finding["finding_id"]]
+            finding.update(scope_supported=True, checked_evidence_ids=list(dict.fromkeys(
+                support["evidence_id"] for check in checks for support in check["support"])))
+        return value
 
 
 def review(status="accepted"):
-    return {"findings": [{"finding_id": "f1", "status": status, "rationale": "Rule and inspected import agree.",
-                          "severity": "medium", "confidence": 0.8}], "limitations": []}
+    return BoundaryReviewResponse({"findings": [{"finding_id": "f1", "status": status, "rationale": "Rule and inspected import agree.",
+                          "severity": "medium", "confidence": 0.8}], "limitations": []})
 
 
 def audit(repo, responses, **config):
@@ -152,6 +171,29 @@ def test_graph_plan_native_react_review_and_read_only(repo):
     assert all(e.snapshot_hash == tools.context.input.snapshot_hash for e in finding.evidence)
     assert fingerprints(repo) == before
     assert result.model_dump(mode="json")["findings"]
+
+
+@pytest.mark.parametrize("verdict", ["accepted", "rejected"])
+def test_run_publishes_evidence_and_findings_after_review(repo, verdict):
+    from server.blackboard.identity import AuditIdentity
+    from server.blackboard.impls.memory import MemoryBlackboard
+
+    board = MemoryBlackboard()
+    identity = AuditIdentity(run_id="audit", invocation_id="investigator")
+    model = ScriptedModel([PLAN, call(), AIMessage(content="Ready"), evaluation, review(verdict)])
+    result = asyncio.run(ArchitectureBoundaryAgent(model, blackboard=board, audit_identity=identity).run(toolset(repo), request()))
+
+    published = board.query_findings(identity.run_id, identity.invocation_id)
+    assert len(published) == len(result.findings) == 1
+    stored = published[0]
+    assert stored.details["validation_status"] == verdict
+    assert stored.local_id == result.findings[0].id
+    assert all(board.get_evidence(stored.run_id, identifier) is not None for identifier in stored.evidence_ids)
+    assert stored.details["investigation"]["termination_reason"] == result.termination_reason
+    baseline, baseline_model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), evaluation, review(verdict)])
+    assert len(model.history) == len(baseline_model.history) == result.model_calls == baseline.model_calls
+    assert result.tool_calls == baseline.tool_calls
+    assert result.termination_reason == baseline.termination_reason
 
 
 def test_reinvestigation_uses_missing_information(repo):
@@ -250,6 +292,43 @@ def test_citations_belong_to_commit_not_only_checkout(repo, dirty):
     assert result.commit
     assert result.findings[0].validation_status == ("insufficient_evidence" if dirty else "accepted")
     assert result.findings[0].evidence[0].commit == (None if dirty else result.commit)
+    if dirty:
+        assert "commit_blob_mismatch" in result.findings[0].review_rationale
+        assert result.termination_reason == "provenance_unverifiable"
+        assert result.model_calls == 5 and result.iterations == 1
+        assert result.hypotheses[0].status == "inconclusive"
+    assert fingerprints(repo) == before
+
+
+def test_crlf_checkout_is_audited_and_published_with_explicit_commit_equivalence(repo):
+    from server.blackboard.identity import AuditIdentity
+    from server.blackboard.impls.memory import MemoryBlackboard
+
+    path = repo / "domain" / "service.py"
+    path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+    def git(*args):
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=True)
+    git("init")
+    git("-c", "core.autocrlf=false", "add", ".")
+    git("-c", "user.name=Offline Test", "-c", "user.email=test@example.invalid", "commit", "-m", "fixture")
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    retained_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    before = fingerprints(repo)
+    board = MemoryBlackboard()
+    identity = AuditIdentity(run_id="crlf-audit", invocation_id="boundary")
+    model = NativeStructuredModel([PLAN, call(), AIMessage(content="Ready"), evaluation, review()])
+    agent = ArchitectureBoundaryAgent(model, blackboard=board, audit_identity=identity)
+    result = asyncio.run(agent.run(toolset(repo), request()))
+    assert result.termination_reason == "sufficient_evidence" and result.model_calls == 5
+    assert result.findings[0].validation_status == "accepted"
+    reference = result.findings[0].evidence[0]
+    assert reference.commit == result.commit
+    assert reference.commit_verification == "line_endings_equivalent"
+    assert reference.content_hash == retained_hash
+    assert reference.git_blob_id == git("rev-parse", f"{result.commit}:domain/service.py").stdout.decode().strip()
+    published = board.query_evidence("crlf-audit")
+    assert published[0].commit_verification == "line_endings_equivalent"
+    assert published[0].git_blob_id == reference.git_blob_id
     assert fingerprints(repo) == before
 
 
@@ -266,6 +345,128 @@ def test_metadata_alone_cannot_prove_violation(repo):
     result, _, _ = audit(repo, [PLAN, call("list_files", {"limit": 2}), AIMessage(content="Ready"),
                                evaluation, review()])
     assert result.findings[0].validation_status == "insufficient_evidence"
+
+
+def test_metadata_candidate_returns_to_source_inspection_before_success(repo):
+    def cited_evaluation(messages):
+        value = evaluation(messages)
+        value["hypotheses"][0]["evidence_ids"] = value["candidates"][0]["evidence_ids"]
+        if not value["claim_checks"]:
+            context = json.loads(messages[1].content)
+            ref = next(item for item in context["evidence"] if item["path"] == "domain/service.py")
+            value["claim_checks"] = [{"subject_type": kind, "subject_id": identifier, "claim_kind": "dependency",
+                "scope_paths": [ref["path"]], "support": [{"evidence_id": ref["id"], "role": "dependency",
+                    "observation": "Investigate the declared dependency"}]} for kind, identifier in [("candidate", "f1"), ("hypothesis", "h1")]]
+        return value
+
+    result, model, _ = audit(repo, [PLAN,
+        call("list_files", {"limit": 2}), AIMessage(content="Ready"), cited_evaluation,
+        call(), AIMessage(content="Ready"), cited_evaluation, review()])
+    assert result.termination_reason == "sufficient_evidence"
+    assert result.iterations == 2 and result.hypotheses[0].status == "confirmed"
+    assert result.findings[0].validation_status == "accepted"
+    context = json.loads(model.history[4][1].content)
+    assert not context["evaluation"]["sufficient"]
+    assert any("source_not_inspected" in gap and "get_source_excerpt" in gap for gap in context["missing_information"])
+    hypothesis_task = next(task for task in context["evidence_recovery_tasks"] if task["subject_type"] == "hypothesis")
+    assert hypothesis_task["id"] == "h1"
+    assert hypothesis_task["action"] == "inspect_source_or_correct_citations"
+    assert hypothesis_task["paths_to_inspect"]
+    assert hypothesis_task["evidence_needed"] == PLAN["hypotheses"][0]["evidence_needed"]
+    assert all("snapshot provenance" not in gap for gap in context["missing_information"] if gap.startswith("Hypothesis"))
+
+
+def test_wrong_hypothesis_citations_reuse_existing_source_without_another_read(repo):
+    def hypothesis_only(messages, kind):
+        context = json.loads(messages[1].content)
+        ids = [record["id"] for record in context["evidence"]
+            if record["kind"] == kind and record["path"] == "domain/service.py"]
+        assert ids
+        return {"sufficient": True, "hypotheses": [dict(PLAN["hypotheses"][0],
+            status="confirmed", evidence_ids=ids, rationale="Inspected the scoped import.")],
+            "candidates": [], "missing_information": [], "claim_checks": [{
+                "subject_type": "hypothesis", "subject_id": "h1", "claim_kind": "dependency",
+                "scope_paths": ["domain/service.py"], "support": [{"evidence_id": ids[0],
+                    "role": "dependency", "observation": "Direct import of storage.db"}],
+            }] if kind == "source" else []}
+
+    result, model, _ = audit(repo, [PLAN, call("list_files", {"limit": 2}), call(),
+        AIMessage(content="Ready"), lambda messages: hypothesis_only(messages, "metadata"),
+        AIMessage(content="Ready"), lambda messages: hypothesis_only(messages, "source"),
+        {"findings": [], "limitations": []}])
+    assert result.termination_reason == "sufficient_evidence"
+    assert result.hypotheses[0].status == "confirmed"
+    assert result.iterations == 2 and result.tool_calls == 2
+    # A resolved hypothesis citing only metadata cannot support a claim check, and
+    # demanding one anyway was unsatisfiable; it must return to investigation instead.
+    assert not any("boundary_check_structure_invalid" in issue for issue in result.limitations)
+    context = json.loads(model.history[5][1].content)
+    assert any("boundary_no_delivered_source_evidence" in gap for gap in context["missing_information"])
+    task = next(item for item in context["evidence_recovery_tasks"] if item["id"] == "h1")
+    assert task["action"] == "inspect_source_or_correct_citations"
+    assert task["paths_to_inspect"] == []  # the cited path was already read as source
+    assert task["available_source_evidence_ids"]  # reuse it instead of reading again
+    assert result.tool_calls == 2
+
+
+def test_invalid_source_cannot_confirm_hypotheses_or_claim_sufficiency_at_finalization(repo):
+    tools = toolset(repo)
+    execution = ArchitectureBoundaryAgent.execution_type(ScriptedModel([]), BoundaryConfig(), tools, request())
+    state = execution.initial_state()
+    state.update(hypotheses=[execution.evaluation_schema.model_validate({
+        "sufficient": True, "hypotheses": [dict(PLAN["hypotheses"][0], status="confirmed", evidence_ids=["unknown"])],
+        "candidates": [], "missing_information": [],
+    }).hypotheses[0]], termination_reason="sufficient_evidence")
+    result = execution.finalize(state)["result"]
+    assert result.termination_reason == "evidence_validation_failed"
+    assert result.hypotheses[0].status == "inconclusive"
+    assert "unknown_evidence_ids" in result.hypotheses[0].rationale
+    assert result.missing_information
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("problem", ["missing", "duplicate", "unknown"])
+def test_semantic_review_errors_are_corrected_without_accepting_invalid_reviews(repo, native, problem):
+    invalid = review()
+    if problem == "missing":
+        invalid["findings"] = []
+    elif problem == "duplicate":
+        invalid["findings"] *= 2
+    else:
+        invalid["findings"][0]["finding_id"] = "PRIVATE_UNKNOWN_CANDIDATE"
+    model = (NativeStructuredModel if native else ScriptedModel)([
+        PLAN, call(), AIMessage(content="Ready"), evaluation, invalid, review("rejected"),
+    ])
+    result = asyncio.run(ArchitectureBoundaryAgent(model).run(toolset(repo), request()))
+    assert result.termination_reason == "sufficient_evidence"
+    assert result.findings[0].validation_status == ("accepted" if problem == "duplicate" else "rejected")
+    issues = result.critical_review.validation_issues
+    code = {"missing": "review_missing_candidate", "duplicate": "review_duplicate_candidate_collapsed", "unknown": "review_unknown_candidates"}[problem]
+    assert any(code in issue for issue in issues)
+    if problem != "duplicate":
+        context = json.loads(model.history[-1][1].content)
+        assert context["boundary_review_requirements"][0]["candidate_id"] == "f1"
+        assert context["prior_critical_review"]["validation_issues"]
+        assert "PRIVATE_UNKNOWN_CANDIDATE" not in json.dumps(context)
+
+
+def test_review_correction_is_reserved_before_investigation_exhausts_calls(repo):
+    result, model, _ = audit(repo, [PLAN,
+        *[call(identifier=f"read-{i}") for i in range(4)], evaluation,
+        {"findings": [], "limitations": []}, review()], max_model_calls=8)
+    assert result.model_calls == len(model.history) == 8
+    assert result.termination_reason == "sufficient_evidence"
+    assert result.findings[0].validation_status == "accepted"
+
+
+def test_repeated_semantic_review_failure_retains_partial_results(repo):
+    invalid = {"findings": [], "limitations": []}
+    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), evaluation, invalid, invalid])
+    assert result.termination_reason == "evidence_validation_failed"
+    assert result.model_calls == len(model.history) == 6
+    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert result.findings[0].evidence
+    assert result.critical_review is not None
 
 
 def test_discarded_hypothesis_is_preserved(repo):
@@ -285,11 +486,11 @@ def test_native_schemas_and_raw_usage_are_used(repo):
             "input_tokens": 100, "output_tokens": 25, "total_tokens": 125,
         })
     model = NativeStructuredModel([
-        measured(PLAN), call(), AIMessage(content="Ready"), evaluation, measured(review()),
+        measured(PLAN), call(), AIMessage(content="Ready"), evaluation, lambda messages: measured(review()(messages)),
     ])
     result = asyncio.run(ArchitectureBoundaryAgent(model).run(toolset(repo), request()))
     assert model.schemas == [("InvestigationPlan", "json_schema", True),
-                             ("Evaluation", "json_schema", True), ("Review", "json_schema", True)]
+                             ("BoundaryEvaluation", "json_schema", True), ("BoundaryReview", "json_schema", True)]
     assert result.plan is not None
     assert result.findings[0].validation_status == "accepted"
     assert result.accounted_tokens - result.estimated_tokens == 250
@@ -363,8 +564,9 @@ def test_truncated_json_diagnostic_and_markdown_fallback(repo):
     assert result.findings[0].validation_status == "accepted"
 
 
-def test_gemini_real_adapter_with_offline_transport(repo, monkeypatch):
-    """Regression: Gemini rejects max_tokens at invoke time before any HTTP call."""
+@pytest.mark.parametrize("reinvestigate", [False, True])
+def test_gemini_real_adapter_with_offline_transport(repo, monkeypatch, reinvestigate):
+    """Exercise real Gemini request preparation, including resumed investigation."""
     from google.genai import types
     from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -372,24 +574,36 @@ def test_gemini_real_adapter_with_offline_transport(repo, monkeypatch):
     model = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", api_key="offline-test-key", max_tokens=2048)
     requests = []
 
+    evaluated = []
     async def generate_content(**kwargs):
         requests.append(kwargs)
         turn = len(requests)
-        if turn == 2:
+        phase = turn - 3 if reinvestigate and turn > 4 else turn
+        schema = kwargs["config"].response_json_schema
+        if schema:
+            encoded = json.dumps(schema)
+            assert all(hint not in encoded for hint in ("maxItems", "minItems", "maxLength", "minLength"))
+            assert schema["additionalProperties"] is False
+            assert schema["required"]
+        if phase == 2:
             part = types.Part.from_function_call(name="get_source_excerpt", args={
-                "path": "domain/service.py", "start_line": 1, "end_line": 4,
+                "path": "storage/db.py" if turn == 5 else "domain/service.py",
+                "start_line": 1, "end_line": 2 if turn == 5 else 4,
             })
         else:
-            if turn == 1:
+            if phase == 1:
                 value = PLAN
-            elif turn == 3:
+            elif phase == 3:
                 value = "Ready to evaluate."
-            elif turn == 4:
-                value = evaluation([ToolMessage(content=json.dumps({
+            elif phase == 4:
+                paths = {source.id: source.path for source in tools.accessible_snapshot.files}
+                context = {"evidence": [{**r.model_dump(), "path": paths[r.file_id]} for r in tools.retrieved_evidence]}
+                value = evaluation([HumanMessage(content=""), HumanMessage(content=json.dumps(context)), ToolMessage(content=json.dumps({
                     "evidence": [r.model_dump() for r in tools.retrieved_evidence],
-                }), tool_call_id="offline")])
-            elif turn == 5:
-                value = review()
+                }), tool_call_id="offline")], sufficient=not (reinvestigate and turn == 4))
+                evaluated.append(value)
+            elif phase == 5:
+                value = review()([HumanMessage(content=""), HumanMessage(content=json.dumps({"evaluation": evaluated[-1]}))])
             else:
                 raise AssertionError("Unexpected extra provider call")
             part = types.Part(text=json.dumps(value) if isinstance(value, dict) else value)
@@ -405,16 +619,24 @@ def test_gemini_real_adapter_with_offline_transport(repo, monkeypatch):
         model, BoundaryConfig(max_output_tokens=512),
     ).run(tools, request()))
     assert result.plan is not None, result.limitations
-    assert result.model_calls == len(requests) == 5
+    assert result.model_calls == len(requests) == (8 if reinvestigate else 5)
+    assert result.iterations == (2 if reinvestigate else 1)
     assert result.findings[0].validation_status == "accepted"
-    assert result.accounted_tokens == 650
+    assert result.accounted_tokens == 130 * len(requests)
     assert result.estimated_tokens == 0
     assert model.max_output_tokens == 2048  # The caller-owned model was not mutated.
     assert all(item["config"].max_output_tokens == 512 for item in requests)
     assert requests[0]["config"].response_json_schema["title"] == "InvestigationPlan"
-    assert requests[3]["config"].response_json_schema["title"] == "Evaluation"
-    assert requests[4]["config"].response_json_schema["title"] == "Review"
+    assert requests[3]["config"].response_json_schema["title"] == "BoundaryEvaluation"
+    assert requests[-1]["config"].response_json_schema["title"] == "BoundaryReview"
+    evaluation_schema = requests[3]["config"].response_json_schema
+    assert evaluation_schema["$defs"]["BoundaryClaimCheck"]["properties"]["claim_kind"]["enum"]
+    assert "support" in evaluation_schema["$defs"]["BoundaryClaimCheck"]["required"]
     assert requests[1]["config"].tools
+    if reinvestigate:
+        assert requests[4]["contents"][-1].role == "user"
+        assert "Continue the investigation" in requests[4]["contents"][-1].parts[-1].text
+        assert requests[5]["contents"][-1].parts[-1].function_response is not None
 
 
 if __name__ == "__main__":

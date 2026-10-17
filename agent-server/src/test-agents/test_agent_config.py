@@ -102,7 +102,8 @@ def test_coordinator_family_preserves_nested_envelopes_and_has_no_direct_tools(a
     assert (config.max_total_tokens, config.max_model_calls, config.max_tool_calls, config.timeout_seconds) == (300_000, 96, 96, 600)
     assert (config.max_rounds, config.max_invocations, config.max_parallel) == (2, 6, 3)
     assert config.invocation_limits.max_total_tokens == 60_000
-    assert config.invocation_limits.max_model_calls == 12 and config.invocation_limits.max_tool_calls == 16
+    assert config.invocation_limits.max_model_calls == InvestigationConfig().max_model_calls
+    assert config.invocation_limits.max_tool_calls == 16
     panel = describe_developer_agent_config(agent_id)
     assert panel["hidden_fields"] == ["max_iterations", "tools"]
     assert panel["specific_fields"] == []

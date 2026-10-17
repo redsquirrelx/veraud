@@ -159,6 +159,61 @@ def test_validation_gap_returns_to_inspection_and_completes(repo):
     assert "verified_obstacle_requires_usage_inspection" in model.history[4][1].content
 
 
+def invalid_blocker(messages):
+    return evaluate(messages, mutate=lambda value: value.update(can_investigate_further=False, continuation_reason=""))
+
+
+def test_recovers_evaluation_after_two_invalid_responses_then_resumes_inspection(repo):
+    result, model, tools = run(repo, [plan(), read(repo, ["service.py"]), READY,
+        invalid_blocker, invalid_blocker, evaluate,
+        read(repo, ["consumer.py", "backend.py"]), READY, evaluate, review("ADAPT-001")],
+        config=limits(max_iterations=2))
+    assert result.status == "completed" and result.termination_reason == "sufficient_evidence"
+    assert result.iterations == 2 and "route:inspect" in result.execution_trace
+    assert result.plan.hypotheses[0].id == "h1"
+    assert result.model_calls == len(model.history) == 10
+    assert result.tool_calls == 5
+    assert result.findings[0].validation_status == "accepted"
+    paths = {file.id: file.path for file in tools.accessible_snapshot.files}
+    assert {"service.py", "consumer.py", "backend.py"} <= {paths[e.file_id] for e in tools.retrieved_evidence}
+    prompt = " ".join(message.content for message in model.history[5] if isinstance(message, HumanMessage))
+    assert "investigation_blocker_required" in prompt
+    assert "continuation_reason must explain a concrete blocker" in prompt
+    assert "do not fabricate a successful evaluation" in prompt
+    assert any("response_schema attempt 2/4" in item for item in result.limitations)
+
+
+@pytest.mark.parametrize("recovery_attempts", [0, 2])
+def test_permanently_invalid_evaluation_stops_at_the_explicit_recovery_limit(repo, recovery_attempts):
+    attempts = 2 + recovery_attempts
+    result, model, tools = run(repo, [plan(), read(repo), READY, *([invalid_blocker] * attempts)],
+        config=limits(max_schema_recovery_attempts=recovery_attempts))
+    assert result.termination_reason == "schema_recovery_exhausted" and result.status == "partial"
+    assert result.model_calls == len(model.history) == 3 + attempts
+    assert result.tool_calls == 4 and tools.retrieved_evidence
+    assert not result.findings and result.plan is not None
+    assert any(f"response_schema attempt {attempts}/{attempts}" in item for item in result.limitations)
+
+
+def test_evaluation_recovery_preserves_the_model_call_budget(repo):
+    result, model, tools = run(repo, [plan(), read(repo), READY, *([invalid_blocker] * 4)],
+        config=limits(max_model_calls=6))
+    assert result.termination_reason == "model_call_limit"
+    assert result.model_calls == len(model.history) == 4
+    assert tools.retrieved_evidence and not result.findings
+
+
+def test_omitted_hypotheses_are_corrected_instead_of_stopping_immediately(repo):
+    def omitted(messages):
+        return evaluate(messages, mutate=lambda value: value.update(hypotheses=[]))
+
+    result, model, _ = run(repo, [plan(), read(repo), READY, omitted, evaluate, review("ADAPT-001")])
+    assert result.status == "completed" and result.hypotheses[0].id == "h1"
+    prompt = " ".join(message.content for message in model.history[4] if isinstance(message, HumanMessage))
+    assert "evaluation_hypotheses_missing" in prompt
+    assert "Include every prior hypothesis ID" in prompt
+
+
 def test_unspecified_target_is_qualified_not_invented(repo):
     result, _, _ = normal(repo, audit_request=request(target_context=None))
     assert result.status == "completed" and result.target_context is None

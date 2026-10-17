@@ -178,6 +178,43 @@ def test_all_auditors_share_the_same_graph(repo):
     assert result.findings[0].validation_status == "accepted"
 
 
+def test_transient_evaluation_failure_retries_the_same_stage_without_repeating_investigation(repo):
+    class Unavailable(Exception):
+        status_code = 503
+
+    tools = toolset(repo)
+    model = ScriptedModel([PLAN, *queries(tools), AIMessage(content="Ready"),
+        Unavailable(), Unavailable(), evaluate, review()])
+    config = DependencyImpactConfig(max_total_tokens=300_000, provider_retry_backoff_seconds=0)
+    result = asyncio.run(DependencyImpactAgent(model, config).run(tools))
+    assert result.termination_reason == "sufficient_evidence"
+    assert result.findings[0].validation_status == "accepted"
+    assert result.tool_calls == 3  # graph and source reads were not restarted
+    assert result.plan.hypotheses[0].id == "h1"
+    assert not result.deferred_stages
+    assert model.history[5] == model.history[6] == model.history[7]
+
+
+@pytest.mark.parametrize("long_quota_wait", [False, True])
+def test_unavailable_evaluation_preserves_source_and_hypotheses_as_explicitly_pending(repo, long_quota_wait):
+    class Unavailable(Exception):
+        status_code = 429 if long_quota_wait else 503
+        response = SimpleNamespace(headers={"retry-after": "44378"} if long_quota_wait else {})
+
+    tools = toolset(repo)
+    model = ScriptedModel([PLAN, *queries(tools), AIMessage(content="Ready"), *[Unavailable() for _ in range(3)]])
+    config = DependencyImpactConfig(max_total_tokens=300_000, max_provider_retries=2, provider_retry_backoff_seconds=0)
+    result = asyncio.run(DependencyImpactAgent(model, config).run(tools))
+    assert result.termination_reason == ("provider_retry_wait_limit" if long_quota_wait else "provider_recovery_exhausted")
+    assert result.tool_calls == 3
+    assert {item.path for item in result.evidence if item.kind == "source"} == {"orders.py", "gateway.py"}
+    assert result.plan.hypotheses[0].id == result.hypotheses[0].id == "h1"
+    assert result.deferred_stages[0].node == "evaluate_evidence"
+    assert result.deferred_stages[0].http_status == (429 if long_quota_wait else 503)
+    assert not result.findings  # No accepted result without evaluation/review.
+    assert DependencyImpactResult.model_validate_json(result.model_dump_json()) == result
+
+
 def test_legitimate_dependency_is_not_reported_as_harm(repo):
     result, _, _ = run_audit(repo, evaluator=lambda m: evaluate(m, legitimate=True, candidate=False),
                              reviewer=review(candidate=False))

@@ -23,8 +23,4 @@ class ReusabilityAgent(CoordinatorAgent):
             "targets": [repository_relative_path(target) for target in request.targets],
         })
         execution = ReusabilityExecution(self, tools, request)
-        state = await execution.graph.ainvoke(
-            execution.initial_state(),
-            {"recursion_limit": 8 * self.config.max_rounds + 12},
-        )
-        return state["result"]
+        return await execution.run(recursion_limit=8 * self.config.max_rounds + 12)

@@ -8,7 +8,12 @@ from ....schemes.investigator import (
     ArchitectureBoundaryRequest as AuditRequest,
 )
 from ....schemes.investigator import (
-    AuditResult,
+    BoundaryClaimCheck,
+    BoundaryEvaluation,
+    BoundaryFinding,
+    BoundaryFindingReview,
+    BoundaryReview,
+    BoundarySupport,
     CandidateFinding,
     Contract,
     Criterion,
@@ -17,8 +22,12 @@ from ....schemes.investigator import (
     Finding,
     Hypothesis,
 )
+from ....schemes.investigator import (
+    BoundaryResult as AuditResult,
+)
 
 __all__ = [
-    "AuditRequest", "AuditResult", "BaseAuditRequest", "BoundaryConfig", "CandidateFinding", "Contract", "Criterion",
+    "AuditRequest", "AuditResult", "BaseAuditRequest", "BoundaryClaimCheck", "BoundaryConfig", "BoundaryEvaluation",
+    "BoundaryFinding", "BoundaryFindingReview", "BoundaryReview", "BoundarySupport", "CandidateFinding", "Contract", "Criterion",
     "Evaluation", "EvidenceReference", "Finding", "FindingReview", "Hypothesis", "InvestigationPlan", "Review",
 ]

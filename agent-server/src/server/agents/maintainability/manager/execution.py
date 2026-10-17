@@ -12,7 +12,12 @@ from ....runtimes.coordination.execution import (
     CoordinatorSynthesisExecution,
 )
 from ....runtimes.coordination.schemas import Consumption
-from ....runtimes.coordination.synthesis import evidence_key, stable_id
+from ....runtimes.coordination.synthesis import (
+    evidence_key,
+    stable_id,
+    terminal_collection_blocker,
+    terminal_provider_blocker,
+)
 from ....runtimes.investigation.schemas import EvidenceReference
 from ..modularity.coordinator.registry import INVESTIGATORS as MODULARITY_INVESTIGATORS
 from ..reusability.coordinator.registry import (
@@ -76,7 +81,7 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         logging.getLogger(__name__).info("maintainability manager node=%s", name)
 
     def initial_state(self):
-        self.audit_id = uuid4().hex
+        self.audit_id = self.assessment_identity()
         return {"assessment_id": self.audit_id, "repository_id": self.tools.accessible_snapshot.repository.name,
             "snapshot_hash": self.tools.context.input.snapshot_hash, "initial_plan": [], "pending_assignments": [],
             "execution_records": [], "investigation_results": [], "rounds_completed": 0, "material_gaps": [],
@@ -163,8 +168,18 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         registry = MODULARITY_INVESTIGATORS if key == "modularity" else REUSABILITY_INVESTIGATORS
         return validation.coverage_issues(result, registry)
 
-    def collect_assessments(self, state):
-        self.tick("collect_assessments")
+    def collect_received(self, raw, state):
+        update = self.collect_assessments(dict(state, execution_records=[raw]), incremental=True)
+        record = next((r for r in update["investigation_results"] if r.assignment.invocation_id == raw.assignment.invocation_id), None)
+        if record is not None:
+            self.publish_collected(record)
+
+    def publish_received_result(self, child, record):
+        child.publish_assessment(record.result)
+
+    def collect_assessments(self, state, *, incremental=False):
+        if not incremental:
+            self.tick("collect_assessments")
         records = list(state["investigation_results"])
         seen = {r.assignment.invocation_id for r in records}
         issued = {a.invocation_id: a for a in state["issued_assignments"]}
@@ -177,27 +192,35 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
                 ignored.append(assignment.invocation_id)
                 continue
             seen.add(assignment.invocation_id)
-            usage = Consumption()
-            if assignment.budget:
-                usage = Consumption(model_calls=assignment.budget.max_model_calls, tool_calls=assignment.budget.max_tool_calls,
-                    accounted_tokens=assignment.budget.max_total_tokens, estimated_tokens=assignment.budget.max_total_tokens,
-                    model_calls_estimated=True)
+            if assignment.invocation_id in self._collected_records:
+                records.append(self._collected_records[assignment.invocation_id])
+                continue
+            usage = self.fallback_consumption(assignment)
             status, error, result, issues = raw.status, raw.error, None, []
+            failure = raw.failure
             if status == "received":
                 try:
                     value = raw.value.model_dump() if hasattr(raw.value, "model_dump") else raw.value
                     result = self.registry[assignment.investigator_id].result_class.model_validate(value)
-                    self.validate_result(result, assignment)
+                    # Evidence rejection does not erase valid, bounded usage already
+                    # reported by the host coordinator. Invalid accounting retains
+                    # the conservative reservation fallback.
+                    validation.validate_accounting(result, assignment.budget)
                     usage = result.consumption
+                    self.validate_result(result, assignment)
                     issues = self.coverage_issues(result, assignment.investigator_id)
                     status = "completed" if not issues else "failed" if result.status == "failed" else "partial"
                 except Exception as exc:  # noqa: BLE001 - untrusted subordinate boundary
+                    from ....services.execution_failures import failure_from_exception
+                    failure = failure_from_exception(exc, "validate_assessment", self.registry[assignment.investigator_id].result_class)
                     result, status, error = None, "failed", type(exc).__name__
+                    error = failure.exception_type or error
             evidence = [e for r in result.invocations for e in r.evidence] if result else []
-            record = CoordinatorAssessment(assignment=assignment, result=result, status=status, error=error,
+            record = CoordinatorAssessment(assignment=assignment, result=result, status=status, error=error, failure=failure,
                 evidence=evidence, consumption=usage, duration_seconds=raw.duration_seconds,
                 warnings=result.limitations if result else [], coverage_issues=issues, evidence_sufficient=status == "completed")
             records.append(record)
+            self._collected_records[assignment.invocation_id] = record
             self.spent = Consumption(**{k: getattr(self.spent, k) + getattr(usage, k)
                 for k in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")},
                 model_calls_estimated=self.spent.model_calls_estimated or usage.model_calls_estimated)
@@ -213,6 +236,10 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         if not gap.blocking or gap.coordinator is None:
             return False
         calls = [r for r in records if r.assignment.investigator_id == gap.coordinator]
+        if calls and terminal_collection_blocker(calls[-1]):
+            return False
+        if calls and terminal_provider_blocker(calls[-1].result):
+            return False
         if len(calls) >= self.config.max_attempts_per_dimension:
             return False
         return not any(r.assignment.question.strip().casefold() == gap.question.strip().casefold()
@@ -249,8 +276,9 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         context = synthesis.synthesis_context(state, self.request, records, findings, evidence, gaps)
         remaining = self.resources()
         self.synth.call_limit = self.synth.calls + max(0, remaining["calls"])
-        self.synth.token_limit = self.synth.tokens + max(0, remaining["tokens"])
+        self.synth.token_limit = self.synthesis_token_limit(remaining)
         before = self.synth.calls, self.synth.tokens, self.synth.estimates
+        self.resume_synthesis()
         draft = await self.synth.call("synthesize_assessments", {"messages": [], "compact_context": context}, AssessmentSynthesis)
         self.spent = self.spent.model_copy(update={"model_calls": self.spent.model_calls + self.synth.calls - before[0],
             "accounted_tokens": self.spent.accounted_tokens + self.synth.tokens - before[1],
@@ -324,7 +352,17 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         limitations = list(dict.fromkeys([g.question for g in state["material_gaps"]]
             + [w for r in state["investigation_results"] for w in r.warnings] + self.synth.issues + [
                 "Only modularity and reusability are implemented; no claim of full ISO/IEC 25010 maintainability coverage.",
-                "Linked observations preserve shared provenance and are not independent confirmation or a numeric quality score."]))
+                 "Linked observations preserve shared provenance and are not independent confirmation or a numeric quality score."]))
+        if state["decision"].reason == "resource_limit":
+            remaining = self.resources()
+            limits = self.config.invocation_limits
+            requirements = [("calls", remaining["calls"], limits.max_model_calls),
+                ("tokens", remaining["tokens"], 1 if self.token_budget is not None else limits.max_total_tokens),
+                ("tools", remaining["tools"], limits.max_tool_calls),
+                ("invocations", self.config.max_invocations - len(state["investigation_results"]), 1),
+                ("seconds", self.remaining(), 0.001)]
+            limitations.extend(f"resource_shortfall: {key}: disponible={max(0, available):g}; requerido={required:g}"
+                for key, available, required in requirements if available < required)
         return {"result": MaintainabilityReport(assessment_id=state["assessment_id"], repository_id=state["repository_id"],
             commit=state["scope"].commit, snapshot_hash=state["snapshot_hash"], objective=self.request.objective, targets=self.request.targets,
             status=status, termination_reason=state["decision"].reason, scope=state["scope"], coverage=state["decision"],

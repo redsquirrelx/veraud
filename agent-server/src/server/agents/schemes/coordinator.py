@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from pydantic import ConfigDict, Field, SerializeAsAny
 
 from ...runtimes.repository.schemas import ExecutionBudget
+from ...services.execution_failures import ExecutionFailure
 from .base import (
     AuditRequest,  # noqa: F401 - compatibility export
     AuditResult,
@@ -86,6 +87,7 @@ class AgentInvocation[AssignmentT: Contract, ResultT: Contract](Contract):
     consumption: Consumption = Field(default_factory=Consumption)
     duration_seconds: float = 0
     error: str | None = None
+    failure: ExecutionFailure | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -104,6 +106,7 @@ class RawAgentInvocation[AssignmentT: Contract](Contract):
     status: Literal["received", "failed", "timeout", "skipped"]
     value: Any = None
     error: str | None = None
+    failure: ExecutionFailure | None = None
     duration_seconds: float = 0
     evidence: list[EvidenceReference] = Field(default_factory=list)
 

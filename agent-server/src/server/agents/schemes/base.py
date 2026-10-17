@@ -5,7 +5,7 @@ or runtimes. It owns the shared investigator envelope and reusable evidence,
 review, criteria and accounting contracts.
 """
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field, field_validator
 
@@ -62,6 +62,8 @@ class Hypothesis(Contract):
     criterion_id: str | None = None
     priority: Literal["high", "medium", "low"] = "medium"
     evidence_needed: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list,
+        description="Delivered evidence IDs supporting the hypothesis conclusion, not requested evidence or invented citations.")
     status: Literal["pending", "confirmed", "discarded", "inconclusive"] = "pending"
     rationale: str = ""
 
@@ -94,6 +96,13 @@ class CandidateFinding(Contract):
 # Iteration assessment: updates hypotheses, proposes findings and makes information gaps explicit.
 # Returned by evaluate_evidence; the shared runtime uses sufficient when deciding how to continue.
 class Evaluation(Contract):
+    validation_feedback: ClassVar[dict[str, str]] = {
+        "evaluation_duplicate_hypotheses": "Each hypothesis ID must occur exactly once.",
+        "evaluation_duplicate_candidates": "Each candidate finding ID must occur exactly once.",
+        "evaluation_hypotheses_missing": "Include every prior hypothesis ID from the supplied context; unresolved hypotheses must remain pending or inconclusive, not disappear.",
+        "evaluation_unknown_criterion": "Use only criterion IDs from the supplied criteria; do not invent a criterion ID.",
+    }
+
     sufficient: bool
     hypotheses: list[Hypothesis]
     candidates: list[CandidateFinding]
@@ -113,6 +122,12 @@ class FindingReview(Contract):
 # Complete candidate review: groups individual judgments and limitations of the review itself.
 # Serves as the structured output of review_findings in the shared investigator lifecycle.
 class Review(Contract):
+    validation_feedback: ClassVar[dict[str, str]] = {
+        "review_duplicate_candidates": "Return exactly one review per candidate in evaluation.candidates. Remove duplicate finding_id entries.",
+        "review_unknown_candidates": "Use only finding_id values from evaluation.candidates. Do not invent or rename candidate IDs.",
+        "review_missing_candidates": "Classify every candidate in evaluation.candidates exactly once using its exact ID. For unsupported candidates use insufficient_evidence or rejected with an honest rationale; do not omit them or fabricate acceptance.",
+    }
+
     findings: list[FindingReview]
     limitations: list[str] = Field(default_factory=list)
 
@@ -120,6 +135,8 @@ class Review(Contract):
 # Verifiable evidence reference: identifies source bytes and location through snapshots, hashes and ranges.
 # Resolved by the host from repository tools and preserved by investigators, coordinators and the manager.
 class EvidenceReference(Contract):
+    commit_verification: Literal["exact", "line_endings_equivalent", "unverified"] | None = None
+    git_blob_id: str | None = None
     id: str
     snapshot_hash: str
     commit: str | None
@@ -145,6 +162,14 @@ class Finding(CandidateFinding):
 
 # Common investigator output: retains findings, hypotheses, limitations and resource accounting.
 # Specialized by each investigator; coordinators validate the concrete result type during collection.
+class DeferredProviderStage(Contract):
+    node: str
+    reason: str
+    http_status: int | None = None
+    retry_after_seconds: float | None = None
+    attempts: int = Field(ge=1)
+
+
 class AuditResult(Contract):
     repository_id: str
     commit: str | None
@@ -156,11 +181,16 @@ class AuditResult(Contract):
     missing_information: list[str]
     limitations: list[str]
     termination_reason: str
+    deferred_stages: list[DeferredProviderStage] = Field(default_factory=list,
+        description="Provider-blocked stages left pending after bounded recovery; all collected work remains in this result.")
     model_calls: int
     tool_calls: int
     iterations: int
     accounted_tokens: int
     estimated_tokens: int
+    evidence: list[EvidenceReference] = Field(default_factory=list, max_length=400,
+        description="Complete retrieved-evidence ledger. Retained even when no evaluation completed, "
+        "so inspected bytes are never silently lost with a failed or exhausted run.")
 
 
 # Shared call/token accounting: distinguishes accounted quantities from estimated usage.

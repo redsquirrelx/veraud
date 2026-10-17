@@ -5,6 +5,7 @@ Run from agent-server: uv run pytest src/test-agents/test_maintainability_manage
 
 import asyncio
 import json
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -26,9 +27,38 @@ from server.agents.maintainability.manager.registry import COORDINATORS
 from server.agents.maintainability.manager.schemas import RawAssessment
 from server.agents.maintainability.modularity.coordinator.schemas import Consumption
 from server.app.tracing_port import NoOpTracingBackend
+from server.blackboard.identity import AuditIdentity
+from server.blackboard.impls.memory import MemoryBlackboard
 from server.runtimes.investigation.schemas import InvestigationConfig
 
 BASE = ["analyze_audit_scope", "plan_audit", "delegate_auditors", "collect_assessments", "synthesize_assessments"]
+
+
+def test_explicit_models_reach_coordinators_and_their_investigators(repo):
+    from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES
+
+    selected = {name: NativeStructuredModel([{"summary": f"Synthesis by {name}"}])
+        for name in MAINTAINABILITY_AGENT_TYPES}
+    received = {}
+
+    def coordinator(key, model, limits):
+        received[key] = model
+        make = modularity_factory([]) if key == "modularity" else reusability_factory([])
+
+        def investigator(name, child_model, child_limits):
+            received[name] = child_model
+            return make(name, child_model, child_limits)
+
+        return COORDINATORS[key].agent_class(model, limits, investigator_factory=investigator,
+            tracing_backend=NoOpTracingBackend())
+
+    agent = MaintainabilityManagerAgent(selected["maintainability_manager"], config(),
+        coordinator_factory=coordinator, tracing_backend=NoOpTracingBackend())
+    agent.agent_models = selected
+    result = asyncio.run(agent.run(tools(repo), MaintainabilityRequest(targets=["main.py"])))
+    assert result.status == "complete"
+    assert set(received) == set(selected) - {"maintainability_manager"}
+    assert all(model is selected[name] for name, model in received.items())
 
 
 @pytest.fixture
@@ -112,6 +142,24 @@ def run(root, drafts=None, *, cfg=None, factory=None, req=None):
     return result, events
 
 
+def test_manager_synthesis_can_recover_after_transient_provider_failure(repo):
+    class Unavailable(Exception):
+        status_code = 503
+
+    model = NativeStructuredModel([Unavailable(), {"summary": "Recovered synthesis"}])
+    agent = MaintainabilityManagerAgent(model, config(max_provider_retries=0), tracing_backend=NoOpTracingBackend())
+    execution = MaintainabilityManagerExecution(agent, tools(repo), MaintainabilityRequest(targets=["main.py"]))
+    state = execution.initial_state()
+    state.update(execution.analyze_audit_scope(state))
+    first = asyncio.run(execution.synthesize_assessments(state))
+    assert any(gap.kind == "synthesis_failure" for gap in first["material_gaps"])
+    state.update(first)
+    second = asyncio.run(execution.synthesize_assessments(state))
+    assert not any(gap.kind == "synthesis_failure" for gap in second["material_gaps"])
+    assert second["summary"] == "Recovered synthesis"
+    assert execution.synth.calls == execution.spent.model_calls == 2
+
+
 def test_complete_first_pass_exact_nodes_and_provenance(repo):
     calls = []
     result, events = run(repo, factory=controlled_coordinators(calls, delay=0.01))
@@ -119,6 +167,8 @@ def test_complete_first_pass_exact_nodes_and_provenance(repo):
     assert result.coverage.covered == ["modularity", "reusability"]
     assert result.node_transitions == [*BASE, "finalize_audit"]
     assert len(calls) == 2 and all(c[2].targets == ["main.py"] for c in calls)
+    assert all(c[1].context.input.budget.max_retrieved_characters == 600_000 for c in calls)
+    assert calls[0][1].retrieval_budget is calls[1][1].retrieval_budget
     assert len({id(c[1]) for c in calls}) == 2
     assert all(r.evidence_sufficient and len(r.result.invocations) == 3 for r in result.assessments)
     assert all(m["audit_id"] == result.assessment_id for name, m in events.records if name == "maintainability-coordinator")
@@ -127,6 +177,249 @@ def test_complete_first_pass_exact_nodes_and_provenance(repo):
     assert set(graph.nodes) == {*BASE, "refine_audit_plan", "finalize_audit", "__start__", "__end__"}
     assert {(e.source, e.target) for e in graph.edges if e.conditional} == {
         ("synthesize_assessments", "finalize_audit"), ("synthesize_assessments", "refine_audit_plan")}
+
+
+@pytest.mark.parametrize("tamper", [None, "git_blob_id", "content_hash", "tool_call_id", "start_line", "symbol_ids"])
+def test_canonical_attribution_survives_collection_and_rejects_tampering(repo, monkeypatch, tamper):
+    from test_modularity import result as leaf_result
+
+    from server.runtimes.coordination.execution import CoordinatorExecution
+    from server.runtimes.investigation.agent import InvestigationExecution
+    from server.runtimes.investigation.provenance import CommitVerification
+
+    monkeypatch.setattr("server.runtimes.investigation.agent.verify_commit",
+        lambda *args: CommitVerification(True, "line_endings_equivalent", "b" * 40))
+    for args in (["init"], ["add", "main.py"], ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "fixture"]):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    calls, returned_usage = [], []
+
+    def coordinator_factory(key, model, limits):
+        def investigator_factory(identifier, model, child_limits):
+            async def inspect(child, request):
+                calls.append(identifier)
+                child.execute("list_files", {}, tool_call_id="metadata")
+                child.execute("get_source_excerpt", {"path": "main.py", "start_line": 1, "end_line": 2}, tool_call_id="source")
+                # Exercise real host verification and collection, without provider calls.
+                host = SimpleNamespace(tools=child, _commit_checks=child.commit_verifications, remaining_seconds=lambda: 10)
+                host.attributed_reference = lambda ref: InvestigationExecution.attributed_reference(host, ref)
+                refs, _ = InvestigationExecution.verify_references(host, CoordinatorExecution.references(child))
+                return leaf_result(identifier, child, request).model_copy(update={"evidence": refs, "tool_calls": 2})
+            return SimpleNamespace(run=inspect)
+
+        async def assess(child, request):
+            result = await COORDINATORS[key].agent_class(NativeStructuredModel([{"summary": "Verified partial work."}]), limits,
+                investigator_factory=investigator_factory, tracing_backend=NoOpTracingBackend()).run(child, request)
+            returned_usage.append(result.consumption)
+            if tamper:
+                record = result.invocations[0]
+                refs = list(record.result.evidence)
+                value = {"git_blob_id": "c" * 40, "content_hash": "d" * 64, "tool_call_id": "different",
+                    "start_line": 2, "symbol_ids": ["different"]}[tamper]
+                refs[-1] = refs[-1].model_copy(update={tamper: value})
+                altered = record.model_copy(update={"result": record.result.model_copy(update={"evidence": refs})})
+                result = result.model_copy(update={"invocations": [altered, *result.invocations[1:]]})
+            return result
+        return SimpleNamespace(run=assess)
+
+    parent_tools = tools(repo)
+    result = asyncio.run(MaintainabilityManagerAgent(NativeStructuredModel([{"summary": "Manager synthesis."}]),
+        config(), coordinator_factory=coordinator_factory, tracing_backend=NoOpTracingBackend()).run(parent_tools,
+        MaintainabilityRequest(dimensions=["modularity"], targets=["main.py"])))
+    assert len(calls) == 3  # A deterministic collection failure must not restart the coordinator.
+    assessment = result.assessments[0]
+    assert assessment.consumption == returned_usage[0]
+    assert not assessment.consumption.model_calls_estimated
+    if tamper:
+        assert assessment.result is None and not assessment.evidence
+        assert assessment.failure.code == "uncollected_nested_evidence"
+        assert f"differing_fields={tamper}" in assessment.failure.diagnostics
+        assert any("result.evidence[1]" in line for line in assessment.failure.diagnostics)
+    else:
+        assert result.status == "complete"
+        for record in assessment.result.invocations:
+            assert record.evidence == record.result.evidence
+            assert len({e.id for e in record.evidence}) == len(record.evidence) == 2
+            assert {e.kind for e in record.evidence} == {"source", "metadata"}
+            assert all(e.commit_verification == "line_endings_equivalent" and e.git_blob_id == "b" * 40 for e in record.evidence)
+
+
+def test_shared_budget_dispatches_both_dimensions_and_all_investigators(repo):
+    from config.agents.audit import AuditAgentDefaults, apply_audit_defaults
+    from server.runtimes.repository.shared_tokens import SharedTokenBudget
+
+    investigators = []
+
+    def coordinator_factory(key, model, limits):
+        assert limits.max_total_tokens == 500000
+        make = modularity_factory([]) if key == "modularity" else reusability_factory([])
+
+        def investigator_factory(identifier, model, child_limits):
+            investigators.append((identifier, child_limits.max_total_tokens))
+            worker = make(identifier, model, child_limits)
+
+            async def run(child_tools, request):
+                result = await worker.run(child_tools, request)
+                # Simulate known per-agent usage: three investigators together
+                # exceed their coordinator's personal 500k allowance.
+                reservation = child_tools.token_budget.reserve(200000)
+                assert reservation is not None
+                reservation.settle(200000)
+                return result.model_copy(update={"accounted_tokens": 200000, "estimated_tokens": 0})
+
+            return SimpleNamespace(run=run)
+
+        return COORDINATORS[key].agent_class(NativeStructuredModel([{"summary": "Controlled assessment."}]), limits,
+            investigator_factory=investigator_factory, tracing_backend=NoOpTracingBackend())
+
+    configured = apply_audit_defaults(config(), AuditAgentDefaults(max_context_characters=160000, max_total_tokens=500000))
+    repository_tools = toolset(repo, max_model_calls=400, max_tool_calls=500,
+        max_total_tokens=3000000, max_tokens_per_objective=3000000,
+        max_retrieved_characters=600000, max_elapsed_seconds=600)
+    repository_tools.token_budget = SharedTokenBudget(3000000)
+    manager = MaintainabilityManagerAgent(NativeStructuredModel([{"summary": "Scoped synthesis."}]), configured,
+        coordinator_factory=coordinator_factory, tracing_backend=NoOpTracingBackend())
+    result = asyncio.run(manager.run(repository_tools, MaintainabilityRequest(targets=["main.py"])))
+    assert result.status == "complete"
+    assert {item.assignment.investigator_id for item in result.assessments} == {"modularity", "reusability"}
+    assert len(investigators) == len({identifier for identifier, _ in investigators}) == 6
+    assert all(tokens == 500000 for _, tokens in investigators)
+    assert all(len(item.result.invocations) == 3 for item in result.assessments)
+    assert all(item.result.consumption.accounted_tokens > 500000 for item in result.assessments)
+    assert 1200000 <= repository_tools.token_budget.used < 3000000
+
+
+def test_blackboard_propagates_through_manager_coordinators_and_factory_investigators(repo):
+    board = MemoryBlackboard()
+    coordinators, investigators = [], []
+
+    def create_coordinator(key, model, limits):
+        make = modularity_factory([]) if key == "modularity" else reusability_factory([])
+
+        def create_investigator(identifier, model, limits):
+            investigator = make(identifier, model, limits)
+            investigators.append(investigator)
+            return investigator
+
+        coordinator = COORDINATORS[key].agent_class(
+            NativeStructuredModel([{"summary": "Controlled assessment."}]), limits,
+            investigator_factory=create_investigator, tracing_backend=NoOpTracingBackend(),
+        )
+        coordinators.append(coordinator)
+        return coordinator
+
+    manager = MaintainabilityManagerAgent(
+        NativeStructuredModel([{"summary": "Scoped synthesis."}]), config(),
+        coordinator_factory=create_coordinator, tracing_backend=NoOpTracingBackend(), blackboard=board,
+        audit_identity=AuditIdentity(run_id="shared-audit", invocation_id="root-execution"),
+    )
+    result = asyncio.run(manager.run(tools(repo), MaintainabilityRequest(targets=["main.py"])))
+
+    assert result.status == "complete"
+    assert result.assessment_id == "shared-audit"
+    assert len(coordinators) == 2 and len(investigators) == 6
+    assert all(agent.blackboard is board for agent in [manager, *coordinators, *investigators])
+    assessments = board.query_assessments(result.assessment_id)
+    assert len(assessments) == 3
+    parent = next(a for a in assessments if a.agent_id == "maintainability_manager")
+    assert parent.status == result.status
+    assert parent.invocation_id == "root-execution"
+    assert parent.details["report"] == result.model_dump(mode="json", serialize_as_any=True)
+    assert len(parent.assessment_ids) == 2
+    assert set(parent.assessment_ids) == {a.id for a in assessments if a is not parent}
+    assert len(parent.evidence_ids) == 6
+    assert all(board.get_evidence(result.assessment_id, identifier) is not None for identifier in parent.evidence_ids)
+    assert {a.invocation_id for a in assessments if a.id in parent.assessment_ids} == {
+        a.assignment.invocation_id for a in result.assessments}
+    investigator_ids = {
+        invocation.assignment.invocation_id for assessment in result.assessments for invocation in assessment.result.invocations
+    }
+    evidence = [board.get_evidence(result.assessment_id, identifier) for identifier in parent.evidence_ids]
+    assert {record.invocation_id for record in evidence} == investigator_ids
+    assert len({record.invocation_id for record in [*assessments, *evidence]}) == 9
+    assert all(assessment.result.assessment_id == assessment.assignment.invocation_id for assessment in result.assessments)
+    baseline_model = NativeStructuredModel([{"summary": "Scoped synthesis."}])
+    baseline = asyncio.run(MaintainabilityManagerAgent(
+        baseline_model, config(), coordinator_factory=controlled_coordinators([]), tracing_backend=NoOpTracingBackend(),
+    ).run(tools(repo), MaintainabilityRequest(targets=["main.py"])))
+    assert len(manager.model.history) == len(baseline_model.history) == 1
+    assert all(len(coordinator.model.history) == 1 for coordinator in coordinators)
+    assert result.consumption.model_calls == baseline.consumption.model_calls
+    assert result.consumption.tool_calls == baseline.consumption.tool_calls
+    assert result.node_transitions == baseline.node_transitions
+
+
+def test_publication_conflict_keeps_siblings_and_usage_without_restarting_coordinator(repo):
+    from test_modularity import result as leaf_result
+
+    from server.blackboard.models import Evidence
+    from server.runtimes.coordination.execution import CoordinatorExecution
+
+    board, coordinator_calls, investigator_calls, originals = MemoryBlackboard(), [], [], []
+
+    def create_coordinator(key, model, limits):
+        coordinator_calls.append(key)
+
+        def create_investigator(identifier, model, limits):
+            worker = SimpleNamespace()
+
+            async def inspect(child, request):
+                investigator_calls.append(identifier)
+                child.execute("get_source_excerpt", {"path": "main.py", "start_line": 1, "end_line": 2}, tool_call_id="read")
+                if identifier == "responsibility":
+                    # Simulate an interrupted prior publication with a genuine
+                    # conflicting record, not a completed investigator receipt.
+                    publication = worker._blackboard_publication
+                    ref = CoordinatorExecution.references(child)[0]
+                    original = Evidence(**publication._identity("evidence", ref.id), source=ref.path,
+                        **ref.model_dump(exclude={"id", "path", "content_hash"}), content_hash="PRIVATE_ORIGINAL_HASH")
+                    board.publish_evidence(original)
+                    originals.append(original)
+                return leaf_result(identifier, child, request)
+
+            worker.run = inspect
+            return worker
+
+        return COORDINATORS[key].agent_class(NativeStructuredModel([{"summary": "Retain siblings; publication conflict unresolved."}]),
+            limits, investigator_factory=create_investigator, tracing_backend=NoOpTracingBackend())
+
+    manager = MaintainabilityManagerAgent(NativeStructuredModel([{"summary": "Coverage remains incomplete."}]),
+        config(max_rounds=3), coordinator_factory=create_coordinator, tracing_backend=NoOpTracingBackend(), blackboard=board)
+    report = asyncio.run(manager.run(tools(repo), MaintainabilityRequest(dimensions=["modularity"], targets=["main.py"])))
+    assert coordinator_calls == ["modularity"] and len(investigator_calls) == 3
+    assert report.status == "partial" and report.termination_reason == "no_actionable_follow_up"
+    assessment = report.assessments[0]
+    assert assessment.result is not None and assessment.failure is None
+    records = assessment.result.invocations
+    failed = next(r for r in records if r.assignment.investigator_id == "responsibility")
+    assert failed.status == "failed" and failed.result is None
+    assert failed.failure.code == "blackboard_publication_conflict" and failed.failure.stage == "publish_result"
+    assert "PRIVATE_ORIGINAL_HASH" not in failed.failure.model_dump_json()
+    assert failed.consumption.model_calls == 4 and not failed.consumption.model_calls_estimated
+    assert assessment.consumption.model_calls == 13 and report.consumption.model_calls == 14
+    assert all(r.status == "completed" for r in records if r is not failed)
+    assert board.get_evidence(originals[0].run_id, originals[0].id) == originals[0]
+    assert len(board.query_evidence(report.assessment_id)) == 3
+
+
+def test_partial_audits_publish_available_children_and_reusing_the_manager_starts_a_new_audit(repo):
+    board = MemoryBlackboard()
+    manager = MaintainabilityManagerAgent(
+        NativeStructuredModel([{"summary": "Partial audit."}, {"summary": "Another partial audit."}]),
+        config(max_rounds=1), coordinator_factory=controlled_coordinators([], fail="reusability"),
+        tracing_backend=NoOpTracingBackend(), blackboard=board,
+    )
+    reports = [asyncio.run(manager.run(tools(repo), MaintainabilityRequest(targets=["main.py"]))) for _ in range(2)]
+
+    assert reports[0].assessment_id != reports[1].assessment_id
+    for report in reports:
+        assert report.status == "partial"
+        records = board.query_assessments(report.assessment_id)
+        assert len(records) == 2
+        parent = next(record for record in records if record.agent_id == "maintainability_manager")
+        assert parent.status == "partial" and len(parent.assessment_ids) == 1
+        assert parent.limitations and parent.gaps
+        assert parent.details["report"]["assessments"][1]["status"] == "failed"
+        assert all(board.get_evidence(report.assessment_id, identifier) is not None for identifier in parent.evidence_ids)
 
 
 def test_coverage_refinement_targets_only_reusability(repo):
@@ -333,12 +626,13 @@ def test_google_native_manager_schema_and_usage_without_paid_transport(repo, mon
             parts=[types.Part(text=json.dumps({"summary": "Scoped synthesis through mocked Google transport."}))]), finish_reason="STOP")],
             usage_metadata=types.GenerateContentResponseUsageMetadata(prompt_token_count=100, candidates_token_count=30, total_token_count=130))
     monkeypatch.setattr(model.async_client.models, "generate_content", generate_content)
-    result = asyncio.run(MaintainabilityManagerAgent(model, config(max_output_tokens=512),
+    result = asyncio.run(MaintainabilityManagerAgent(model, config(max_output_tokens=512, provider_request_timeout_seconds=3),
         coordinator_factory=controlled_coordinators([]), tracing_backend=NoOpTracingBackend()).run(tools(repo),
             MaintainabilityRequest(targets=["main.py"])))
     assert result.status == "complete" and len(requests) == 1
     assert result.consumption.accounted_tokens >= 730 and result.consumption.model_calls == 27
     assert model.max_output_tokens == 2048 and requests[0]["config"].max_output_tokens == 512
+    assert model.timeout is None and requests[0]["config"].http_options.timeout == 3000
 
 
 def test_conflict_resolution_requires_assigned_completed_attempt_and_new_source(repo):

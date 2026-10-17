@@ -121,7 +121,8 @@ class ProviderScenario(NativeStructuredModel):
             key = self.investigator(context)
             if self.fail_dependency and key == "dependency_impact":
                 raise RuntimeError("Simulated provider outage")
-            instruction = messages[-1].content
+            instruction = next((m.content for m in reversed(messages)
+                if isinstance(m.content, str) and m.content.startswith("Now execute ")), "")
             if "Now execute plan_investigation" in instruction:
                 value = PLAN if key == "architecture_boundary" else {
                     "objectives": [context["objective"]], "components": context.get("inventory", {}).get("directories", []),
@@ -145,7 +146,7 @@ class ProviderScenario(NativeStructuredModel):
                             "evidence_ids": [e["id"] for e in refs],
                         }]
             elif "Now execute review_findings" in instruction:
-                value = review() if key == "architecture_boundary" else {"findings": [], "limitations": []}
+                value = review()(messages) if key == "architecture_boundary" else {"findings": [], "limitations": []}
             elif any(isinstance(m, ToolMessage) for m in messages):
                 return AIMessage(content="Source inspected; ready to evaluate.")
             else:
@@ -242,6 +243,70 @@ def test_e2e_one_round_real_investigators(audit_repository):
     assert finding.contributions[0].investigator_id == "architecture_boundary"
     assert any(e.path == "domain/service.py" and e.start_line == 1 for e in finding.evidence)
     assert model.synthesis_calls == 1
+
+
+@pytest.mark.parametrize("responsibility_limited", [False, True])
+def test_manager_collection_reuses_real_child_publications_and_tool_measurements(audit_repository, responsibility_limited):
+    from server.agents.maintainability.manager import (
+        MaintainabilityConfig,
+        MaintainabilityManagerAgent,
+        MaintainabilityRequest,
+    )
+    from server.app.tracing_port import NoOpTracingBackend
+    from server.blackboard.identity import AuditIdentity
+    from server.blackboard.impls.memory import MemoryBlackboard
+
+    originals, writes, coordinator_calls = {}, {}, []
+
+    class Board(MemoryBlackboard):
+        def publish_evidence(self, record):
+            writes[record.id] = writes.get(record.id, 0) + 1
+            originals.setdefault(record.id, record.model_copy(deep=True))
+            return super().publish_evidence(record)
+
+    class Scenario(ProviderScenario):
+        async def ainvoke(self, messages, **kwargs):
+            answer = await super().ainvoke(messages, **kwargs)
+            if responsibility_limited and "Now execute evaluate_evidence" in messages[-1].content:
+                context = json.loads(messages[1].content)
+                if self.investigator(context) == "responsibility":
+                    return AIMessage(content=json.dumps({"sufficient": False, "hypotheses": [], "candidates": [],
+                        "missing_information": ["More responsibility evidence required"], "component_assessments": []}),
+                        usage_metadata={"input_tokens": 100, "output_tokens": 100, "total_tokens": 200})
+            return answer
+
+    configured = limits(max_rounds=1)
+    configured = configured.model_copy(update={"invocation_limits": configured.invocation_limits.model_copy(update={"max_iterations": 10})})
+
+    def coordinator_factory(key, model, child_limits):
+        coordinator_calls.append(key)
+        # Real default investigator registry and lifecycle; only provider responses are simulated.
+        return ModularityAgent(Scenario(), child_limits, tracing_backend=NoOpTracingBackend())
+
+    board = Board()
+    manager = MaintainabilityManagerAgent(NativeStructuredModel([{"summary": "Retained original child work."}]),
+        MaintainabilityConfig(max_rounds=1, invocation_limits=configured,
+            provider_rate_limits={"requests_per_minute": None, "tokens_per_minute": None}),
+        coordinator_factory=coordinator_factory, tracing_backend=NoOpTracingBackend(), blackboard=board,
+        audit_identity=AuditIdentity(run_id="measured-audit", invocation_id="manager"))
+    report = asyncio.run(manager.run(repository_tools(audit_repository), MaintainabilityRequest(dimensions=["modularity"],
+        targets=["domain", "storage"], criteria=request().criteria)))
+    assert coordinator_calls == ["modularity"]
+    assessment = report.assessments[0]
+    assert assessment.result is not None and assessment.failure is None
+    responsibility = next(r for r in assessment.result.invocations if r.assignment.investigator_id == "responsibility")
+    assert responsibility.failure is None and responsibility.result is not None
+    if responsibility_limited:
+        assert report.status == assessment.status == responsibility.status == "partial"
+        assert responsibility.result.termination_reason == "model_call_limit"
+    else:
+        assert report.status == "complete" and responsibility.status == "completed"
+    assert assessment.result.consolidated_findings  # Accepted boundary finding survives partial responsibility coverage.
+    evidence = board.query_evidence("measured-audit")
+    assert evidence and all(writes[e.id] == 1 and e == originals[e.id] for e in evidence)
+    assert all(e.details["measurement"]["call_id"] == e.tool_call_id for e in evidence)
+    assert all(e.details["tool_name"] == "get_source_excerpt" for e in evidence)
+    assert len(board.query_assessments("measured-audit")) == 2
 
 
 def test_e2e_two_rounds_real_investigators(audit_repository):

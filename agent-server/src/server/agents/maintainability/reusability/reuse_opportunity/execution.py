@@ -75,7 +75,7 @@ class ReuseOpportunityExecution(InvestigationExecution):
 
     def is_sufficient(self, state) -> ValidationRoute:
         evaluation = state["evaluation"]
-        reason = self.stop
+        reason = self.stop or ("provenance_unverifiable" if self.provenance_blocked else "")
         if not reason and self.remaining_seconds() <= 0:
             reason = "time_limit"
         if not reason and evaluation and evaluation.sufficient and not evaluation.missing_information:
@@ -83,7 +83,7 @@ class ReuseOpportunityExecution(InvestigationExecution):
         if not reason:
             reason = ("iteration_limit" if state["iterations"] >= self.config.max_iterations else
                       "tool_call_limit" if self.tools.budget_usage.tool_calls >= self.tool_limit else
-                      "model_call_limit" if self.calls >= self.call_limit - 2 else
+                      "model_call_limit" if self.calls >= self.call_limit - self.closing_call_reserve else
                       "no_actionable_gap" if evaluation and not evaluation.missing_information else "")
         self.final_reason = reason
         self.limited = bool(reason and reason != "sufficient_evidence")

@@ -7,7 +7,6 @@ from pydantic import Field, SerializeAsAny, field_validator
 from ..maintainability.manager.config import MaintainabilityConfig
 from . import coordinator as shared
 from .base import (
-    AuditResult,
     Contract,
     EvidenceReference,
     ScopedAuditRequest,
@@ -17,11 +16,11 @@ from .coordinator import (
     ReusabilityAssessment,
     ReusabilityRequest,  # noqa: F401 - compatibility export
 )
-from .investigator import DependencyImpactResult, ResponsibilityResult
+from .investigator import BoundaryResult, DependencyImpactResult, ResponsibilityResult
 
 # Data-only lookup used to restore nested modularity result types without importing agent registries.
 _MODULARITY_RESULTS = {
-    "architecture_boundary": AuditResult,
+    "architecture_boundary": BoundaryResult,
     "responsibility": ResponsibilityResult,
     "dependency_impact": DependencyImpactResult,
 }
