@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} | Veraud</title>
+    <link rel="stylesheet" href="{{ url_for('web_static', path='styles.css') }}">
+    <script src="{{ url_for('web_static', path='blackboard.js') }}" defer></script>
+</head>
+<body>
+    <main>
+        <p>Veraud</p>
+        <h1>{{ title }}</h1>
+        <form method="get">
+            <label for="run-id">ID de auditoría</label>
+            <input id="run-id" name="run_id" required value="{{ request.query_params.get('run_id', '') }}">
+            <button type="submit">Consultar</button>
+        </form>
+        <p id="connection" role="status">Introduce el run_id para consultar una auditoría.</p>
+        <section id="audit" hidden>
+            <h2>Estado: <span id="audit-status"></span></h2>
+            <p id="audit-error" role="alert" hidden></p>
+            <div id="execution-issues" aria-label="Motivos por agente" hidden></div>
+            <p id="audit-waits" role="status" hidden></p>
+            <p id="audit-activity" role="status" hidden></p>
+            <p id="audit-meta"></p>
+            <p id="updated-at"></p>
+            <div class="report-actions">
+                <button id="download-report" type="button" disabled aria-describedby="report-hint report-status">Descargar informe Word</button>
+                <p id="report-hint">El informe se genera con los registros publicados de esta auditoría.</p>
+                <p id="report-status" role="status" aria-live="polite"></p>
+            </div>
+            <section><h2>Evidencias (<span id="evidence-count">0</span>)</h2><div id="evidence"></div></section>
+            <section><h2>Hallazgos (<span id="findings-count">0</span>)</h2><div id="findings"></div></section>
+            <section><h2>Evaluaciones (<span id="assessments-count">0</span>)</h2><div id="assessments"></div></section>
+        </section>
+        <noscript>Activa JavaScript para consultar y actualizar el Blackboard automáticamente.</noscript>
+    </main>
+</body>
+</html>

@@ -13,6 +13,7 @@ from ..app.execution_service import (
 )
 from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
+from .dependencies import BlackboardDep
 from .schemas import (
     AgentSchemaResponse,
     DomainError,
@@ -230,6 +231,7 @@ async def run_agent(
         },
     })],
     service: ServiceDep,
+    blackboard: BlackboardDep,
 ) -> ExecutionResponse:
     """Run one agent and return its output.
 
@@ -248,6 +250,7 @@ async def run_agent(
             body.config,
             body.input,
             execution_id=body.execution_id,
+            blackboard=blackboard,
         )
 
     except UnknownAgentError as error:
