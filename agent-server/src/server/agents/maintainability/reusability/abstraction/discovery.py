@@ -27,6 +27,8 @@ def discover(snapshot, request, limit):
     # Unsupported/missing language indexes remain inspectable; no new parser/service.
     records.extend((f.id, f.id, None, "file", None, None) for f in sorted(files.values(), key=lambda f: f.path)
                    if f.id not in represented and in_scope(f.path))
+    committed = {i for c in request.follow_up for i in c.subject_ids}
+    records.sort(key=lambda item: item[0] not in committed)
     selected = []
     for identifier, file_id, name, kind, start, end in records[:limit]:
         selected.append(AbstractionCandidateTarget(component_id=identifier, path=files[file_id].path,

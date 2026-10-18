@@ -54,9 +54,10 @@ def repo(tmp_path):
     return root
 
 
-def plan():
+def plan(primary="policy.py"):
     return {"objectives": ["Assess reuse tradeoffs"], "components": [], "hypotheses": [{
-        "id": "h1", "question": "Does this abstraction justify its indirection?", "criterion_id": "abstraction-reuse"}]}
+        "id": "h1", "question": "Does this abstraction justify its indirection?", "criterion_id": "abstraction-reuse",
+        "declaration_ids": [primary]}]}
 
 
 def reads(root, paths, *, graph=True):
@@ -115,8 +116,9 @@ def evaluate(messages, *, primary="policy.py", category="useful_abstraction", pa
         "category": category if category != "justified_boundary" else "unnecessary_abstraction",
         "assessment_ids": ["a1"], "basis": "usage_evidence",
     }
-    value = {"sufficient": True, "hypotheses": [{**plan()["hypotheses"][0],
-        "status": "discarded" if category == "justified_boundary" else "confirmed", "rationale": "Evaluated against source."}],
+    value = {"sufficient": True, "hypotheses": [{**{k: v for k, v in plan()["hypotheses"][0].items() if k != "declaration_ids"},
+        "status": "discarded" if category == "justified_boundary" else "confirmed", "rationale": "Evaluated against source.",
+        "evidence_ids": source_ids}],
         "candidates": [candidate] if finding else [], "missing_information": [], "abstraction_assessments": [assessment]}
     if mutate:
         mutate(value)
@@ -124,8 +126,18 @@ def evaluate(messages, *, primary="policy.py", category="useful_abstraction", pa
 
 
 def review(*identifiers, status="accepted"):
-    return {"findings": [{"finding_id": i, "status": status, "rationale": "Inspected source and tradeoffs support this scoped conclusion.",
-                          "severity": "medium", "confidence": 0.8} for i in identifiers], "limitations": []}
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        assessments = context["evaluation"]["abstraction_assessments"]
+        return {"findings": [{"finding_id": i, "status": status, "rationale": "Inspected source and tradeoffs support this scoped conclusion.",
+                              "severity": "medium", "confidence": 0.8} for i in identifiers], "limitations": [],
+            "hypotheses": [{"hypothesis_id": h["id"], "status": "supported", "scope_supported": True,
+                "resolution": "discarded" if any(a["conclusion"] == "justified_boundary" for a in assessments
+                    if a["hypothesis_id"] == h["id"]) else "confirmed",
+                "rationale": "Reviewed the original question against declaration and consumer bodies.",
+                "assessment_ids": [a["id"] for a in assessments if a["hypothesis_id"] == h["id"]],
+                "checked_evidence_ids": h["evidence_ids"], "unverified_claims": []} for h in context["hypotheses"]]}
+    return respond
 
 
 def run(root, responses, *, target="policy.py", native=True, **updates):
@@ -133,13 +145,13 @@ def run(root, responses, *, target="policy.py", native=True, **updates):
     config = AbstractionConfig(**({"max_iterations": 1, "max_total_tokens": 300_000,
         "provider_rate_limits": {"requests_per_minute": None, "tokens_per_minute": None}} | updates))
     model = (NativeStructuredModel if native else ScriptedModel)(responses)
-    result = asyncio.run(AbstractionAgent(model, config).run(tools, AbstractionRequest(targets=[target])))
+    result = asyncio.run(AbstractionAgent(model, config).run(tools, AbstractionRequest(targets=[target] if target else [])))
     return result, model, tools
 
 
 def normal(root, *, primary="policy.py", category="useful_abstraction", roles=None, finding=True, mutate=None, **config):
     roles = roles if roles is not None else [("orders.py", "consumer"), ("reports.py", "consumer")]
-    return run(root, [plan(), reads(root, [primary, *[p for p, _ in roles]]), AIMessage(content="Ready to validate"),
+    return run(root, [plan(primary), reads(root, [primary, *[p for p, _ in roles]]), AIMessage(content="Ready to validate"),
         lambda m: evaluate(m, primary=primary, category=category, participants=roles, finding=finding, mutate=mutate),
         review("ABS-001") if finding else review()], target=primary, **config)
 
@@ -218,6 +230,204 @@ def test_host_rejects_unverified_abstraction_claims(repo, fault):
     assert result.findings[0].validation_status == "insufficient_evidence"
     assert result.abstractions_investigated[0].validation_issues
     assert result.inconclusive_investigations
+    assert result.hypotheses[0].status == "inconclusive"
+
+
+@pytest.mark.parametrize("fault", ["missing", "scope", "unrelated", "unchecked", "duplicate"])
+def test_hypothesis_requires_bound_independent_review_even_without_findings(repo, fault):
+    def reviewer(messages):
+        value = review()(messages)
+        judgment = value["hypotheses"][0]
+        if fault == "missing":
+            value["hypotheses"] = []
+        elif fault == "scope":
+            judgment["scope_supported"] = False
+        elif fault == "unrelated":
+            judgment["assessment_ids"] = ["another-assessment"]
+        elif fault == "unchecked":
+            judgment["checked_evidence_ids"] = []
+        else:
+            value["hypotheses"].append(judgment.copy())
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), lambda m: evaluate(m, finding=False), reviewer])
+    assert result.abstractions_investigated[0].validation_status == "source_backed"
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.status == "partial" and result.critical_review
+    assert result.termination_reason == "evidence_validation_failed"
+
+
+def test_import_hits_do_not_establish_consumer_behavior(repo):
+    message = reads(repo, ["policy.py", "orders.py", "reports.py"])
+    for call in message.tool_calls:
+        if call["name"] == "get_source_excerpt" and call["args"]["path"] != "policy.py":
+            call["args"]["end_line"] = 1
+    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), evaluate, review("ABS-001")])
+    assert result.hypotheses[0].status == "inconclusive"
+    assert all("participant_body_not_inspected" in p.validation_issues
+               for p in result.abstractions_investigated[0].participants)
+    assert result.findings[0].validation_status == "insufficient_evidence"
+
+
+def test_incomplete_declaration_body_is_not_verified(repo):
+    message = reads(repo, ["policy.py", "orders.py", "reports.py"])
+    for call in message.tool_calls:
+        if call["name"] == "get_source_excerpt" and call["args"]["path"] == "policy.py":
+            call["args"]["end_line"] = 2
+    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), evaluate, review("ABS-001")])
+    assert "abstraction_body_not_inspected" in result.abstractions_investigated[0].validation_issues
+    assert result.hypotheses[0].status == "inconclusive"
+
+
+def test_repeated_invalid_usage_closes_without_more_exploration(repo):
+    def invalid(messages):
+        return evaluate(messages, mutate=lambda v: v["abstraction_assessments"][0]["participants"][0].update(
+            relationship_id="relationship:invented-from-retrieval"))
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), invalid, AIMessage(content="No more source"), invalid,
+        review("ABS-001")], max_iterations=5)
+    assert result.termination_reason == "no_investigation_progress"
+    assert result.iterations == 2 and result.critical_review is not None
+    assert result.hypotheses[0].status == "inconclusive"
+
+
+def test_token_reservation_preserves_evaluation_and_review(repo, monkeypatch):
+    execution = AbstractionAgent.execution_type
+    original = execution.closing_token_reserve
+    def consumed(self, node, reserve):
+        if node == "investigate" and self.calls == 2:
+            self.tokens = self.token_limit - int(2.9 * reserve)
+        return original(self, node, reserve)
+    monkeypatch.setattr(execution, "closing_token_reserve", consumed)
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        evaluate, review("ABS-001")])
+    assert result.termination_reason == "token_limit"
+    assert result.abstractions_investigated and result.critical_review
+    assert result.accounted_tokens <= 300_000
+    assert result.findings[0].validation_status == "accepted"
+
+
+def test_navigation_supplies_real_edges_and_unread_consumers(repo):
+    tools = toolset(repo)
+    execution = AbstractionAgent.execution_type(ScriptedModel([]), AbstractionConfig(), tools,
+        AbstractionRequest(targets=["policy.py"]))
+    context = execution.model_context("investigate", execution.initial_state())
+    edge = next(r for r in context["abstraction_navigation"] if r["source_path"] == "orders.py")
+    assert edge["target_path"] == "policy.py" and edge["navigation_only"]
+    assert edge["relationship_id"] in execution.relationships
+    assert any(r["arguments"]["path"] == "orders.py" for r in context["next_source_reads"])
+    assert not execution.references()
+
+
+def test_missing_critical_review_cannot_leave_confirmed_hypothesis(repo):
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), evaluate, RuntimeError("Review unavailable")])
+    assert result.abstractions_investigated[0].validation_status == "source_backed"
+    assert result.critical_review is None
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.findings[0].validation_status == "insufficient_evidence"
+
+
+def test_compaction_preserves_assessment_citations_and_original_history(repo):
+    from server.agents.maintainability.reusability.abstraction.schemas import (
+        AbstractionEvaluation,
+    )
+
+    tools = toolset(repo)
+    execution = AbstractionAgent.execution_type(ScriptedModel([]), AbstractionConfig(), tools,
+        AbstractionRequest(targets=["policy.py"]))
+    state = execution.initial_state()
+    payload = lambda identifier: json.dumps({"evidence": [{"id": identifier, "kind": "source"}], "data": "x" * 20_000})
+    state["messages"] = [ToolMessage(content=payload(i), tool_call_id=i, name="get_source_excerpt")
+                         for i in ("old", "pinned", "recent1", "recent2")]
+    declaration = execution.selected[0].component_id
+    state["evaluation"] = AbstractionEvaluation(sufficient=False, hypotheses=[], candidates=[], missing_information=[],
+        abstraction_assessments=[{"id": "a1", "hypothesis_id": "h1", "declaration_id": declaration,
+            "conclusion": "inconclusive", "observed_facts": ["Partial observation"],
+            "supporting_evidence_ids": ["pinned"], "counterevidence_analysis": "Not resolved", "uncertainty": "high"}])
+    before = [m.model_dump() for m in state["messages"]]
+    compacted = execution.provider_history(state, [], overhead_characters=100_000, node="review_findings")
+    assert json.loads(compacted[0].content)["history_compacted"]
+    assert compacted[1].content == state["messages"][1].content
+    assert [m.model_dump() for m in state["messages"]] == before
+
+
+def test_unrelated_assessment_does_not_contaminate_valid_scoped_conclusion(repo):
+    def mixed(messages):
+        value = evaluate(messages)
+        unrelated = evaluate(messages, primary="wrapper.py",
+            participants=[("client.py", "consumer")], finding=False)["abstraction_assessments"][0]
+        unrelated["id"] = "unrelated"
+        unrelated["participants"][0]["relationship_id"] = "unverified-edge"
+        value["abstraction_assessments"].append(unrelated)
+        return value
+    def scoped_review(messages):
+        value = review("ABS-001")(messages)
+        value["hypotheses"][0]["assessment_ids"] = ["a1"]
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py", "wrapper.py", "client.py"]),
+        AIMessage(content="Validate"), mixed, scoped_review], target=None, max_candidates=40)
+    assert result.hypotheses[0].status == "confirmed"
+    assert result.findings[0].validation_status == "accepted"
+    outside = next(a for a in result.abstractions_investigated if a.id == "unrelated")
+    assert "declaration_outside_hypothesis_scope" in outside.validation_issues
+    assert outside.conclusion == "inconclusive"
+    assert result.coverage.planned_declarations == result.coverage.assessed_declarations
+    assert result.coverage.unplanned_candidates and not result.coverage.unassessed_candidates
+    assert not result.missing_information and result.status == "completed"
+    assert result.plan.hypotheses[0].declaration_ids == result.coverage.planned_declarations
+
+
+def test_review_recomputes_repaired_host_downgrade_and_retains_history(repo):
+    def broken(messages):
+        return evaluate(messages, mutate=lambda v: v["abstraction_assessments"][0]["participants"][0].update(
+            relationship_id="missing-edge"))
+    def repaired_but_uncertain(messages):
+        return evaluate(messages, mutate=lambda v: v["hypotheses"][0].update(status="inconclusive"))
+    result, _, _ = run(repo, [plan(), reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), broken, AIMessage(content="Correct relation using already delivered IDs"),
+        repaired_but_uncertain, review("ABS-001")], max_iterations=2)
+    assert result.hypotheses[0].status == "confirmed"
+    assert result.findings[0].validation_status == "accepted"
+    assert not result.missing_information
+    assert result.termination_reason == "iteration_limit" and result.status == "partial"
+    first, second = result.hypothesis_validation_history
+    assert first.proposed.status == "confirmed" and first.validated.status == "inconclusive"
+    assert second.proposed.status == second.validated.status == "inconclusive"
+    assert result.critical_review.hypotheses[0].resolution == "confirmed"
+
+
+def test_review_cannot_ignore_an_uninspected_committed_declaration(repo):
+    initial = plan()
+    initial["hypotheses"][0]["declaration_ids"].append("wrapper.py")
+    result, _, _ = run(repo, [initial, reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), evaluate, review("ABS-001")], target=None, max_candidates=40)
+    assert result.abstractions_investigated[0].validation_status == "source_backed"
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert result.coverage.unassessed_candidates
+    assert any("planned abstraction" in gap for gap in result.missing_information)
+
+
+@pytest.mark.parametrize("declarations", [[], ["invented-id"]])
+def test_missing_plan_binding_cannot_be_filled_by_later_assessment_claim(repo, declarations):
+    initial = plan()
+    initial["hypotheses"][0]["declaration_ids"] = declarations
+    result, _, _ = run(repo, [initial, reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), evaluate, review("ABS-001")])
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.status == "partial"
+    assert any("planned declaration identities" in gap for gap in result.missing_information)
+
+
+def test_evaluation_cannot_replace_original_question_to_fit_another_scope(repo):
+    initial = plan()
+    initial["hypotheses"][0]["question"] = "Does PricePolicy justify aggregation reuse?"
+    result, _, _ = run(repo, [initial, reads(repo, ["policy.py", "orders.py", "reports.py"]),
+        AIMessage(content="Validate"), lambda m: evaluate(m, mutate=lambda v:
+            v["hypotheses"][0].update(question="Is a UI Button useful?")), review("ABS-001")])
+    assert result.hypotheses[0].question == initial["hypotheses"][0]["question"]
+    assert result.hypothesis_validation_history[0].proposed.question == "Is a UI Button useful?"
 
 
 def test_host_gap_drives_another_inspection(repo):
@@ -227,7 +437,7 @@ def test_host_gap_drives_another_inspection(repo):
         lambda m: evaluate(m, participants=roles), review("ABS-001")], max_iterations=2)
     assert result.status == "completed" and result.iterations == 2
     assert result.findings[0].validation_status == "accepted"
-    assert "actual_consumer_required" in json.loads(model.history[4][1].content)["missing_information"][0]
+    assert any("actual_consumer_required" in gap for gap in json.loads(model.history[4][1].content)["missing_information"])
 
 
 # Zero-tool admission is covered by test_zero_tool_allowance_and_provider_failure
@@ -349,7 +559,8 @@ def test_live_harness_reuses_configuration_and_tracing(repo, capsys):
 
 def test_integration_useful_pass_through_and_justified_interface_in_one_audit(repo):
     before = fingerprints(repo)
-    hypotheses = [{**plan()["hypotheses"][0], "id": "h" + str(i)} for i in range(1, 4)]
+    hypotheses = [{**plan(primary)["hypotheses"][0], "id": "h" + str(i)}
+                  for i, primary in enumerate(("policy.py", "wrapper.py", "port.py"), 1)]
     def combined(messages):
         cases = [
             ("policy.py", "useful_abstraction", [("orders.py", "consumer"), ("reports.py", "consumer")], True),
@@ -454,7 +665,12 @@ def test_google_adapter_native_schemas_tools_and_usage_with_mocked_transport(rep
                 value = evaluate([HumanMessage(content=""), HumanMessage(content=json.dumps(context)),
                     *[ToolMessage(content=r.model_dump_json(), tool_call_id=r.tool_call_id) for r in responses]])
             elif turn == 5:
-                value = review("ABS-001")
+                source_ids = [r.id for r in InvestigationExecution.references(SimpleNamespace(tools=tools)) if r.kind == "source"]
+                value = {"findings": [{"finding_id": "ABS-001", "status": "accepted", "rationale": "Reviewed scoped source.",
+                    "severity": "info", "confidence": 0.8}], "limitations": [], "hypotheses": [{
+                    "hypothesis_id": "h1", "status": "supported", "scope_supported": True, "resolution": "confirmed",
+                    "rationale": "Reviewed declaration and actual consumers.", "assessment_ids": ["a1"],
+                    "checked_evidence_ids": source_ids, "unverified_claims": []}]}
             else:
                 raise AssertionError("Unexpected provider call")
             parts = [types.Part(text=json.dumps(value) if isinstance(value, dict) else value)]

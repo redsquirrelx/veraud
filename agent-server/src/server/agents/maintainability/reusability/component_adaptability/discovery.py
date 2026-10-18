@@ -21,6 +21,16 @@ RULES = [
 COMPILED = [(kind, name, re.compile(pattern)) for kind, name, pattern in RULES]
 
 
+def source_role(source):
+    if "/fixtures/" in "/" + source.path:
+        return "fixture"
+    if source.language in {"python", "typescript", "javascript"}:
+        return "implementation"
+    if source.path.endswith((".toml", ".yaml", ".yml", ".json", ".ini", ".env")):
+        return "configuration"
+    return "auxiliary"
+
+
 def discover(snapshot, request, config):
     targets = [repository_relative_path(t) for t in request.targets]
     files = {f.id: f for f in snapshot.files}
@@ -62,6 +72,11 @@ def discover(snapshot, request, config):
         lines = text.splitlines()
         for line, content in enumerate(lines, 1):
             for kind, rule, pattern in COMPILED:
+                if f.language not in {"python", "typescript", "javascript"} and kind not in {"data_schema", "configuration", "framework"}:
+                    continue  # Data/config text is not executable construction, DI or global state.
+                if rule == "construction_or_locator" and re.match(
+                    r"^\s*(?:(?:export|default|async|declare|abstract)\s+)*(?:class|def|function)\b", content):
+                    continue  # A class/function declaration is not a construction or locator call.
                 if pattern.search(content):
                     signals.append(DiscoverySignal(constraint_type=kind, line=line, rule=rule))
                     if len(signals) >= config.max_signals_per_component * config.max_components:
@@ -78,9 +93,9 @@ def discover(snapshot, request, config):
         # Module-level assumptions remain navigation hints for class/function targets.
         chosen = (local + [s for s in signals if s.line < start])[:config.max_signals_per_component]
         item = ComponentTarget(component_id=identifier, file_id=f.id, path=f.path, symbol=name,
-            start_line=start, end_line=end, signals=chosen)
-        ranked.append((-len(local), f.path, start, identifier, item))
-    ranked.sort(key=lambda r: r[:4])
-    return AdaptabilityCoverage(selected_components=[r[4] for r in ranked[:config.max_components]],
+            start_line=start, end_line=end, signals=chosen, source_role=source_role(f))
+        ranked.append((item.source_role != "implementation", -len(local), f.path, start, identifier, item))
+    ranked.sort(key=lambda r: r[:5])
+    return AdaptabilityCoverage(selected_components=[r[5] for r in ranked[:config.max_components]],
         eligible_components=len(candidates), omitted_components=max(0, len(candidates) - config.max_components),
         scanned_files=len(scanned), omitted_scan_files=max(0, len(scan_files) - len(scanned)), scan_truncated_paths=truncated)

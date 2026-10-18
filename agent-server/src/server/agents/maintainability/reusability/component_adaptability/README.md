@@ -89,9 +89,47 @@ context duplication. Pydantic rejects invalid decisions; bounded schema correcti
 apply. Host tool argument/permission failures stop safely before executing the batch.
 
 Only targeted missing evidence permits another inspection while budgets remain. An explicit
-`can_investigate_further=false` needs a concrete `continuation_reason` and exits as
-`unverifiable`; a sufficient assessment without actionable gaps does not loop blindly.
+`can_investigate_further=false` needs a concrete `continuation_reason` and typed
+`continuation_blocker` (external context, unavailable source or dynamic behavior) before
+an `unverifiable` exit. The host overrides this claim when available bodies or validation
+repairs remain. Repeated unchanged repair failures stop as `no_investigation_progress`
+while preserving review; a sufficient assessment without actionable gaps does not loop blindly.
 Hard limits and unrecoverable failures always terminate with limited/failed output.
+After an initial evaluation, the host completes missing planned component bodies through
+the existing tool node before spending another model call on equivalent evaluation.
+Reads obey both line and character limits, tool permissions, admission, deadline and
+closing-call headroom. Each repair range is attempted at most once; overlong individual
+lines or failed reads remain explicit limitations rather than unbounded retry loops.
+For an assessment already citing component source, body coverage includes accumulated
+delivered continuations, even if a later model response repeats the initial citation.
+Original supporting citations are retained; supplemental body evidence is included in
+the examined constraint and candidate and must be checked by independent review.
+This only establishes inspection coverage: seam/usage checks, commit verification and
+semantic acceptance remain required; missing input-preparation evidence stays inconclusive.
+
+`AdaptabilityPlan.hypotheses[].component_ids` binds each original question to exact selected
+components. Discovery alone is not a coverage commitment; coverage separates planned,
+unplanned and unassessed planned components. Assessment/citation repair feedback and bounded
+missing-body reads guide inspection. Final hypothesis resolution requires independent
+`AdaptabilityReview` coverage of all bound components and citations; unsupported resolutions
+become inconclusive. `critical_review` preserves model judgments and
+`hypothesis_validation_issues` records host downgrades. Findings expose concrete
+`validation_issues` such as component/assessment mismatch rather than a generic rejection.
+
+Data-schema assessments identify `schema_dependency_basis` and explain
+`schema_adaptation_analysis`: an input metadata contract is not automatically a dependency
+on fixed database names. Fixtures cannot establish hardcoded production domain values.
+Existing parameters/dictionary mappings count as possible seams without requiring another
+abstract interface. Independent review must explicitly validate these distinctions.
+Confirmed obstacles/risks require `adaptation_checks` identifying a concrete required
+change, inspected existing seams, why they cannot satisfy the assessed context and the
+checked citations. A blanket positive checkbox is insufficient. Input-contract schema
+risks also require inspected usage/input preparation; if normalization suffices or remains
+unknown, they cannot establish a need to change the component.
+Discovery marks implementation/fixture/configuration/auxiliary roles and ranks implementations
+first; non-code files cannot acquire executable DI/construction/global-state signals from
+SQL strings, dependency names or metadata. Structural coverage remains Python/JS/TS;
+readable auxiliary source does not imply equivalent structural indexing.
 
 ## Output and interpretation
 
@@ -118,6 +156,19 @@ same semantic root key/context; unrelated obstacles must not use a generic share
 Accepted observations of the same root across files consolidate source/component/assessment
 references, keep conservative confidence/classification, and retain rejected duplicate
 candidates with `duplicate_of`. No original candidate is silently erased.
+Mixed candidates spanning distinct root keys, contexts, types or classifications are
+split into scoped, stable-ID-derived candidates using the linked assessment facts and
+citations. Each derived candidate is independently reviewed. `split_from` identifies its
+original, retained in `candidate_split_history`. This repairs packaging only, not semantic
+validity. Host hypothesis normalization replaces its own validation annotation instead
+of nesting it across evaluations/finalization.
+For accepted context-dependent risks, review supplies `change_scope`, `qualified_impact`
+and `qualified_recommendation`. Final finding prose uses inspected facts and these scoped
+statements rather than repeating the original candidate's categorical claims. Content-only
+adaptation is explicitly distinguished from executable business logic or full rewrites;
+unspecified reuse scenarios remain assumptions. Original review judgments remain visible
+in `critical_review`. Missing input-preparation evidence still leaves a validator risk
+inconclusive; no automatic recommendation to relax its validation contract is accepted.
 
 Consumers must filter `validation_status == "accepted"` and inspect classification,
 target/assumptions and limitations. `completed` means the selected scope was investigated

@@ -10,6 +10,23 @@ test roles, cite a resolved internal relationship from that participant to the d
 delegate/contract roles go from declaration to participant. Include source covering the
 relationship declaration (e.g. import/inheritance), not just metadata or an unrelated range.
 Use the existing relationship's exact ID. External/dynamic/unavailable links are inconclusive.
+Never derive relationship IDs by changing a retrieval evidence ID's prefix. Use
+abstraction_navigation or list_relationships to select real endpoints and exact IDs.
+The declaration already has declaration_id: never list it as its own participant.
+Read the complete selected declaration body (multiple excerpts if needed) and consumer
+behavior, not only imports or single-line search matches. Follow assessment_validation
+for concrete repair blockers; reuse delivered evidence IDs when the source is already read.
+If a linked assessment remains invalid, the hypothesis must remain inconclusive.
+Use hypothesis_scopes as the immutable plan commitments. An assessment's declaration_id
+must belong to its hypothesis's scope; do not attach a Button assessment to a guard question.
+Keep the original hypothesis question. Every committed declaration needs support before
+the complete hypothesis can resolve. Unplanned discovery candidates do not create gaps.
+Retain out-of-scope assessments for traceability, but do not use them to support or refute
+another scope. Report a local observation when only one consumer/module was inspected;
+one consumer does not demonstrate benefits across multiple suites or absence of coupling.
+Keep the original question's scope: Button plus Input cannot be answered with Button plus
+ModuleHeader. Describe only observed benefits; do not claim universal safety, negligible
+cost or repository-wide reuse from counts. Mark broader interpretations as unverified.
 
 - useful_abstraction: actual consumers, concrete reuse_benefit and variation_points analysis.
   Explain observed reuse or isolation, not hypothetical universal applicability. Findings

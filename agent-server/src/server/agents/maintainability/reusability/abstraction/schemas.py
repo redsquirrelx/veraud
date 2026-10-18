@@ -7,8 +7,12 @@ from ....schemes.investigator import (
     AbstractionCoverage,
     AbstractionEvaluation,
     AbstractionFinding,
+    AbstractionHypothesisReview,
+    AbstractionHypothesisValidation,
+    AbstractionPlan,
     AbstractionRequest,
     AbstractionResult,
+    AbstractionReview,
     AuditRequest,
     AuditResult,
     Basis,
@@ -30,7 +34,9 @@ from .config import AbstractionConfig
 
 __all__ = [
     "AbstractionAssessment", "AbstractionCandidate", "AbstractionCandidateTarget", "AbstractionConfig",
-    "AbstractionCoverage", "AbstractionEvaluation", "AbstractionFinding", "AbstractionRequest", "AbstractionResult",
+    "AbstractionCoverage", "AbstractionEvaluation", "AbstractionFinding", "AbstractionHypothesisReview",
+    "AbstractionHypothesisValidation",
+    "AbstractionPlan", "AbstractionRequest", "AbstractionResult", "AbstractionReview",
     "AuditRequest", "AuditResult", "Basis", "CandidateFinding", "Category", "ComponentReference", "Contract",
     "Criterion", "Evaluation", "EvidenceReference", "Finding", "InspectedParticipant", "InvestigatedAbstraction",
     "Participant",

@@ -5,6 +5,8 @@ from ....schemes.investigator import (
     AdaptabilityCoverage,
     AdaptabilityEvaluation,
     AdaptabilityFinding,
+    AdaptabilityPlan,
+    AdaptabilityReview,
     AuditRequest,
     AuditResult,
     CandidateFinding,
@@ -36,7 +38,7 @@ from ....schemes.investigator import (
 from .config import ComponentAdaptabilityConfig
 
 __all__ = [
-    "AdaptabilityCandidate", "AdaptabilityCoverage", "AdaptabilityEvaluation", "AdaptabilityFinding", "AuditRequest",
+    "AdaptabilityCandidate", "AdaptabilityCoverage", "AdaptabilityEvaluation", "AdaptabilityFinding", "AdaptabilityPlan", "AdaptabilityReview", "AuditRequest",
     "AuditResult", "CandidateFinding", "ComponentAdaptabilityConfig", "ComponentAdaptabilityRequest",
     "ComponentAdaptabilityResult", "ComponentTarget", "Conclusion", "ConstraintAssessment", "ConstraintType", "Contract",
     "Criterion", "DiscoverySignal", "Evaluation", "EvidenceReference", "ExaminedConstraint", "Finding", "InspectRoute",

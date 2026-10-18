@@ -17,7 +17,7 @@ All paths below are relative to `agent-server/src/`.
 | Same file: `InvestigationExecution` | All cognitive nodes, model calls, native structured output, retries, token/deadline/call budgets, provenance and critical review. Only graph wiring and domain evaluation/finalization are specialized. |
 | `server/runtimes/investigation/schemas.py`, `state.py` | Extends existing request/config/evaluation/finding/result contracts; reuses `InvestigationState`, including evidence, hypotheses, unresolved gaps and resource counters. |
 | `server/runtimes/repository/tools.py` | Seven existing read-only tools; compact serialization, identical-query cache, evidence registry, access policy and measurements. |
-| `server/services/repository_analysis/` | Existing symbols, source ranges, retained source and static relationships; no parser, embedding service or alternative framework added. |
+| `server/services/repository_analysis/` | Existing symbols, source ranges, retained source and static relationships; no parser service, embedding service or alternative framework added. |
 | `test-agents/run_architecture_boundary.py` | Shared YAML/`.env` configuration, snapshot construction, budgets and tracing via `run_audit(..., agent_class=ReuseOpportunityAgent)`. |
 
 The package exports the agent and public request/config/result classes, matching the
@@ -30,18 +30,38 @@ HTTP registration, new service or coordinator is introduced.
 ## Discovery and language coverage
 
 `discovery.py` scopes existing indexed **functions/methods**, selects at most 160
-symbols in stable path/line/ID order, compares bounded source features, and retains
+symbols in deterministic order (multiline operations before constructor/single-line
+boilerplate, then path/line/ID), compares bounded source features, and retains
 at most 8 ranked **pairs**. Both bounds are configurable. It considers:
 
 - Identifier-erased token shapes: catches renamed implementations.
 - Shared vocabulary in the indexed source: can shortlist different syntax, such as
   iterative accumulation versus `sum` with a comprehension.
+- Type/plumbing words such as `str`, `list`, `super` and `__init__` do not count as
+  shared operation vocabulary. Protocol/interface/stub pairs and simple constructor
+  assignment/list-append pairs are retained with low-priority navigation labels, behind
+  substantive pairs. Python AST inspection only classifies retained snippets; it does
+  not execute the audited project or introduce a new parser service.
 
 The signal cutoffs only bound navigation; they are not numerical quality thresholds,
 semantic equivalence tests or recommendations. Groups have stable hashed IDs from
 their indexed member identities. The result exposes omitted symbols/groups, inspected
 paths and unassessed groups; discovery is never claimed exhaustive. It sends only
 shortlist metadata/signals, not the repository source, into preparation context.
+`ReusePlan.hypotheses[].group_ids` commits exact group IDs to each original question.
+Discovery selection is not mandatory coverage. `planned_groups`, `unplanned_groups`
+and `unassessed_groups` distinguish commitments from unchosen candidates and pending work.
+Unknown/empty hypothesis bindings remain blockers; no-group discovery may still finish
+with no hypotheses or findings.
+The developer control `max_planned_groups` defaults to two distinct groups. The host
+admits hypotheses whole in plan order and defers those exceeding the limit, recording
+the deferral as a limitation. It never silently narrows a hypothesis's bound question.
+
+Before invoking semantic evaluation, the host requires at least one planned pair with
+both complete bodies delivered and valid commit provenance. Otherwise it publishes
+only evidence blockers, retains partial reads and spends no model call on speculative
+comparisons. Once source is available, normal evaluation and review resume within the
+same iteration and execution limits.
 
 | Language | Existing evidence available |
 | --- | --- |
@@ -100,6 +120,45 @@ source anchors and Git blob provenance are checked. Unknown/out-of-scope groups,
 duplicate assessments, invented citations and missing tradeoff fields cannot support
 acceptance. Recommended conclusions need semantic critical review as well: deterministic
 checks do not prove equivalence, purity, business intent or low migration risk.
+The host recognizes contract-only declarations independently of model labels. Such
+profiles retain source citations but cannot establish implementation behavior, effects,
+failure semantics or a definitive no-reuse conclusion. Runtime properties are marked
+unknown and the comparison remains insufficient, including `not_recommended` cases.
+Constructor-only comparison supports a local constructor extraction decision, not claims
+about the complete workflows of the containing classes.
+`examined_groups[].proposed_evidence_ids` retains the model's original implementation
+and caller citations separately from resolved `evidence_ids`. Unknown IDs cannot appear
+as resolved citations. An exact indexed anchor may be repaired only to delivered source
+for the same file covering its full range with verified commit attribution. Repair does
+not imply full body coverage, matching participant identity or semantic correctness;
+those checks still apply independently.
+
+`critical_review` includes scoped hypothesis resolutions and checked comparison citations,
+even for discarded hypotheses without candidates. Each resolution must cover all committed
+groups with valid behavior comparisons; unsupported assessments cannot leave hypotheses
+confirmed/discarded. Original questions and group bindings remain fixed during evaluation.
+Review must explicitly answer sharing feasibility via `sharing_supported`, identify
+`supporting_group_ids` and name an assessed `supported_boundary` for confirmation.
+Similarity alone is not confirmation. A supporting group needs a valid positive or
+conditional candidate accepted in that review; a rejected proposal cannot support it.
+Another accepted proposal may support the same hypothesis, so one rejection does not
+automatically discard the entire question. Discarding requires a negative feasibility
+answer without accepted positive proposals. Contradictions become inconclusive and
+appear in `hypothesis_validation_issues`, while the original review remains visible.
+
+Conditional comparisons without verified callers acquire explicit caller compatibility
+unknowns and `qualification_notes`; body similarity does not establish safe extraction,
+guaranteed benefits or low migration effort. Findings expose `conditions`, including
+model-specified prerequisites and preservation of return/error contracts, mutation
+ownership and cleanup. Conditions also appear in the recommendation text so canonical
+reports and DOCX retain the qualifications. A source-backed conditional observation
+may still complete within scope while these adoption prerequisites remain open.
+
+Structural representations are limited to Python, TypeScript and JavaScript and remain
+incomplete even there. `coverage.indexed_languages` reports languages of eligible indexed
+symbols in the requested scope, not all languages in the repository or full analyzer
+capability. Other languages and unresolved/unindexed constructs remain unevaluated;
+missing symbols or edges do not establish absence of consumers, effects or opportunities.
 
 Exact group duplicates retain one accepted finding and rejected duplicates with
 `duplicate_of`. `stable_id` identifies a member pair across runs with the same indexed
@@ -127,9 +186,14 @@ All existing defaults apply, including 100,000 context characters, 14 RPM / 250,
 provider retries and hard budget guards. Cancellation propagates to the caller, rather
 than being disguised as a completed assessment; clients remain caller-owned. ToolNode
 argument failures and repository-tool errors appear as content-free `tool_failures`.
+`tool_failure_details` additionally retains bounded error messages/codes, requested path/range,
+failure stage and correlated repository/provider call IDs. Compact repository-error receipts
+prevent duplicate incidents across the two ledgers. `tool_error_feedback` and bounded
+missing-member reads guide subsequent repair; repeated unchanged behavior/source failures
+stop as `no_investigation_progress` while preserving review.
 Even after recovered errors, assessment status remains conservatively `partial`.
 
-`completed` means selected groups were investigated and critically reviewed, not that
+`completed` means planned groups were investigated and critically reviewed, not that
 the repository is globally reusable. Supported conditional decisions and valid empty
 findings can complete. Missing evidence, limits or errors yield `partial`; failure
 before a usable plan/source investigation yields `failed`. Available evidence survives.

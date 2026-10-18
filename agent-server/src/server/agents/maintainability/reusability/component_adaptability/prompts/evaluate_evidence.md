@@ -1,6 +1,7 @@
 Return AdaptabilityEvaluation with all hypotheses, candidates, constraint_assessments,
 cleared_components and coverage_rationale. Preserve prior hypothesis IDs and update their
-status/rationale. Every selected component needs an inspected assessment or an explicit
+status/rationale. Keep original questions and hypothesis_scopes fixed; evidence for another
+component cannot confirm this question. Every planned component needs an inspected assessment or an explicit
 source-backed clearance with no finding; do not manufacture defects to fill a quota.
 
 Each ConstraintAssessment has stable id, actual selected component_id, hypothesis_id,
@@ -17,6 +18,11 @@ import/config locations in supporting/counterevidence where relevant. seam_analy
 seam_evidence_ids must include inspected component source showing constructor/public
 boundary/configuration behavior; include actual external factories/adapters as additional
 source when relevant. Absence in a bounded search is not proof no override exists anywhere.
+Reassess prior conclusions against ALL accumulated source reads, including automatic
+body continuations. constraint_validation.evidence includes host-attached continuations
+for an already source-cited component; these establish inspection coverage, not semantic
+support or a confirmed obstacle. Update facts, seams, counterevidence and conclusions
+when later excerpts change the interpretation; do not merely repeat the initial excerpt.
 For usage, cite caller_id (real file/symbol), resolved internal relationship_id directed
 from caller to component symbol/file, and evidence_ids covering caller body plus relationship
 source anchors (e.g. import). Explain instantiation_configuration. Static edges alone do
@@ -52,3 +58,23 @@ targeted next inspection in missing_information. Clear resolved gaps on a
 later pass. Fully qualified context-dependent assessments can complete without pretending
 all unknowns are resolved. cleared_components requires complete body inspection and a
 concrete coverage_rationale, never a blanket certification of portability.
+
+When genuinely blocked, set continuation_blocker to external_context, unavailable_source
+or dynamic_behavior and explain the specific missing fact in continuation_reason. 'Enough
+evidence collected' is not a blocker. Missing available bodies, mismatched component IDs,
+citations or seam checks are repairable: keep can_investigate_further=true and use
+next_source_reads, constraint_validation and candidate_validation for targeted repair.
+
+For data_schema, set schema_dependency_basis and schema_adaptation_analysis. Distinguish
+the expected metadata INPUT SHAPE from fixed DOMAIN VALUES. Explain the specific mismatch
+with the assessed context and why existing function parameters, mappings or adapters do
+not already handle it. A fixture with named tables does not establish those table names
+are hardcoded in production. fixture_only/unknown cannot establish a production obstacle.
+Do not infer lack of seams from absence of an abstract interface: dictionaries or parameters
+can themselves be effective seams. Keep unknowns if data provenance/configuration is unread.
+An input_contract risk requires inspected representative usage/input preparation, not
+only key lookups in the component. Explain why translating supplied data cannot already
+meet that contract; otherwise retain an unknown or mitigated assessment without a candidate.
+Do not combine assessments with distinct constraint_key, assessed_context, type or
+classification into one candidate. The host splits such mixed candidates, preserving the
+original in candidate_split_history; use the current candidate IDs for subsequent work.

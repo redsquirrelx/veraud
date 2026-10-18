@@ -22,6 +22,9 @@ from ....schemes.investigator import (
     ReuseGroup,
     ReuseOpportunityRequest,
     ReuseOpportunityResult,
+    ReusePlan,
+    ReuseReview,
+    ReuseToolFailure,
 )
 from ....schemes.investigator import (
     ReuseInspectRoute as InspectRoute,
@@ -35,5 +38,6 @@ __all__ = [
     "AuditRequest", "AuditResult", "CallerInspection", "CandidateFinding", "CandidateLocation", "Classification",
     "Contract", "Criterion", "DiscoveryCoverage", "Evaluation", "EvidenceReference", "ExaminedGroup", "Finding",
     "ImplementationComparison", "InspectRoute", "ReuseAssessment", "ReuseCandidate", "ReuseEvaluation", "ReuseFinding",
-    "ReuseGroup", "ReuseOpportunityConfig", "ReuseOpportunityRequest", "ReuseOpportunityResult", "ValidationRoute",
+    "ReuseGroup", "ReuseOpportunityConfig", "ReuseOpportunityRequest", "ReuseOpportunityResult", "ReusePlan", "ReuseReview",
+    "ReuseToolFailure", "ValidationRoute",
 ]

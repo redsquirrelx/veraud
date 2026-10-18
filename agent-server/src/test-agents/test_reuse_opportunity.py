@@ -24,6 +24,7 @@ from server.agents.maintainability.reusability.reuse_opportunity import (
 from server.agents.maintainability.reusability.reuse_opportunity.discovery import (
     discover,
     features,
+    source_characteristics,
 )
 from server.runtimes.repository.tools import ToolLimits
 
@@ -46,9 +47,13 @@ def limits(**changes):
         "provider_rate_limits": {"requests_per_minute": None, "tokens_per_minute": None}} | changes))
 
 
-def plan():
-    return {"objectives": ["Compare amount aggregation responsibilities and caller constraints"], "components": [],
-        "hypotheses": [{"id": "h1", "question": "Can these implementations share amount aggregation?", "criterion_id": "reuse-opportunity"}]}
+def plan(group_ids=None):
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        return {"objectives": ["Compare amount aggregation responsibilities and caller constraints"], "components": [],
+            "hypotheses": [{"id": "h1", "question": "Can these implementations share amount aggregation?", "criterion_id": "reuse-opportunity",
+                "group_ids": group_ids if group_ids is not None else [g["id"] for g in context["candidate_groups"]]}]}
+    return respond
 
 
 def reads(root, paths=None, relationships=True):
@@ -100,6 +105,7 @@ def evaluation(messages, *, classification="recommended", candidate=True, caller
         "counterevidence_analysis": "Different business policies would justify independence; inspected fixture callers do not introduce policy variation.",
         "rationale": "The inspected implementations and callers support a bounded proposal, not a mandatory refactor.",
         "unknowns": [] if classification != "conditional" else ["Numeric contract and effect compatibility need confirmation."],
+        "conditions": ["Preserve the supported numeric inputs, accumulation order and rounding before extracting the common function."] if classification == "conditional" else [],
         "limitations": ["Static seeded evidence; no execution, history or performance measurement."]}
     ids = [i for p in profiles for i in p["evidence_ids"]] + [i for c in callers for i in c["evidence_ids"]]
     finding = {"id": "REUSE-001", "title": "Consider sharing amount aggregation", "description": assessment["shared_responsibility"],
@@ -107,7 +113,8 @@ def evaluation(messages, *, classification="recommended", candidate=True, caller
         "evidence_ids": ids or ["missing-evidence"], "justification": assessment["rationale"],
         "modularity_impact": assessment["expected_benefit"], "severity": "low", "confidence": 0.8,
         "recommendation": assessment["proposed_boundary"], "group_id": group["id"], "classification": classification}
-    value = {"sufficient": True, "hypotheses": [{**plan()["hypotheses"][0],
+    value = {"sufficient": True, "hypotheses": [{"id": "h1", "question": "Can these implementations share amount aggregation?",
+        "criterion_id": "reuse-opportunity", "evidence_ids": ids,
         "status": "discarded" if classification == "not_recommended" else "confirmed", "rationale": assessment["rationale"]}],
         "candidates": [finding] if candidate else [], "group_assessments": [assessment], "missing_information": []}
     if mutate:
@@ -116,9 +123,21 @@ def evaluation(messages, *, classification="recommended", candidate=True, caller
 
 
 def review(*ids, status="accepted"):
-    return {"findings": [{"finding_id": i, "status": status,
-        "rationale": "Compared implementation/caller source and the stated differences, boundary and risks.",
-        "severity": "low", "confidence": 0.8} for i in ids], "limitations": []}
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        assessments = context["evaluation"]["group_assessments"]
+        return {"findings": [{"finding_id": i, "status": status,
+            "rationale": "Compared implementation/caller source and the stated differences, boundary and risks.",
+            "severity": "low", "confidence": 0.8} for i in ids], "limitations": [],
+            "hypotheses": [{"hypothesis_id": h["id"], "assessment_group_ids": [a["group_id"] for a in assessments if a["hypothesis_id"] == h["id"]],
+                "checked_evidence_ids": [r["id"] for r in context["evidence"] if r["kind"] == "source"],
+                "scope_supported": True, "resolution": "discarded" if all(a["classification"] == "not_recommended" for a in assessments) else "confirmed",
+                "sharing_supported": not all(a["classification"] == "not_recommended" for a in assessments),
+                "supporting_group_ids": [a["group_id"] for a in assessments if a["hypothesis_id"] == h["id"] and a["classification"] != "not_recommended"],
+                "supported_boundary": "A domain-local amount aggregation function preserving each caller's contract." if any(a["classification"] != "not_recommended" for a in assessments) else "",
+                "rationale": "Checked the original scoped question against the implementation comparison.", "unverified_claims": []}
+                for h in context["hypotheses"]]}
+    return respond
 
 
 def run(root, responses, config=None, audit_request=None, tools=None):
@@ -148,6 +167,247 @@ def test_identifier_erasure_finds_renamed_code():
     a, _ = features("def alpha(value):\n return value + 2", "alpha")
     b, _ = features("def beta(other):\n return other + 2", "beta")
     assert a == b
+
+
+def test_premature_evaluation_is_blocked_then_recovers_after_source_reads(repo):
+    result, model, _ = run(repo, [plan(), AIMessage(content="Already know the answer"), reads(repo),
+        AIMessage(content="Validate"), evaluation, review("REUSE-001")], config=limits(max_iterations=2))
+    assert result.status == "completed" and result.findings[0].validation_status == "accepted"
+    assert result.iterations == 2 and len(model.history) == 6
+    repair_context = json.loads(model.history[2][1].content)
+    assert not repair_context["evaluation"]["group_assessments"]
+    assert repair_context["next_source_reads"] and repair_context["missing_information"]
+
+
+@pytest.mark.parametrize("wrong", [False, True])
+def test_index_citations_resolve_only_to_matching_delivered_source(repo, wrong):
+    tools = toolset(repo)
+    snapshot = tools.accessible_snapshot
+    group = discover(snapshot, request(), limits()).selected_groups[0]
+    anchors = {m.component_id: next(e.id for e in snapshot.evidence if e.file_id == m.file_id
+        and e.start_line is not None and m.start_line <= e.start_line <= m.end_line) for m in group.members}
+    def using_anchors(messages):
+        value = evaluation(messages, classification="conditional", caller=False)
+        assessment = value["group_assessments"][0]
+        for profile in assessment["implementations"]:
+            profile["evidence_ids"] = [anchors[group.members[0].component_id] if wrong else anchors[profile["component_id"]]]
+        ids = [i for p in assessment["implementations"] for i in p["evidence_ids"]]
+        value["candidates"][0]["evidence_ids"] = ids
+        value["hypotheses"][0]["evidence_ids"] = ids
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo), AIMessage(content="Validate"), using_anchors, review("REUSE-001")], tools=tools)
+    assessment = result.examined_groups[0]
+    delivered = {r.id for r in result.evidence}
+    assert all(set(p.evidence_ids) <= delivered for p in assessment.implementations)
+    assert {i for values in assessment.proposed_evidence_ids.values() for i in values} <= set(anchors.values())
+    assert (result.findings[0].validation_status == "accepted") is (not wrong)
+    if wrong:
+        assert any("implementation_body_not_inspected" in issue for issue in assessment.validation_issues)
+
+
+def test_unknown_citations_are_preserved_only_as_proposals(repo):
+    def corrupt(value):
+        value["group_assessments"][0]["implementations"][0]["evidence_ids"] = ["fabricated"]
+    result, _, _ = normal(repo, mutate=corrupt)
+    assessment = result.examined_groups[0]
+    assert assessment.implementations[0].evidence_ids == []
+    assert "fabricated" in assessment.proposed_evidence_ids[assessment.implementations[0].component_id]
+    assert "unknown_evidence_ids" in assessment.validation_issues
+    assert result.findings[0].validation_status == "insufficient_evidence"
+
+
+@pytest.mark.parametrize("answer", ["confirmed", "discarded"])
+def test_rejected_sharing_proposal_cannot_confirm_similarity_as_feasibility(repo, answer):
+    def reviewer(messages):
+        value = review("REUSE-001", status="rejected")(messages)
+        judgment = value["hypotheses"][0]
+        judgment["resolution"] = answer
+        if answer == "discarded":
+            judgment.update(sharing_supported=False, supporting_group_ids=[], supported_boundary="",
+                rationale="The proposed sharing boundary is not justified because the return and failure policies differ.")
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo), AIMessage(content="Validate"),
+        lambda m: evaluation(m, classification="conditional"), reviewer])
+    assert result.findings[0].validation_status == "rejected"
+    if answer == "confirmed":
+        assert result.hypotheses[0].status == "inconclusive" and result.status == "partial"
+        assert any("confirmed_requires_supported_reviewed_proposal" in issue
+                   for issue in result.hypothesis_validation_issues["h1"])
+        assert result.critical_review.hypotheses[0].resolution == "confirmed"
+    else:
+        assert result.hypotheses[0].status == "discarded" and result.status == "completed"
+        assert not result.missing_information
+
+
+@pytest.mark.parametrize("fault", ["similarity_only", "no_boundary", "unknown_group", "discarded_with_accepted_proposal"])
+def test_hypothesis_review_requires_a_coherent_answer_to_sharing_question(repo, fault):
+    def reviewer(messages):
+        value = review("REUSE-001")(messages)
+        judgment = value["hypotheses"][0]
+        if fault == "similarity_only":
+            judgment["sharing_supported"] = None
+        elif fault == "no_boundary":
+            judgment["supported_boundary"] = ""
+        elif fault == "unknown_group":
+            judgment["supporting_group_ids"] = ["invented-group"]
+        else:
+            judgment.update(resolution="discarded", sharing_supported=False, supporting_group_ids=[], supported_boundary="")
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo), AIMessage(content="Validate"), evaluation, reviewer])
+    assert result.hypotheses[0].status == "inconclusive" and result.status == "partial"
+    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert result.hypothesis_validation_issues["h1"]
+
+
+def test_one_rejected_proposal_does_not_invalidate_another_supported_boundary(repo):
+    (repo / "wholesale.py").write_text((repo / "sales.py").read_text(encoding="utf-8").replace("order_cost", "batch_total"), encoding="utf-8")
+    def combined(messages):
+        context = json.loads(messages[1].content)
+        values = [evaluation([messages[0], HumanMessage(content=json.dumps(context | {"candidate_groups": [group]})), *messages[2:]],
+            classification="conditional", caller=False) for group in context["candidate_groups"]]
+        value = values[0]
+        value["group_assessments"] = [a for v in values for a in v["group_assessments"]]
+        value["candidates"] = [{**v["candidates"][0], "id": f"REUSE-{i}"} for i, v in enumerate(values)]
+        return value
+    def reviewer(messages):
+        value = review("REUSE-0", "REUSE-1")(messages)
+        value["findings"][1]["status"] = "rejected"
+        value["hypotheses"][0]["supporting_group_ids"] = value["hypotheses"][0]["supporting_group_ids"][:1]
+        return value
+    result, _, _ = run(repo, [plan(), reads(repo, ["sales.py", "billing.py", "wholesale.py"]), AIMessage(content="Validate"),
+        combined, reviewer], config=limits(max_groups=2),
+        audit_request=ReuseOpportunityRequest(targets=["sales.py", "billing.py", "wholesale.py"]))
+    assert result.status == "completed" and result.hypotheses[0].status == "confirmed"
+    assert [f.validation_status for f in result.findings] == ["accepted", "rejected"]
+
+
+def test_conditional_proposal_retains_explicit_unknowns_and_prerequisites_without_callers(repo):
+    def overconfident(value):
+        value["group_assessments"][0]["unknowns"] = []
+        value["group_assessments"][0]["conditions"] = []
+    result, model, _ = normal(repo, classification="conditional", caller=False, mutate=overconfident)
+    assessment = result.examined_groups[0]
+    assert result.status == "completed" and result.findings[0].validation_status == "accepted"
+    assert any("Caller compatibility" in item for item in assessment.unknowns)
+    assert assessment.qualification_notes
+    finding = result.findings[0]
+    assert finding.conditions and "Conditional proposal" in finding.recommendation
+    assert any("migration effort remain qualitative" in item for item in finding.conditions)
+    assert all(condition in finding.recommendation for condition in finding.conditions)
+    context = json.loads(model.history[-1][1].content)
+    assert context["qualified_group_assessments"][0]["unknowns"] == assessment.unknowns
+
+
+def test_representation_coverage_reports_indexed_languages_without_exhaustiveness(repo):
+    (repo / "sample.ts").write_text("export function typed(value: number): number { return value + 1; }\n", encoding="utf-8")
+    (repo / "sample.js").write_text("export function plain(value) { return value + 2; }\n", encoding="utf-8")
+    tools = toolset(repo)
+    coverage = discover(tools.accessible_snapshot, ReuseOpportunityRequest(), limits())
+    assert set(coverage.indexed_languages) == {"python", "typescript", "javascript"}
+    assert not coverage.exhaustive
+    result, _, _ = normal(repo)
+    assert result.coverage.indexed_languages == ["python"]
+    assert any("other languages" in item and "outside structural coverage" in item for item in result.limitations)
+
+
+def test_initial_plan_defers_whole_hypotheses_over_group_budget(repo):
+    (repo / "wholesale.py").write_text((repo / "sales.py").read_text(encoding="utf-8").replace("order_cost", "batch_total"), encoding="utf-8")
+    def broad_plan(messages):
+        value = plan()(messages)
+        template = value["hypotheses"][0]
+        value["hypotheses"] = [{**template, "id": f"h{i}", "group_ids": [identifier]}
+            for i, identifier in enumerate(template["group_ids"])]
+        return value
+    result, _, _ = run(repo, [broad_plan, AIMessage(content="Need source"), review()],
+        config=limits(max_groups=3), audit_request=ReuseOpportunityRequest(targets=["sales.py", "billing.py", "wholesale.py"]))
+    assert len(result.plan.hypotheses) == len(result.coverage.planned_groups) == 2
+    assert len(result.coverage.unplanned_groups) == 1
+    assert any("Deferred hypothesis" in item for item in result.limitations)
+
+
+def test_substantive_behavior_outranks_protocols_and_trivial_plumbing(repo):
+    (repo / "noise.py").write_text(
+        "from typing import Protocol\n"
+        "class PortOne(Protocol):\n    def execute(self, request: str) -> str: ...\n"
+        "class PortTwo(Protocol):\n    def execute(self, request: str) -> str: ...\n"
+        "class First:\n    def __init__(self, gateway):\n        self._gateway = gateway\n"
+        "class Second:\n    def __init__(self, gateway):\n        self._gateway = gateway\n",
+        encoding="utf-8")
+    snapshot = toolset(repo).accessible_snapshot
+    coverage = discover(snapshot, ReuseOpportunityRequest(targets=["sales.py", "billing.py", "noise.py"]), limits(max_groups=20))
+    assert {m.path for m in coverage.selected_groups[0].members} == {"sales.py", "billing.py"}
+    assert any("contract_only_navigation" in group.discovery_signals for group in coverage.selected_groups)
+    assert any("trivial_plumbing_navigation" in group.discovery_signals for group in coverage.selected_groups)
+
+
+def test_contract_signatures_cannot_discard_implementation_reuse_hypothesis(repo):
+    for path, name in (("sales.py", "First"), ("billing.py", "Second")):
+        (repo / path).write_text(f"from typing import Protocol\nclass {name}(Protocol):\n    def execute(self, value: str) -> str: ...\n", encoding="utf-8")
+    result, _, _ = normal(repo, classification="not_recommended", caller=False, candidate=False)
+    assessment = result.examined_groups[0]
+    assert assessment.validation_status == "insufficient_evidence"
+    assert any("contract_declaration" in issue for issue in assessment.validation_issues)
+    assert all(profile.behavior_basis == "contract_only" and profile.side_effects.startswith("Unknown from contract")
+               and profile.failure_behavior.startswith("Unknown from contract") for profile in assessment.implementations)
+    assert assessment.unknowns
+    assert result.hypotheses[0].status == "inconclusive" and result.status == "partial"
+
+
+def test_nontrivial_constructor_calls_are_not_labeled_assignment_plumbing(repo):
+    (repo / "constructors.py").write_text(
+        "class Plain:\n    def __init__(self, gateway):\n        self._gateway = gateway\n"
+        "class Computes:\n    def __init__(self, gateway):\n        self._gateway = connect(gateway)\n", encoding="utf-8")
+    snapshot = toolset(repo).accessible_snapshot
+    files = {f.id: f for f in snapshot.files}
+    symbols = {s.id: s for s in snapshot.symbols}
+    labels = {s.qualified_name: source_characteristics(s, files[s.file_id], symbols)
+              for s in snapshot.symbols if s.name == "__init__"}
+    assert labels["Plain.__init__"] == (False, True)
+    assert labels["Computes.__init__"] == (False, False)
+
+
+def test_repeated_unresolved_behavior_stops_with_review_instead_of_more_requests(repo):
+    def no_callers(messages):
+        return evaluation(messages, caller=False)
+    result, _, _ = run(repo, [plan(), reads(repo, ["sales.py", "billing.py"]), AIMessage(content="Validate"),
+        no_callers, AIMessage(content="No additional evidence"), no_callers, review("REUSE-001")],
+        config=limits(max_iterations=5))
+    assert result.termination_reason == "no_investigation_progress" and result.iterations == 2
+    assert result.critical_review is not None
+    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert result.hypotheses[0].status == "inconclusive"
+
+
+def test_only_committed_subset_creates_coverage_obligations(repo):
+    (repo / "wholesale.py").write_text((repo / "sales.py").read_text(encoding="utf-8").replace("order_cost", "batch_total"), encoding="utf-8")
+    def scoped_plan(messages):
+        group = json.loads(messages[1].content)["candidate_groups"][0]
+        return plan([group["id"]])(messages)
+    result, model, _ = run(repo, [scoped_plan, reads(repo, ["sales.py", "billing.py", "wholesale.py"]), AIMessage(content="Validate"),
+        lambda m: evaluation(m, classification="conditional", caller=False), review("REUSE-001")],
+        config=limits(max_groups=3), audit_request=ReuseOpportunityRequest(targets=["sales.py", "billing.py", "wholesale.py"]))
+    assert result.status == "completed" and len(result.coverage.planned_groups) == 1
+    assert len(result.coverage.unplanned_groups) == 2 and not result.coverage.unassessed_groups
+    assert not result.missing_information
+    assert json.loads(model.history[1][1].content)["candidate_queue"] == result.coverage.planned_groups
+
+
+@pytest.mark.parametrize("fault", ["missing_review", "scope", "unchecked", "missing_plan", "unknown_plan"])
+def test_discarded_hypotheses_require_bound_behavior_and_independent_review(repo, fault):
+    def reviewer(messages):
+        value = review()(messages)
+        if fault == "missing_review":
+            value["hypotheses"] = []
+        elif fault == "scope":
+            value["hypotheses"][0]["scope_supported"] = False
+        elif fault == "unchecked":
+            value["hypotheses"][0]["checked_evidence_ids"] = []
+        return value
+    initial = plan([]) if fault == "missing_plan" else plan(["invented-group"]) if fault == "unknown_plan" else plan()
+    result, _, _ = run(repo, [initial, reads(repo), AIMessage(content="Validate"),
+        lambda m: evaluation(m, classification="not_recommended", caller=False, candidate=False), reviewer])
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.status == "partial" and result.missing_information
 
 
 def test_direct_e2e_recommended_provenance_routes_and_read_only(repo):
@@ -249,11 +509,11 @@ def test_host_rejects_unsupported_positive_claim(repo, fault):
 
 
 def test_iteration_limit_preserves_evidence_and_unsupported_result(repo):
-    result, _, _ = run(repo, [plan(), reads(repo, ["sales.py"]), AIMessage(content="Validate"), evaluation, review("REUSE-001")])
+    result, model, _ = run(repo, [plan(), reads(repo, ["sales.py"]), AIMessage(content="Validate"), review()])
     assert result.status == "partial" and result.termination_reason == "iteration_limit"
-    assert result.examined_groups[0].evidence
+    assert result.evidence and not result.examined_groups
     assert result.coverage.unassessed_groups
-    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert not result.findings and len(model.history) == 4
 
 
 @pytest.mark.parametrize("config", [{"max_total_tokens": 1000}, {"max_model_calls": 4}, {"max_context_characters": 4000}])
@@ -272,9 +532,14 @@ def test_hard_limits_terminate_without_accepting_unsupported_output(repo, config
 def test_tool_failure_is_reported_and_does_not_silently_succeed(repo):
     message = reads(repo)
     message.tool_calls[1]["args"]["path"] = "missing.py"
-    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), evaluation, review("REUSE-001")])
+    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), review()])
     assert result.status == "partial" and result.tool_failures
-    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert not result.findings
+    assert len(result.tool_failures) == len(result.tool_failure_details) == 1
+    failure = result.tool_failure_details[0]
+    assert failure.stage == "repository" and failure.provider_call_id == "read-0"
+    assert failure.path == "missing.py" and failure.start_line == 1
+    assert failure.code == "access_denied" and failure.message
 
 
 def test_provider_failure_returns_failed_diagnostic(repo):
@@ -341,7 +606,7 @@ def test_multiple_cross_module_groups_and_evidence_are_not_duplicated(repo):
         value["candidates"] = [{**c, "id": "REUSE-" + str(i)} for i, v in enumerate(values) for c in v["candidates"]]
         return value
     result, _, _ = run(repo, [plan(), reads(repo, ["sales.py", "billing.py", "wholesale.py"]), AIMessage(content="Validate"),
-        combined, review("REUSE-0", "REUSE-1", "REUSE-2")], config=limits(max_groups=3),
+        combined, review("REUSE-0", "REUSE-1", "REUSE-2")], config=limits(max_groups=3, max_planned_groups=3),
         audit_request=ReuseOpportunityRequest(targets=["sales.py", "billing.py", "wholesale.py"]))
     assert result.status == "completed" and len(result.examined_groups) == 3
     assert len({f.stable_id for f in result.findings}) == 3
@@ -354,9 +619,9 @@ def test_declaration_only_read_does_not_prove_body(repo):
     for call in message.tool_calls:
         if call["name"] == "get_source_excerpt" and call["args"]["path"] in {"sales.py", "billing.py"}:
             call["args"]["end_line"] = 1
-    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), evaluation, review("REUSE-001")])
-    assert result.findings[0].validation_status == "insufficient_evidence"
-    assert any("implementation_body_not_inspected" in i for i in result.examined_groups[0].validation_issues)
+    result, _, _ = run(repo, [plan(), message, AIMessage(content="Validate"), review()])
+    assert not result.findings and not result.examined_groups
+    assert any("Read both complete implementation bodies" in i for i in result.missing_information)
 
 
 def test_caller_body_without_import_anchor_cannot_support_recommendation(repo):
@@ -380,8 +645,12 @@ def test_git_revision_provenance(repo, dirty):
         with (repo / "sales.py").open("a", encoding="utf-8") as stream:
             stream.write("# uncommitted\n")
     before = fingerprints(repo)
-    result, _, _ = normal(repo)
-    assert (result.findings[0].validation_status == "accepted") is (not dirty)
+    if dirty:
+        result, _, _ = run(repo, [plan(), reads(repo), AIMessage(content="Validate"), review()])
+        assert not result.findings and result.termination_reason == "provenance_unverifiable"
+    else:
+        result, _, _ = normal(repo)
+        assert result.findings[0].validation_status == "accepted"
     assert fingerprints(repo) == before
 
 
@@ -455,6 +724,23 @@ def test_toolnode_schema_failure_is_observable_even_after_recovery(repo):
     assert result.status == "partial" and result.tool_failures
     assert result.findings[0].validation_status == "accepted"  # recovered evidence is retained
     assert any("bad-range" in f for f in result.tool_failures)
+    assert len(result.tool_failure_details) == 1
+    failure = result.tool_failure_details[0]
+    assert failure.stage == "tool_node" and failure.path == "sales.py" and failure.start_line == -1
+    assert failure.message and failure.call_id == "bad-range"
+
+
+def test_failed_range_receipt_guides_bounded_repair(repo):
+    invalid = AIMessage(content="", tool_calls=[{"name": "get_source_excerpt", "args": {
+        "path": "sales.py", "start_line": 1, "end_line": 99999}, "id": "oversized"}])
+    result, model, tools = run(repo, [plan(), invalid, reads(repo), AIMessage(content="Validate"), evaluation, review("REUSE-001")])
+    assert result.findings[0].validation_status == "accepted"
+    context = json.loads(model.history[2][1].content)
+    assert context["tool_error_feedback"][0]["provider_call_id"] == "oversized"
+    assert context["tool_error_feedback"][0]["code"] and context["tool_error_feedback"][0]["message"]
+    assert all(read["arguments"]["end_line"] <= next(f.line_count for f in tools.accessible_snapshot.files
+        if f.path == read["arguments"]["path"]) for read in context["next_source_reads"])
+    assert len(result.tool_failure_details) == len(result.tool_failures) == 1
 
 
 def test_duplicate_assessment_id_is_not_valid_support(repo):
@@ -484,6 +770,7 @@ def test_google_native_adapter_lean_schema_and_usage_with_mocked_transport(repo,
     config = limits(max_output_tokens=512)
     model = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", api_key="offline-test-key", max_tokens=2048, max_retries=0)
     requests, responses = [], []
+    review_context = {}
     execute = tools.execute
     def observe(*args, **kwargs):
         response = execute(*args, **kwargs)
@@ -497,7 +784,8 @@ def test_google_native_adapter_lean_schema_and_usage_with_mocked_transport(repo,
             parts = [types.Part.from_function_call(name=c["name"], args=c["args"]) for c in reads(repo).tool_calls]
         else:
             if turn == 1:
-                value = plan()
+                groups = [g.model_dump() for g in discover(tools.accessible_snapshot, request(), config).selected_groups]
+                value = plan()([HumanMessage(content=""), HumanMessage(content=json.dumps({"candidate_groups": groups}))])
             elif turn == 3:
                 value = "Validate the inspected source"
             elif turn == 4:
@@ -507,8 +795,9 @@ def test_google_native_adapter_lean_schema_and_usage_with_mocked_transport(repo,
                     "evidence": [r.model_dump() for r in InvestigationExecution.references(SimpleNamespace(tools=tools))]}
                 value = evaluation([HumanMessage(content=""), HumanMessage(content=json.dumps(context)),
                     *[ToolMessage(content=r.model_dump_json(), tool_call_id=r.tool_call_id) for r in responses]])
+                review_context.update(context | {"evaluation": value, "hypotheses": value["hypotheses"]})
             elif turn == 5:
-                value = review("REUSE-001")
+                value = review("REUSE-001")([HumanMessage(content=""), HumanMessage(content=json.dumps(review_context))])
             else:
                 raise AssertionError("Unexpected provider call")
             parts = [types.Part(text=json.dumps(value) if isinstance(value, dict) else value)]

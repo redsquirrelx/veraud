@@ -13,3 +13,8 @@ and cache identical successful queries; they still consume tool-call admission.
 When ready, return without tools to validate. After a validation loop, target the
 specific missing_information. Missing source/callers or contracts remain unknown,
 never invented. Do not execute code, write files or delegate to another investigator.
+Prioritize the groups in hypothesis_scopes and candidate_queue, not all discovery groups.
+Follow next_source_reads for bounded missing implementation ranges. Inspect behavior beyond
+protocol signatures before drawing implementation conclusions. Use tool_error_feedback to
+correct the exact failed path/range/arguments, respecting tool bounds; avoid repeating the
+same invalid call. Contract-only and trivial-plumbing candidates are navigation, not proof.

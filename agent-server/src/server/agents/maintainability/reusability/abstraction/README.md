@@ -60,8 +60,14 @@ An insufficient assessment without an actionable gap finalizes with limitations.
   assessed declarations. Relevant implementations and consumers elsewhere in the same
   accessible repository may be followed. Invalid/traversing/inaccessible targets are
   rejected. Tools retain the repository policy; this is not a separate filesystem sandbox.
-- Candidate metadata cannot support a finding. Declaration source must include the
-  indexed declaration line; each participant requires its own source and explanation.
+- `AbstractionPlan.hypotheses[].declaration_ids` explicitly binds each original question
+  to its committed selected declarations. Exact selected IDs are preferred; exact file
+  paths (all selected declarations in that file) and `path:qualified_symbol` are normalized
+  to IDs. Unknown/empty bindings remain blockers. Evaluations cannot replace the original
+  question or attach declarations outside that binding to support a conclusion.
+- Candidate metadata cannot support a finding. Source ranges must cover the complete
+  indexed declaration body; each behavioral participant requires inspected body source
+  and an explanation. Imports and single-line search matches alone do not suffice.
 - Consumer/implementation/test/composition links require actual resolved internal
   relationships to the abstraction; delegate/contract links use the opposite direction.
   Their source declaration anchors must have been inspected. Metadata, an unrelated
@@ -77,6 +83,18 @@ An insufficient assessment without an actionable gap finalizes with limitations.
   can be `justified_boundary`, with discarded hypotheses and no negative finding.
 - Exact duplicate accepted concerns are consolidated conservatively; duplicate candidates
   remain rejected with `duplicate_of`, retaining original review/evidence history.
+- Invalid linked assessments downgrade resolved hypotheses during evaluation. Final
+  resolution also requires exactly one independent scope review, valid assessments bound
+  to the same hypothesis and checked source citations, including candidate-free runs.
+  `critical_review` retains the model judgments; final host statuses are authoritative.
+- Review supplies an explicit `resolution` and must cover every committed declaration
+  and all linked assessment citations. It can resolve a prior host downgrade after valid
+  repair; `hypothesis_validation_history` retains each proposed and host-validated state.
+  Unrelated assessments are retained as inconclusive without contaminating a scoped
+  conclusion. Out-of-scope findings still cannot be accepted.
+- Bounded navigation supplies real relationship endpoints and missing source reads.
+  Repeated unchanged validation/source coverage stops as `no_investigation_progress`.
+  Closing token reservations preserve evaluation/review headroom under the hard budget.
 
 ## Result and execution
 
@@ -87,11 +105,15 @@ An insufficient assessment without an actionable gap finalizes with limitations.
 consequence for protocol compatibility. Existing numeric confidence is a model/review
 estimate, not a new calibrated score or a newly invented quality threshold.
 
-`completed` requires sufficient evidence, completed review, resolved selected candidates
+`completed` requires sufficient evidence, completed review, resolved planned declarations
 and no unsupported findings or pending hypotheses. `partial` preserves incomplete
 investigations and results at limits; `failed` denotes failure before a usable plan/source
 investigation. Empty findings are not evidence of compliance or global reuse quality.
 Consumers must filter findings by `validation_status == "accepted"`.
+Coverage separates `planned_declarations` from `unplanned_candidates`; discovery is not
+a promise to assess every indexed candidate. `unassessed_candidates` records outstanding
+planned declarations. A completed scoped investigation may retain an inconclusive
+out-of-scope side assessment; its status does not certify that side assessment.
 
 All shared defaults apply, including 100,000 context characters and provider admission
 limits of 14 RPM / 250,000 TPM. Explicit config can change budgets and rate limits.
@@ -124,6 +146,8 @@ links are deliberately not promoted to verified graph links in this version.
 Discovery is bounded and not exhaustive; nested declarations and unsupported language
 features may need targeted source investigation or remain uncovered. Narrative docs
 are excluded by the existing access policy; architectural intent must be declared or
-supported by accessible code. Context compaction is not implemented. Offline fixtures
+supported by accessible code. Provider-history compaction preserves cited source and the
+authoritative ledger/history, while reducing old uncited tool payloads. `inspected_paths`
+means files with retrieved fragments, not complete file inspection. Offline fixtures
 exercise real graphs/tools with simulated provider responses and do not establish live
 provider reliability or semantic precision across arbitrary repositories.

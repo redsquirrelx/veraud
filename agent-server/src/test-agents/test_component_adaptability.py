@@ -51,9 +51,14 @@ def limits(**updates):
         "provider_rate_limits": {"requests_per_minute": None, "tokens_per_minute": None}} | updates))
 
 
-def plan():
-    return {"objectives": ["Check fixed backend and injection seams against target context"], "components": [],
-        "hypotheses": [{"id": "h1", "question": "Is backend substitution blocked by the public construction path?", "criterion_id": "component-adaptability"}]}
+def plan(component_ids=None):
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        return {"objectives": ["Check fixed backend and injection seams against target context"], "components": [],
+            "hypotheses": [{"id": "h1", "question": "Is backend substitution blocked by the public construction path?",
+                "criterion_id": "component-adaptability", "component_ids": component_ids if component_ids is not None else
+                    [c["component_id"] for c in context["selected_components"]]}]}
+    return respond
 
 
 def read(root, paths=None, relationships=True):
@@ -102,7 +107,7 @@ def evaluate(messages, *, conclusion=None, finding=True, mutate=None, caller_pat
         "severity": "low", "confidence": 0.8, "recommendation": assessment["mitigation_options"][0],
         "assessment_ids": ["a1"], "constraint_type": "dependency_injection",
         "classification": conclusion if conclusion in {"verified_obstacle", "context_dependent_risk"} else "context_dependent_risk"}
-    value = {"sufficient": True, "hypotheses": [{**plan()["hypotheses"][0],
+    value = {"sufficient": True, "hypotheses": [{"id": "h1", "question": "Is backend substitution blocked by the public construction path?", "criterion_id": "component-adaptability",
         "status": "discarded" if conclusion == "mitigated" else "inconclusive" if conclusion == "unknown" else "confirmed", "rationale": "Compared inspected body and construction context."}],
         "candidates": [candidate] if finding else [], "missing_information": [],
         "constraint_assessments": [assessment], "cleared_components": [],
@@ -113,9 +118,25 @@ def evaluate(messages, *, conclusion=None, finding=True, mutate=None, caller_pat
 
 
 def review(*ids, status="accepted"):
-    return {"findings": [{"finding_id": identifier, "status": status,
-        "rationale": "Inspected source, scoped target and counterevidence support this qualified observation.",
-        "severity": "low", "confidence": 0.8} for identifier in ids], "limitations": []}
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        assessments = context["evaluation"]["constraint_assessments"]
+        return {"findings": [{"finding_id": identifier, "status": status,
+            "rationale": "Inspected source, scoped target and counterevidence support this qualified observation.",
+            "severity": "low", "confidence": 0.8} for identifier in ids], "limitations": [],
+            "adaptation_checks": [{"assessment_id": a["id"], "checked_evidence_ids": [r["id"] for r in context["evidence"] if r["kind"] == "source"],
+                "required_change": "Supply a backend through a changed construction path for the assessed offline context.",
+                "existing_seams": "Attribute replacement exists, but no public constructor argument supplies the backend.",
+                "why_seams_insufficient": "The assessed default public construction path still creates the fixed production client.",
+                "target_mismatch_supported": True, "input_normalization_suffices": False,
+                "change_scope": "component_logic", "qualified_impact": "For the assumed offline context, the inspected construction path would need a supplied-backend option or a verified override.",
+                "qualified_recommendation": "Consider a backend parameter only if offline substitution is a real requirement."} for a in assessments],
+            "hypotheses": [{"hypothesis_id": h["id"], "assessment_ids": [a["id"] for a in assessments if a["hypothesis_id"] == h["id"]],
+                "checked_evidence_ids": [r["id"] for r in context["evidence"] if r["kind"] == "source"],
+                "scope_supported": True, "resolution": "confirmed" if any(a["conclusion"] in {"verified_obstacle", "context_dependent_risk"} for a in assessments) else "discarded",
+                "contract_and_fixture_claims_supported": True, "rationale": "Reviewed the bound question, component bodies, usage and mitigating seams.",
+                "unverified_claims": []} for h in context["hypotheses"]]}
+    return respond
 
 
 def run(root, responses, *, config=None, audit_request=None, tools=None):
@@ -157,6 +178,264 @@ def test_validation_gap_returns_to_inspection_and_completes(repo):
     assert result.status == "completed" and result.iterations == 2
     assert "route:inspect" in result.execution_trace
     assert "verified_obstacle_requires_usage_inspection" in model.history[4][1].content
+
+
+def test_false_sufficiency_blocker_cannot_prevent_available_source_repair(repo):
+    def premature(messages):
+        return evaluate(messages, mutate=lambda value: value.update(can_investigate_further=False,
+            continuation_reason="Sufficient evidence collected to evaluate the targeted hypotheses."))
+    result, model, _ = run(repo, [plan(), read(repo, ["service.py"]), READY, premature,
+        read(repo, ["consumer.py", "backend.py"]), READY, evaluate, review("ADAPT-001")], config=limits(max_iterations=3))
+    assert result.status == "completed" and result.iterations == 2
+    assert "route:inspect" in result.execution_trace
+    assert any("Host rejected unsupported investigation blocker" in item for item in result.limitations)
+    assert json.loads(model.history[4][1].content)["candidate_validation"]["ADAPT-001"]
+
+
+def test_host_completes_missing_body_in_line_and_character_bounded_chunks(repo):
+    text = (repo / "service.py").read_text(encoding="utf-8")
+    padding = "".join(f"        self.option_{i} = '{'x' * 150}'\n" for i in range(20))
+    (repo / "service.py").write_text(text.replace("    def publish", padding + "\n    def publish"), encoding="utf-8")
+    partial = read(repo)
+    partial["tool_requests"][1]["arguments_json"] = json.dumps({"path": "service.py", "start_line": 1, "end_line": 4})
+    result, model, tools = run(repo, [plan(), partial, READY, evaluate, READY, evaluate, review("ADAPT-001")],
+        config=limits(max_iterations=3, max_source_lines=10, max_source_characters=512))
+    assert result.status == "completed" and result.iterations == 2
+    assert len(model.history) == 7 and "repair:complete_component_bodies" in result.execution_trace
+    assert result.tool_calls > 4 and not result.tool_failures
+    component = result.coverage.selected_components[0]
+    assert max(r.end_line for r in result.evidence if r.path == "service.py" and r.kind == "source") == component.end_line
+    for record in tools.retrieved_evidence:
+        if record.kind == "source":
+            assert record.end_line - record.start_line + 1 <= 10
+            source = next(f for f in tools.accessible_snapshot.files if f.id == record.file_id)
+            assert len("\n".join(source.content.splitlines()[record.start_line - 1:record.end_line])) <= 512
+    assert result.hypotheses[0].rationale.count("Unverified model interpretation:") == 0
+
+
+@pytest.mark.parametrize("review_mode", ["complete", "initial_only", "rejected"])
+def test_repaired_body_is_retained_when_model_repeats_initial_citations(repo, review_mode):
+    partial = read(repo, ["service.py"], relationships=False)
+    partial["tool_requests"][0]["arguments_json"] = json.dumps({"path": "service.py", "start_line": 1, "end_line": 4})
+    initial = {}
+
+    def first(messages):
+        initial.update(evaluate(messages))
+        return initial
+
+    def repeat(messages):
+        context = json.loads(messages[1].content)
+        checked = context["constraint_validation"][0]
+        assert "component_body_not_inspected" not in checked["validation_issues"]
+        assert len(checked["evidence"]) == 2
+        # Simulate the live failure: reevaluation repeats the first assessment/candidate.
+        return json.loads(json.dumps(initial))
+
+    def reviewer(messages):
+        context = json.loads(messages[1].content)
+        assert len(context["evaluation"]["candidates"][0]["evidence_ids"]) == 2
+        value = review("ADAPT-001", status="rejected" if review_mode == "rejected" else "accepted")(messages)
+        if review_mode == "initial_only":
+            ids = initial["constraint_assessments"][0]["supporting_evidence_ids"]
+            value["hypotheses"][0]["checked_evidence_ids"] = ids
+            value["adaptation_checks"][0]["checked_evidence_ids"] = ids
+        return value
+
+    result, _, _ = run(repo, [plan(), partial, READY, first, READY, repeat, reviewer],
+        config=limits(max_iterations=3), audit_request=request(target_context=None))
+    assert "repair:complete_component_bodies" in result.execution_trace
+    assessed = result.examined_constraints[0]
+    assert assessed.validation_status == "source_backed" and len(assessed.evidence) == 2
+    assert assessed.supporting_evidence_ids == initial["constraint_assessments"][0]["supporting_evidence_ids"]
+    if review_mode == "complete":
+        assert result.status == "completed" and result.findings[0].validation_status == "accepted"
+        assert len(result.findings[0].evidence) == 2
+        assert len(result.hypotheses[0].evidence_ids) == 2
+    elif review_mode == "initial_only":
+        assert result.status == "partial" and result.findings[0].validation_status == "insufficient_evidence"
+        assert "independent_scope_review_incomplete" in result.hypothesis_validation_issues["h1"]
+    else:
+        assert result.findings[0].validation_status == "rejected"
+
+
+def test_automatic_body_repair_obeys_tool_admission_limit(repo):
+    partial = {"action": "use_tools", "tool_requests": [{"name": "get_source_excerpt", "arguments_json": json.dumps({
+        "path": "service.py", "start_line": 1, "end_line": 2})}]}
+    result, _, _ = run(repo, [plan(), partial, READY, evaluate, evaluate, review("ADAPT-001")],
+        config=limits(max_iterations=3, max_tool_calls=2, max_source_lines=2))
+    assert result.tool_calls == 2 and result.termination_reason == "tool_call_limit"
+    assert result.status == "partial" and result.coverage.unassessed_components
+    assert not any(f.validation_status == "accepted" for f in result.findings)
+
+
+def test_repeated_host_validation_does_not_nest_model_rationales(repo):
+    result, _, _ = normal(repo, mutate=lambda value: value["constraint_assessments"][0].update(seam_evidence_ids=[]))
+    rationale = result.hypotheses[0].rationale
+    assert rationale.count("Unverified model interpretation:") == 1
+    assert rationale.count("Host validation:") == 1
+
+
+def test_mixed_root_candidates_are_split_and_independently_reviewed(repo):
+    def mixed(messages):
+        value = evaluate(messages)
+        first = value["constraint_assessments"][0]
+        second = {**first, "id": "a2", "constraint_key": "configuration:fixed-endpoint"}
+        value["constraint_assessments"].append(second)
+        value["candidates"][0]["assessment_ids"] = ["a1", "a2"]
+        return value
+    def reviewer(messages):
+        context = json.loads(messages[1].content)
+        return review(*[c["id"] for c in context["evaluation"]["candidates"]])(messages)
+    result, _, _ = run(repo, [plan(), read(repo), READY, mixed, reviewer])
+    assert result.status == "completed" and len(result.findings) == 2
+    assert all(f.validation_status == "accepted" and f.split_from == "ADAPT-001" for f in result.findings)
+    assert all(len(f.assessment_ids) == 1 for f in result.findings)
+    assert result.candidate_split_history["ADAPT-001"].assessment_ids == ["a1", "a2"]
+    assert {r.finding_id for r in result.critical_review.findings} == {f.id for f in result.findings}
+
+
+@pytest.mark.parametrize("fault", ["missing_check", "no_mismatch", "no_seam_analysis"])
+def test_review_acceptance_requires_specific_adaptation_change_and_seam_reasoning(repo, fault):
+    def reviewer(messages):
+        value = review("ADAPT-001")(messages)
+        if fault == "missing_check":
+            value["adaptation_checks"] = []
+        elif fault == "no_mismatch":
+            value["adaptation_checks"][0]["target_mismatch_supported"] = False
+        else:
+            value["adaptation_checks"][0]["why_seams_insufficient"] = ""
+        return value
+    result, _, _ = run(repo, [plan(), read(repo), READY, evaluate, reviewer])
+    assert result.hypotheses[0].status == "inconclusive" and result.findings[0].validation_status == "insufficient_evidence"
+    assert "concrete_adaptation_mismatch_not_reviewed:a1" in result.hypothesis_validation_issues["h1"]
+
+
+def test_hypothesis_cannot_use_other_components_evidence_and_question_is_preserved(repo):
+    def scoped_plan(messages):
+        context = json.loads(messages[1].content)
+        value = plan()(messages)
+        service = next(c for c in context["selected_components"] if c["path"] == "service.py")
+        flexible = next(c for c in context["selected_components"] if c["path"] == "flexible.py")
+        value["hypotheses"][0]["component_ids"] = [service["component_id"]]
+        value["hypotheses"].append({"id": "h2", "question": "Does the flexible component prevent backend substitution?",
+            "criterion_id": "component-adaptability", "component_ids": [flexible["component_id"]]})
+        return value
+    def contaminated(messages):
+        context = json.loads(messages[1].content)
+        scoped = context | {"selected_components": [c for c in context["selected_components"] if c["path"] == "service.py"]}
+        value = evaluate([messages[0], HumanMessage(content=json.dumps(scoped)), *messages[2:]])
+        value["hypotheses"][0]["question"] = "A weaker unrelated surrogate question"
+        value["hypotheses"].append({"id": "h2", "question": "Does the flexible component prevent backend substitution?",
+            "criterion_id": "component-adaptability", "status": "confirmed", "rationale": "Signals in service indicate rigidity.",
+            "evidence_ids": value["candidates"][0]["evidence_ids"]})
+        return value
+    result, _, _ = run(repo, [scoped_plan, read(repo), READY, contaminated, review("ADAPT-001")],
+        audit_request=request(targets=["service.py", "flexible.py"]))
+    by_id = {h.id: h for h in result.hypotheses}
+    assert by_id["h1"].status == "confirmed" and by_id["h1"].question == result.plan.hypotheses[0].question
+    assert by_id["h2"].status == "inconclusive"
+    assert "committed_components_not_validly_assessed" in result.hypothesis_validation_issues["h2"]
+    assert result.findings[0].validation_status == "accepted" and result.status == "partial"
+
+
+@pytest.mark.parametrize("fault", ["missing_binding", "unknown_binding", "missing_review", "unchecked_review"])
+def test_hypothesis_requires_bound_components_and_independent_citation_review(repo, fault):
+    def reviewer(messages):
+        value = review("ADAPT-001")(messages)
+        if fault == "missing_review":
+            value["hypotheses"] = []
+        elif fault == "unchecked_review":
+            value["hypotheses"][0]["checked_evidence_ids"] = []
+        return value
+    initial = plan([]) if fault == "missing_binding" else plan(["invented"]) if fault == "unknown_binding" else plan()
+    result, _, _ = run(repo, [initial, read(repo), READY, evaluate, reviewer])
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.status == "partial" and result.findings[0].validation_status == "insufficient_evidence"
+    assert result.critical_review is not None and result.hypothesis_validation_issues["h1"]
+
+
+def test_candidate_reports_exact_component_mismatch_without_invalidating_scoped_assessment(repo):
+    def corrupt(value):
+        value["candidates"][0]["components"].append("file:unassessed-fixture")
+    result, _, _ = normal(repo, mutate=corrupt)
+    assert result.examined_constraints[0].validation_status == "source_backed"
+    finding = result.findings[0]
+    assert finding.validation_status == "insufficient_evidence"
+    assert "candidate_components_do_not_match_assessments" in finding.validation_issues
+    assert "candidate_components_do_not_match_assessments" in finding.review_rationale
+
+
+def test_discovery_candidates_outside_plan_do_not_become_coverage_obligations(repo):
+    def narrow_plan(messages):
+        context = json.loads(messages[1].content)
+        component = next(c for c in context["selected_components"] if c["path"] == "service.py")
+        return plan([component["component_id"]])(messages)
+    def scoped_evaluation(messages):
+        context = json.loads(messages[1].content)
+        scoped = context | {"selected_components": [c for c in context["selected_components"] if c["path"] == "service.py"]}
+        return evaluate([messages[0], HumanMessage(content=json.dumps(scoped)), *messages[2:]])
+    result, _, _ = run(repo, [narrow_plan, read(repo), READY, scoped_evaluation, review("ADAPT-001")],
+        audit_request=request(targets=["service.py", "flexible.py"]))
+    assert result.status == "completed" and not result.coverage.unassessed_components
+    assert len(result.coverage.planned_components) == len(result.coverage.unplanned_components) == 1
+    assert result.summary.startswith("1/1 planned components investigated")
+
+
+@pytest.mark.parametrize("basis,analysis,reviewed", [
+    ("fixture_only", "Fixture examples name particular tables.", True),
+    ("input_contract", "", True),
+    ("input_contract", "Input normalization can supply expected keys without changing the component.", True),
+    ("fixed_domain_schema", "Claimed fixed values inferred from fixture names.", False),
+])
+def test_fixture_names_and_input_shape_do_not_establish_schema_rigidity(repo, basis, analysis, reviewed):
+    (repo / "schema.py").write_text("def build(metadata):\n    return [model['name'] for model in metadata['models']]\n", encoding="utf-8")
+    (repo / "fixture.json").write_text('{"models": [{"name": "cuenta_demo"}]}', encoding="utf-8")
+    def schema_evaluation(messages):
+        value = evaluate(messages)
+        assessment = value["constraint_assessments"][0]
+        assessment.update(constraint_type="data_schema", constraint_key="schema:domain-values",
+            schema_dependency_basis=basis, schema_adaptation_analysis=analysis,
+            observed_facts=["The supplied dictionary uses models/name keys; the fixture contains cuenta_demo."],
+            seam_analysis="The metadata argument supplies model names; no fixed table value is observed in the component body.")
+        value["candidates"][0]["constraint_type"] = "data_schema"
+        return value
+    def reviewer(messages):
+        value = review("ADAPT-001")(messages)
+        value["hypotheses"][0]["contract_and_fixture_claims_supported"] = reviewed
+        if basis == "input_contract":
+            value["adaptation_checks"][0]["input_normalization_suffices"] = True
+        return value
+    result, _, _ = run(repo, [plan(), read(repo, ["schema.py", "fixture.json"], relationships=False), READY, schema_evaluation, reviewer],
+        audit_request=request(targets=["schema.py"], target_context=None))
+    assert result.status == "partial" and result.hypotheses[0].status == "inconclusive"
+    assert result.findings[0].validation_status == "insufficient_evidence"
+    assert result.findings[0].validation_issues
+
+
+def test_auxiliary_files_do_not_acquire_executable_di_or_global_signals(repo):
+    (repo / "fixtures").mkdir()
+    (repo / "fixtures" / "example.json").write_text('{"sql": "SELECT * FROM demo", "example": "Client() static global"}', encoding="utf-8")
+    (repo / "pyproject.toml").write_text('[project]\nname="Client()"\nversion="static"\ndependencies=["fastapi"]\n', encoding="utf-8")
+    coverage = discover(toolset(repo).accessible_snapshot, request(targets=[]), limits(max_components=20))
+    auxiliary = [c for c in coverage.selected_components if c.path.endswith((".json", ".toml"))]
+    assert {c.source_role for c in auxiliary} == {"fixture", "configuration"}
+    assert all(s.constraint_type not in {"dependency_injection", "global_state"} for c in auxiliary for s in c.signals)
+    assert coverage.selected_components[0].source_role == "implementation"
+
+
+def test_exported_component_declaration_is_not_a_construction_signal(repo):
+    (repo / "page.ts").write_text("export function AccountingGuidePage() {\n  return 1;\n}\n", encoding="utf-8")
+    coverage = discover(toolset(repo).accessible_snapshot, request(targets=["page.ts"]), limits())
+    assert coverage.selected_components
+    assert not any(s.rule == "construction_or_locator" for c in coverage.selected_components for s in c.signals)
+
+
+def test_repeated_unchanged_repairs_stop_with_review_and_preserved_evidence(repo):
+    result, _, _ = run(repo, [plan(), read(repo, ["service.py"]), READY, evaluate, READY, evaluate, review("ADAPT-001")],
+        config=limits(max_iterations=5))
+    assert result.termination_reason == "no_investigation_progress" and result.iterations == 2
+    assert result.critical_review is not None and result.evidence
+    assert result.findings[0].validation_status == "insufficient_evidence"
 
 
 def invalid_blocker(messages):
@@ -219,6 +498,50 @@ def test_unspecified_target_is_qualified_not_invented(repo):
     assert result.status == "completed" and result.target_context is None
     assert result.findings[0].classification == "context_dependent_risk"
     assert result.findings[0].assumptions and result.examined_constraints[0].context_basis == "plausible"
+
+
+def test_content_adaptation_does_not_publish_full_rewrite_claim_as_accepted_risk(repo):
+    (repo / "guide.tsx").write_text('export function AccountingGuidePage() {\n  return <article>PCGE Peru - IGV 18%</article>;\n}\n', encoding="utf-8")
+    def content_evaluation(messages):
+        def overstate(value):
+            assessment = value["constraint_assessments"][0]
+            assessment.update(constraint_type="interface", constraint_key="ui:local-guide-content",
+                observed_facts=["JSX displays Peruvian accounting nomenclature and an 18% tax example."],
+                seam_analysis="The inspected function accepts no props for replacing displayed content.",
+                adaptation_impact="Changing jurisdiction would require changing the explanatory text.",
+                adaptation_effort="Qualitatively low; no measured estimate.",
+                assumptions=["A future reuse scenario uses different accounting terminology."],
+                counterevidence_analysis="A dedicated local reference page may intentionally contain jurisdiction-specific text.")
+            value["candidates"][0].update(constraint_type="interface", description="Impossible to reuse without full rewrites.",
+                justification="Impossible to reuse without full rewrites.", recommendation="Rewrite the whole component.")
+        return evaluate(messages, mutate=overstate)
+    def reviewer(messages):
+        value = review("ADAPT-001")(messages)
+        value["findings"][0]["rationale"] = "Impossible to reuse without full rewrites."
+        value["adaptation_checks"][0].update(change_scope="content_only",
+            qualified_impact="In the assumed jurisdiction, displayed guide text would need adaptation; no full rewrite is established.",
+            qualified_recommendation="Consider supplying localized guide content if cross-jurisdiction reuse is required.")
+        return value
+    result, _, _ = run(repo, [plan(), read(repo, ["guide.tsx"], relationships=False), READY, content_evaluation, reviewer],
+        audit_request=request(targets=["guide.tsx"], target_context=None))
+    finding = result.findings[0]
+    assert result.status == "completed" and finding.validation_status == "accepted"
+    assert all("Impossible to reuse without full rewrites" not in text for text in (
+        finding.description, finding.justification, finding.recommendation, finding.review_rationale))
+    assert "executable calculation rules" in finding.description and "assumption" in finding.justification
+    assert "displayed guide text" in finding.adaptation_impact and "localized guide content" in finding.recommendation
+    assert result.critical_review.findings[0].rationale == "Impossible to reuse without full rewrites."
+
+
+@pytest.mark.parametrize("fault", ["unknown_scope", "unqualified_impact"])
+def test_contextual_risk_needs_reviewed_change_scope_and_qualified_impact(repo, fault):
+    def reviewer(messages):
+        value = review("ADAPT-001")(messages)
+        value["adaptation_checks"][0]["change_scope" if fault == "unknown_scope" else "qualified_impact"] = "unknown" if fault == "unknown_scope" else ""
+        return value
+    result, _, _ = run(repo, [plan(), read(repo), READY, evaluate, reviewer], audit_request=request(target_context=None))
+    assert result.findings[0].validation_status == "insufficient_evidence" and result.hypotheses[0].status == "inconclusive"
+    assert "context_risk_requires_qualified_change_scope:a1" in result.hypothesis_validation_issues["h1"]
 
 
 def test_model_mitigated_assessment_preserves_counterevidence_without_findings(repo):
@@ -429,7 +752,7 @@ def test_constraint_limit_is_host_enforced(repo):
 def test_unverifiable_blocker_finalizes_without_wasting_iterations(repo):
     def blocked(value):
         value.update(sufficient=False, can_investigate_further=False,
-            continuation_reason="External deployment override contract is unavailable in the accessible snapshot.")
+            continuation_reason="External deployment override contract is unavailable in the accessible snapshot.", continuation_blocker="external_context")
     result, model, _ = run(repo, [plan(), read(repo), READY,
         lambda m: evaluate(m, conclusion="unknown", finding=False, mutate=blocked), review()], config=limits(max_iterations=3))
     assert result.status == "partial" and result.termination_reason == "unverifiable"
@@ -482,7 +805,7 @@ def test_adjacent_bounded_reads_can_cover_a_complete_component(repo):
 def test_clearance_requires_source_and_preserves_empty_findings(repo):
     def clear(messages):
         context = json.loads(messages[1].content)
-        return {"sufficient": True, "hypotheses": [{**plan()["hypotheses"][0], "status": "discarded", "rationale": "No demonstrated obstacle in the inspected scope."}],
+        return {"sufficient": True, "hypotheses": [{"id": "h1", "question": "Is backend substitution blocked by the public construction path?", "criterion_id": "component-adaptability", "status": "discarded", "rationale": "No demonstrated obstacle in the inspected scope."}],
             "candidates": [], "constraint_assessments": [], "missing_information": [],
             "cleared_components": [c["component_id"] for c in context["selected_components"]],
             "coverage_rationale": "Scoped body inspection did not establish a target-incompatible dependency; not a global guarantee."}
@@ -584,6 +907,7 @@ def test_google_native_adapter_structured_decisions_and_usage_offline(repo, monk
     tools, config = toolset(repo), limits(max_output_tokens=512)
     model = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", api_key="offline-test-key", max_tokens=2048, max_retries=0)
     requests, responses = [], []
+    review_context = {}
     execute = tools.execute
     def observe(*args, **kwargs):
         result = execute(*args, **kwargs)
@@ -594,7 +918,8 @@ def test_google_native_adapter_structured_decisions_and_usage_offline(repo, monk
         requests.append(kwargs)
         turn = len(requests)
         if turn == 1:
-            value = plan()
+            coverage = discover(tools.accessible_snapshot, request(), config)
+            value = plan()([HumanMessage(content=""), HumanMessage(content=json.dumps({"selected_components": [c.model_dump() for c in coverage.selected_components]}))])
         elif turn == 2:
             assert kwargs["config"].response_json_schema["title"] == "InspectionDecision"
             value = read(repo)
@@ -608,8 +933,9 @@ def test_google_native_adapter_structured_decisions_and_usage_offline(repo, monk
                 "evidence": [r.model_dump() for r in InvestigationExecution.references(SimpleNamespace(tools=tools))]}
             value = evaluate([HumanMessage(content=""), HumanMessage(content=json.dumps(context)),
                 *[ToolMessage(content=r.model_dump_json(), tool_call_id=r.tool_call_id) for r in responses]])
+            review_context.update(context | {"evaluation": value, "hypotheses": value["hypotheses"]})
         elif turn == 5:
-            value = review("ADAPT-001")
+            value = review("ADAPT-001")([HumanMessage(content=""), HumanMessage(content=json.dumps(review_context))])
         else:
             raise AssertionError("Unexpected provider call")
         return types.GenerateContentResponse(candidates=[types.Candidate(content=types.Content(role="model", parts=[types.Part(text=json.dumps(value))]), finish_reason="STOP")],
