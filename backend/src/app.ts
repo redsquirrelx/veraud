@@ -34,7 +34,7 @@ import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.cont
 import { AgentSettingsRepository } from "./modules/agent-settings/agent-settings.repository.js"
 import { AgentSettingsService } from "./modules/agent-settings/agent-settings.service.js"
 import { registerAgentSettingsRoutes } from "./modules/agent-settings/agent-settings.controller.js"
-import { BACKEND_AGENT_TYPES } from "./modules/agent-settings/agent-types.js"
+import type { AgentCatalogSource } from "./modules/agent-settings/agent-catalog.js"
 import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configuration.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
@@ -51,6 +51,7 @@ export interface BuildAppOptions {
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
   makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
   makeModelAccessVerifier?: () => ModelAccessVerifier
+  makeAgentCatalogSource?: () => AgentCatalogSource
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -73,11 +74,15 @@ export async function buildApp(options: BuildAppOptions) {
     : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
   const taskService = new TaskService(taskRepository, runner)
   const agentSettingsRepository = new AgentSettingsRepository(db)
-  await agentSettingsRepository.ensureSeeded(BACKEND_AGENT_TYPES)
   const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
     ? new AgentServerClient(options.agentServerUrl)
     : { verify: async () => { throw new Error("No agent-server URL configured; model access cannot be verified") } })
-  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier)
+  const catalogSource = options.makeAgentCatalogSource?.() ?? (options.agentServerUrl ? new AgentServerClient(options.agentServerUrl) : undefined)
+  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier, catalogSource)
+  if (catalogSource) {
+    try { await agentSettingsService.synchronize() }
+    catch { app.log.warn("Agent-server catalog synchronization failed; keeping the last synchronized agents") }
+  }
   const agentExecutionRepository = new AgentExecutionRepository(db, agentSettingsRepository)
   const agentInvoker = options.makeAgentInvoker
     ? options.makeAgentInvoker(options.agentServerUrl)

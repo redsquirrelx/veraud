@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { makeTestAgentCatalogSource } from "./helpers/agentCatalog.js"
 import type { AgentInput, AgentInvoker, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
@@ -51,6 +52,7 @@ describe("project architecture endpoint", () => {
     // The default invoker has no pipeline support: rows fail closed the way
     // dispatchPipelineByName does when the agent-server cannot be reached.
     const { app, db } = await buildApp({
+      makeAgentCatalogSource: makeTestAgentCatalogSource,
       databaseUrl: freshDatabase(),
       workspaceDir,
       silent: true,

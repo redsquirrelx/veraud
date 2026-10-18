@@ -1,5 +1,6 @@
 import { logger } from "../../config/logger.js"
 import type { AgentRunConfig, ModelAccessVerifier } from "../../modules/agent-settings/agent-configuration.js"
+import { AgentCatalogError, parseAgentCatalog, type AgentCatalog, type AgentCatalogSource } from "../../modules/agent-settings/agent-catalog.js"
 
 /** The agent-server answers /api/agents/run with the agent's own output, opaque
  *  to this side: each agent defines its shape and the backend stores it as JSON. */
@@ -51,13 +52,26 @@ export const DEFAULT_INVOKE_TIMEOUT_MS = 300_000
  *  ceiling is the pipeline timeout plus headroom for the callbacks to land. */
 export const PIPELINE_INVOKE_TIMEOUT_MS = 660_000
 
-export class AgentServerClient implements AgentInvoker, ModelAccessVerifier {
+export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, AgentCatalogSource {
   private log = logger.withTag("agent-server")
 
   constructor(
     private baseUrl: string,
     private timeoutMs: number = DEFAULT_INVOKE_TIMEOUT_MS,
   ) {}
+
+  async getAgentCatalog(): Promise<AgentCatalog> {
+    try {
+      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/agents/catalog`, {
+        signal: AbortSignal.timeout(Math.min(this.timeoutMs, 5000)),
+      })
+      if (!response.ok) throw new AgentCatalogError()
+      return parseAgentCatalog(await response.json())
+    } catch (error) {
+      if (error instanceof AgentCatalogError) throw error
+      throw new AgentCatalogError()
+    }
+  }
 
   async verify(config: AgentRunConfig): Promise<void> {
     let response: Response

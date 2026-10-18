@@ -10,6 +10,7 @@ import { AgentConfigurationError } from "../modules/agent-settings/agent-configu
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
 import { AgentSettingsService } from "../modules/agent-settings/agent-settings.service.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
+import { makeTestAgentCatalogSource } from "./helpers/agentCatalog.js"
 
 test("model access gates execution; immutable snapshots, credentials and verification revisions", async () => {
   const directory = mkdtempSync(join(tmpdir(), "veraud-config-execution-"))
@@ -30,6 +31,7 @@ test("model access gates execution; immutable snapshots, credentials and verific
   } }
   const { app, db } = await buildApp({
     databaseUrl, workspaceDir: join(directory, "workspace"), silent: true,
+    makeAgentCatalogSource: makeTestAgentCatalogSource,
     makeModelAccessVerifier: () => verifier,
     makeAgentInvoker: () => ({ run: async (_type, _input, executionId, config) => {
       dispatched.push({ pipeline: "direct", executionId, config })

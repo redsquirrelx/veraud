@@ -6,7 +6,7 @@ import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { MAINTAINABILITY_AGENT_TYPE, MAINTAINABILITY_AUDIT_AGENTS, SECURITY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -136,14 +136,14 @@ export class AgentExecutionService {
       ...(attributes.includes("security") ? [SECURITY_AGENT_TYPE] : []),
     ])
     const rootConfiguration = configurations.find((item) => item.agentType === agentType)!
+    const configs: Record<string, AgentRunConfig> = {}
+    for (const configuration of configurations) {
+      const participants = await this.settings.modelParticipants(configuration.agentType)
+      for (const participant of participants) configs[participant] = configuration.transport
+    }
     const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [rootConfiguration], "QualityAudit")
     const execution = result.executions[agentType]!
     await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
-    const configs: Record<string, AgentRunConfig> = {}
-    for (const configuration of configurations) {
-      const participants = configuration.agentType === SECURITY_AGENT_TYPE ? [SECURITY_AGENT_TYPE] : MAINTAINABILITY_AUDIT_AGENTS
-      for (const participant of participants) configs[participant] = configuration.transport
-    }
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
     void this.dispatchQualityAudit(execution, configs, commitHash, attributes, options)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }

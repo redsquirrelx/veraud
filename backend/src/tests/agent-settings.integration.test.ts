@@ -9,10 +9,10 @@ import { buildApp } from "../app.js"
 import { PROJECT_ARCHITECTURE_AGENT_TYPE } from "../modules/agent-settings/agent-types.js"
 import { DUMMY_AGENT_TYPE } from "../modules/agent-settings/agent-types.js"
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
-import { BACKEND_AGENT_TYPES } from "../modules/agent-settings/agent-types.js"
+import { TEST_AGENT_TYPES, makeTestAgentCatalogSource, testAgentCatalog } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 
-test("agent settings list backend types without an agent-server and never expose keys", async () => {
+test("agent settings list discovered types and preserve assignments without exposing keys", async () => {
   const directory = mkdtempSync(join(tmpdir(), "veraud-agent-settings-"))
   const databaseUrl = `file:${join(directory, "test.db")}`
   execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "migrate", "deploy"], {
@@ -22,16 +22,17 @@ test("agent settings list backend types without an agent-server and never expose
   })
   const { app, db } = await buildApp({
     databaseUrl, workspaceDir: join(directory, "workspace"), silent: true,
+    makeAgentCatalogSource: makeTestAgentCatalogSource,
   })
   auditResponseSerialization(app)
   try {
     const initial = await app.inject({ url: "/api/agent-settings" })
     assert.equal(initial.statusCode, 200)
-    assert.deepEqual(initial.json(), [...BACKEND_AGENT_TYPES].sort().map((agentType) => ({
+    assert.deepEqual(initial.json().map(({ agentType, configured, configuration, verification }: { agentType: string, configured: boolean, configuration: unknown, verification: unknown }) => ({ agentType, configured, configuration, verification })), [...TEST_AGENT_TYPES].sort().map((agentType) => ({
       agentType, configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null },
     })))
     const defaults = await db.agentSettings.findMany({ orderBy: { agentType: "asc" }, select: { agentType: true, aiModelId: true, aiCredentialId: true, temperature: true, maxTokens: true } })
-    assert.deepEqual(defaults.map((row) => ({ ...row })), [...BACKEND_AGENT_TYPES].sort().map((agentType) => ({
+    assert.deepEqual(defaults.map((row) => ({ ...row })), [...TEST_AGENT_TYPES].sort().map((agentType) => ({
       agentType, aiModelId: null, aiCredentialId: null, temperature: null, maxTokens: null,
     })))
     const openai = await db.aiProvider.findFirstOrThrow({ where: { name: "OpenAI" } })
@@ -44,14 +45,14 @@ test("agent settings list backend types without an agent-server and never expose
     await db.agentSettings.create({ data: { agentType: "retired", aiModelId: model.id, aiCredentialId: credential.id } })
     const repository = new AgentSettingsRepository(db)
     const existing = await db.agentSettings.findMany({ orderBy: { agentType: "asc" } })
-    await repository.ensureSeeded(BACKEND_AGENT_TYPES)
-    await repository.ensureSeeded(BACKEND_AGENT_TYPES)
+    await repository.synchronizeCatalog(testAgentCatalog())
+    await repository.synchronizeCatalog(testAgentCatalog())
     assert.deepEqual(await db.agentSettings.findMany({ orderBy: { agentType: "asc" } }), existing)
 
     const response = await app.inject({ url: "/api/agent-settings" })
     assert.equal(response.statusCode, 200)
     const rows = response.json()
-    assert.deepEqual(rows.map((row: { agentType: string }) => row.agentType), [...BACKEND_AGENT_TYPES].sort())
+    assert.deepEqual(rows.map((row: { agentType: string }) => row.agentType), [...TEST_AGENT_TYPES].sort())
     assert.equal(rows[0].configured, true)
     assert.equal(rows[0].configuration.model.name, "example-model")
     assert.deepEqual(rows[0].configuration.credential, { id: credential.id, name: "production", providerId: openai.id, providerName: "OpenAI" })
@@ -105,7 +106,7 @@ test("agent settings list backend types without an agent-server and never expose
     assert.equal(mismatched[0].configuration.temperature, null)
     assert.equal(mismatched[0].configuration.maxTokens, null)
     await db.agentSettings.delete({ where: { agentType: DUMMY_AGENT_TYPE } })
-    await repository.ensureSeeded(BACKEND_AGENT_TYPES)
+    await repository.synchronizeCatalog(testAgentCatalog())
     assert.deepEqual(await db.agentSettings.findUnique({ where: { agentType: DUMMY_AGENT_TYPE }, select: { agentType: true, aiModelId: true, aiCredentialId: true, temperature: true, maxTokens: true } }), {
       agentType: DUMMY_AGENT_TYPE, aiModelId: null, aiCredentialId: null, temperature: null, maxTokens: null,
     })

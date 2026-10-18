@@ -6,14 +6,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { makeQualityAuditCatalogSource, TEST_MAINTAINABILITY_AGENTS } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
-import { MAINTAINABILITY_AUDIT_AGENTS } from "../modules/agent-settings/agent-types.js"
 
 for (const attributes of [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"]]) {
 it(`runs a ${attributes.join("+")} audit and persists one partial report and Word artifact independently of architecture`, async () => {
   const agentType = attributes.includes("maintainability") ? "maintainability_manager" : "security"
-  const agents = [...(attributes.includes("maintainability") ? MAINTAINABILITY_AUDIT_AGENTS : []),
+   const agents = [...(attributes.includes("maintainability") ? TEST_MAINTAINABILITY_AGENTS : []),
     ...(attributes.includes("security") ? ["security"] : [])]
   const dir = mkdtempSync(join(tmpdir(), "veraud-quality-"))
   const databaseUrl = `file:${join(dir, "test.db")}`
@@ -26,7 +26,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
   let finish!: (result: Record<string, AgentInput>) => void
   const pending = new Promise<Record<string, AgentInput>>((resolve) => { finish = resolve })
   let seen: PipelineInput | undefined
-  const options = { databaseUrl, workspaceDir, silent: true, makeModelAccessVerifier: () => ({ verify: async () => {} }) }
+  const options = { databaseUrl, workspaceDir, silent: true, makeAgentCatalogSource: makeQualityAuditCatalogSource, makeModelAccessVerifier: () => ({ verify: async () => {} }) }
   const { app, db } = await buildApp({ ...options, makeAgentInvoker: () => ({
     run: async () => ({}), runPipelineByName: async (name, input, ids, configs) => {
       assert.equal(name, "quality-audit")

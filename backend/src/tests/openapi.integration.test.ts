@@ -7,7 +7,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
-import { BACKEND_AGENT_TYPES } from "../modules/agent-settings/agent-types.js"
 
 describe("OpenAPI portal", () => {
   it("serves Swagger UI, its assets, and the discovered backend specification", async () => {
@@ -49,7 +48,7 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 35)
+      assert.equal(operations.length, 36)
       const expectedOperations = [
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
@@ -72,6 +71,7 @@ describe("OpenAPI portal", () => {
         "POST /api/agent-executions/{id}/progress",
         "POST /api/agent-executions/{id}/running",
         "POST /api/agent-settings/{agentType}/verify",
+        "POST /api/agent-settings/sync",
         "POST /api/ai-providers/{id}/credentials",
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
@@ -114,9 +114,7 @@ describe("OpenAPI portal", () => {
       assert.deepEqual(missingExecution.json(), { error: "Agent execution 0 not found" })
       const agentSettings = await app.inject({ method: "GET", url: "/api/agent-settings" })
       assert.equal(agentSettings.statusCode, 200)
-      assert.deepEqual(agentSettings.json(), [...BACKEND_AGENT_TYPES].sort().map((agentType) => ({
-        agentType, configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null },
-      })))
+      assert.deepEqual(agentSettings.json(), [], "No local agents are seeded without discovery")
       const architectureResponse = specification.paths["/api/projects/{id}/architecture"].post.responses["201"].content["application/json"].schema
       assert.ok(architectureResponse.properties.executions.properties.orientation)
       assert.ok(architectureResponse.properties.executions.properties.architecture)

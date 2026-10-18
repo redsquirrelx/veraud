@@ -1,33 +1,63 @@
-# Backend agents and saved configuration
+# Discovered agents and saved configuration
 
-`GET /api/agent-settings` lists the agent types explicitly declared in backend
-workflows and merges them with backend `AgentSettings` rows. Swagger describes
+`GET /api/agent-settings` lists the agents declared by the last successfully
+synchronized agent-server catalog and their saved `AgentSettings`. Swagger describes
 the response under **Agent Settings** at `/docs`.
 
 ## Source of available agents
 
-`agent-types.ts` defines the shared backend catalog, currently containing
-`dummy`, `orientation`, `architecture` and `semantic_validation`. The
-project-architecture workflow uses the shared stage constants. The frontend
-renders the backend response without its own type list.
+Agent-server `GET /api/agents/catalog` is the source of truth. The backend uses
+the canonical `agent_id` as `agentType` and stores its published `name`, `role`,
+model requirements, execution modes and availability. Backend workflow constants
+in `agent-types.ts` are transport identifiers, not a registration allowlist.
+Adding an agent to the server catalog does not require a backend seed change.
+Quality-audit model participant expansion also traverses the synchronized hierarchy
+and its `modelConfigurationAgentType` values, rather than a backend investigator list.
+It retains the existing per-attribute root model selection policy.
 
-Each declared type appears even if it has no saved configuration. Settings for
-other types are omitted. The endpoint
-does not contact the agent-server and works while that service is offline or its
-URL is not configured. Adding a supported backend agent requires updating the
-backend catalog alongside its workflow.
+## Automatic synchronization
 
-## Automatic defaults
+When `agentServerUrl` is configured, startup fetches the catalog with a five-second
+timeout. It validates version `1.0`, unique identities, model configuration owners,
+parent/child reference consistency and absence of cycles **before** writing.
+One database transaction creates missing rows and updates metadata and links.
+Existing model/credential assignments, generation options, verification records
+and execution history are preserved. Repeating synchronization is idempotent.
 
-At application startup, `AgentSettingsRepository.ensureSeeded()` creates a row
-for every type in `BACKEND_AGENT_TYPES` that does not yet exist. The operation
-is transactional and idempotent. Existing selections, execution options and rows
-outside the catalog are retained.
+Each declared agent gets a row, including deterministic/internal participants.
+No model or credential is selected automatically. Agents removed from the catalog
+are marked `catalogDeclared: false`, excluded from settings and rejected for new
+assignments/executions. Their rows and historical execution references remain.
+Legacy rows become active only if their canonical ID is declared by the server.
 
-New rows contain only `agentType`; model, credential, temperature and maximum
-tokens are null. They appear as **Not configured** until selections are assigned.
-The backend does not choose a model or credential automatically. Executions
-without an assigned model and credential are rejected with `422`.
+On an unavailable service, unsupported version or malformed graph, the last
+successful catalog is retained. A fresh installation without discovery has an
+empty agent list; there is no hard-coded fallback. Listing uses the persisted
+catalog and does not contact agent-server. Retry after starting agent-server with:
+
+```http
+POST /api/agent-settings/sync
+```
+
+Success returns the synchronized settings list. Unavailable/unconfigured discovery
+or invalid catalog returns `503` without partially updating the database.
+`BuildAppOptions.makeAgentCatalogSource` injects discovery in isolated tests.
+
+## Optional hierarchy
+
+Migration `20261018000000_agent_server_catalog` adds catalog metadata and the
+`agent_hierarchy` self-relation table. Each link references a parent and child
+`agent_settings.agent_type`; a composite key prevents duplicate links. An agent
+can have no children, several children, or multiple parents without duplicating
+its configuration row. The catalog graph is validated against self-links/cycles.
+Each successful sync replaces links with the current declared graph.
+
+Settings responses include `parentAgentTypes` and `childAgentTypes` arrays (empty
+when absent), `name`, `role`, `requiresModel`, `modelConfigurationAgentType`,
+`executionModes` and `availability`. A model-independent agent such as
+`audit_report` requires no assignment. A participant sharing another agent's
+model, such as `remediation_synthesizer` using `security`, is configured through
+that owner. PUT/verify reject participants without an available independent model.
 
 ## Saved settings
 
@@ -44,7 +74,7 @@ and belongs to the same provider; it does not verify access against the provider
 ## Frontend
 
 Settings loads this endpoint when the **Agents** tab is opened. It renders one
-Card per backend type, with configured/pending status and editable model and
+Card per returned agent, with configured/pending status and editable model and
 credential selectors. Credentials remain disabled until a model is selected and
 are filtered by its provider. Changing providers clears the selected credential;
 changing models within the same provider retains it. **Save changes** persists
@@ -55,6 +85,9 @@ generation parameters. Temperature accepts values from 0 to 2; maximum tokens
 accepts positive integers up to 2147483647. Empty fields clear the stored override
 to null. Saving updates the Card, closes the Drawer and shows a success toast
 after backend confirmation. Cancel discards unsaved Drawer edits.
+Clients can use `requiresModel`, `modelConfigurationAgentType` and `availability`
+to distinguish independent model settings from deterministic/shared participants,
+and `parentAgentTypes`/`childAgentTypes` to present the hierarchy.
 Loading, empty-list and retryable error states are supported. Requests are
 cancelled when the section unmounts.
 
@@ -70,7 +103,7 @@ The backend validates that both records exist and share a provider, then saves
 the assignments transactionally. Temperature and maximum tokens are optional:
 omitting them preserves saved values, while sending null clears them. Invalid
 ranges and non-integer maximum tokens return `400`.
-The response is the updated agent configuration without API keys. Unknown backend
+The response is the updated agent configuration without API keys. Undeclared
 types return `404`, invalid assignments return `422`, and malformed bodies return
 `400`. Swagger documents the operation under **Agent Settings**.
 
@@ -130,6 +163,7 @@ from `backend/` before restarting both services:
 
 ```bash
 pnpm exec prisma migrate deploy
+pnpm exec prisma generate
 ```
 
 ## Token budget persistence
@@ -164,15 +198,15 @@ and enforcing tolerance will be integrated in the execution phase.
 From `backend/`:
 
 ```bash
-pnpm exec tsx --test src/tests/agent-settings.integration.test.ts src/tests/agent-configuration-execution.integration.test.ts src/tests/openapi.integration.test.ts
+pnpm exec tsx --test src/tests/agent-catalog.integration.test.ts src/tests/agent-settings.integration.test.ts src/tests/agent-configuration-execution.integration.test.ts src/tests/openapi.integration.test.ts
 ```
 
-The integration check uses a temporary database without an agent-server to
-cover backend type selection, missing settings, exclusion of unrelated settings,
-provider mismatch, decimal/null values and credential exclusion. It also verifies
-startup defaults, repeated seeding without overwrites and recreation of missing
-catalog rows. Write coverage checks successful assignment, persistence, preserved
-execution options, unknown types, missing selections and rejected provider mismatches.
+The catalog integration uses a real local HTTP discovery stub and migrated SQLite
+database to verify startup synchronization, previously unknown server identities,
+optional children, reparenting, retirement, idempotence, retained assignments and
+history, invalid graphs, offline recovery and rejection of invented local agents.
+Settings tests inject a fake catalog source and cover assignment persistence,
+provider mismatch, decimal/null values and credential exclusion.
 
 Frontend coverage lives in `AgentsSettings.test.tsx`, `AgentSettingsCard.test.tsx`
 `AgentAccessVerification.test.tsx` and `SettingsPage.test.tsx`. Agent-server

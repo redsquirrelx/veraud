@@ -75,7 +75,7 @@ describe("status endpoint", () => {
 
       assert.equal(response.statusCode, 200)
       assert.deepEqual(response.json(), { status: "ok", service: "backend", agentServer: "online" })
-      assert.deepEqual(requested, ["/api/status"])
+      assert.deepEqual(requested, ["/api/agents/catalog", "/api/status"])
     } finally {
       await new Promise<void>((resolve) => agent.close(() => resolve()))
     }

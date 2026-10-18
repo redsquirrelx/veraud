@@ -4,6 +4,7 @@ import { createServer } from "node:http"
 import Fastify from "fastify"
 import { logger } from "../../config/logger.js"
 import { AgentServerClient } from "./agent-server.client.js"
+import { AgentCatalogError } from "../../modules/agent-settings/agent-catalog.js"
 
 test("HTTP dispatch sends captured config and access checks do not expose provider errors", async () => {
   const app = Fastify({ logger: false })
@@ -92,5 +93,32 @@ test("generic pipeline dispatch posts stage maps to the named pipeline", async (
   } finally {
     await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()))
     await app.close()
+  }
+})
+
+test("catalog discovery bounds stalled requests and rejects non-JSON responses with a controlled error", async () => {
+  let stalled = false
+  const server = createServer((_request, response) => {
+    if (stalled) return
+    response.writeHead(200, { "content-type": "text/plain" })
+    response.end("not-json-private-response")
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== "string")
+    const url = `http://127.0.0.1:${address.port}`
+    for (const timeout of [1000, 30]) {
+      stalled = timeout === 30
+      const client = new AgentServerClient(url, timeout)
+      await assert.rejects(() => client.getAgentCatalog(), (error: unknown) => {
+        assert.ok(error instanceof AgentCatalogError)
+        assert.doesNotMatch(error.message, /not-json-private-response/)
+        return true
+      })
+    }
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 })
