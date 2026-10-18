@@ -1,6 +1,6 @@
 {
   "max_context_characters": 160000,
-  "max_total_tokens": 300000,
+  "max_total_tokens": 500000,
   "max_model_calls": 24,
   "timeout_seconds": 600
 }
