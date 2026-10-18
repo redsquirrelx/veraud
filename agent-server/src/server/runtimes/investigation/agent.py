@@ -17,6 +17,7 @@ from pydantic_core import PydanticCustomError
 
 from ...blackboard.publication import publication_for
 from ...config.logs import get_logger
+from ...infrastructure.llm.chat import prepare_chat_model
 from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
 from .messages import provider_history
@@ -151,28 +152,9 @@ class InvestigationExecution:
         self.tool_limit = min(config.max_tool_calls, budget.max_tool_calls)
         self.token_limit = (config.max_total_tokens if tools.token_budget is not None else
                             min(config.max_total_tokens, budget.max_total_tokens, budget.max_tokens_per_objective))
-        self.output_limit = min(config.max_output_tokens, budget.max_output_tokens_per_call)
-        self.invoke_options = {"max_tokens": self.output_limit}
-        if isinstance(model, BaseChatModel):
-            # include_raw uses a RunnableParallel: per-invoke kwargs may not reach
-            # its model branch. Bind the hard output cap on a shallow model copy.
-            for field in ("max_output_tokens", "max_tokens"):
-                if field in type(model).model_fields:
-                    configured_limit = getattr(model, field)
-                    if configured_limit is not None:
-                        self.output_limit = min(self.output_limit, configured_limit)
-                    self.model = model.model_copy(update={field: self.output_limit})
-                    # Gemini rejects call-time max_tokens as an extra SDK field.
-                    # The provider-specific model field above already enforces it.
-                    self.invoke_options = {}
-                    break
-            for field in ("timeout", "request_timeout"):
-                if field in type(self.model).model_fields:
-                    existing = getattr(self.model, field)
-                    if existing is None or isinstance(existing, (int, float)):
-                        timeout = min(existing, config.provider_request_timeout_seconds) if existing is not None else config.provider_request_timeout_seconds
-                        self.model = self.model.model_copy(update={field: timeout})
-                    break
+        self.model, self.invoke_options, self.output_limit = prepare_chat_model(model,
+            max_output_tokens=min(config.max_output_tokens, budget.max_output_tokens_per_call),
+            request_timeout_seconds=config.provider_request_timeout_seconds)
         self.native_tools = [self._wrap(name) for name in config.tools]
         self.investigator = self.model.bind_tools(self.native_tools) if self.native_tools else self.model
         self.graph = self._build_graph()

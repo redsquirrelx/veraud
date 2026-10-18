@@ -34,3 +34,26 @@ def test_native_client_cleanup_deduplicates_aliases():
     assert asyncio.run(close_model_clients(SimpleNamespace(llm=llm))) == ()
     sync_client.close.assert_called_once()
     async_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.parametrize("provider, name, field", [
+    ("gemini", "gemini-2.5-flash", "max_output_tokens"), ("openai", "gpt-4o-mini", "max_tokens"),
+])
+def test_native_limits_use_real_provider_fields_without_call_time_max_tokens(provider, name, field):
+    import asyncio
+
+    model = chat.build_chat_model(ModelSettings(provider=provider, name=name, max_tokens=700, temperature=0.2),
+        ModelCredentials(api_key="offline-placeholder"))
+    try:
+        prepared, options, output_limit = chat.prepare_chat_model(model,
+            max_output_tokens=4000, request_timeout_seconds=20)
+        assert getattr(prepared, field) == output_limit == 700
+        assert options == {}
+        timeout_field = "timeout" if provider == "gemini" else "request_timeout"
+        assert getattr(prepared, timeout_field) == 20
+        assert getattr(model, timeout_field) != 20
+        lower, _, cap = chat.prepare_chat_model(model, max_output_tokens=256, request_timeout_seconds=20)
+        assert getattr(lower, field) == cap == 256
+        assert getattr(model, field) == 700
+    finally:
+        asyncio.run(close_model_clients(SimpleNamespace(llm=model)))
