@@ -158,7 +158,8 @@ def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolse
             "root_path": str(root), "commit_hash": commit, "attributes": ["maintainability", "security"],
             "agent_defaults": {"max_context_characters": 40000, "max_total_tokens": 60000,
                 "max_model_calls": 8, "max_tool_calls": 8},
-            "security_config": {"max_tool_calls": 1, "max_source_lines": 1, "max_total_tokens": 2000},
+            "security_config": {"max_tool_calls": 1, "max_source_lines": 1, "max_total_tokens": 2000,
+                "max_retrieved_characters": 1},
             "audit_budget": {"max_total_tokens": 50000},
         }, ExecutionConfig()))["audit"]
 
@@ -175,7 +176,9 @@ def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolse
     assert analysis["effective_config"]["max_total_tokens"] == 2000
     assert analysis["audit_token_limit"] == 50000
     assert security["consumption"]["tool_calls"] == 1
-    assert {"security_source_truncated", "tool_call_limit"} <= set(analysis["incomplete_reasons"])
+    assert "security_retrieval_limit" in analysis["incomplete_reasons"]
+    assert analysis["read_errors"][0]["code"] == "content_budget_exhausted"
+    assert analysis["read_errors"][0]["remaining_retrieved_characters"] == 1
 
 
 @pytest.mark.parametrize("failed_attribute", [None, "maintainability", "security", "security_timeout", "shared_token_limit"])

@@ -313,6 +313,8 @@ class AuditService:
             )
             tool_limits = ToolLimits(compact=True)
             if isinstance(request, SecurityAuditRequest):
+                budget = ExecutionBudget.model_validate(budget.model_dump() | {
+                    "max_retrieved_characters": limits.max_retrieved_characters})
                 tool_limits = ToolLimits(compact=True, max_source_lines=limits.max_source_lines,
                     max_source_characters=limits.max_source_characters)
             tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
@@ -398,6 +400,8 @@ class AuditService:
                     max_output_tokens_per_call=policy.max_output_tokens, max_elapsed_seconds=policy.timeout_seconds)
                 tool_limits = ToolLimits(compact=True)
                 if attribute == "security":
+                    budget = ExecutionBudget.model_validate(budget.model_dump() | {
+                        "max_retrieved_characters": policy.max_retrieved_characters})
                     tool_limits = ToolLimits(compact=True, max_source_lines=policy.max_source_lines,
                         max_source_characters=policy.max_source_characters)
                 tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(

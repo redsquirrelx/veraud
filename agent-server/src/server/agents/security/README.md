@@ -82,7 +82,7 @@ Por ejemplo, este body ya es válido para la API directa:
 `security_config` deriva su esquema y restricciones de `SecurityAuditConfig`, y
 la configuración completa se revalida con el catálogo antes de aceptar la tarea.
 Incluye los cuatro límites comunes, `max_output_tokens`, `max_scan_files`,
-`max_source_lines`, `max_source_characters`, duración, cuotas y política de
+`max_source_lines`, `max_source_characters`, `max_retrieved_characters`, duración, cuotas y política de
 reintentos del proveedor. Las opciones sin consumidor en seguridad, prompts y
 credenciales no se aceptan como controles. Los paneles de usuario continúan usando
 `describe_agent_config`/`validate_agent_config` con nivel `user`; estas opciones de
@@ -110,6 +110,12 @@ Los fallos terminales distinguen una línea demasiado larga
 rango no disponible (`security_source_range_invalid`). Los errores desconocidos
 conservan `security_source_read_failed` junto con su detalle. Estos diagnósticos
 viajan al seguimiento y al informe JSON/Word con el archivo y las líneas afectadas.
+`security_config.max_retrieved_characters` controla el presupuesto acumulado de
+respuestas serializadas del toolset (150.000 caracteres por defecto), tanto en
+auditorías individuales como conjuntas. Para inspeccionar un alcance mayor, por
+ejemplo, se puede enviar `"max_retrieved_characters": 2000000` junto con un
+presupuesto suficiente de `max_tool_calls`. No es un límite de tokens del modelo:
+aumentar `max_total_tokens` o `max_context_characters` no lo modifica.
 El timeout de `config` acota la ejecución completa; un timeout específico menor en
 `security_config` puede acortar seguridad. En ejecución conjunta, cada atributo
 conserva su propio límite y ambos están acotados por el plazo global.

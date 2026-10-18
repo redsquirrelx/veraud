@@ -195,7 +195,7 @@ def test_security_catalog_keeps_developer_controls_out_of_the_user_panel():
     user = describe_agent_config("security")
     developer = describe_agent_config("security", level="developer")
     assert "max_total_tokens" in user["config_schema"]["properties"]
-    for name in ("max_scan_files", "max_source_lines", "max_context_characters", "max_model_calls"):
+    for name in ("max_scan_files", "max_source_lines", "max_context_characters", "max_model_calls", "max_retrieved_characters"):
         assert name not in user["config_schema"]["properties"]
         assert name in developer["config_schema"]["properties"]
         with pytest.raises(ValueError):
@@ -203,7 +203,7 @@ def test_security_catalog_keeps_developer_controls_out_of_the_user_panel():
 
 
 @pytest.mark.parametrize("overrides", [{"max_scan_files": 501}, {"max_model_calls": 101},
-    {"max_source_lines": 0}, {"timeout_seconds": -1}, {"api_key": "must-not-be-a-control"},
+    {"max_source_lines": 0}, {"max_retrieved_characters": 0}, {"timeout_seconds": -1}, {"api_key": "must-not-be-a-control"},
     {"prompts": {"unused_node": "ignored"}}])
 def test_security_overrides_reject_invalid_or_ineffective_controls_before_execution(audit_environment, overrides):
     with TestClient(app) as client:
@@ -381,6 +381,25 @@ def test_security_read_errors_expose_real_tool_cause_and_resource_usage(audit_en
         assert issue["termination_reason"] == reason
         assert any(f"code={code}" in item and "main.py:" in item for item in issue["diagnostics"])
         assert content not in str(error)
+
+
+def test_security_can_complete_large_sources_with_an_explicit_retrieval_budget(audit_environment):
+    audit_environment.model.bind = lambda **kwargs: audit_environment.model
+    (audit_environment.root / "main.py").write_text(("#" + "x" * 8000 + "\n") * 25, encoding="utf-8")
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": {"max_source_lines": 1,
+                "max_tool_calls": 200, "max_retrieved_characters": 300000}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "completed"
+        assessment = snapshot["assessments"][0]
+        assert assessment["coverage"]["files"]["main.py"]["complete"]
+        assert len(assessment["coverage"]["files"]["main.py"]["read_ranges"]) == 25
+        assert assessment["details"]["security_analysis"]["read_errors"] == []
+        assert assessment["details"]["security_analysis"]["effective_config"]["max_retrieved_characters"] == 300000
 
 
 def test_joint_cancellation_stops_both_attributes_and_retains_the_shared_analysis(audit_environment, monkeypatch):

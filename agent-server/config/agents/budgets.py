@@ -34,6 +34,11 @@ class SourceReadConfig(ConfigContract):
         description="Maximum characters per source excerpt; toolset limits may be stricter.")
 
 
+class RetrievalBudgetConfig(ConfigContract):
+    max_retrieved_characters: int = Field(default=150_000, ge=1,
+        description="Cumulative serialized repository response budget, in characters.")
+
+
 class SourceLineConfig(ConfigContract):
     max_source_lines: int = Field(default=80, ge=1,
         description="Maximum lines per source excerpt; toolset limits may be stricter.")

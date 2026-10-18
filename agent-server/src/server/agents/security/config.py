@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field, create_model
 from config.agents import ConfigContract, ModelSettings
 from config.agents.budgets import (
     ExecutionTimingConfig,
+    RetrievalBudgetConfig,
     SourceLineConfig,
     SourceReadConfig,
 )
@@ -18,7 +19,7 @@ from config.agents.provider import ProviderRetryConfig
 from config.agents.tools import ToolLimits
 
 
-class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig, SourceLineConfig, SourceReadConfig):
+class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig, SourceLineConfig, SourceReadConfig, RetrievalBudgetConfig):
     defaults: ClassVar = {name: field.default for name, field in ToolLimits.model_fields.items()
         if name in {"max_source_lines", "max_source_characters"}}
     max_scan_files: int = Field(default=24, ge=1, le=500)
@@ -30,6 +31,7 @@ class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig, SourceLin
 SECURITY_AUDIT_CONTROLS = {
     "max_context_characters", "max_total_tokens", "max_model_calls", "max_tool_calls", "max_output_tokens",
     "timeout_seconds", "provider_rate_limits", "max_scan_files", "max_source_lines", "max_source_characters",
+    "max_retrieved_characters",
     *ExecutionTimingConfig.model_fields, *ProviderRetryConfig.model_fields,
 }
 SecurityAuditOverrides = create_model("SecurityAuditOverrides", __config__=ConfigDict(extra="forbid"),
