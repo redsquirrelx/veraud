@@ -1,17 +1,19 @@
 import { useState } from "react"
-import { Card, ItemSearcher, ItemSelector, type ItemSelectorItem } from "../../shared/ui-kit/index.ts"
+import { useTranslation } from "react-i18next"
+import { Card, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
 import "./TestSelectorPage.css"
 
 const PAGE_SIZE = 10
-
-const allBranches: ItemSelectorItem[] = Array.from({ length: 25 }, (_, index) => {
-  if (index === 0) {
-    return { id: "main", label: "main", detail: "default branch" }
-  }
-  return { id: `feature-${index}`, label: `feature-${index}`, detail: `${index} commits ahead` }
-})
+const BRANCH_COUNT = 25
 
 export function TestSelectorPage() {
+  const { t } = useTranslation("common")
+  const allBranches = Array.from({ length: BRANCH_COUNT }, (_, index) => {
+    if (index === 0) {
+      return { id: "main", label: "main", detail: t("testPages.selector.branchDefault") }
+    }
+    return { id: `feature-${index}`, label: `feature-${index}`, detail: t("testPages.selector.commitsAhead", { count: index }) }
+  })
   const [visible, setVisible] = useState(PAGE_SIZE)
   const [selectedId, setSelectedId] = useState<string | null>("main")
   const [foundId, setFoundId] = useState<string | null>(null)
@@ -23,9 +25,9 @@ export function TestSelectorPage() {
 
   return (
     <section className="test-selector-page">
-      <h1>Selector playground</h1>
+      <h1>{t("testPages.selector.title")}</h1>
       <Card>
-        <span className="label">Branches ({items.length} of {allBranches.length})</span>
+        <span className="label">{t("testPages.selector.branches", { visible: items.length, total: allBranches.length })}</span>
         <ItemSelector
           items={items}
           selectedId={selectedId}
@@ -35,11 +37,11 @@ export function TestSelectorPage() {
         />
       </Card>
       <Card>
-        <span className="label">Selected branch</span>
-        <p className="mono">{selectedId ?? "none"}</p>
+        <span className="label">{t("testPages.selector.selectedBranch")}</span>
+        <p className="mono">{selectedId ?? t("testPages.none")}</p>
       </Card>
       <Card>
-        <span className="label">Find a branch by id</span>
+        <span className="label">{t("testPages.selector.findById")}</span>
         <ItemSearcher
           items={items}
           selectedId={foundId}
@@ -49,8 +51,8 @@ export function TestSelectorPage() {
         />
       </Card>
       <Card>
-        <span className="label">Found branch</span>
-        <p className="mono">{foundId ?? "none"}</p>
+        <span className="label">{t("testPages.selector.foundBranch")}</span>
+        <p className="mono">{foundId ?? t("testPages.none")}</p>
       </Card>
     </section>
   )

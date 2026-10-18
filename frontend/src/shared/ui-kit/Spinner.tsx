@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import "./Spinner.css"
 
 interface SpinnerProps {
@@ -6,12 +7,13 @@ interface SpinnerProps {
 }
 
 export function Spinner({ size = 16, tone = "dark" }: SpinnerProps) {
+  const { t } = useTranslation("common")
   return (
     <span
       className={`ui-spinner ui-spinner-${tone}`}
       style={{ width: size, height: size }}
       role="status"
-      aria-label="Loading"
+      aria-label={t("ui.loading")}
     />
   )
 }

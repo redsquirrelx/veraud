@@ -1,0 +1,57 @@
+{
+  "title": "Tasks",
+  "menu": {
+    "label": "Active tasks",
+    "title": "Active tasks ({{count}})",
+    "expand": "Expand tasks",
+    "collapse": "Collapse tasks",
+    "close": "Close task menu",
+    "empty": "No queued tasks",
+    "showCommandFor": "Show command for {{name}}",
+    "hideCommandFor": "Hide command for {{name}}",
+    "command": "Command",
+    "commandUnavailable": "Command unavailable",
+    "done": "Done",
+    "failed": "Failed"
+  },
+  "status": {
+    "running": "Running",
+    "queued": "Queued",
+    "succeeded": "Succeded",
+    "failed": "Failed"
+  },
+  "kindOptions": {
+    "clone": {
+      "label": "Clone",
+      "hint": "Initial repository download"
+    },
+    "pull": {
+      "label": "Pull",
+      "hint": "Sync an attached checkout"
+    },
+    "fetch": {
+      "label": "Fetch",
+      "hint": "Sync a detached checkout"
+    },
+    "checkoutBranch": {
+      "label": "Checkout branch",
+      "hint": "Switch branches"
+    },
+    "checkoutDetach": {
+      "label": "Checkout commit",
+      "hint": "Move to a specific commit"
+    },
+    "listBranches": {
+      "label": "List branches",
+      "hint": "Read-only"
+    },
+    "revParse": {
+      "label": "Resolve branch",
+      "hint": "Read-only"
+    },
+    "logCommits": {
+      "label": "List commits",
+      "hint": "Read-only"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ApiError, checkoutBranch, checkoutCommit, listBranches, listCommits, type GitCommitEntry } from "../../infrastructure/http-client/httpClient.ts"
 
 export interface AppliedVersion {
@@ -27,6 +28,7 @@ function describeFailure(failure: unknown, fallback: string): string {
 }
 
 export function useVersionSelector(projectId: number | null, options?: { onApplied?: (version: AppliedVersion) => void }) {
+  const { t } = useTranslation("projects")
   const [branches, setBranches] = useState<string[]>([])
   const [branch, setBranch] = useState("")
   const [commits, setCommits] = useState<GitCommitEntry[]>([])
@@ -75,13 +77,13 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (markApplied) {
         setApplied(null)
       }
-      setError(describeFailure(failure, "Could not load commits"))
+      setError(describeFailure(failure, t("version.errors.loadCommits")))
     } finally {
       if (alive()) {
         setLoadingCommits(false)
       }
     }
-  }, [])
+  }, [t])
 
   const loadInitial = useCallback(async (id: number, token: number) => {
     const alive = () => mounted.current && generation.current === token
@@ -94,7 +96,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       }
       if (result.branches.length === 0) {
         setBranches([])
-        setError("No branches found in the local checkout")
+        setError(t("version.errors.noBranches"))
         return
       }
       const hash = result.detachedHash ?? null
@@ -115,13 +117,13 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
         return
       }
       setBranches([])
-      setError(describeFailure(failure, "Could not load branches"))
+      setError(describeFailure(failure, t("version.errors.loadBranches")))
     } finally {
       if (alive()) {
         setLoadingBranches(false)
       }
     }
-  }, [loadCommits])
+  }, [loadCommits, t])
 
   useEffect(() => {
     if (projectId === null) {
@@ -155,7 +157,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       }
       setCommits([])
       setCommitHash("")
-      setError(describeFailure(failure, "Could not check out the branch"))
+      setError(describeFailure(failure, t("version.errors.checkoutBranch")))
       setLoadingCommits(false)
     }
   }
@@ -188,7 +190,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (!mounted.current || generation.current !== token) {
         return
       }
-      setError(describeFailure(failure, "Could not load branches"))
+      setError(describeFailure(failure, t("version.errors.loadBranches")))
     }
   }
 
@@ -207,7 +209,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
     const wanted = hash.trim()
     if (HASH_PATTERN.test(wanted) === false) {
       setCommitHash(wanted)
-      setError("Commit hash must be 7 to 40 hex characters")
+      setError(t("version.errors.invalidHash"))
       return false
     }
     if (applied !== null && applied.branch === branch && applied.commitHash.toLowerCase() === wanted.toLowerCase()) {
@@ -246,7 +248,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (!mounted.current) {
         return false
       }
-      setError(describeFailure(failure, isTip ? "Could not check out the branch" : "Could not check out the commit"))
+      setError(describeFailure(failure, isTip ? t("version.errors.checkoutBranch") : t("version.errors.checkoutCommit")))
       return false
     } finally {
       if (mounted.current) {

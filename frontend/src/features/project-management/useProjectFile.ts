@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { ApiError, readProjectFile, type ProjectFile } from "../../infrastructure/http-client/httpClient.ts"
 
 export function useProjectFile(projectId: number | null) {
+  const { t } = useTranslation("projects")
   const [preview, setPreview] = useState<{ projectId: number, file: ProjectFile } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -39,11 +41,11 @@ export function useProjectFile(projectId: number | null) {
           return
         }
         setPreview(null)
-        setError(failure instanceof ApiError ? failure.message : "Could not read the file")
+        setError(failure instanceof ApiError ? failure.message : t("detail.files.errors.readFailed"))
         setLoading(false)
       }
     )
-  }, [projectId])
+  }, [projectId, t])
 
   // a preview always belongs to its project: switching projects hides it
   // without an effect, and leaving the page drops it with the unmount

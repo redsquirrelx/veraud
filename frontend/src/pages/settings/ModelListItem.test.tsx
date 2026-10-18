@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ModelListItem } from "./ModelListItem.tsx"
+import { changeLanguage } from "../../shared/i18n/index.ts"
 
 describe("ModelListItem", () => {
   it("shows the name, provider and usage", () => {
@@ -41,5 +42,18 @@ describe("ModelListItem", () => {
 
     expect(onEdit).toHaveBeenCalledTimes(1)
     expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it("translates chrome to Spanish", async () => {
+    await changeLanguage("es")
+    render(<ModelListItem name="gpt-4o" provider="OpenAI" inUse onEdit={() => {}} onRemove={() => {}} />)
+
+    expect(screen.getByText("gpt-4o")).toBeDefined()
+    expect(screen.getByText("OpenAI")).toBeDefined()
+    expect(screen.getByText("En uso")).toBeDefined()
+    expect(screen.getByRole("button", { name: "Editar gpt-4o" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Eliminar gpt-4o" })).toBeDefined()
+
+    await changeLanguage("en")
   })
 })

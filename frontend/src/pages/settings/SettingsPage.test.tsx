@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, beforeAll, describe, expect, it } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { I18nextProvider } from "react-i18next"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
+import { i18n, changeLanguage, initializeI18n } from "../../shared/i18n/index.ts"
 import { SettingsPage } from "./SettingsPage.tsx"
 
 const realFetch = globalThis.fetch
@@ -13,11 +15,18 @@ class FakeSocket {
   close() {}
 }
 
-afterEach(() => {
+beforeAll(async () => {
+  await initializeI18n("en")
+})
+
+afterEach(async () => {
   globalThis.fetch = realFetch
   globalThis.WebSocket = realWebSocket
   window.localStorage.removeItem("tasks.visibility")
   window.localStorage.removeItem("settings.activeTab")
+  window.localStorage.removeItem("settings.language")
+  document.documentElement.lang = "en"
+  await initializeI18n("en")
 })
 
 const providers = [{
@@ -50,10 +59,12 @@ function stubRouted(responses: Array<{ status: number, body?: unknown }>) {
 function renderSettings(responses: Array<{ status: number, body?: unknown }>) {
   const calls = stubRouted(responses)
   render(
-    <ToastProvider>
-      <SettingsPage />
-      <Dock />
-    </ToastProvider>
+    <I18nextProvider i18n={i18n}>
+      <ToastProvider>
+        <SettingsPage />
+        <Dock />
+      </ToastProvider>
+    </I18nextProvider>
   )
   return calls
 }
@@ -102,7 +113,7 @@ describe("SettingsPage", () => {
       { status: 200, body: saved }, { status: 200, body: providers },
     ])
     await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
-    expect(await screen.findByRole("heading", { name: "Mantenibilidad · todos los agentes" })).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Maintainability · all agents" })).toBeDefined()
     expect(screen.queryByRole("heading", { name: "architecture" })).toBeNull()
     await userEvent.click(screen.getByRole("button", { name: "Select a model..." }))
     await userEvent.click(screen.getByRole("option", { name: /gpt-4o/ }))
@@ -214,6 +225,24 @@ describe("SettingsPage", () => {
     expect(JSON.parse(window.localStorage.getItem("tasks.visibility") as string)["list-branches"]).toBe(true)
   })
 
+  it("switches language immediately while keeping the tab and form state", async () => {
+    renderSettings([{ status: 200, body: [] }])
+    await userEvent.click(screen.getByRole("tab", { name: "Preferences" }))
+
+    const toggle = screen.getByRole("checkbox", { name: /List branches/ })
+    await userEvent.click(toggle)
+    expect(toggle).toBeChecked()
+
+    await userEvent.click(screen.getByRole("radio", { name: "Español" }))
+
+    expect(screen.getByText("Idioma")).toBeDefined()
+    expect(screen.getByRole("radio", { name: "Español" })).toBeChecked()
+    expect(JSON.parse(window.localStorage.getItem("settings.language")!)).toBe("es")
+    expect(document.documentElement.lang).toBe("es")
+    expect(screen.getByRole("tab", { name: "Preferencias" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("checkbox", { name: /Listar ramas/ })).toBeChecked()
+  })
+
   it("loads models and credentials from the backend", async () => {
     renderSettings([{ status: 200, body: providers }])
 
@@ -237,10 +266,12 @@ describe("SettingsPage", () => {
     globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
     render(
-      <ToastProvider>
-        <SettingsPage />
-        <Dock />
-      </ToastProvider>
+      <I18nextProvider i18n={i18n}>
+        <ToastProvider>
+          <SettingsPage />
+          <Dock />
+        </ToastProvider>
+      </I18nextProvider>
     )
 
     expect(document.querySelectorAll(".ui-item-list-skeleton").length).toBe(6)
@@ -324,5 +355,98 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("Model gpt-4o is assigned to an agent")).toBeDefined()
     expect(screen.getByRole("button", { name: "Remove prod" })).toBeDefined()
+  })
+
+  it("translates the settings title and tabs to Spanish and back", async () => {
+    renderSettings([{ status: 200, body: [] }])
+
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeDefined()
+
+    await changeLanguage("es")
+
+    expect(screen.getByRole("heading", { name: "Configuración" })).toBeDefined()
+    expect(screen.getByRole("tab", { name: "Agentes" })).toBeDefined()
+    expect(screen.getByRole("tab", { name: "Modelos y credenciales" })).toBeDefined()
+    expect(screen.getByRole("tab", { name: "Preferencias" })).toBeDefined()
+    expect(screen.getAllByText("Modelos y credenciales")).toHaveLength(2)
+
+    await changeLanguage("en")
+
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeDefined()
+    expect(screen.getByRole("tab", { name: "Agents" })).toBeDefined()
+  })
+
+  it("translates the model registration toast to Spanish", async () => {
+    await changeLanguage("es")
+    const withNewModel = [{
+      id: 1,
+      name: "OpenAI",
+      models: [{ id: 10, name: "gpt-4o", inUse: true }, { id: 11, name: "o1", inUse: false }],
+      credentials: [],
+    }]
+    renderSettings([
+      { status: 200, body: providers },
+      { status: 201, body: { id: 11, name: "o1", inUse: false } },
+      { status: 200, body: withNewModel },
+    ])
+
+    await screen.findByRole("option", { name: /gpt-4o/ })
+    await userEvent.click(screen.getByRole("button", { name: "Añadir modelo" }))
+
+    const dialog = screen.getByRole("dialog", { name: "Añadir un modelo" })
+    await userEvent.click(within(dialog).getByRole("button", { name: /proveedor/ }))
+    await userEvent.click(within(dialog).getByRole("option", { name: "OpenAI" }))
+    await userEvent.type(within(dialog).getByPlaceholderText(/nombre del modelo/), "o1")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Enviar" }))
+
+    expect(await screen.findByText(/Modelo o1 registrado/)).toBeDefined()
+    expect(screen.queryByRole("dialog")).toBeNull()
+
+    await changeLanguage("en")
+  })
+
+  it("translates model registration errors to Spanish keeping backend details", async () => {
+    await changeLanguage("es")
+    renderSettings([
+      { status: 200, body: providers },
+      { status: 409, body: { message: "Model gpt-4o is already registered" } },
+    ])
+
+    await screen.findByRole("option", { name: /gpt-4o/ })
+    await userEvent.click(screen.getByRole("button", { name: "Añadir modelo" }))
+
+    const dialog = screen.getByRole("dialog", { name: "Añadir un modelo" })
+    await userEvent.click(within(dialog).getByRole("button", { name: /proveedor/ }))
+    await userEvent.click(within(dialog).getByRole("option", { name: "OpenAI" }))
+    await userEvent.type(within(dialog).getByPlaceholderText(/nombre del modelo/), "gpt-4o")
+    await userEvent.click(within(dialog).getByRole("button", { name: "Enviar" }))
+
+    expect(await screen.findAllByText("No se pudo registrar el modelo: Model gpt-4o is already registered")).toHaveLength(2)
+    expect(screen.getByRole("dialog", { name: "Añadir un modelo" })).toBeDefined()
+
+    await changeLanguage("en")
+  })
+
+  it("translates the credential deletion toast to Spanish", async () => {
+    await changeLanguage("es")
+    const withoutCredential = [{
+      id: 1,
+      name: "OpenAI",
+      models: [{ id: 10, name: "gpt-4o", inUse: true }],
+      credentials: [],
+    }]
+    renderSettings([
+      { status: 200, body: providers },
+      { status: 204 },
+      { status: 200, body: withoutCredential },
+    ])
+
+    await screen.findByRole("option", { name: /prod/ })
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar prod" }))
+
+    expect(await screen.findByText(/Credencial prod eliminada/)).toBeDefined()
+    expect(screen.queryByRole("button", { name: "Eliminar prod" })).toBeNull()
+
+    await changeLanguage("en")
   })
 })

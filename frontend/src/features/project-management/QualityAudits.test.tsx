@@ -23,7 +23,7 @@ describe("project quality audits", () => {
     render(<AnalyzeMenu canAnalyze analyzing={false} onAnalyze={onAnalyze} onAudit={onAudit} />)
     await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
     expect(screen.getByText("Project architecture")).toBeInTheDocument()
-    await userEvent.click(screen.getByText("Mantenibilidad"))
+    await userEvent.click(screen.getByText("Maintainability"))
     expect(onAudit).toHaveBeenCalledOnce()
     expect(onAnalyze).not.toHaveBeenCalled()
   })

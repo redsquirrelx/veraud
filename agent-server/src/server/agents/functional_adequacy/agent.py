@@ -4,10 +4,9 @@ from __future__ import annotations
 import json
 import re
 from functools import lru_cache
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
-from sentence_transformers import SentenceTransformer, util
 
 from ...config.logs import get_logger
 from ...config.tracing import traced_generate
@@ -20,6 +19,9 @@ from .schemas import (
     RequirementResult,
 )
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 logger = get_logger("functional-adequacy-agent")
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -28,6 +30,8 @@ _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 @lru_cache(maxsize=4)
 def _get_sbert_model(model_name: str = FunctionalAdequacyConfig().embedding_model) -> SentenceTransformer:
     """Load SBERT once and reuse it across executions."""
+    from sentence_transformers import SentenceTransformer
+
     return SentenceTransformer(model_name)
 
 
@@ -141,6 +145,8 @@ class FunctionalAdequacyAgent(
                     for req in input_data.requirements
                 }
             }
+
+        from sentence_transformers import util
 
         model = _get_sbert_model(self.config.embedding_model)
 

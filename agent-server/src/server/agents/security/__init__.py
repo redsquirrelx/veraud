@@ -1,3 +1,5 @@
-from .security_component import SecurityComponentAgent
+from .security_manager import SecuritySupervisorAgent
 
-__all__ = ["SecurityComponentAgent"]
+SecurityComponentAgent = SecuritySupervisorAgent
+
+__all__ = ["SecurityComponentAgent", "SecuritySupervisorAgent"]

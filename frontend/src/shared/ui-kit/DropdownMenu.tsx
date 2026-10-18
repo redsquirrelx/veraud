@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { CheckIcon, ChevronDownIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import "./DropdownMenu.css"
@@ -24,7 +25,9 @@ interface DropdownMenuProps {
 }
 
 /** Action disclosure: buttons that report a selection, without a persistent value. */
-export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, disabled = false, loading = false, loadingText, align = "start", emptyText = "No options available" }: DropdownMenuProps) {
+export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, disabled = false, loading = false, loadingText, align = "start", emptyText }: DropdownMenuProps) {
+  const { t } = useTranslation("common")
+  const resolvedEmptyText = emptyText ?? t("ui.dropdownMenu.noOptions")
   const id = useId()
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -105,7 +108,7 @@ export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, 
       </button>
       {expanded && (
         <div id={`${id}-menu`} className="ui-dropdown-menu-panel" data-align={align} role="menu" aria-labelledby={`${id}-trigger`}>
-          {items.length === 0 ? <p className="ui-dropdown-menu-empty">{emptyText}</p> : (
+          {items.length === 0 ? <p className="ui-dropdown-menu-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {
                 const selected = item.id === selectedId

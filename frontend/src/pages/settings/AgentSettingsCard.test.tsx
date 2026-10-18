@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { AgentSettingsCard } from "./AgentSettingsCard.tsx"
 import type { AgentSettings, AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
+import { changeLanguage } from "../../shared/i18n/index.ts"
 
 const providers: AiProviderDetail[] = [
   { id: 1, name: "OpenAI", models: [{ id: 10, name: "model-a", inUse: false }, { id: 11, name: "model-b", inUse: false }], credentials: [{ id: 20, name: "openai-key", apiKeyPreview: "****1234", inUse: false }] },
@@ -76,5 +77,23 @@ describe("AgentSettingsCard", () => {
     expect(screen.getByRole("button", { name: "google-key" })).toBeEnabled()
     await waitFor(() => expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled())
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("AgentSettingsCard Spanish", () => {
+  afterEach(async () => {
+    await changeLanguage("en")
+  })
+
+  it("translates status, selectors and actions to Spanish", async () => {
+    await changeLanguage("es")
+    render(<AgentSettingsCard agent={{ agentType: "dummy", configured: false, configuration: null }} providers={providers} providersLoading={false} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
+
+    expect(screen.getByText("Sin configurar")).toBeDefined()
+    expect(screen.getByRole("button", { name: "Selecciona un modelo…" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Selecciona primero un modelo" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Configurar dummy" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeDisabled()
+    expect(screen.getByText(/Presupuesto inicial/)).toBeDefined()
   })
 })

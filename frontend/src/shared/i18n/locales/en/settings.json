@@ -1,0 +1,200 @@
+{
+  "title": "Settings",
+  "tabs": {
+    "agents": "Agents",
+    "audit": "Audit",
+    "models": "Models & credentials",
+    "preferences": "Preferences",
+    "label": "Settings sections"
+  },
+  "audit": {
+    "modelsTitle": "Maintainability audit models",
+    "modelsDescription": "One model and credential for all nine maintainability agents: the manager, both coordinators and all investigators. Each agent receives an explicit configuration when the audit starts.",
+    "allAgents": "Maintainability · all agents",
+    "saved": "Maintainability audit configuration saved"
+  },
+  "form": {
+    "provider": "Provider",
+    "providerPlaceholder": "Select a provider...",
+    "submit": "Submit",
+    "edit": "Edit"
+  },
+  "models": {
+    "sectionTitle": "Models & credentials",
+    "title": "Models",
+    "add": "Add model",
+    "addDialog": "Add a model",
+    "editDialog": "Edit a model",
+    "empty": "No models registered yet",
+    "inUse": "In use",
+    "editItem": "Edit {{name}}",
+    "removeItem": "Remove {{name}}",
+    "loadFailed": "Could not load AI providers",
+    "registered": "Model {{name}} registered",
+    "updated": "Model {{name}} updated",
+    "deleted": "Model {{name}} deleted",
+    "registerFailed": "Could not register the model",
+    "registerFailedWithDetail": "{{detail}}",
+    "updateFailed": "Could not update the model",
+    "updateFailedWithDetail": "{{detail}}",
+    "deleteFailed": "Could not delete the model",
+    "deleteFailedWithDetail": "{{detail}}",
+    "form": {
+      "name": "Model name",
+      "namePlaceholder": "Insert the model name..."
+    }
+  },
+  "credentials": {
+    "title": "Credentials",
+    "add": "Add credential",
+    "addDialog": "Add a credential",
+    "editDialog": "Edit a credential",
+    "empty": "No credentials registered yet",
+    "editHint": "When editing a credential, leave the API key blank to keep the current key.",
+    "apiKeyLabel": "API key",
+    "inUse": "In use",
+    "editItem": "Edit {{name}}",
+    "removeItem": "Remove {{name}}",
+    "registered": "Credential {{name}} registered",
+    "updated": "Credential {{name}} updated",
+    "deleted": "Credential {{name}} deleted",
+    "registerFailed": "Could not register the credential",
+    "registerFailedWithDetail": "{{detail}}",
+    "updateFailed": "Could not update the credential",
+    "updateFailedWithDetail": "{{detail}}",
+    "deleteFailed": "Could not delete the credential",
+    "deleteFailedWithDetail": "{{detail}}",
+    "form": {
+      "name": "Credential name",
+      "namePlaceholder": "Insert a name....",
+      "apiKey": "Api Key"
+    }
+  },
+  "agents": {
+    "title": "Agent configuration",
+    "subtitle": "Agent types declared in the backend and their saved configuration.",
+    "empty": "No agent types are declared in the backend.",
+    "retry": "Retry",
+    "loadFailed": "Could not load agent settings",
+    "loadFailedWithDetail": "Could not load agent settings: {{detail}}",
+    "saveFailed": "Could not save agent settings",
+    "saveFailedWithDetail": "Could not save agent settings: {{detail}}",
+    "assignmentsSaved": "Configuration for {{agentType}} saved successfully",
+    "status": {
+      "unsavedChanges": "Unsaved changes",
+      "configured": "Configured",
+      "needsAttention": "Needs attention",
+      "notConfigured": "Not configured"
+    },
+    "form": {
+      "model": "Model",
+      "credential": "Credential",
+      "selectModel": "Select a model...",
+      "selectCredential": "Select a credential...",
+      "selectModelFirst": "Select a model first",
+      "noModels": "No models registered",
+      "noCredentialsForProvider": "No credentials registered for this provider"
+    },
+    "card": {
+      "saved": "Configuration saved.",
+      "tokenSummary": "Initial budget: {{budget}} · Absolute limit: {{limit}}",
+      "configure": "Configure",
+      "configureAgent": "Configure {{agentType}}",
+      "saveChanges": "Save changes",
+      "saving": "Saving..."
+    },
+    "drawer": {
+      "title": "Configure {{agentType}}",
+      "description": "Choose model access and generation parameters.",
+      "cancel": "Cancel",
+      "saveChanges": "Save changes",
+      "saving": "Saving...",
+      "modelAccess": "Model & access",
+      "modelAccessHint": "The model and credential must belong to the same provider.",
+      "generation": "Generation parameters",
+      "generationHint": "Leave a field empty to use the default value.",
+      "temperature": "Temperature",
+      "temperatureHint": "0–2 · Lower values produce more consistent results.",
+      "temperatureInvalid": "Temperature must be between 0 and 2.",
+      "maxTokens": "Maximum output tokens per call",
+      "maxTokensHint": "Limits the output of each model call. The backend default is {{default}} tokens.",
+      "maxTokensPlaceholder": "Default: {{default}}",
+      "maxTokensInvalid": "Maximum tokens must be a positive integer, up to 2147483647.",
+      "defaultPlaceholder": "Default",
+      "tokenBudget": "Execution token budget",
+      "tokenBudgetHint": "Counts input and output across all model calls. Leave a field empty to clear its override.",
+      "initialBudget": "Initial token budget",
+      "initialBudgetPlaceholder": "Default: {{default}}",
+      "initialBudgetHint": "Default initial budget: {{default}} tokens.",
+      "absoluteLimit": "Absolute token limit",
+      "absoluteLimitPlaceholder": "Default: {{default}}",
+      "absoluteLimitHint": "Default absolute limit: {{default}} tokens.",
+      "tokenLimitsInvalid": "Token limits must be positive integers, up to 2147483647.",
+      "limitsOrderInvalid": "The absolute limit must be greater than or equal to the initial budget.",
+      "toleranceMargin": "Tolerance margin: {{margin}} tokens ({{percent}}%).",
+      "toleranceMarginStrict": "Tolerance margin: {{margin}} tokens ({{percent}}%). Strict budget: no additional margin.",
+      "agentOptions": "Agent-specific options",
+      "comingSoon": "Coming soon",
+      "customSettings": "Custom settings for {{agentType}}",
+      "agentOptionsHint": "Additional options specific to this agent will appear here when available."
+    },
+    "verification": {
+      "verified": "Verified",
+      "needsAttention": "Needs attention",
+      "notVerified": "Not verified",
+      "verify": "Verify access",
+      "verifying": "Verifying...",
+      "lastChecked": "Last checked: {{date}}",
+      "verifyFailed": "Could not verify model access",
+      "verifyFailedWithDetail": "Could not verify model access: {{detail}}",
+      "hint": "Checks saved model access with a minimal provider request. Every execution checks again before starting.",
+      "saveFirst": "Save your changes before verifying access."
+    }
+  },
+  "preferences": {
+    "language": "Language",
+    "languageHint": "Applies immediately and is saved on this device.",
+    "languages": {
+      "es": "Español",
+      "en": "English"
+    },
+    "notifications": {
+      "title": "Task notifications",
+      "hint": "Read-only tasks stay silent unless they fail. Failed tasks always show."
+    },
+    "taskKinds": {
+      "clone": {
+        "label": "Clone",
+        "hint": "Initial repository download"
+      },
+      "pull": {
+        "label": "Pull",
+        "hint": "Sync an attached checkout"
+      },
+      "fetch": {
+        "label": "Fetch",
+        "hint": "Sync a detached checkout"
+      },
+      "checkoutBranch": {
+        "label": "Checkout branch",
+        "hint": "Switch branches"
+      },
+      "checkoutDetach": {
+        "label": "Checkout commit",
+        "hint": "Move to a specific commit"
+      },
+      "listBranches": {
+        "label": "List branches",
+        "hint": "Read-only"
+      },
+      "revParse": {
+        "label": "Resolve branch",
+        "hint": "Read-only"
+      },
+      "logCommits": {
+        "label": "List commits",
+        "hint": "Read-only"
+      }
+    }
+  }
+}

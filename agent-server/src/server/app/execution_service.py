@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..agents.base import BaseAgent
 from ..agents.dummy.agent import DummyAgent
+from ..agents.functional_adequacy.agent import FunctionalAdequacyAgent
 from ..api.schemas import ExecutionConfig
 from ..config import tracing
 from ..config.dev_agents_config import load_dev_agents_config
@@ -78,6 +79,9 @@ def build_default_registry() -> AgentRegistry:
     registry = AgentRegistry()
 
     registry.register(DummyAgent.agent_type, DummyAgent)
+    registry.register(
+        FunctionalAdequacyAgent.agent_type, FunctionalAdequacyAgent
+    )
 
     return registry
 

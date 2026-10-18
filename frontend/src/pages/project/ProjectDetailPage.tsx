@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom"
+import type { ParseKeys } from "i18next"
+import { useTranslation } from "react-i18next"
 import { ApiError, listProjects, syncProject, type AgentExecution, type ProjectSummary, type VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
@@ -23,6 +25,7 @@ import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
+import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
@@ -31,19 +34,21 @@ import { useProjectFile } from "../../features/project-management/useProjectFile
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
+import { formatDate, formatNumber } from "../../shared/i18n/format.ts"
 import "./ProjectDetailPage.css"
 
-const sectionItems = [
-  { id: "overview", label: "Overview", icon: <FolderIcon /> },
-  { id: "analysis", label: "Analysis", icon: <FolderIcon /> },
-  { id: "audits", label: "Audits", icon: <FolderIcon /> },
-  { id: "files", label: "Files", icon: <FolderIcon /> },
+const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
+  { id: "overview", labelKey: "detail.sections.overview", icon: <FolderIcon /> },
+  { id: "analysis", labelKey: "detail.sections.analysis", icon: <FolderIcon /> },
+  { id: "audits", labelKey: "detail.sections.audits", icon: <FolderIcon /> },
+  { id: "files", labelKey: "detail.sections.files", icon: <FolderIcon /> },
 ]
 
 const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
 
 export function ProjectDetailPage() {
   const { id, section } = useParams()
+  const { t } = useTranslation("projects")
   const navigate = useNavigate()
   const activeSection = section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
@@ -53,7 +58,7 @@ export function ProjectDetailPage() {
   const { pushToast } = useToasts()
   const version = useVersionSelector(project?.id ?? null, {
     onApplied: (applied) => {
-      pushToast("success", `Version ${applied.branch} at ${applied.commitHash.slice(0, 7)} applied`)
+      pushToast("success", t("detail.versionApplied", { branch: applied.branch, shortHash: applied.commitHash.slice(0, 7) }))
     },
   })
   const files = useProjectTree(project?.id ?? null, project?.repositoryName ?? "")
@@ -107,7 +112,7 @@ export function ProjectDetailPage() {
     try {
       const updated = await syncProject(project.id)
       setProject(updated)
-      pushToast("success", `Project ${updated.repositoryOwner}/${updated.repositoryName} synced`)
+      pushToast("success", t("detail.sync.success", { name: `${updated.repositoryOwner}/${updated.repositoryName}` }))
       await version.refresh()
       clearPreview()
       refreshFiles()
@@ -116,7 +121,7 @@ export function ProjectDetailPage() {
       if (error instanceof ApiError) {
         pushToast("error", error.message)
       } else {
-        pushToast("error", "Could not sync the project")
+        pushToast("error", t("detail.sync.errorFallback"))
       }
     } finally {
       setSyncing(false)
@@ -136,7 +141,7 @@ export function ProjectDetailPage() {
       () => {
         if (alive) {
           setProject(null)
-          setLoadError("Could not load the project")
+          setLoadError(t("detail.loadError"))
           setLoading(false)
         }
       }
@@ -144,7 +149,7 @@ export function ProjectDetailPage() {
     return () => {
       alive = false
     }
-  }, [id])
+  }, [id, t])
 
   // single driver: entering the files section and any version change refetch the tree
   useEffect(() => {
@@ -174,11 +179,11 @@ export function ProjectDetailPage() {
     }
     notifiedExecution.current = finished.id
     if (finished.status === "Completed") {
-      pushToast("success", "Analysis completed")
+      pushToast("success", t("analysis.completed"))
     } else {
-      pushToast("error", finished.error ?? "Analysis failed")
+      pushToast("error", finished.error ?? t("analysis.failed"))
     }
-  }, [analysis.phase, analysis.execution, analysis.tracked, pushToast])
+  }, [analysis.phase, analysis.execution, analysis.tracked, pushToast, t])
 
   useEffect(() => {
     const finished = analysis.execution
@@ -258,14 +263,14 @@ export function ProjectDetailPage() {
 
   return (
     <section className="project-page">
-      <ProjectSidebar items={sectionItems} activeId={activeSection} onSelect={(next) => void navigate(`/projects/${id}/${next}`)} />
+      <ProjectSidebar items={sectionItems.map((item) => ({ id: item.id, label: t(item.labelKey), icon: item.icon }))} activeId={activeSection} onSelect={(next) => void navigate(`/projects/${id}/${next}`)} />
       <div className="project-content">
         {loading ? (
-          <p className="label" role="status">Loading project</p>
+          <p className="label" role="status">{t("detail.loading")}</p>
         ) : loadError !== "" ? (
           <p role="alert">{loadError}</p>
         ) : project === null ? (
-          <p>Project not found</p>
+          <p>{t("detail.notFound")}</p>
         ) : (
           <>
             <ProjectHeader
@@ -290,16 +295,16 @@ export function ProjectDetailPage() {
             />
             <div className="project-body">
             {activeSection === "overview" && <Card>
-              <section className="project-overview" aria-label="Project overview">
-                <h2>Overview</h2>
+              <section className="project-overview" aria-label={t("detail.overview.regionLabel")}>
+                <h2>{t("detail.overview.title")}</h2>
                 <div className="project-dates-row">
                   <span className="project-date">
-                    Registered {new Date(project.registeredAt).toLocaleDateString()}
+                    {t("detail.overview.registeredAt", { date: formatDate(project.registeredAt) })}
                   </span>
                   <span className="project-date">
                     {project.lastSyncedAt === null
-                      ? "Never synced"
-                      : `Last synced ${new Date(project.lastSyncedAt).toLocaleDateString()}`}
+                      ? t("detail.overview.neverSynced")
+                      : t("detail.overview.lastSynced", { date: formatDate(project.lastSyncedAt) })}
                   </span>
                 </div>
                 <a
@@ -308,12 +313,12 @@ export function ProjectDetailPage() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open on GitHub<ExternalIcon size={12} />
+                  {t("detail.overview.openOnGitHub")}<ExternalIcon size={12} />
                 </a>
                 {analysis.analyzing && (
-                <div className="files-loading" role="status" aria-label="Loading">
+                <div className="files-loading" role="status" aria-label={t("detail.files.loading")}>
                   <Spinner />
-                  <span className="label">Analyzing the project</span>
+                  <span className="label">{t("detail.overview.analyzing")}</span>
                 </div>
               )}
               </section>
@@ -324,25 +329,28 @@ export function ProjectDetailPage() {
               <Card>
                 <div className="audit-block">
                   <div className="audit-head">
-                    <h4 className="audit-title">Summary</h4>
+                    <h4 className="audit-title">{t("detail.overview.summary")}</h4>
                     <div className="audit-head-right">
                       <div className="audit-status-row">
                         {orientationSummary !== null && orientationSummary.projectType !== "" && (
                           <>
-                            <span className="label">Project type</span>
+                            <span className="label">{t("detail.overview.projectType")}</span>
                             <Badge tone="info">{orientationSummary.projectType}</Badge>
                           </>
                         )}
                         {projectArchitectureSummary !== null && projectArchitectureSummary.pattern !== "" && (
                           <>
-                            <span className="label">Pattern</span>
+                            <span className="label">{t("detail.overview.pattern")}</span>
                             <Badge tone="info">{projectArchitectureSummary.pattern}</Badge>
                           </>
                         )}
                         {semanticValidationSummary !== null && (
                           <>
-                            <span className="label">Review</span>
-                            <Badge tone={verdictTone(semanticValidationSummary.verdict)}>{semanticValidationSummary.verdict}</Badge>
+                            <span className="label">{t("detail.overview.review")}</span>
+                            <Badge tone={verdictTone(semanticValidationSummary.verdict)}>{(() => {
+                              const verdictKey = statusLabelKey(reviewVerdictLabelKeys, semanticValidationSummary.verdict)
+                              return verdictKey === null ? semanticValidationSummary.verdict : t(verdictKey)
+                            })()}</Badge>
                           </>
                         )}
                       </div>
@@ -350,7 +358,7 @@ export function ProjectDetailPage() {
                   </div>
                   <div className="audit-button-row">
                     <Button onClick={() => void navigate(`/projects/${id}/analysis`)}>
-                      View full analysis
+                      {t("detail.overview.viewFullAnalysis")}
                     </Button>
                   </div>
                 </div>
@@ -372,21 +380,21 @@ export function ProjectDetailPage() {
                   <Card>
                     {orientationSummary !== null
                       ? <OrientationResultView summary={orientationSummary} execution={orientationExec} />
-                      : <StageStatusView title="Orientation" result={orientationExec.result} execution={orientationExec} />}
+                      : <StageStatusView title={t("pipeline.orientationTitle")} result={orientationExec.result} execution={orientationExec} />}
                   </Card>
                 )}
                 {projectArchitectureExec !== null && (
                   <Card>
                     {projectArchitectureSummary !== null
                       ? <ProjectArchitectureResultView summary={projectArchitectureSummary} execution={projectArchitectureExec} />
-                      : <StageStatusView title="Architecture" result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
+                      : <StageStatusView title={t("pipeline.architectureTitle")} result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
                   </Card>
                 )}
                 {semanticValidationExec !== null && (
                   <Card>
                     {semanticValidationSummary !== null
                       ? <SemanticValidationResultView summary={semanticValidationSummary} execution={semanticValidationExec} />
-                      : <StageStatusView title="Semantic validation" result={semanticValidationExec.result} execution={semanticValidationExec} />}
+                      : <StageStatusView title={t("pipeline.semanticTitle")} result={semanticValidationExec.result} execution={semanticValidationExec} />}
                   </Card>
                 )}
               </>
@@ -394,31 +402,31 @@ export function ProjectDetailPage() {
             {activeSection === "files" && (
               <Card>
                 <SplitView
-                  label="Resize file preview and directories"
+                  label={t("detail.files.resizeLabel")}
                   right={
                     preview.loading && preview.file === null ? (
-                      <div className="files-loading" role="status" aria-label="Loading">
+                      <div className="files-loading" role="status" aria-label={t("detail.files.loading")}>
                         <Spinner />
-                        <span className="label">Loading file</span>
+                        <span className="label">{t("detail.files.loadingFile")}</span>
                       </div>
                     ) : preview.error !== "" ? (
                       <p className="files-error">{preview.error}</p>
                     ) : preview.file === null ? (
-                      <p className="label files-empty">Select a file to preview</p>
+                      <p className="label files-empty">{t("detail.files.selectFile")}</p>
                     ) : (
                       <CodeViewer code={preview.file.content} language={fileLanguage(preview.file.path)} highlight />
                     )
                   }
                   left={
                     files.loading && files.tree === null ? (
-                      <div className="files-loading" role="status" aria-label="Loading">
+                      <div className="files-loading" role="status" aria-label={t("detail.files.loading")}>
                         <Spinner />
-                        <span className="label">Loading project files</span>
+                        <span className="label">{t("detail.files.loadingFiles")}</span>
                       </div>
                     ) : files.error !== "" ? (
                       <p className="files-error">{files.error}</p>
                     ) : files.tree === null ? (
-                      <p className="label">No files to show</p>
+                      <p className="label">{t("detail.files.noFiles")}</p>
                     ) : (
                       <DirectoryTree tree={files.tree} onRefresh={files.refresh} onSelectFile={openFile} />
                     )
@@ -435,27 +443,27 @@ export function ProjectDetailPage() {
               ) : (
                 <Card>
                   {runStatuses}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>View partial results</Link>}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
-                    <h3>Configuration used</h3>
-                    <p className="label">Captured for {execution.agentType} #{execution.id}</p>
+                    <h3>{t("detail.audits.configuration.title")}</h3>
+                    <p className="label">{t("detail.audits.configuration.capturedFor", { agentType: execution.agentType, id: execution.id })}</p>
                     <dl>
-                      <dt>Model</dt><dd>{execution.configuration!.model.name}</dd>
-                      <dt>Provider</dt><dd>{execution.configuration!.model.providerName}</dd>
-                      <dt>Credential</dt><dd>{execution.configuration!.credential.name} (#{execution.configuration!.credential.id})</dd>
-                      <dt>Temperature</dt><dd>{execution.configuration!.temperature}</dd>
-                       <dt>Maximum output tokens per call</dt><dd>{execution.configuration!.maxTokens}</dd>
-                       <dt>Initial token budget</dt><dd>{execution.configuration!.tokenBudget?.toLocaleString() ?? "Not recorded"}</dd>
-                       <dt>Absolute token limit</dt><dd>{execution.configuration!.absoluteTokenLimit?.toLocaleString() ?? "Not recorded"}</dd>
+                      <dt>{t("detail.audits.configuration.model")}</dt><dd>{execution.configuration!.model.name}</dd>
+                      <dt>{t("detail.audits.configuration.provider")}</dt><dd>{execution.configuration!.model.providerName}</dd>
+                      <dt>{t("detail.audits.configuration.credential")}</dt><dd>{t("detail.audits.configuration.credentialValue", { name: execution.configuration!.credential.name, id: execution.configuration!.credential.id })}</dd>
+                      <dt>{t("detail.audits.configuration.temperature")}</dt><dd>{execution.configuration!.temperature}</dd>
+                       <dt>{t("detail.audits.configuration.maxTokens")}</dt><dd>{execution.configuration!.maxTokens}</dd>
+                       <dt>{t("detail.audits.configuration.tokenBudget")}</dt><dd>{execution.configuration!.tokenBudget == null ? t("detail.audits.configuration.notRecorded") : formatNumber(execution.configuration!.tokenBudget)}</dd>
+                       <dt>{t("detail.audits.configuration.absoluteLimit")}</dt><dd>{execution.configuration!.absoluteTokenLimit == null ? t("detail.audits.configuration.notRecorded") : formatNumber(execution.configuration!.absoluteTokenLimit)}</dd>
                     </dl>
-                    <p className="label">Captured when this execution started. Later Settings changes apply to new executions.</p>
+                    <p className="label">{t("detail.audits.configuration.note")}</p>
                   </div>)}
                 </Card>
               )
             )}
             {analysis.phase === "error" && <Card>
               <p role="alert">{analysis.message}</p>
-             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>Review agent configuration</Link>
+             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}
             </div>
           </>

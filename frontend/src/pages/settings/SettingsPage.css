@@ -38,6 +38,7 @@
 .settings-tabs button:focus-visible { outline: 2px solid #006194; outline-offset: -4px; }
 
 .settings-page [role="tabpanel"][hidden] { display: none; }
+.settings-page [role="tabpanel"] > .ui-card + .ui-card { margin-top: 0.75rem; }
 .settings-page [role="tabpanel"]:focus-visible { outline: 2px solid #006194; outline-offset: 2px; }
 
 @media (max-width: 600px) {
@@ -112,6 +113,13 @@
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
+}
+
+.settings-language-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 100%;
 }
 
 .settings-agents > .ui-panel {

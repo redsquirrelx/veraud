@@ -1,0 +1,48 @@
+{
+  "execution": {
+    "status": {
+      "running": "En ejecución",
+      "waiting": "En espera",
+      "completed": "Completada",
+      "failed": "Fallida"
+    }
+  },
+  "menu": {
+    "label": "Ejecuciones de agentes",
+    "title": "Ejecuciones de agentes ({{count}})",
+    "expand": "Expandir agentes",
+    "collapse": "Contraer agentes",
+    "close": "Cerrar el menú de agentes",
+    "empty": "No hay ejecuciones de agentes",
+    "runTitle": "Ejecución n.º {{id}} de {{agentType}}",
+    "done": "Completada",
+    "failed": "Fallida"
+  },
+  "tokenUsage": {
+    "usageFor": "Uso de tokens de {{agentType}} en la ejecución {{id}}",
+    "budgetUsage": "Uso del presupuesto de tokens",
+    "budgetUsageValue": "{{total}} tokens, {{percentage}} % del presupuesto inicial. {{state}}.",
+    "summary": {
+      "withBudget": "{{total}} / {{budget}} tokens",
+      "totalOnly": "{{total}} tokens",
+      "reportedWithBudget": "Informado: {{total}} / {{budget}} tokens",
+      "reportedTotalOnly": "Informado: {{total}} tokens"
+    },
+    "notReported": "Uso de tokens no informado",
+    "state": {
+      "exhausted": "Límite absoluto alcanzado",
+      "inTolerance": "Dentro de la tolerancia",
+      "budgetExceeded": "Presupuesto inicial superado",
+      "withinBudget": "Dentro del presupuesto"
+    },
+    "absoluteLimit": "Límite absoluto: {{value}} tokens",
+    "noAbsoluteLimit": "Sin límite absoluto registrado",
+    "noBudget": "Sin presupuesto inicial registrado",
+    "includesEstimated": "Incluye {{value}} tokens estimados",
+    "breakdown": "Desglose de tokens",
+    "input": "Entrada (informada)",
+    "output": "Salida (informada)",
+    "estimated": "Estimados",
+    "notReportedValue": "No informado"
+  }
+}

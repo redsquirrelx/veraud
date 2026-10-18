@@ -9,11 +9,22 @@ import "@fontsource/jetbrains-mono/500.css"
 import "./index.css"
 import { AppProviders } from "./app/providers.tsx"
 import { router } from "./app/router.tsx"
+import { initializeI18n } from "./shared/i18n/index.ts"
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <AppProviders>
-      <RouterProvider router={router} />
-    </AppProviders>
-  </StrictMode>
-)
+async function bootstrap() {
+  try {
+    await initializeI18n()
+  } catch {
+    // Render anyway; i18next falls back to English resources.
+  }
+
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>
+    </StrictMode>
+  )
+}
+
+void bootstrap()

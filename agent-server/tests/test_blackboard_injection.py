@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 from pydantic import BaseModel
@@ -49,6 +50,7 @@ def test_investigator_execution_receives_injected_blackboard():
     class Execution:
         def __init__(self, model, config, tools, request):
             self.graph = self
+            self.timing = SimpleNamespace(stage=lambda _: nullcontext(), publication_allowed=True)
 
         def initial_state(self):
             return {}
@@ -65,5 +67,5 @@ def test_investigator_execution_receives_injected_blackboard():
         execution_type = Execution
 
     agent = Agent(object(), blackboard=board)
-    tools = SimpleNamespace(budget_usage=SimpleNamespace(tool_calls=0))
+    tools = SimpleNamespace(budget_usage=SimpleNamespace(tool_calls=0), tool_measurements=[])
     assert asyncio.run(agent.run(tools)) is result

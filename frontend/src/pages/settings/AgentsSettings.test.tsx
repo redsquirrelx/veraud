@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { AgentsSettings } from "./AgentsSettings.tsx"
+import { changeLanguage } from "../../shared/i18n/index.ts"
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -97,5 +98,40 @@ describe("AgentsSettings", () => {
     expect(signal.aborted).toBe(false)
     unmount()
     expect(signal.aborted).toBe(true)
+  })
+})
+
+describe("AgentsSettings Spanish", () => {
+  afterEach(async () => {
+    await changeLanguage("en")
+  })
+
+  it("translates headings, statuses and the drawer to Spanish", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([
+      { agentType: "analyzer", configured: false, configuration: null },
+    ]), { status: 200 }))
+    vi.stubGlobal("fetch", fetch)
+    await changeLanguage("es")
+    const user = userEvent.setup()
+    render(<AgentsSettings providers={[{ id: 1, name: "OpenAI", models: [{ id: 1, name: "example", inUse: true }], credentials: [{ id: 2, name: "production", apiKeyPreview: "****1234", inUse: true }] }]} />)
+
+    expect(await screen.findByRole("heading", { name: "Configuración de agentes" })).toBeDefined()
+    expect(screen.getByText("Sin configurar")).toBeDefined()
+    await user.click(screen.getByRole("button", { name: "Configurar analyzer" }))
+    const drawer = screen.getByRole("dialog", { name: "Configurar analyzer" })
+    expect(within(drawer).getByText("Modelo y acceso")).toBeDefined()
+    expect(within(drawer).getByText("Parámetros de generación")).toBeDefined()
+    expect(within(drawer).getByRole("spinbutton", { name: "Temperatura" })).toBeDefined()
+    expect(within(drawer).getByRole("button", { name: "Guardar cambios" })).toBeDisabled()
+  })
+
+  it("translates catalog failures to Spanish keeping backend details", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ message: "backend exploded" }), { status: 500 }))
+    vi.stubGlobal("fetch", fetch)
+    await changeLanguage("es")
+    render(<AgentsSettings />)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar la configuración de agentes: backend exploded")
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeDefined()
   })
 })

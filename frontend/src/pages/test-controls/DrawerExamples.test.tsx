@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DrawerExamples } from "./DrawerExamples.tsx"
+import { initializeI18n, changeLanguage } from "../../shared/i18n/index.ts"
+
+afterEach(async () => {
+  await initializeI18n("en")
+})
 
 describe("Drawer playground examples", () => {
   it("discards cancelled edits and retains locally saved values on reopening", async () => {
@@ -27,5 +32,15 @@ describe("Drawer playground examples", () => {
     expect(screen.getByText("Saved name: Security agent")).toBeDefined()
     await user.click(open)
     expect(within(screen.getByRole("dialog")).getByRole("textbox", { name: "Agent name" })).toHaveValue("Security agent")
+  })
+
+  it("translates the form drawer", async () => {
+    await changeLanguage("es")
+    const user = userEvent.setup()
+    render(<DrawerExamples />)
+    await user.click(screen.getByRole("button", { name: "Abrir drawer de formulario" }))
+    const dialog = screen.getByRole("dialog", { name: "Configuración del agente demo" })
+    expect(within(dialog).getByRole("textbox", { name: "Nombre del agente" })).toBeDefined()
+    expect(within(dialog).getByRole("button", { name: "Guardar cambios" })).toBeDefined()
   })
 })

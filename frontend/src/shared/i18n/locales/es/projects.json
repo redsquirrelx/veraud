@@ -1,0 +1,253 @@
+{
+  "home": {
+    "title": "Proyectos y repositorios",
+    "description": "Supervisión autónoma continua de atributos de calidad según <strong>ISO/IEC 25010</strong>: Rendimiento, Mantenibilidad, Seguridad operacional y Adecuación funcional.",
+    "shallowClone": "Clon superficial"
+  },
+  "list": {
+    "sectionLabel": "Proyectos",
+    "registeredCount_one": "{{count}} proyecto registrado",
+    "registeredCount_other": "{{count}} proyectos registrados",
+    "searchPlaceholder": "Buscar por repositorio",
+    "loadingLabel": "Cargando proyectos",
+    "loadError": "No se pudieron cargar los proyectos",
+    "empty": "Aún no hay proyectos",
+    "sort": {
+      "title": "Título",
+      "date": "Fecha"
+    }
+  },
+  "card": {
+    "inspect": "Inspeccionar",
+    "pin": "Fijar proyecto",
+    "unpin": "Dejar de fijar proyecto",
+    "openOnGitHub": "Abrir en GitHub",
+    "openOnGitHubLabel": "Abrir {{repo}} en GitHub"
+  },
+  "registration": {
+    "title": "Registrar proyecto",
+    "submit": "Registrar proyecto",
+    "success": "El proyecto {{name}} se registró correctamente.",
+    "registered": "Proyecto {{name}} registrado",
+    "urlPlaceholder": "Repository URL: https://github.com/owner/repo or git@github.com:owner/repo.git",
+    "loadingText": "Espera",
+    "errors": {
+      "timeout": "La solicitud tardó demasiado y se canceló",
+      "network": "No se pudo conectar con el backend",
+      "unexpected": "Error inesperado"
+    }
+  },
+  "version": {
+    "sourceLabel": "Origen de la versión",
+    "git": "Git",
+    "analyzed": "Analizadas",
+    "loadingBranches": "Cargando ramas",
+    "applying": "Aplicando versión",
+    "detachedNotice": "(HEAD desvinculado en {{hash}}): selecciona una rama para volver a vincularlo",
+    "appliedNotice": "En {{branch}} en {{shortHash}}",
+    "analyzedEmpty": "Aún no hay versiones analizadas",
+    "analyzedPlaceholder": "Selecciona una versión analizada",
+    "analyzedLabel": "Versión analizada",
+    "branchesEmpty": "No se encontraron ramas",
+    "branchPlaceholder": "Selecciona una rama",
+    "branchDetachedPlaceholder": "(HEAD desvinculado en {{hash}})",
+    "branchLabel": "Rama",
+    "commitsEmpty": "No se encontraron commits",
+    "commitLabel": "Commit",
+    "errors": {
+      "noBranches": "No se encontraron ramas en la copia local",
+      "loadBranches": "No se pudieron cargar las ramas",
+      "loadCommits": "No se pudieron cargar los commits",
+      "checkoutBranch": "No se pudo cambiar a la rama",
+      "checkoutCommit": "No se pudo cambiar al commit",
+      "invalidHash": "El hash del commit debe tener de 7 a 40 caracteres hexadecimales",
+      "loadAnalyzed": "No se pudieron cargar las versiones analizadas"
+    }
+  },
+  "analyze": {
+    "audit": {
+      "label": "Mantenibilidad",
+      "description": "Auditoría de calidad e informe Word"
+    },
+    "label": "Analizar",
+    "loading": "Analizando",
+    "pipelines": {
+      "projectArchitecture": {
+        "label": "Arquitectura del proyecto",
+        "description": "Orientación, arquitectura y validación semántica"
+      }
+    }
+  },
+  "analysis": {
+    "errors": {
+      "startFailed": "No se pudo analizar el proyecto"
+    },
+    "completed": "Análisis completado",
+    "failed": "Análisis fallido"
+  },
+  "pipeline": {
+    "runLabel": "{{agentType}} ejecución #{{id}}",
+    "tokenBudgetExhausted": "Ejecución interrumpida: presupuesto de tokens agotado.",
+    "partialResults": "Resultados parciales disponibles — incompletos",
+    "orientationTitle": "Orientación",
+    "architectureTitle": "Arquitectura",
+    "semanticTitle": "Validación semántica",
+    "components": "Componentes ({{count}})",
+    "startingPoints": "Puntos de partida ({{count}})",
+    "uncertainties": "Incertidumbres ({{count}})",
+    "supportingFindings": "Hallazgos de respaldo ({{count}})",
+    "organization": "Organización ({{count}})",
+    "connections": "Conexiones ({{count}})",
+    "relationshipCoverage": "Cobertura de relaciones entre módulos ({{count}})",
+    "deviations": "Desviaciones ({{count}})",
+    "infrastructure": "Infraestructura ({{count}})",
+    "findings": "Hallazgos ({{count}})",
+    "pending": "Pendientes ({{count}})",
+    "issues": "Problemas ({{count}})",
+    "limitations": "Limitaciones ({{count}})",
+    "colorLegend": "Leyenda de colores",
+    "legendHint": "El relleno muestra la certeza del arquitecto; el borde muestra la revisión semántica. Sin revisar no significa rechazado.",
+    "architectFill": "Arquitecto — relleno",
+    "semanticBorder": "Semántica — borde / flecha",
+    "legendArrows": "Flechas continuas: relaciones respaldadas por el arquitecto. Flechas discontinuas: relaciones hipotéticas o sin resolver. Las notas ámbar D1, D2… identifican desviaciones reportadas, no defectos automáticos.",
+    "architecturalExplanation": "Explicación arquitectónica",
+    "patternContrast": "Contraste del patrón",
+    "scopeLabel": "Alcance: {{scope}}",
+    "expectedLabel": "Esperado: {{expectation}}",
+    "deviationDetail": "Esperado: {{expectation}} · {{explanation}}",
+    "resolutionBlocker": "Bloqueador de resolución: {{blocker}} — {{blockerReason}}",
+    "pendingEndpoints": "Endpoints pendientes ({{count}}): {{paths}}",
+    "diagram": "Diagrama",
+    "diagramWithOrigin": "Diagrama (informe {{origin}})",
+    "diagramFallback": "Diagrama “{{title}}”: {{nodes}} nodo(s), {{edges}} arista(s)",
+    "proposedCorrection": "Corrección propuesta: {{correction}}"
+  },
+  "detail": {
+    "loading": "Cargando proyecto",
+    "loadError": "No se pudo cargar el proyecto",
+    "notFound": "Proyecto no encontrado",
+    "contextLabel": "Contexto del proyecto",
+    "actionsLabel": "Acciones del proyecto",
+    "syncLabel": "Sincronizar",
+    "syncing": "Sincronizando",
+    "analyzingBadge": "Analizando",
+    "sidebarTitle": "Proyecto",
+    "serviceStatus": "Estado de los servicios",
+    "sections": {
+      "overview": "Resumen",
+      "analysis": "Análisis",
+      "audits": "Auditorías",
+      "files": "Archivos"
+    },
+    "overview": {
+      "title": "Resumen",
+      "regionLabel": "Resumen del proyecto",
+      "registeredAt": "Registrado el {{date}}",
+      "neverSynced": "Nunca sincronizado",
+      "lastSynced": "Última sincronización: {{date}}",
+      "openOnGitHub": "Abrir en GitHub",
+      "analyzing": "Analizando el proyecto",
+      "summary": "Resumen",
+      "projectType": "Tipo de proyecto",
+      "pattern": "Patrón",
+      "review": "Revisión",
+      "viewFullAnalysis": "Ver análisis completo"
+    },
+    "files": {
+      "resizeLabel": "Redimensionar vista previa y directorios",
+      "loading": "Cargando",
+      "loadingFile": "Cargando archivo",
+      "selectFile": "Selecciona un archivo para previsualizar",
+      "loadingFiles": "Cargando archivos del proyecto",
+      "noFiles": "No hay archivos para mostrar",
+      "errors": {
+        "readFailed": "No se pudo leer el archivo",
+        "loadFailed": "No se pudieron cargar los archivos del proyecto"
+      }
+    },
+    "audits": {
+      "empty": "Aún no hay análisis: elige una versión y pulsa Analizar",
+      "viewPartial": "Ver resultados parciales",
+      "configuration": {
+        "title": "Configuración utilizada",
+        "capturedFor": "Capturada para {{agentType}} n.º {{id}}",
+        "model": "Modelo",
+        "provider": "Proveedor",
+        "credential": "Credencial",
+        "credentialValue": "{{name}} (#{{id}})",
+        "temperature": "Temperatura",
+        "maxTokens": "Máximo de tokens de salida por llamada",
+        "tokenBudget": "Presupuesto inicial de tokens",
+        "absoluteLimit": "Límite absoluto de tokens",
+        "notRecorded": "No registrado",
+        "note": "Capturada cuando comenzó esta ejecución. Los cambios posteriores en Configuración se aplican a nuevas ejecuciones."
+      }
+    },
+    "sync": {
+      "success": "Proyecto {{name}} sincronizado",
+      "errorFallback": "No se pudo sincronizar el proyecto"
+    },
+    "versionApplied": "Versión {{branch}} en {{shortHash}} aplicada",
+    "reviewAgents": "Revisar la configuración de agentes"
+  },
+  "status": {
+    "projectBadge": {
+      "queued": "En cola",
+      "ready": "Listo",
+      "syncing": "Sincronizando"
+    },
+    "projectFilter": {
+      "all": "Todos",
+      "queued": "En cola",
+      "ready": "Listo",
+      "syncing": "Sincronizando"
+    },
+    "execution": {
+      "waiting": "En espera",
+      "running": "En ejecución",
+      "completed": "Completada",
+      "failed": "Fallida"
+    },
+    "completion": {
+      "complete": "Completa",
+      "partial": "Parcial",
+      "failed": "Fallida"
+    },
+    "claim": {
+      "supported": "Respaldada",
+      "hypothesis": "Hipótesis",
+      "unresolved": "Sin resolver"
+    },
+    "review": {
+      "accepted": "Aceptada",
+      "revisionsNeeded": "Requiere revisiones",
+      "needsEvidence": "Necesita evidencia",
+      "inconclusive": "No concluyente"
+    },
+    "finding": {
+      "supported": "Respaldada",
+      "overstated": "Exagerada",
+      "contradicted": "Contradicha",
+      "insufficientEvidence": "Evidencia insuficiente"
+    },
+    "derived": {
+      "completed": "Completada",
+      "waiting": "En espera",
+      "neverAnalyzed": "Nunca analizada"
+    },
+    "legendArchitect": {
+      "supported": "Respaldada",
+      "hypothesis": "Hipótesis",
+      "unresolved": "Sin resolver"
+    },
+    "legendSemantic": {
+      "supported": "Respaldada",
+      "overstated": "Exagerada",
+      "contradicted": "Contradicha",
+      "insufficientEvidence": "Evidencia insuficiente",
+      "notReviewed": "Sin revisar"
+    }
+  },
+  "selectedCount_one": "{{count}} proyecto seleccionado",
+  "selectedCount_other": "{{count}} proyectos seleccionados"
+}
