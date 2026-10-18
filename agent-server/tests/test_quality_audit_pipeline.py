@@ -120,7 +120,9 @@ def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts
 
     payload = asyncio.run(execute())["audit"]
     assert payload["attributes"] == ["security"]
-    assert payload["status"] == "partial"
+    assert payload["status"] == "completed"
+    assert payload["report"]["identification"]["status"] == "completed"
+    assert payload["blackboard"]["execution_issues"] == []
     assert payload["blackboard"]["assessments"][0]["agent_id"] == "security"
     assert sink.running == [(42, None), (42, payload["run_id"])]
     assert payload["docx_base64"]
@@ -187,7 +189,10 @@ def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_
         return payload, restored
 
     payload, restored = asyncio.run(execute())
-    assert payload["status"] == "partial"
+    assert payload["status"] == ("completed" if failed_attribute is None else "partial")
+    if failed_attribute is None:
+        assert payload["blackboard"]["execution_issues"] == []
+        assert restored.identification.status == "partial"  # Quality claims remain inconclusive.
     assert {item["quality_attribute"] for item in payload["blackboard"]["assessments"]} == {"maintainability", "security"}
     assert {item["run_id"] for item in payload["blackboard"]["assessments"]} == {payload["run_id"]}
     assert captured["maintainability"][0] is captured["security"][0]

@@ -39,7 +39,8 @@ def test_security_scanners_publish_portable_candidates_without_claiming_verifica
         state = service.start(str(root), SecurityAuditRequest(), ExecutionConfig(), "security")
         await service.wait(state.run_id)
         snapshot = service.snapshot(state.run_id)
-        assert snapshot.status == "partial", snapshot
+        assert snapshot.status == "completed", snapshot
+        assert not snapshot.execution_issues
         assert snapshot.findings
         rules = {item.criterion_id for item in snapshot.findings}
         assert "SEC-PWD-003" in rules
@@ -49,12 +50,17 @@ def test_security_scanners_publish_portable_candidates_without_claiming_verifica
         assert "example-secret" not in snapshot.model_dump_json()
         assert "private-key" not in snapshot.model_dump_json()
         assessment = next(item for item in snapshot.assessments if item.agent_id == "security")
+        assert assessment.status == "completed"
+        assert assessment.termination_reason == "security_scope_completed"
+        assert assessment.details["security_analysis"]["incomplete_reasons"] == []
+        assert assessment.limitations
         assert assessment.consumption.model_calls > 0
         assert assessment.consumption.accounted_tokens > 0
         restored = BlackboardSnapshot.model_validate_json(snapshot.model_dump_json())
         report = await report_from_snapshot(restored)
         security = next(item for item in report.quality_results.attributes if item.id == "security")
         assert security.subcharacteristics
+        assert all(item.verification_status == "inconclusive" for item in report.quality_results.findings)
         with zipfile.ZipFile(io.BytesIO(render_audit_report_docx(report))) as document:
             assert b"DAST" in document.read("word/document.xml")
         await service.aclose()
@@ -104,8 +110,59 @@ def test_token_budget_falls_back_without_losing_detection(audit_environment):
         await service.wait(state.run_id)
         snapshot = service.snapshot(state.run_id)
         assert snapshot.status == "partial"
+        assert snapshot.assessments[0].termination_reason == "audit_token_limit"
+        assert "presupuesto compartido" in snapshot.execution_issues[0].explanation
         assert snapshot.findings[0].details["security_finding"]["remediation"]["llm_generated"] is False
         model.ainvoke.assert_not_awaited()
+        await service.aclose()
+
+    asyncio.run(execute())
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("files", "security_file_limit"),
+    ("tools", "tool_call_limit"),
+    ("truncated", "security_source_truncated"),
+    ("read_failure", "security_source_read_failed"),
+    ("empty_scope", "security_empty_scope"),
+    ("provider_failure", "security_remediation_fallback"),
+])
+def test_real_security_incompleteness_retains_specific_reasons(audit_environment, monkeypatch, case, expected):
+    root = audit_environment.root
+    config = audit_service.SecurityAuditConfig()
+    request = SecurityAuditRequest()
+    if case == "files":
+        (root / "extra.py").write_text("value = 1\n", encoding="utf-8")
+        config = config.model_copy(update={"max_scan_files": 1})
+    elif case == "tools":
+        (root / "extra.py").write_text("value = 1\n", encoding="utf-8")
+        config = config.model_copy(update={"max_tool_calls": 1})
+    elif case == "truncated":
+        (root / "main.py").write_text("value = 1\n" * 200, encoding="utf-8")
+    elif case == "read_failure":
+        monkeypatch.setattr(audit_service.RepositoryToolset, "execute",
+            lambda *args, **kwargs: SimpleNamespace(error=True, evidence=()))
+    elif case == "empty_scope":
+        request = SecurityAuditRequest(targets=["missing.py"])
+    else:
+        (root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
+    monkeypatch.setattr(audit_service, "SecurityAuditConfig", lambda: config)
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock(return_value="invalid structured response")
+
+    async def execute():
+        service = AuditService(MemoryBlackboard())
+        state = service.start(str(root), request, ExecutionConfig(), "security")
+        await service.wait(state.run_id)
+        snapshot = service.snapshot(state.run_id)
+        assert snapshot.status == "partial", snapshot
+        assessment = snapshot.assessments[0]
+        assert assessment.termination_reason == expected
+        assert expected in assessment.details["security_analysis"]["incomplete_reasons"]
+        assert assessment.details["security_analysis"]["incidents"]
+        assert snapshot.execution_issues[0].termination_reason == expected
+        assert not snapshot.execution_issues[0].explanation.startswith("Motivo registrado")
         await service.aclose()
 
     asyncio.run(execute())
@@ -164,6 +221,8 @@ def test_http_selects_security_and_reconstructs_its_export_without_the_repositor
         client.portal.call(app.state.audit_service.wait, run_id)
         exported = client.get(f"/api/audits/{run_id}")
         assert exported.status_code == 200
+        assert exported.json()["status"] == "completed"
+        assert exported.json()["execution_issues"] == []
         assert exported.json()["assessments"][0]["quality_attribute"] == "security"
         (audit_environment.root / "main.py").unlink()
         restored = client.post("/api/audits/reports/from-snapshot", json=exported.json())

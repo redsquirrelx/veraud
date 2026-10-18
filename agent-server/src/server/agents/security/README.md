@@ -51,8 +51,15 @@ incluidos los descartados por el filtro, cuyo resultado queda identificado en
 campos enviados al modelo/publicados; los hashes siguen identificando el contenido
 original de la instantánea.
 
-El resultado es parcial por el alcance heurístico del módulo: SCA compara nombres
-sin resolver versiones y DAST no se ejecuta. JSON y Word documentan estas
-limitaciones. El análisis se exporta e importa con los mismos endpoints/CLI del
+La ejecución queda `completed` cuando termina todas las lecturas y etapas previstas,
+con motivo `security_scope_completed`. Queda `partial` si hay alcance vacío, límites
+de archivos/lecturas, errores de lectura, fragmentos truncados o propuestas del modelo
+sin completar, con sus motivos específicos en `security_analysis.incomplete_reasons`.
+La cancelación conserva el motivo `security_interrupted`.
+
+El alcance heurístico se conserva como limitación independiente del estado de
+ejecución: SCA compara nombres sin resolver versiones y DAST no se ejecuta. Completar
+la ejecución no verifica los candidatos ni certifica seguridad. JSON y Word documentan
+estas limitaciones. El análisis se exporta e importa con los mismos endpoints/CLI del
 flujo existente; el generador documental no necesita acceso al repositorio ni al
 proveedor para reconstruir el informe de diez secciones.

@@ -55,3 +55,16 @@ def test_snapshot_and_report_use_the_same_diagnostics_and_generate_a_grounded_su
     assert report.recommendations_and_improvement_plan == []
     statement = next(item for item in report.executive_summary.principal_results if "HTTP 400" in item.text)
     assert [item.record_id for item in statement.source_refs] == ["manager"]
+
+
+def test_historical_security_scope_does_not_get_reinterpreted_as_an_execution_failure():
+    original = assessment(agent_id="security", status="partial", termination_reason="security_legacy_scope",
+        quality_attribute="security", finding_ids=(), evidence_ids=())
+    issues = execution_diagnostics([original])
+    assert len(issues) == 1
+    assert issues[0].status == "partial"
+    assert issues[0].termination_reason == "security_legacy_scope"
+    assert "Registro histórico" in issues[0].explanation
+    assert "no acredita por sí mismo un fallo" in issues[0].explanation
+    assert issues[0].source_record_ids == [original.id]
+    assert original.termination_reason == "security_legacy_scope"

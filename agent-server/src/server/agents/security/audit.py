@@ -42,6 +42,12 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     snapshot = tools.accessible_snapshot
     publication = Publication(board, "security", identity=identity)
     evidence_ids, finding_ids, incidents, scanned = [], [], [], []
+    incomplete_reasons = []
+
+    def record_incident(reason, description):
+        if reason not in incomplete_reasons:
+            incomplete_reasons.append(reason)
+        incidents.append(description)
     calls = 0
     policy = SecurityConfig()
     supervisor = SecuritySupervisorAgent(config=policy)
@@ -95,6 +101,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                 "model_calls_estimated": False},
             details={"quality_attribute": "security", "subcharacteristic": "static_security",
                 "security_analysis": {"scanned_files": scanned, "incidents": incidents, "provider_calls": gateway.calls,
+                    "incomplete_reasons": list(incomplete_reasons),
                     "remediation": "proposal_only", "dast": "not_evaluated"}})
         # A synchronous terminal receipt records consumed resources even after
         # the host revokes further work. Provider tasks cannot publish records.
@@ -102,6 +109,10 @@ async def run_security_audit(tools, request, limits, model, board, identity):
 
     candidates = sorted([f for f in snapshot.files if not request.targets or any(
         f.path == target or f.path.startswith(target.rstrip("/") + "/") for target in request.targets)], key=lambda f: f.path)
+    if not candidates:
+        record_incident("security_empty_scope", "No hay archivos accesibles para inspeccionar en el alcance seleccionado.")
+    if len(candidates) > limits.max_scan_files:
+        record_incident("security_file_limit", "El alcance supera el límite de archivos de seguridad.")
     try:
         # Legacy scanners read only an isolated copy of controlled excerpts.
         # The checkout is never modified; partial files are explicitly recorded.
@@ -109,12 +120,12 @@ async def run_security_audit(tools, request, limits, model, board, identity):
             for source in candidates[:limits.max_scan_files]:
                 await asyncio.sleep(0)
                 if tools.budget_usage.tool_calls >= limits.max_tool_calls:
-                    incidents.append("Presupuesto de lecturas agotado.")
+                    record_incident("tool_call_limit", "Presupuesto de lecturas agotado.")
                     break
                 response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": 1},
                     tool_call_id="security-read-" + str(len(scanned)))
                 if response.error or not response.evidence:
-                    incidents.append(f"No se pudo inspeccionar {source.path}.")
+                    record_incident("security_source_read_failed", f"No se pudo inspeccionar {source.path}.")
                     continue
                 ref = response.evidence[0]
                 content = response.data["content"]
@@ -123,7 +134,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                 staged.write_text(content, encoding="utf-8")
                 scanned.append(source.path)
                 if source.line_count and ref.end_line < source.line_count:
-                    incidents.append(f"Lectura parcial de {source.path}: hasta la línea {ref.end_line}.")
+                    record_incident("security_source_truncated", f"Lectura parcial de {source.path}: hasta la línea {ref.end_line}.")
                 evidence_id = publication.record_id("evidence", source.id)
                 board.publish_evidence(Evidence(**publication._identity("evidence", source.id), kind="source",
                     source=source.path, content=redact(content), snapshot_hash=ref.snapshot_hash, commit=snapshot.repository.commit,
@@ -158,7 +169,12 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                         original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False,
                             "interrupted": True}
                     except Exception as error:  # noqa: BLE001 - retain original candidates on bounded provider failure
-                        incidents.append(f"Remediación local para {source.path}: {type(error).__name__}.")
+                        reason = {
+                            "security_remediation_call_budget_exhausted": "model_call_limit",
+                            "security_remediation_budget_exhausted": "audit_token_limit",
+                            "security_remediation_context_limit": "context_limit",
+                        }.get(str(error), "security_remediation_fallback")
+                        record_incident(reason, f"Remediación local para {source.path}: {type(error).__name__}.")
                         original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False}
                     supervisor.validator_agent.validate_patches([original])
                     kept = bool(supervisor.verifier_agent.filter_false_positives([original]))
@@ -180,9 +196,11 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                     if interrupted is not None:
                         raise interrupted
         if len(scanned) < len(candidates):
-            incidents.append("Quedan archivos sin inspeccionar en el alcance seleccionado.")
-        publish_assessment("partial", "security_legacy_scope")
-        return SecurityAuditResult(status="partial")
+            record_incident("security_scope_incomplete", "Quedan archivos sin inspeccionar en el alcance seleccionado.")
+        status = "partial" if incomplete_reasons else "completed"
+        publish_assessment(status, incomplete_reasons[0] if incomplete_reasons else "security_scope_completed")
+        return SecurityAuditResult(status=status)
     except BaseException:
+        record_incident("security_interrupted", "El análisis de seguridad se interrumpió antes de completar las etapas previstas.")
         publish_assessment("partial", "security_interrupted")
         raise

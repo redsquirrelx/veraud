@@ -5,6 +5,14 @@ import re
 from pydantic import BaseModel, Field
 
 REASONS = {
+    "security_legacy_scope": "Registro histórico: el adaptador marcó el alcance heurístico como parcial; este motivo no acredita por sí mismo un fallo o una interrupción.",
+    "security_empty_scope": "No se encontraron archivos accesibles en el alcance de seguridad seleccionado.",
+    "security_file_limit": "Se alcanzó el límite de archivos de seguridad; quedan archivos sin inspeccionar.",
+    "security_source_read_failed": "No se pudo leer parte del código previsto para el análisis de seguridad.",
+    "security_source_truncated": "Parte del código se inspeccionó mediante fragmentos truncados; la cobertura de seguridad es parcial.",
+    "security_scope_incomplete": "Quedan archivos del alcance de seguridad sin inspeccionar.",
+    "security_remediation_fallback": "No se completó una propuesta de remediación con el modelo; se conservaron el candidato y la propuesta local.",
+    "security_interrupted": "El análisis de seguridad se interrumpió; se conservó el trabajo parcial.",
     "round_limit": "Se alcanzó el límite de rondas sin completar la cobertura requerida.",
     "model_call_limit": "Se alcanzó el límite de llamadas al modelo.",
     "tool_call_limit": "Se alcanzó el límite de llamadas a herramientas.",

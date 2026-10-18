@@ -136,7 +136,7 @@ Cada informe incluye `annexes_and_traceability.generation`, con:
 Es una traza de interpretación documental, no una reevaluación técnica ni razonamiento
 libre. El agente sigue sin estado entre llamadas y no modifica el Blackboard de entrada.
 El esquema público conserva `schema_version: "1.0"` con extensiones aditivas y valores
-predeterminados para documentos anteriores; el algoritmo se identifica como generador 2.2.0.
+predeterminados para documentos anteriores; el algoritmo se identifica como generador 2.2.1.
 
 La proyección de seguridad reconoce `security/static_security`, conserva los campos
 originales del módulo en los detalles técnicos y mantiene sus detecciones como

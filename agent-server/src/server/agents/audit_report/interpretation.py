@@ -7,7 +7,7 @@ from ...services.audit_diagnostics import execution_records
 from ..schemes.report import CoverageCommitment, ReportDecision
 from .knowledge import AGENT_CATEGORIES, reference
 
-GENERATOR_VERSION = "2.2.0"
+GENERATOR_VERSION = "2.2.1"
 ANALYSIS_FIELDS = ("components_investigated", "unresolved_component_assessments", "abstractions_investigated",
     "examined_groups", "examined_constraints", "dependency_assessments", "component_assessments",
     "abstraction_assessments", "reuse_assessments", "adaptation_assessments")
