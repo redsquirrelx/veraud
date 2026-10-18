@@ -98,6 +98,13 @@ Table ai_model {
 
 Table agent_settings {
   agent_type varchar [pk, not null]
+  catalog_declared boolean [not null, default: false]
+  catalog_name varchar
+  catalog_role varchar
+  requires_model boolean [not null, default: false]
+  model_configuration_agent_type varchar
+  execution_modes text [not null, default: '[]']
+  availability varchar [not null, default: 'not_executed']
 
   ai_model_id int
   ai_credential_id int
@@ -110,6 +117,18 @@ Table agent_settings {
   verification_checked_at timestamp
   verification_error text
 }
+
+Table agent_hierarchy {
+  parent_agent_type varchar [not null]
+  child_agent_type varchar [not null]
+  indexes {
+    (parent_agent_type, child_agent_type) [pk]
+    child_agent_type
+  }
+}
+
+Ref: "agent_hierarchy"."parent_agent_type" > "agent_settings"."agent_type" [delete: cascade, update: cascade]
+Ref: "agent_hierarchy"."child_agent_type" > "agent_settings"."agent_type" [delete: cascade, update: cascade]
 
 
 Ref: "public"."ai_provider"."id" <? "public"."ai_model"."ai_provider_id"
