@@ -233,6 +233,13 @@ def test_modularity_closes_only_the_validated_same_source_component_repair(repo,
         assert after.consumption.model_calls == after.result.consumption.model_calls - before.result.consumption.model_calls
         assert after.consumption.tool_calls == 1
         assert report.resolved_gap_ids
+        from server.agents.audit_report import AuditReportAgent, AuditReportRequest
+
+        document = asyncio.run(AuditReportAgent(blackboard=board).run(AuditReportRequest(run_id=report.assessment_id)))
+        assert document.identification.status == "completed", document.model_dump_json(indent=2)
+        modularity = next(s for a in document.quality_results.attributes for s in a.subcharacteristics if s.id == "modularity")
+        assert modularity.status == "completed"
+        assert document.annexes_and_traceability.generation.historical_assessment_ids
         from server.agents.maintainability.manager.validation import validate_accounting
         from server.services.execution_failures import ExecutionValidationError
 

@@ -134,6 +134,18 @@ def test_broader_nested_first_pass_and_internal_coordinator_followup(audit_repos
     assert reusability.rounds_completed == 1 and len(reusability.invocations) == 3
     assert all(r.evidence_sufficient for r in report.assessments)
     assert len(report.findings) >= 4 and all(r.result.consolidated_findings for r in report.assessments)
+    from server.agents.audit_report import AuditReportAgent, AuditReportRequest
+    from server.blackboard.impls.memory import MemoryBlackboard
+    from server.blackboard.publication import Publication
+
+    board = MemoryBlackboard()
+    Publication(board, "maintainability_manager", run_id=report.assessment_id,
+        invocation_id="report-e2e-root").publish_assessment(report)
+    document = asyncio.run(AuditReportAgent(blackboard=board).run(AuditReportRequest(run_id=report.assessment_id)))
+    assert "reusability" not in {a.id for a in document.quality_results.attributes}
+    assert document.annexes_and_traceability.generation.validation_status == "passed"
+    assert document.annexes_and_traceability.coverage_commitments
+    assert any(e.recorded_results.get("examined_groups") for e in document.annexes_and_traceability.executions)
 
 
 def test_nested_refinement_recovers_only_incomplete_coordinator(audit_repository):

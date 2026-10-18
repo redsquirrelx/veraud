@@ -10,7 +10,9 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+from lxml.etree import Element
 
+from ..agents.audit_report.references import ReferenceCatalog
 from ..agents.schemes.report import SoftwareAuditReport
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -105,6 +107,18 @@ class ReportDocument:
         self.aliases = {}
         self.bookmarks = set()
         self.execution_targets = {}
+        self.used_entity_targets = set()
+        self.reference_labels = dict(ReferenceCatalog(report.model_dump(mode="json")).labels)
+        self.reference_labels.update(report.annexes_and_traceability.reference_labels)
+        self.reference_labels[report.identification.audit_id] = "Auditoría actual"
+        self.reference_labels[report.identification.source_digest] = "Huella de los registros de entrada"
+        for number, revision in enumerate(report.identification.revisions, 1):
+            self.reference_labels[revision.snapshot_hash] = f"Snapshot auditado S{number:03d}"
+            if revision.commit:
+                self.reference_labels[revision.commit] = f"Revisión auditada R{number:03d}"
+        generation = report.annexes_and_traceability.generation
+        if generation:
+            self.reference_labels[generation.generation_id] = "Generación de este informe"
         groups = (("Hallazgo", "H", report.quality_results.findings),
             ("Evidencia", "E", report.annexes_and_traceability.evidence_inventory),
             ("Evaluación", "A", report.annexes_and_traceability.assessments),
@@ -125,6 +139,14 @@ class ReportDocument:
                 if prefix in {"H", "E", "A"}:
                     kind = {"H": "finding", "E": "evidence", "A": "assessment"}[prefix]
                     self.aliases[f"{kind}:{identifier}"] = identifier
+        self.entity_targets = []
+        for identifier, label in sorted(self.reference_labels.items()):
+            if identifier in self.aliases or not identifier:
+                continue
+            number = len(self.entity_targets) + 1
+            self.targets[identifier] = (label, f"ref_entity_{number}", len(self.targets) + 1)
+            self.aliases[identifier] = identifier
+            self.entity_targets.append(identifier)
         # Match longest IDs first, and never rewrite a substring of a path/name.
         self.reference_pattern = (re.compile(r"(?<![\w])(?:" + "|".join(re.escape(key)
             for key in sorted(self.aliases, key=lambda key: (-len(key), key))) + r")(?![\w])") if self.aliases else None)
@@ -147,10 +169,13 @@ class ReportDocument:
         props.created = props.modified = issued_at.replace(tzinfo=UTC) if issued_at.tzinfo is None else issued_at.astimezone(UTC)
         props.identifier = report.identification.source_digest
         section.header.paragraphs[0].text = "Veraud · Informe de auditoría de calidad del software"
-        section.footer.paragraphs[0].text = "Auditoría: " + text(report.identification.audit_id)
+        section.footer.paragraphs[0].text = "Veraud · Auditoría actual"
 
-    def heading(self, title, level=1, target=None):
-        paragraph = self.doc.add_heading(text(title), level=level)
+    def heading(self, title, level=1, target=None, *, collapsed=False):
+        paragraph = self.doc.add_heading("", level=level)
+        self.linked_text(paragraph, title)
+        if collapsed:
+            paragraph._p.get_or_add_pPr().append(Element("{http://schemas.microsoft.com/office/word/2012/wordml}collapsed"))
         if target:
             self.bookmark(paragraph, target)
 
@@ -168,6 +193,8 @@ class ReportDocument:
         self.bookmarks.add(identifier)
 
     def hyperlink(self, paragraph, identifier):
+        if identifier in self.reference_labels:
+            self.used_entity_targets.add(identifier)
         label, anchor, _ = self.targets[identifier]
         link = OxmlElement("w:hyperlink")
         link.set(qn("w:anchor"), anchor)
@@ -301,6 +328,9 @@ class ReportDocument:
         if not rows:
             self.write(container, "Sin registros publicados.")
             return
+        if container is self.doc and len(rows) > 12:
+            self.paragraph(f"Detalle extenso: {len(rows)} registros. Puede contraer o expandir el encabezado siguiente en Word compatible.")
+            self.heading(f"Detalle de tabla — {headers[0]} ({len(rows)} registros)", 4, collapsed=True)
         table = container.add_table(rows=1, cols=len(headers))
         if container is not self.doc and len(container.paragraphs) > 1 and not container.paragraphs[0].text:
             empty = container.paragraphs[0]._p
@@ -372,6 +402,9 @@ class ReportDocument:
         self.doc.add_heading(text(identity.title), 0)
         self.paragraph("Las referencias azules enlazan con su sección en este documento. "
             "La información emergente del enlace conserva el identificador de origen.")
+        self.paragraph("Los bloques extensos tienen encabezados plegables: use la flecha junto al título o "
+            "Expandir/contraer desde su menú contextual en Word de escritorio compatible. "
+            "Otros visores pueden mostrar todo el contenido expandido.")
         self.heading("1. Portada e identificación de la auditoría")
         self.fields([("Auditoría", identity.audit_id), ("Proyecto", identity.project_name),
             ("Repositorio", identity.repository_url or identity.repository_location),
@@ -442,7 +475,7 @@ class ReportDocument:
             self.statements(attribute.summary)
             for subnumber, sub in enumerate(attribute.subcharacteristics, 1):
                 self.heading(f"6.{number}.{subnumber}. {sub.title}", 3)
-                self.fields([("Estado", LABELS[sub.status]), ("Temas de evaluación", sub.evaluation_topics),
+                self.fields([("Estado", LABELS[sub.status]), ("Temas de referencia (la cobertura se detalla por compromiso)", sub.evaluation_topics),
                     ("Hallazgos", sub.finding_ids), ("Limitaciones", (
                         f"Se conservan {len(sub.limitations)} limitaciones originales en los anexos de ejecución y trazabilidad."
                         if sub.limitations else "Sin limitaciones adicionales publicadas."))])
@@ -457,13 +490,20 @@ class ReportDocument:
             self.fields([("Atributo / subcaracterística", f"{finding.quality_attribute} / {finding.subcharacteristic}"),
                 ("Severidad", LABELS.get(finding.severity, "No determinada")),
                 ("Estado de verificación", LABELS[finding.verification_status]),
+                ("Vigencia", finding.lifecycle), ("Sustituido por", finding.superseded_by),
+                ("Tratamiento documental", finding.disposition), ("Revisión original", finding.original_review_rationale),
                 ("Tipo / clasificación", f"{finding.kind} / {finding.classification}"), ("Descripción", finding.description),
                 ("Criterio", finding.criterion.model_dump(mode="json")), ("Justificación", finding.justification),
                 ("Componentes", finding.components), ("Evidencias", finding.evidence_ids), ("Impacto", finding.impact),
                 ("Recomendación", finding.recommendation), ("Revisión", finding.verification_rationale),
                 ("Problemas de validación", finding.validation_issues), ("Grupos consolidados", finding.consolidation_ids),
                 ("Fuentes", [item.model_dump(mode="json") for item in finding.source_refs]),
-                ("Análisis técnico registrado", finding.technical_details)])
+                ("Contexto evaluado", finding.assessed_context), ("Frontera de compartición", finding.sharing_boundary),
+                ("Condiciones", finding.conditions), ("Supuestos", finding.assumptions),
+                ("Desconocidos", finding.unknowns), ("Limitaciones del hallazgo", finding.limitations),
+                ])
+            self.heading("Análisis técnico registrado", 4, collapsed=True)
+            self.value(self.doc, finding.technical_details)
 
         self.heading("7. Análisis consolidado de riesgos")
         risk = report.consolidated_risks
@@ -471,7 +511,11 @@ class ReportDocument:
         self.paragraph(risk.prioritization_method)
         self.table(("Riesgo / hallazgos", "Componentes", "Impacto", "Prioridad"),
             (([ReferenceTarget(item.id), *item.finding_ids], ", ".join(item.components), item.description,
-                LABELS.get(item.priority, item.priority)) for item in risk.risks))
+                 LABELS.get(item.priority, item.priority)) for item in risk.risks))
+        for item in risk.risks:
+            self.fields([("Riesgo", ReferenceTarget(item.id)), ("Tipo", item.risk_type),
+                ("Contexto evaluado", item.assessed_context), ("Condiciones", item.conditions),
+                ("Supuestos", item.assumptions), ("Desconocidos", item.unknowns), ("Limitaciones", item.limitations)])
         self.heading("Relaciones entre hallazgos", 2)
         self.table(("Relación / estado", "Hallazgos", "Justificación", "Fuentes"),
             ((f"{item.kind} / {item.status}", item.finding_ids, item.rationale,
@@ -489,22 +533,41 @@ class ReportDocument:
 
         self.heading("9. Recomendaciones y plan de mejora")
         if not report.recommendations_and_improvement_plan:
-            self.paragraph("No constan acciones correctivas asociadas a hallazgos verificados.")
+            self.paragraph("No constan recomendaciones asociadas a hallazgos vigentes verificados.")
         for item in report.recommendations_and_improvement_plan:
             self.heading(self.targets[item.id][0], 2, target=item.id)
             self.fields([("Hallazgos", item.finding_ids), ("Acción", item.action),
+                ("Tipo de acción", item.action_type), ("Contexto evaluado", item.assessed_context),
+                ("Frontera de compartición", item.sharing_boundary), ("Condiciones", item.conditions),
+                ("Supuestos", item.assumptions), ("Desconocidos", item.unknowns), ("Limitaciones", item.limitations),
                 ("Justificación técnica", item.technical_justification), ("Prioridad", LABELS[item.priority]),
                 ("Beneficio esperado", item.expected_benefit),
-                ("Criterio propuesto para verificar la corrección", item.proposed_verification_criterion)])
+                ("Criterio propuesto de verificación", item.proposed_verification_criterion)])
 
         self.heading("10. Anexos y trazabilidad")
         annexes = report.annexes_and_traceability
+        if annexes.generation is not None:
+            generation = annexes.generation
+            self.heading("Registro de construcción del informe", 2)
+            self.fields([("Generación", generation.generation_id), ("Versión del generador", generation.generator_version),
+                ("Digest de entrada", generation.source_digest), ("Validación documental", generation.validation_status),
+                ("Comprobaciones", generation.validation_checks), ("Incidencias", generation.issues),
+                ("Evaluaciones vigentes", generation.effective_assessment_ids),
+                ("Evaluaciones históricas", generation.historical_assessment_ids)])
+            self.paragraph("El JSON canónico conserva el snapshot de entrada completo para reconstruir el informe por separado.")
+            self.heading(f"Decisiones documentales ({len(generation.decisions)} registros)", 3, collapsed=True)
+            self.table(("Regla", "Decisión", "Motivo", "Fuentes"), ((d.rule, d.outcome, d.reason,
+                [s.model_dump(mode="json") for s in d.source_refs]) for d in generation.decisions))
+        self.heading(f"Cobertura de compromisos ({len(annexes.coverage_commitments)} registros)", 2, collapsed=True)
+        self.table(("Agente / hipótesis", "Sujetos / evidencias", "Estado / vigencia", "Pregunta / limitaciones"),
+            ((f"{c.agent_id} / {c.hypothesis_id}", [*c.subject_ids, *c.evidence_ids], f"{c.status} / {c.lifecycle}",
+                [c.question, *c.validation_issues]) for c in annexes.coverage_commitments))
         for title, items in (("Trazabilidad del inventario tecnológico", software.technologies),
                 ("Trazabilidad de dependencias", software.dependencies), ("Trazabilidad del entorno", software.runtime_environment)):
             if items:
                 self.heading(title, 2)
                 self.value(self.doc, items)
-        self.heading("Diagnóstico de la ejecución", 2)
+        self.heading("Diagnóstico de la ejecución", 2, collapsed=True)
         self.paragraph("Las incidencias de ejecución limitan la auditoría; no son defectos confirmados del software evaluado.")
         self.table(("Agente / invocación", "Motivo", "Incidencias registradas"),
             ((f"{item.agent_id}\n{self.execution_targets.get(item.invocation_id, item.invocation_id)}", item.explanation, item.incidents)
@@ -524,18 +587,18 @@ class ReportDocument:
             self.heading(f"{self.targets[item.record_id][0]} — {item.agent_id}", 3, target=item.record_id)
             self.fields([("Agente", item.agent_id), ("Ejecución", self.execution_targets.get(item.invocation_id, item.invocation_id)),
                 ("Registro de origen", item.record_id)])
-        self.heading("Inventario de evidencias", 2)
+        self.heading(f"Inventario de evidencias ({len(annexes.evidence_inventory)} registros)", 2, collapsed=True)
         for item in annexes.evidence_inventory:
-            self.heading(f"{self.targets[item.id][0]} — {item.source}", 3, target=item.id)
+            self.heading(f"{self.targets[item.id][0]} — {item.source}", 3, target=item.id, collapsed=True)
             self.fields([(field_label(key), LiteralText(value) if key == "content" else value)
                 for key, value in item.model_dump(mode="json").items()])
-        self.heading("Registros de ejecución y validación", 2)
+        self.heading("Registros de ejecución y validación", 2, collapsed=True)
         self.table(("Agente / invocación", "Estado / terminación", "Recursos"),
             ((f"{item.agent_id}\n{self.execution_targets[item.invocation_id]}", f"{LABELS.get(item.status, item.status)} / {item.termination_reason or 'No consta'}",
                 item.consumption) for item in annexes.executions))
         for item in annexes.executions:
             target = self.execution_targets[item.invocation_id]
-            self.heading(f"{self.targets[target][0]} — {item.agent_id}", 3, target=target)
+            self.heading(f"{self.targets[target][0]} — {item.agent_id}", 3, target=target, collapsed=True)
             self.fields([("Evaluaciones", item.assessment_ids), ("Limitaciones", item.limitations),
                 ("Resultados pendientes", item.unresolved_results), ("Resultados registrados", item.recorded_results)])
         for title, items in (("Métricas y resultados de herramientas", annexes.metrics_and_tool_results),
@@ -543,6 +606,13 @@ class ReportDocument:
                 ("Criterios técnicos adicionales", annexes.additional_criteria)):
             self.heading(title, 2)
             self.listing([item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in items])
+        self.heading("Catálogo de referencias legibles", 2, collapsed=True)
+        self.paragraph("Las identidades originales se conservan en la información emergente de los enlaces y en el JSON canónico. "
+            "Un nombre no publicado indica que el análisis no aporta una identidad inequívoca.")
+        for identifier in self.entity_targets:
+            if identifier not in self.used_entity_targets:
+                continue
+            self.value(self.doc, ReferenceTarget(identifier))
         buffer = BytesIO()
         self.doc.save(buffer)
         return buffer.getvalue()

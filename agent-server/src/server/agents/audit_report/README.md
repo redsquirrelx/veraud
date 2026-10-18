@@ -10,6 +10,8 @@ no vuelve a ejecutar los investigadores y no realiza llamadas a modelos.
   `read_blackboard → assemble_report → validate_traceability`.
 - `execution.py`: organización documental, estadísticas, riesgos y trazabilidad.
 - `knowledge.py`: interpretación de contratos existentes y categorías de auditoría.
+- `interpretation.py`: linaje explícito de continuaciones y matriz de compromisos.
+- `input_validation.py`: validación de las extensiones consumidas al importar JSON o leer el Blackboard.
 - `schemas.py`: exportaciones públicas; contratos canónicos en `agents/schemes/report.py`.
 - No existe configuración vacía ni parámetros de proveedor: esta ejecución es
   determinista. Por ello no participa en el catálogo de configuraciones LLM.
@@ -90,6 +92,90 @@ prioridad deriva de severidad publicada; el criterio de corrección se identific
 como **propuesto**, no como una prueba que ya se ejecutó. La ausencia de hallazgos
 no se presenta como cumplimiento de ISO ni como garantía global de calidad.
 
+### Estado efectivo, oportunidades y cobertura
+
+Las continuaciones solo sustituyen evaluaciones cuando declaran una base explícita y
+conservan identidad de repositorio/revisión/alcance, plan inicial, recibos históricos y
+brechas conservadas o resueltas. No se elige una autoridad por fecha o similitud de texto.
+Las ramas ambiguas o ciclos quedan como incidencias. El estado por dimensión se calcula
+sobre las evaluaciones vigentes; los antecedentes parciales se mantienen en anexos.
+
+Los hallazgos conservan `original_validation_status`, `original_review_rationale`, estado
+documental y `lifecycle`. Un seguimiento resuelto puede marcar una observación anterior
+como histórica si coincide su identidad estable, componentes, contexto y condiciones,
+o si descarta explícitamente el compromiso original vinculado. Los conteos de registros
+se conservan; `active_total` y `active_by_verification` distinguen la vista vigente.
+
+`disposition` distingue defectos, riesgos contextualizados, oportunidades, propuestas
+condicionales, fortalezas y observaciones. Solo los defectos y riesgos contextualizados
+vigentes y verificados alimentan riesgos/debilidades. Las oportunidades pueden generar
+acciones de evaluación, sin presentarse como correcciones obligatorias. Contexto, frontera,
+condiciones, supuestos, desconocidos y limitaciones se propagan a riesgos y recomendaciones.
+
+La matriz `annexes_and_traceability.coverage_commitments` conserva preguntas, sujetos,
+estado final de hipótesis, análisis asociados, evidencia citada y vigencia. Distingue
+evaluado, descartado, pendiente, diferido, omitido y no evaluado. Reparar un sujeto no
+resuelve los demás. Las listas de temas son referencia del modelo de calidad, no prueba
+de cobertura. Los candidatos de descubrimiento y los análisis especializados originales
+permanecen en los registros; no se convierten automáticamente en compromisos.
+
+Las relaciones del manager se resuelven mediante grupos consolidados y contribuciones
+hasta los hallazgos originales. Los análisis sin hallazgos y las ejecuciones sin evidencias
+propias se conservan a partir de los resultados retenidos por sus supervisores.
+
+### Registro auditable de generación
+
+Cada informe incluye `annexes_and_traceability.generation`, con:
+
+- `generation_id`, fecha y `generator_version`;
+- digest y `source_snapshot` completo para reconstruir la entrada;
+- IDs de evaluaciones vigentes e históricas;
+- decisiones estructuradas: regla, resultado, motivo, referencias originales y rutas de salida;
+- incidencias y comprobaciones de validación.
+
+Es una traza de interpretación documental, no una reevaluación técnica ni razonamiento
+libre. El agente sigue sin estado entre llamadas y no modifica el Blackboard de entrada.
+El esquema público conserva `schema_version: "1.0"` con extensiones aditivas y valores
+predeterminados para documentos anteriores; el algoritmo se identifica como generador 2.1.0.
+
+### Nombres legibles y bloques plegables
+
+El contexto del análisis publica `entity_catalog` con archivos, símbolos (nombre cualificado,
+archivo y líneas) y proyectos. No incluye el contenido fuente. El generador reúne ese catálogo
+y los metadatos ya disponibles en el snapshot en `annexes_and_traceability.reference_labels`.
+La generación offline utiliza exclusivamente esos datos; no accede al repositorio.
+
+Los objetivos específicos se proyectan desde los compromisos vigentes por área investigadora,
+con sus sujetos y fuentes. Las instrucciones de reparación originales permanecen en los
+registros técnicos y el snapshot de entrada. El Word resuelve las referencias en texto,
+encabezados, tablas y anexos, usando enlaces internos y un catálogo de destinos utilizados.
+Los identificadores completos permanecen en el JSON y en la información emergente de los enlaces.
+Las identidades sin nombre o con metadatos contradictorios reciben una etiqueta explícita
+«nombre no publicado»; no se inventan símbolos. Los fragmentos fuente no se reescriben.
+
+El DOCX incorpora encabezados plegables para inventario de evidencias, cobertura, diagnósticos,
+análisis técnicos, decisiones y tablas de más de doce registros. Word de escritorio compatible
+permite expandir/contraer mediante la flecha del encabezado o su menú contextual; otros visores
+pueden mostrar todo expandido. No se eliminan ni se ocultan permanentemente filas o evidencias.
+
+El servicio retiene cada generación por separado durante la vida del proceso:
+
+```http
+GET /api/audits/{run_id}/report-generations
+GET /api/audits/{run_id}/report-generations/{generation_id}
+```
+
+También se retienen las generaciones desde snapshots importados, sin crear una auditoría
+activa ni escribir sus datos en el Blackboard compartido. La segunda ruta devuelve el
+JSON original sin regenerarlo. Las descargas exponen `X-Report-Generation-ID`, y la página
+ofrece el JSON exacto de la generación elegida incluso cuando se descarga Word.
+
+La retención del servicio es en memoria. Descargar el JSON conserva el informe, su traza
+y su snapshot después de reiniciar el servidor; el pipeline conserva estos mismos campos
+dentro de su artefacto JSON persistido. El DOCX presenta el registro y la matriz de cobertura
+sin repetir el snapshot bruto completo. Cada nueva generación tiene ID/fecha propios;
+el digest y el contenido técnico son reproducibles para la misma entrada y versión.
+
 Los anexos preservan archivo, líneas, símbolos, hash, snapshot, commit, verificación
 Git, productor, ejecución y llamada de herramienta. También mantienen métricas,
 diagramas y grafos cuando existen; no crean artefactos que no fueron publicados.
@@ -151,6 +237,29 @@ de cada nivel. En el blackboard se muestra un resumen con detalles desplegables.
 También se puede reconstruir offline desde una exportación de
 `GET /api/audits/{run_id}`:
 
+En `/blackboard?run_id=…`, **Descargar análisis JSON** guarda el snapshot completo
+al terminar la ejecución (incluidas ejecuciones parciales, fallidas o canceladas).
+Conserva `run_id`, evidencias, hallazgos, evaluaciones y sus resultados jerárquicos
+anidados. La descarga consulta una vista nueva, no serializa únicamente lo visible.
+
+En `/blackboard`, **Generar informe desde JSON** permite cargar ese archivo y elegir
+Word o JSON del informe, incluso después de reiniciar el servidor y sin introducir
+un `run_id`. El generador usa un Blackboard aislado; no importa los datos a la auditoría
+activa, no lee el repositorio y no ejecuta agentes investigadores ni modelos.
+
+Endpoints equivalentes (cuerpo `application/json` con el snapshot exportado):
+
+- `POST /api/audits/reports/from-snapshot`: informe canónico JSON.
+- `POST /api/audits/reports/from-snapshot.docx`: informe Word descargable.
+
+El archivo de entrada es el **análisis del Blackboard**, no el informe ya generado.
+Debe contener `run_id` y las listas `evidence`, `findings`, `assessments`. Se validan
+los contratos de cada registro, la pertenencia al mismo run y los IDs duplicados;
+las referencias faltantes siguen produciendo limitaciones y resultados inconclusos.
+Los registros y las decisiones originales se conservan.
+
+Desde la línea de comandos, sin un servidor en ejecución:
+
 ```powershell
 uv run python src/test-agents/run_audit_report.py blackboard.json --output informe.json
 ```
@@ -163,5 +272,6 @@ solo conserva auditorías durante la vida del proceso.
 
 ```powershell
 uv run pytest tests/test_audit_report.py tests/test_audits.py tests/test_blackboard_publication.py -q
+uv run pytest tests/test_audit_report_interpretation.py tests/test_audit_snapshot_reports.py -q
 uv run ruff check src/server/agents/audit_report src/server/agents/schemes/report.py
 ```

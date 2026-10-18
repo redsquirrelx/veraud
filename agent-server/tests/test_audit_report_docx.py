@@ -33,7 +33,7 @@ def test_same_json_produces_identical_valid_docx_with_all_ten_sections_and_trace
     assert [item.split(".")[0] for item in headings] == [str(index) for index in range(1, 11)]
     content = document_text(document)
     for expected in ("Seguridad", "No evaluado", "Descartado", "Hallazgo descartado", "Verificado",
-            "domain/service.py", "commit", "snapshot", "blob", report.identification.source_digest,
+            "domain/service.py",
             report.quality_results.findings[0].criterion.description):
         assert expected in content
     with ZipFile(BytesIO(first)) as archive:
@@ -112,6 +112,53 @@ def test_source_content_is_not_rewritten_even_when_it_contains_record_ids():
         root = ElementTree.fromstring(archive.read("word/document.xml"))
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     assert any(node.text == "f1 = e1  # literal source" for node in root.findall(".//w:t", ns))
+
+
+def test_symbol_names_are_resolved_everywhere_with_real_destinations_and_literal_source():
+    symbol_id, file_id = "symbol:" + "a" * 24, "file:" + "b" * 24
+    missing = "component:" + "c" * 24
+    board = MemoryBlackboard()
+    board.publish_evidence(evidence(file_id=file_id, symbol_ids=(symbol_id,), content=f"# literal {symbol_id}", details={
+        "investigation": {"plan": {"hypotheses": [{"id": "h1", "component_ids": [symbol_id]}]},
+            "hypotheses": [{"id": "h1", "status": "confirmed", "evidence_ids": ["e1"]}]},
+        "audit_context": {"entity_catalog": [
+            {"id": file_id, "kind": "file", "path": "domain/service.py"},
+            {"id": symbol_id, "kind": "symbol", "file_id": file_id, "name": "Service.parse_allowlist", "start_line": 10, "end_line": 25}]}}))
+    board.publish_finding(finding(components=(symbol_id, missing), description=f"Inspect {symbol_id} in {file_id}."))
+    report = build(board)
+    assert report.annexes_and_traceability.reference_labels[symbol_id] == "Service.parse_allowlist — domain/service.py:10–25"
+    assert any("Service.parse_allowlist — domain/service.py:10–25" in objective.text
+        for objective in report.objectives_and_scope.specific_objectives)
+    output = render_audit_report_docx(report)
+    with ZipFile(BytesIO(output)) as archive:
+        root = ElementTree.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    visible = " ".join(node.text or "" for node in root.findall(".//w:t", ns))
+    assert "Service.parse_allowlist — domain/service.py:10–25" in visible
+    assert "Componente C001 — nombre no publicado" in visible
+    assert missing not in visible and file_id not in visible
+    assert visible.count(symbol_id) == 1  # Original source excerpt only.
+    anchors = {node.get(f"{{{ns['w']}}}name") for node in root.findall(".//w:bookmarkStart", ns)}
+    assert all(link.get(f"{{{ns['w']}}}anchor") in anchors for link in root.findall(".//w:hyperlink", ns))
+    assert report.quality_results.findings[0].components == [symbol_id, missing]
+
+
+def test_extensive_tables_and_annexes_have_collapsible_headings_without_hidden_rows():
+    report = build(populated())
+    evidence_item = report.annexes_and_traceability.evidence_inventory[0]
+    inventory = [evidence_item.model_copy(update={"id": f"extra-evidence-{number}"}) for number in range(15)]
+    report = report.model_copy(update={"annexes_and_traceability": report.annexes_and_traceability.model_copy(
+        update={"evidence_inventory": inventory})})
+    with ZipFile(BytesIO(render_audit_report_docx(report))) as archive:
+        root = ElementTree.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "w15": "http://schemas.microsoft.com/office/word/2012/wordml"}
+    folded = [
+        p for p in root.findall(".//w:p", ns) if p.find("w:pPr/w15:collapsed", ns) is not None]
+    assert any("Inventario de evidencias (15 registros)" in "".join(p.itertext()) for p in folded)
+    assert all(p.find("w:pPr/w:pStyle", ns) is not None for p in folded)
+    assert len(root.findall(".//w:bookmarkStart", ns)) >= 15
+    assert not root.findall(".//w:vanish", ns)
 
 
 def test_docx_endpoint_downloads_blackboard_report_and_returns_404_for_unknown_audit():

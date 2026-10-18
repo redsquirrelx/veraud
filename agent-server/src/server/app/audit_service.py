@@ -31,6 +31,7 @@ from ..agents.maintainability.manager import (
     MaintainabilityRequest,
 )
 from ..agents.maintainability.manager.validation import validate_call_capacity
+from ..agents.schemes.report import ReportGenerationSummary
 from ..api.schemas import ExecutionConfig
 from ..blackboard.identity import AuditIdentity
 from ..blackboard.interface import Blackboard
@@ -110,6 +111,7 @@ class AuditService:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._timings: dict[str, ActiveDeadline] = {}
         self._closing = False
+        self._report_generations: dict[str, dict[str, SoftwareAuditReport]] = {}
 
     def get(self, run_id: str) -> AuditState | None:
         return self._states.get(run_id)
@@ -124,7 +126,29 @@ class AuditService:
     async def report(self, run_id: str) -> SoftwareAuditReport | None:
         if self.get(run_id) is None:
             return None
-        return await AuditReportAgent(blackboard=self.blackboard).run(AuditReportRequest(run_id=run_id))
+        report = await AuditReportAgent(blackboard=self.blackboard).run(AuditReportRequest(run_id=run_id))
+        self.retain_report(report)
+        return report
+
+    def retain_report(self, report: SoftwareAuditReport) -> None:
+        """Keep immutable output receipts separate from the audit's input Blackboard."""
+        generation = report.annexes_and_traceability.generation
+        if generation is None:
+            raise ValueError("A generated report must include its construction trace.")
+        reports = self._report_generations.setdefault(report.identification.audit_id, {})
+        existing = reports.get(generation.generation_id)
+        if existing is not None and existing != report:
+            raise ValueError("Cannot overwrite an original report generation.")
+        reports[generation.generation_id] = report.model_copy(deep=True)
+
+    def report_generations(self, run_id: str) -> list[ReportGenerationSummary]:
+        return [ReportGenerationSummary(**{key: getattr(report.annexes_and_traceability.generation, key)
+                for key in ReportGenerationSummary.model_fields})
+            for report in self._report_generations.get(run_id, {}).values()]
+
+    def saved_report(self, run_id: str, generation_id: str) -> SoftwareAuditReport | None:
+        report = self._report_generations.get(run_id, {}).get(generation_id)
+        return report.model_copy(deep=True) if report is not None else None
 
     def snapshot(self, run_id: str) -> AuditSnapshot | None:
         state = self.get(run_id)

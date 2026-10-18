@@ -223,6 +223,12 @@ def publish_audit_context(blackboard: Blackboard, identity: AuditIdentity, snaps
         "technologies": [item.model_dump(mode="json") for item in snapshot.technologies],
         "repository_structure": sorted({item.path.split("/")[0] for item in snapshot.files}),
         "modules": [item.path for item in snapshot.projects],
+        "entity_catalog": [
+            *[{"id": item.id, "kind": "file", "path": item.path} for item in snapshot.files],
+            *[{"id": item.id, "kind": "symbol", "file_id": item.file_id,
+                "name": item.qualified_name, "start_line": item.start_line, "end_line": item.end_line}
+                for item in snapshot.symbols],
+            *[{"id": item.id, "kind": "project", "name": item.name, "path": item.path} for item in snapshot.projects]],
         "dependencies": [item.model_dump(mode="json") for item in snapshot.dependencies],
         "runtime_environment": [item.model_dump(mode="json") for item in snapshot.infrastructure],
         "limitations": list(snapshot.coverage.limitations),

@@ -5,23 +5,15 @@ import asyncio
 import json
 from pathlib import Path
 
-from server.agents.audit_report import AuditReportAgent, AuditReportRequest
-from server.blackboard.impls.memory import MemoryBlackboard
-from server.blackboard.models import Assessment, Evidence, Finding
+from server.agents.audit_report import AuditReportRequest
+from server.services.audit_report_snapshot import (
+    BlackboardSnapshot,
+    report_from_snapshot,
+)
 
 
 async def build_report(snapshot, run_id):
-    board = MemoryBlackboard()
-    for key, schema, publish in (
-        ("evidence", Evidence, board.publish_evidence),
-        ("findings", Finding, board.publish_finding),
-        ("assessments", Assessment, board.publish_assessment),
-    ):
-        for value in snapshot.get(key, []):
-            record = schema.model_validate(value)
-            if record.run_id == run_id:
-                publish(record)
-    return await AuditReportAgent(blackboard=board).run(AuditReportRequest(run_id=run_id))
+    return await report_from_snapshot(BlackboardSnapshot.model_validate({**snapshot, "run_id": run_id}))
 
 
 def main():

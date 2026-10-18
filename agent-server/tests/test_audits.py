@@ -488,6 +488,10 @@ def test_status_includes_live_records_and_preserves_them_after_completion_or_fai
         assert early["status"] == "running"
         assert [record["id"] for record in early["evidence"] if record["kind"] == "source"] == ["evidence"]
         assert any("audit_context" in record["details"] for record in early["evidence"])
+        catalog = next(record["details"]["audit_context"]["entity_catalog"] for record in early["evidence"]
+            if "audit_context" in record["details"])
+        assert any(item["kind"] == "file" and item["path"] for item in catalog)
+        assert all("content" not in item for item in catalog)
         assert early["findings"] == early["assessments"] == []
         client.portal.call(publish_more.set)
         client.portal.call(published.wait)

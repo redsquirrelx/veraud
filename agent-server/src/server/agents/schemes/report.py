@@ -56,6 +56,8 @@ class FindingStatistics(Contract):
     by_severity_and_verification: dict[str, dict[str, int]] = Field(default_factory=dict)
     by_attribute: dict[str, int] = Field(default_factory=dict)
     verified_by_component: dict[str, int] = Field(default_factory=dict)
+    active_total: int = 0
+    active_by_verification: dict[str, int] = Field(default_factory=dict)
 
 
 class ExecutiveSummary(Contract):
@@ -102,7 +104,16 @@ class SoftwareDescription(Contract):
     source_refs: list[RecordReference] = Field(default_factory=list)
 
 
-class ReportFinding(Contract):
+class ReportQualifications(Contract):
+    assessed_context: str = ""
+    sharing_boundary: str = ""
+    conditions: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ReportFinding(ReportQualifications):
     id: str
     title: str
     quality_attribute: str
@@ -123,6 +134,11 @@ class ReportFinding(Contract):
     consolidation_ids: list[str] = Field(default_factory=list)
     classification: Literal["problem", "observation", "strength"] = "observation"
     technical_details: dict[str, JsonValue] = Field(default_factory=dict)
+    lifecycle: Literal["current", "historical"] = "current"
+    superseded_by: list[str] = Field(default_factory=list)
+    original_validation_status: str = "insufficient_evidence"
+    original_review_rationale: str = ""
+    disposition: Literal["defect", "contextual_risk", "opportunity", "conditional_proposal", "strength", "observation"] = "observation"
 
 
 class SubcharacteristicResult(Contract):
@@ -150,7 +166,7 @@ class QualityResults(Contract):
     findings: list[ReportFinding]
 
 
-class ReportRisk(Contract):
+class ReportRisk(ReportQualifications):
     id: str
     finding_ids: list[str]
     components: list[str]
@@ -158,6 +174,7 @@ class ReportRisk(Contract):
     severity: str | None
     priority: Literal["urgent", "high", "medium", "low", "undetermined"]
     basis: Literal["verified_findings"] = "verified_findings"
+    risk_type: Literal["verified_harm", "contextual"] = "verified_harm"
 
 
 class FindingRelationship(Contract):
@@ -184,7 +201,7 @@ class AuditConclusions(Contract):
     general_conclusion: str
 
 
-class ImprovementRecommendation(Contract):
+class ImprovementRecommendation(ReportQualifications):
     id: str
     finding_ids: list[str]
     action: str
@@ -192,6 +209,7 @@ class ImprovementRecommendation(Contract):
     priority: Literal["urgent", "high", "medium", "low", "undetermined"]
     expected_benefit: str
     proposed_verification_criterion: str
+    action_type: Literal["correction", "context_validation", "opportunity_assessment", "conditional_assessment"] = "correction"
 
 
 class ReportEvidence(Contract):
@@ -224,7 +242,55 @@ class ExecutionTrace(Contract):
     recorded_results: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class CoverageCommitment(Contract):
+    invocation_id: str
+    agent_id: str
+    hypothesis_id: str | None = None
+    question: str
+    subject_ids: list[str] = Field(default_factory=list)
+    status: Literal["evaluated", "discarded", "pending", "deferred", "skipped", "not_evaluated"]
+    final_hypothesis_status: str | None = None
+    assessment_ids: list[str] = Field(default_factory=list)
+    validation_issues: list[str] = Field(default_factory=list)
+    source_refs: list[RecordReference] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    lifecycle: Literal["current", "historical"] = "current"
+
+
+class ReportDecision(Contract):
+    id: str
+    rule: str
+    outcome: str
+    reason: str
+    source_refs: list[RecordReference] = Field(default_factory=list)
+    output_paths: list[str] = Field(default_factory=list)
+
+
+class ReportGeneration(Contract):
+    generation_id: str
+    generator_version: str
+    report_schema_version: str = "1.0"
+    generated_at: datetime
+    source_digest: str
+    source_snapshot: dict[str, JsonValue]
+    effective_assessment_ids: list[str]
+    historical_assessment_ids: list[str]
+    decisions: list[ReportDecision]
+    validation_status: Literal["pending", "passed", "failed"] = "pending"
+    validation_checks: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
+class ReportGenerationSummary(Contract):
+    generation_id: str
+    generated_at: datetime
+    generator_version: str
+    source_digest: str
+    validation_status: Literal["pending", "passed", "failed"]
+
+
 class AuditAnnexes(Contract):
+    reference_labels: dict[str, str] = Field(default_factory=dict)
     evidence_inventory: list[ReportEvidence]
     assessments: list[RecordReference]
     executions: list[ExecutionTrace]
@@ -237,6 +303,8 @@ class AuditAnnexes(Contract):
     unresolved_references: list[str]
     limitations: list[str]
     execution_issues: list[ExecutionDiagnostic] = Field(default_factory=list)
+    coverage_commitments: list[CoverageCommitment] = Field(default_factory=list)
+    generation: ReportGeneration | None = None
 
 
 class SoftwareAuditReport(Contract):

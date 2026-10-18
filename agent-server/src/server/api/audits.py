@@ -9,9 +9,11 @@ from config.agents.budgets import TokenBudgetConfig
 
 from ..agents.audit_report import SoftwareAuditReport
 from ..agents.maintainability.manager import MaintainabilityRequest
+from ..agents.schemes.report import ReportGenerationSummary
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.execution_service import InvalidConfigError
 from ..services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
+from ..services.audit_report_snapshot import BlackboardSnapshot, report_from_snapshot
 from .schemas import DomainError, ExecutionConfig, RequestValidationErrorResponse
 
 router = APIRouter(prefix="/api/audits", tags=["Audits"])
@@ -41,6 +43,30 @@ def get_audit_service(request: Request) -> AuditService:
 
 
 ServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+
+
+@router.post("/reports/from-snapshot", response_model=SoftwareAuditReport,
+    summary="Build report JSON from an exported Blackboard snapshot",
+    description="Uses an isolated Blackboard, without a live run, repository access or model calls.")
+async def build_snapshot_report(body: BlackboardSnapshot, response: Response, service: ServiceDep) -> SoftwareAuditReport:
+    response.headers["Cache-Control"] = "no-store"
+    report = await report_from_snapshot(body)
+    service.retain_report(report)
+    response.headers["X-Report-Generation-ID"] = report.annexes_and_traceability.generation.generation_id
+    return report
+
+
+@router.post("/reports/from-snapshot.docx", response_class=Response,
+    summary="Build a Word report from an exported Blackboard snapshot",
+    responses={200: {"content": {DOCX_MEDIA_TYPE: {"schema": {"type": "string", "format": "binary"}}}}})
+async def build_snapshot_report_docx(body: BlackboardSnapshot, service: ServiceDep) -> Response:
+    report = await report_from_snapshot(body)
+    service.retain_report(report)
+    content = await asyncio.to_thread(render_audit_report_docx, report)
+    return Response(content=content, media_type=DOCX_MEDIA_TYPE, headers={
+        "Content-Disposition": 'attachment; filename="informe-auditoria.docx"',
+        "X-Report-Generation-ID": report.annexes_and_traceability.generation.generation_id,
+        "Cache-Control": "no-store"})
 
 
 @router.post("", status_code=202, response_model=AuditState,
@@ -81,6 +107,7 @@ async def get_audit_report(run_id: str, response: Response, service: ServiceDep)
     if report is None:
         raise HTTPException(status_code=404, detail="Audit not found.")
     response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Report-Generation-ID"] = report.annexes_and_traceability.generation.generation_id
     return report
 
 
@@ -97,4 +124,23 @@ async def download_audit_report_docx(run_id: str, service: ServiceDep) -> Respon
     content = await asyncio.to_thread(render_audit_report_docx, report)
     return Response(content=content, media_type=DOCX_MEDIA_TYPE, headers={
         "Content-Disposition": 'attachment; filename="informe-auditoria.docx"',
+        "X-Report-Generation-ID": report.annexes_and_traceability.generation.generation_id,
         "Cache-Control": "no-store"})
+
+
+@router.get("/{run_id}/report-generations", response_model=list[ReportGenerationSummary],
+    summary="List retained report generations for a live or imported audit")
+async def list_report_generations(run_id: str, response: Response, service: ServiceDep) -> list[ReportGenerationSummary]:
+    response.headers["Cache-Control"] = "no-store"
+    return service.report_generations(run_id)
+
+
+@router.get("/{run_id}/report-generations/{generation_id}", response_model=SoftwareAuditReport,
+    summary="Retrieve an original report and its construction trace without regenerating it")
+async def get_report_generation(run_id: str, generation_id: str, response: Response, service: ServiceDep) -> SoftwareAuditReport:
+    report = service.saved_report(run_id, generation_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report generation not found.")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Report-Generation-ID"] = generation_id
+    return report
