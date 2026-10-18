@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from ....runtimes.coordination.continuation import CoordinatorContinuation
 from ....runtimes.coordination.execution import (
     CoordinatorExecution,
     CoordinatorSynthesisExecution,
@@ -128,6 +129,10 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
     def configure_invocation(self, investigator, assignment, state):
         self.configure_investigator(investigator)
         investigator.tracing = _CorrelatedTracing(self.agent.tracing, state["assessment_id"], assignment.invocation_id)
+        if assignment.baseline_invocation_id:
+            previous = next(r for r in state["investigation_results"] if r.assignment.invocation_id == assignment.baseline_invocation_id)
+            publication = self.publication.child(previous.assignment.invocation_id, assignment.investigator_id) if self.publication else None
+            investigator.continuation = CoordinatorContinuation(previous.result, tuple(assignment.subordinate_gap_ids), publication)
 
     def investigator_request(self, spec, assignment, context):
         context = context[:3500]
@@ -135,7 +140,8 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         context += "\nCoverage criteria: " + "; ".join(assignment.success_criteria)
         context += "\nRequested depth: " + self.request.depth + "; configured resource limits are authoritative."
         args = {"objective": assignment.question, "targets": assignment.targets,
-                "architectural_context": context[:6000], "criteria": self.request.criteria}
+                "architectural_context": context[:6000], "criteria": self.request.criteria,
+                "follow_up": assignment.commitments, "follow_up_diagnostics": assignment.diagnostics}
         if assignment.investigator_id == "reusability":
             args["target_context"] = self.request.target_context
         return spec.request_class(**args)
@@ -162,7 +168,16 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
             result, assignment, snapshot=self.tools.accessible_snapshot.repository,
             request=self.request, check_reference=self.valid_reference,
             verify_references=self.synth.verify_references,
+            baseline=self.baseline_result(assignment),
         )
+
+    def baseline_result(self, assignment):
+        if not assignment.baseline_invocation_id:
+            return None
+        record = self._collected_records.get(assignment.baseline_invocation_id)
+        if record is None or record.result is None or record.assignment.investigator_id != assignment.investigator_id:
+            raise ValueError("Unknown coordinator continuation baseline.")
+        return record.result
 
     def coverage_issues(self, result, key):
         registry = MODULARITY_INVESTIGATORS if key == "modularity" else REUSABILITY_INVESTIGATORS
@@ -205,8 +220,7 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
                     # Evidence rejection does not erase valid, bounded usage already
                     # reported by the host coordinator. Invalid accounting retains
                     # the conservative reservation fallback.
-                    validation.validate_accounting(result, assignment.budget)
-                    usage = result.consumption
+                    usage = validation.validate_accounting(result, assignment.budget, baseline=self.baseline_result(assignment))
                     self.validate_result(result, assignment)
                     issues = self.coverage_issues(result, assignment.investigator_id)
                     status = "completed" if not issues else "failed" if result.status == "failed" else "partial"
@@ -236,6 +250,14 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         if not gap.blocking or gap.coordinator is None:
             return False
         calls = [r for r in records if r.assignment.investigator_id == gap.coordinator]
+        if gap.task_type == "external_context" or len(calls) >= self.config.max_attempts_per_dimension:
+            return False
+        if gap.source_assessment_invocation_id:
+            source = next((r for r in calls if r.assignment.invocation_id == gap.source_assessment_invocation_id), None)
+            if source is None or source.result is None or source.failure is not None:
+                return False
+            return any(g.id in gap.subordinate_gap_ids and self.registry[gap.coordinator].agent_class.continuation_actionable(source.result, g)
+                for g in source.result.material_gaps)
         if calls and terminal_collection_blocker(calls[-1]):
             return False
         if calls and terminal_provider_blocker(calls[-1].result):
@@ -252,6 +274,9 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         latest = [r for r in state["investigation_results"] if r.assignment.round == state["rounds_completed"]]
         known = {evidence_key(e) for r in prior for e in r.evidence if e.kind == "source"}
         return (any(e.kind == "source" and evidence_key(e) not in known for r in latest for e in r.evidence)
+                or any(r.result and r.assignment.baseline_invocation_id and any(
+                    p.assignment.invocation_id == r.assignment.baseline_invocation_id and p.result
+                    and set(r.result.resolved_gap_ids) - set(p.result.resolved_gap_ids) for p in prior) for r in latest)
                 or any(r.evidence_sufficient and not any(p.evidence_sufficient and p.assignment.investigator_id == r.assignment.investigator_id
                        for p in prior) for r in latest))
 
@@ -259,11 +284,26 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         self.tick("synthesize_assessments")
         records = state["investigation_results"]
         findings, evidence = self.indexes(records)
-        covered = [d for d in state["scope"].assessable if any(r.assignment.investigator_id == d and r.evidence_sufficient for r in records)]
-        gaps = {g.id: g for g in state["material_gaps"] if g.kind not in {"missing_coverage", "synthesis_failure"}}
+        latest = {r.assignment.investigator_id: r for r in records}
+        covered = [d for d in state["scope"].assessable if d in latest and latest[d].evidence_sufficient]
+        resolved = set(state["resolved_gap_ids"])
+        gaps = {g.id: g for g in state["material_gaps"] if g.subordinate_gap_ids or g.kind not in {"missing_coverage", "synthesis_failure"}}
+        for gap in list(gaps.values()):
+            current = latest.get(gap.coordinator)
+            if (gap.subordinate_gap_ids and current and current.result and
+                    (set(gap.subordinate_gap_ids) <= set(current.result.resolved_gap_ids) or current.evidence_sufficient)):
+                gaps.pop(gap.id)
+                resolved.add(gap.id)
         for dimension in state["scope"].assessable:
             if dimension not in covered:
                 calls = [r for r in records if r.assignment.investigator_id == dimension]
+                current = latest.get(dimension)
+                tasks = synthesis.subordinate_tasks(current, findings, evidence) if current and current.result else []
+                if tasks:
+                    for task in tasks:
+                        if task.id not in resolved:
+                            gaps[task.id] = task
+                    continue
                 details = "; ".join(calls[-1].coverage_issues) if calls else "No result"
                 gap = CoverageGap(id="coverage-" + dimension, kind="missing_coverage", coordinator=dimension,
                     question=f"Complete the missing source-backed {dimension} coverage. {details}",
@@ -283,8 +323,7 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         self.spent = self.spent.model_copy(update={"model_calls": self.spent.model_calls + self.synth.calls - before[0],
             "accounted_tokens": self.spent.accounted_tokens + self.synth.tokens - before[1],
             "estimated_tokens": self.spent.estimated_tokens + self.synth.estimates - before[2]})
-        resolved = set(state["resolved_gap_ids"])
-        links = list(state["links"])
+        links = [link for link in state["links"] if set(link.finding_refs) <= findings.keys()]
         items = list(findings.items())
         for i, (left_ref, left) in enumerate(items):
             for right_ref, right in items[i + 1:]:
@@ -326,7 +365,7 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         decision = CoverageDecision(route="no" if can_follow else "yes", sufficient=sufficient, reason=reason,
             covered=covered, required=state["scope"].assessable, actionable_gap_ids=[g.id for g in actionable], can_follow_up=can_follow)
         return {"material_gaps": values, "resolved_gap_ids": sorted(resolved), "actionable_followups": actionable,
-            "decision": decision, "summary": draft.summary if draft else state["summary"],
+            "decision": decision, "summary": synthesis.qualified_summary(draft.summary, findings) if draft else state["summary"],
             "links": list({stable_id("link", link.model_dump()): link for link in links}.values()),
             "synthesis_history": [*state["synthesis_history"], SynthesisRound(round=state["rounds_completed"], draft=draft, decision=decision, gaps=values)]}
 
@@ -340,8 +379,19 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
             targets = list(dict.fromkeys(t for g in gaps for t in g.targets))[:12]
             objective = "\n".join(g.question for g in gaps)
             attempt = 1 + sum(r.assignment.investigator_id == key for r in state["investigation_results"])
-            pending.append(self.assignment(key, objective, state["rounds_completed"] + 1, targets,
-                [g.id for g in gaps], list(dict.fromkeys(ref for g in gaps for ref in g.evidence_refs))[:8], attempt))
+            assignment = self.assignment(key, objective, state["rounds_completed"] + 1, targets,
+                [g.id for g in gaps], list(dict.fromkeys(ref for g in gaps for ref in g.evidence_refs))[:8], attempt)
+            sources = {g.source_assessment_invocation_id for g in gaps if g.source_assessment_invocation_id}
+            if sources:
+                # Continue one validated cumulative baseline, preserving the full
+                # dimension scope rather than promoting a narrow task to coverage.
+                source = next(r for r in reversed(state["investigation_results"]) if r.assignment.invocation_id in sources)
+                assignment = assignment.model_copy(update={"baseline_invocation_id": source.assignment.invocation_id,
+                    "subordinate_gap_ids": list(dict.fromkeys(i for g in gaps for i in g.subordinate_gap_ids)),
+                    "targets": source.assignment.targets,
+                    "commitments": list({c.model_dump_json(): c for g in gaps for c in g.commitments}.values()),
+                    "diagnostics": list(dict.fromkeys(i for g in gaps for i in g.diagnostics))})
+            pending.append(assignment)
         return {"pending_assignments": pending, "issued_assignments": [*state["issued_assignments"], *pending]}
 
     def finalize_audit(self, state):

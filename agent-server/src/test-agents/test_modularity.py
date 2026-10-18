@@ -62,10 +62,13 @@ def result(key, tools, request):
 
 
 def factory(calls, *, fail=None, slow=None):
+    counts = {}
     def create(key, model, limits):
         async def run(tools, request):
+            counts[key] = counts.get(key, 0) + 1
             calls.append((key, id(tools), request.objective))
-            tools.execute("get_source_excerpt", {"path": "main.py", "start_line": 1, "end_line": 2}, tool_call_id="read")
+            tools.execute("get_source_excerpt", {"path": "main.py", "start_line": 1,
+                "end_line": 2 if counts[key] > 1 else 1}, tool_call_id="read")
             if key == fail:
                 raise RuntimeError("secret should not be exposed")
             if key == slow:

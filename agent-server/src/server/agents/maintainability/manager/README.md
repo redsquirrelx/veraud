@@ -106,11 +106,27 @@ are not gaps. Overall status is `complete`, `partial`, or `failed`.
 Only material actionable gaps enter refinement. It groups them by coordinator and issues
 new questions/targets; completed dimensions are not automatically redispatched. Equivalent
 questions are blocked, per-dimension attempts and total invocations/rounds are capped,
-and lack of new canonical source or recovered coverage stops progress. Coverage may
+and lack of new canonical source, validated subordinate task resolution or recovered coverage stops progress. Coverage may
 recover on a later valid attempt without deleting earlier failures. Quality/contradiction
 gaps persist until a completed assigned follow-up supplies new source content/ranges and
 a validated resolution; new retrieval UUIDs alone cannot close them. Original links/gaps
 and every synthesis decision remain in history, including resolved contradiction links.
+
+Structured subordinate gaps retain task type, original invocation/question, exact subjects,
+assessed context, sharing boundary and diagnostics. For these tasks, refinement resumes a
+host-validated same-run coordinator baseline and dispatches only the selected pending
+investigators. It does not restart all three lenses. The original plan and child receipts
+remain immutable; new evaluations append to the cumulative result. Resolving one task does
+not certify a dimension with other material gaps. External context and terminal blockers
+remain limitations without repeated repository dispatch.
+
+A subordinate `validation_repair` may resolve using the same inspected source after the
+coordinator verifies the invalid-to-valid transition of the original commitment. Source
+inspection and model-proposed quality/contradiction gaps retain their new-source rule.
+Manager coverage is computed from the latest validated cumulative dimension assessment;
+earlier assessments remain historical, and superseded consolidated findings are not
+duplicated as independent active findings. Conditions, assumptions, unknowns and qualified
+local consequences are retained in the synthesis projection and final qualified summary.
 
 ## Resources and observability
 
@@ -122,6 +138,10 @@ separate investigator caps. The caller's repository budget can impose stricter l
 Two parallel children reserve their whole envelopes before either starts; unknown failed
 executions consume reservations, while never-started invocations are skipped. Nested costs
 are counted once via each coordinator's consumption, plus manager synthesis costs.
+Continuation results report cumulative consumption, but their manager invocation records
+charge only the validated delta from the assigned baseline. Historical costs cannot be
+recharged or used to hide underreported new work. Blackboard references the original child
+publications without rewriting them under the continuation's identity.
 
 One shared `ProviderPacer` covers manager synthesis, both coordinators and all investigators,
 defaulting to 14 RPM / 250,000 TPM. An injected pacer can share accounting across assessments

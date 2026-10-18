@@ -117,13 +117,15 @@ class SimulatedProvider:
         self.calls.append((key, name, context.get("objective")))
         # Yield provider I/O without implementing dispatch timing in the tests.
         await asyncio.sleep(0)
-        if self.scenario == "provider_failure" and key == "reuse_opportunity" and name == "InvestigationPlan":
+        if self.scenario == "provider_failure" and key == "reuse_opportunity" and name == "ReusePlan":
             raise RuntimeError("Simulated unavailable provider, not an investigator stub")
         if key == "coordinator":
             value = self.synthesis(context)
-        elif name == "InvestigationPlan":
+        elif name in {"InvestigationPlan", "AbstractionPlan", "ReusePlan", "AdaptabilityPlan"}:
             value = {"abstraction": abstraction_plan, "reuse_opportunity": reuse_plan,
-                     "component_adaptability": adaptability_plan}[key]()
+                      "component_adaptability": adaptability_plan}[key]()
+            if callable(value):
+                value = value(messages)
         elif name in {"inspect", "InspectionDecision"}:
             used_tools = any(isinstance(m, ToolMessage) for m in messages)
             if used_tools:
@@ -145,10 +147,10 @@ class SimulatedProvider:
             value = reuse_evaluate(messages, classification="conditional", caller=False, mutate=self.reuse_comparison)
         elif name == "AdaptabilityEvaluation":
             value = adaptability_evaluate(messages, mutate=self.adaptability_comparison)
-        elif name == "Review":
-            value = {"abstraction": lambda: abstraction_review("ABS-001"),
-                     "reuse_opportunity": lambda: reuse_review("REUSE-001"),
-                     "component_adaptability": lambda: adaptability_review("ADAPT-001")}[key]()
+        elif name in {"Review", "AbstractionReview", "ReuseReview", "AdaptabilityReview"}:
+            value = {"abstraction": lambda: abstraction_review("ABS-001")(messages),
+                      "reuse_opportunity": lambda: reuse_review("REUSE-001")(messages),
+                      "component_adaptability": lambda: adaptability_review("ADAPT-001")(messages)}[key]()
         else:
             raise AssertionError(f"Unexpected real graph schema: {key}/{name}")
         return value if isinstance(value, AIMessage) else AIMessage(content=json.dumps(value))

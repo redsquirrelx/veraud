@@ -4,8 +4,33 @@ from pathlib import Path
 
 from .....runtimes.coordination import synthesis as shared
 from .....runtimes.coordination.execution import CoordinatorSynthesisExecution
-from .....runtimes.investigation.schemas import EvidenceReference
 from .schemas import ConsolidatedFinding, EvidenceGap, FindingContribution
+
+
+def qualified_limitations(item, findings):
+    required = list(dict.fromkeys(text for ref in item.finding_refs for text in findings[ref]["required_qualifications"]))
+    if not required:
+        return item.limitations
+    block = "Original investigator qualifications:\n" + "\n".join(required)
+    # Respect Conclusion's bounded list without dropping any original qualification.
+    return [*item.limitations, block] if len(item.limitations) < 12 else [*item.limitations[:-1], item.limitations[-1] + "\n" + block]
+
+
+def qualified_statement(item, findings):
+    details = [findings[ref]["details"] for ref in item.finding_refs]
+    if not any(d.get("classification") in {"conditional", "context_dependent_risk"} for d in details):
+        return item.statement
+    # Do not revive categorical extraction/rewrite claims through synthesis prose.
+    # The original host-qualified consequences/conditions remain complete below.
+    statements = []
+    for value in details:
+        if value.get("classification") == "conditional":
+            boundary = value.get("sharing_boundary") or value["title"]
+            statements.append("Conditional sharing proposal: " + boundary + ". Its recorded prerequisites must be verified before extraction.")
+        else:
+            statements.append("Context-qualified observation: " + (value.get("adaptation_impact") or value["modularity_impact"]))
+    statement = "\n".join(dict.fromkeys(statements))
+    return statement if len(statement) <= 2000 else "Context-qualified investigator observations; original contexts, conditions and local consequences are retained in limitations."
 
 
 class ReusabilitySynthesisExecution(CoordinatorSynthesisExecution):
@@ -35,6 +60,8 @@ class ReusabilitySynthesisExecution(CoordinatorSynthesisExecution):
                 signatures = {findings[r]["polarity"] for r in group.finding_refs}
                 if len(signatures) != 1 or any(findings[r]["validation_status"] != "accepted" for r in group.finding_refs):
                     raise ValueError
+                if len({str(findings[r]["grouping_identity"]) for r in group.finding_refs}) != 1:
+                    raise ValueError
             for item in [*draft.gaps, *draft.resolutions, *draft.conclusions, *draft.relationships]:
                 if not set(item.evidence_refs) <= evidence.keys():
                     raise ValueError
@@ -49,16 +76,17 @@ class ReusabilitySynthesisExecution(CoordinatorSynthesisExecution):
                 cited = {e for r in item.finding_refs for e in findings[r]["evidence_refs"]}
                 if not set(item.evidence_refs) <= cited:
                     raise ValueError
+            draft = draft.model_copy(update={"conclusions": [item.model_copy(update={"limitations": qualified_limitations(item, findings),
+                "statement": qualified_statement(item, findings)})
+                for item in draft.conclusions]})
             invocations = {r["invocation_id"]: r for r in context["invocations"]}
             for resolution in draft.resolutions:
                 invocation = invocations.get(resolution.invocation_id)
                 if not invocation or not set(resolution.withdrawn_finding_refs) <= findings.keys():
                     raise ValueError
-                prior_keys = {shared.evidence_key(EvidenceReference.model_validate(e)) for ref, e in evidence.items()
-                    if invocations[ref.split("/", 1)[0]]["round"] < invocation["round"]}
-                if (any(not r.startswith(resolution.invocation_id + "/") for r in resolution.evidence_refs)
-                        or not any(shared.evidence_key(EvidenceReference.model_validate(evidence[r])) not in prior_keys for r in resolution.evidence_refs)):
-                    # Preserve the draft but reject a closure without new evidence.
+                if any(not r.startswith(resolution.invocation_id + "/") for r in resolution.evidence_refs):
+                    # The coordinator checks new source OR a bound host-validation
+                    # transition against actual records, not the model's explanation.
                     draft = draft.model_copy(update={"resolutions": [r for r in draft.resolutions if r is not resolution]})
             for relationship in draft.relationships:
                 if len(set(relationship.finding_refs)) < 2:
@@ -84,7 +112,8 @@ def polarity(finding):
 
 
 def group_key(finding):
-    return (*shared.semantic_key(finding), polarity(finding), getattr(finding, "assessed_context", ""))
+    identity = getattr(finding, "stable_id", "") or shared.stable_id("semantic", shared.semantic_key(finding))
+    return (identity, polarity(finding), shared.qualification_key(finding))
 
 
 def finding_index(records):
@@ -106,6 +135,16 @@ def consolidate(records, groups, gaps, withdrawn):
 
 def actionable(gap, records):
     if not gap.material or not gap.investigator_id or not gap.question.strip():
+        return False
+    if gap.task_type == "external_context":
+        return False
+    prior = [r for r in records if r.assignment.investigator_id == gap.investigator_id]
+    if prior and (shared.terminal_provider_blocker(prior[-1].result) or shared.terminal_collection_blocker(prior[-1])):
+        return False
+    attempts = [r for r in records if gap.id in r.assignment.gap_ids]
+    if attempts:
+        # One targeted attempt per unchanged commitment. A new model phrasing or
+        # invocation ID cannot reopen the same bounded repair indefinitely.
         return False
     matching = [r for r in records if shared.request_key(r.assignment.investigator_id, r.assignment.question,
         r.assignment.targets) == shared.request_key(gap.investigator_id, gap.question, gap.targets)]

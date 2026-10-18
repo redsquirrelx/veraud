@@ -68,6 +68,16 @@ explícitamente conclusiones refutadas, conservándolas en los registros histór
 Una lista vacía de hallazgos no prueba cumplimiento. Los resultados parciales nunca
 se transforman silenciosamente en conclusiones favorables.
 
+La síntesis recibe hipótesis finales, análisis validados, estado de evaluación de evidencia
+y cobertura; los juicios crudos de `critical_review` no sustituyen la decisión del host.
+Las lagunas distinguen inspección de fuente, reparación de validación, contexto externo
+y trabajo diferido. Los diagnósticos relacionados se agrupan por compromiso concreto.
+Los seguimientos conservan sujetos, pregunta y procedencia en `commitments`, transmitidos
+al investigador mediante `follow_up`. Una reparación de validación puede cerrar con las
+mismas fuentes si el host verifica la transición de inválida a válida del mismo compromiso;
+una laguna de fuente sigue exigiendo rangos/contenido nuevos frente a rondas anteriores.
+El contexto externo permanece como limitación sin repetir inspecciones del repositorio.
+
 ## Recursos, seguridad y observabilidad
 
 Se comparten snapshot inmutable y cliente de modelo; cada invocación obtiene un

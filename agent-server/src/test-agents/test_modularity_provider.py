@@ -34,6 +34,12 @@ from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactAgent,
 )
 from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
+from server.agents.maintainability.reusability.component_adaptability import (
+    ComponentAdaptabilityAgent,
+)
+from server.agents.maintainability.reusability.reuse_opportunity import (
+    ReuseOpportunityAgent,
+)
 from server.agents.schemes.investigator import BoundaryReview
 from server.runtimes.investigation.provider import (
     lean_schema,
@@ -86,6 +92,92 @@ def test_retry_limit_exhaustion_is_bounded(repo):
     result = asyncio.run(run.call("review_findings", run.initial_state(), Review))
     assert result is None and run.stop == "provider_recovery_exhausted" and run.retryable_failure
     assert run.calls == len(model.history) == 2
+
+
+@pytest.mark.parametrize(("retries", "budget", "sleeps_expected", "reason"), [
+    (4, 60, [2, 4, 8, 16], "provider_recovery_exhausted"),
+    (4, 3, [2], "provider_recovery_budget"),
+    (0, 0, [], "provider_recovery_exhausted"),
+])
+def test_failed_planning_reports_the_actual_retry_blocker_and_skips_unstarted_stages(
+        repo, retries, budget, sleeps_expected, reason):
+    unavailable = errors.ServerError(503, response_json={"error": {"code": 503, "message": "Unavailable"}})
+    run, model = execution(repo, [unavailable] * 5, max_provider_retries=retries,
+        provider_retry_backoff_seconds=2, provider_recovery_budget_seconds=budget)
+    sleeps, visited = [], []
+
+    async def fast_sleep(seconds):
+        sleeps.append(seconds)
+
+    run.provider_pacer.sleep = fast_sleep
+
+    async def execute():
+        result = None
+        async for update in run.graph.astream(run.initial_state(), stream_mode="updates"):
+            visited.extend(update)
+            if "finalize" in update:
+                result = update["finalize"]["result"]
+        return result
+
+    result = asyncio.run(execute())
+    assert visited == ["plan_investigation", "finalize"]
+    assert sleeps == sleeps_expected and run.recovery_wait_seconds == sum(sleeps_expected)
+    assert result.termination_reason == reason
+    assert result.model_calls == len(model.history) == len(sleeps_expected) + 1
+    assert result.plan is None and result.iterations == result.tool_calls == 0
+    assert result.findings == result.hypotheses == result.evidence == []
+    assert result.critical_review is None and result.evaluation_evidence_status == "not_evaluated"
+    assert result.accounted_tokens == result.estimated_tokens > 0
+    stage, = result.deferred_stages
+    assert stage.node == "plan_investigation" and stage.reason == reason
+    assert stage.attempts == result.model_calls and stage.http_status == 503
+    assert any("were not started" in item for item in result.missing_information)
+    assert not any("A valid evidence evaluation could not" in item for item in result.missing_information)
+
+
+@pytest.mark.parametrize("agent_type", [ResponsibilityAgent, DependencyImpactAgent,
+    ComponentAdaptabilityAgent, ReuseOpportunityAgent])
+def test_shared_and_specialized_graphs_finalize_directly_when_planning_fails(repo, agent_type):
+    model = ScriptedModel([RuntimeError("Planning provider unavailable")])
+    agent = agent_type(model)
+    run = agent.execution_type(model, agent.config, toolset(repo), agent.request_type())
+    visited = []
+    closing_node = ("limited_finalize" if agent_type in {ComponentAdaptabilityAgent, ReuseOpportunityAgent}
+        else "finalize")
+
+    async def execute():
+        result = None
+        async for update in run.graph.astream(run.initial_state(), stream_mode="updates"):
+            visited.extend(update)
+            if closing_node in update:
+                result = update[closing_node]["result"]
+        return result
+
+    result = asyncio.run(execute())
+    assert visited == ["plan_investigation", closing_node]
+    assert result.plan is None and result.iterations == result.tool_calls == 0
+    assert result.model_calls == len(model.history) == 1
+    assert result.termination_reason == "model_or_schema_error"
+
+
+@pytest.mark.parametrize("blocker", ["token", "call"])
+def test_first_gateway_timeout_reports_the_budget_blocking_retry(repo, blocker):
+    def timeout(messages):
+        # Reproduce a closing request that fits once but cannot be retried.
+        if blocker == "token":
+            run.token_limit = run.tokens + 1
+        else:
+            run.call_limit = run.calls
+        return errors.ServerError(504, response_json={"error": {"code": 504, "message": "Gateway timeout"}})
+
+    run, model = execution(repo, [timeout])
+    result = asyncio.run(run.call("review_findings", run.initial_state(), Review))
+    assert result is None and len(model.history) == run.calls == 1
+    assert run.stop == f"provider_retry_{blocker}_limit"
+    assert run.deferred_stages[0].reason == run.stop
+    assert run.deferred_stages[0].http_status == 504
+    assert run.deferred_stages[0].attempts == 1
+    assert run.recovery_wait_seconds == 0
 
 
 def test_one_slow_provider_request_is_bounded_and_visible_without_restarting(repo):

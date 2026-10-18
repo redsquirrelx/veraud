@@ -17,6 +17,7 @@ class ModularityAgent(CoordinatorAgent):
     config_type = ModularityConfig
     trace_name = "modularity"
     agent_type = "modularity"
+    actionable_gap = staticmethod(ModularityExecution.actionable)
 
     async def run(self, tools, request=None):
         if tools.budget_usage.tool_calls:

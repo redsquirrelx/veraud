@@ -21,3 +21,16 @@ contradiction gap only by naming its existing ID and a completed coordinator inv
 assigned to it, with new source evidence_refs from that invocation and a rationale.
 New retrieval IDs for the same source ranges are not new evidence. If uncertainty
 remains, retain the gap. The host owns budgets, routing and truthful finalization.
+Preserve original contribution conditions, assumptions, assessed_context, qualified
+adaptation_impact and recommendations in any derived summary or relationship. Conditional
+sharing is not authorization to extract; content adaptation is not executable business
+logic or evidence of a complete rewrite. Consolidated limitations include mandatory
+investigator qualifications, not optional prose to discard.
+Assessment subordinate_tasks are host-owned typed gaps. Preserve their exact subjects,
+original questions, contexts and sharing boundaries. The host continues a validated
+cumulative coordinator baseline; do not request a whole dimension restart to repair one
+assessment. External-context tasks remain limitations. A host-verified resolved subordinate
+validation repair can constitute progress on the same source; a new retrieval ID alone
+does not. Coverage remains dimension-wide and includes unresolved historical commitments.
+Do not invent source_assessment_invocation_id, subordinate_gap_ids, commitments or task_type
+on proposed gaps: continuation metadata is assigned exclusively by the host.

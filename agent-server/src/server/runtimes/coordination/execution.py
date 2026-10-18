@@ -4,7 +4,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from time import monotonic
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -18,11 +18,21 @@ from ..repository.context import RepositoryContext
 from ..repository.schemas import ExecutionBudget
 from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import RepositoryToolset
+from .knowledge import (
+    commitment_resolved,
+    covered,
+    new_source,
+    project,
+    task_specs,
+    validation_progress,
+)
 from .schemas import Consumption
 from .synthesis import (
     evidence_index,
-    evidence_key,
+    follow_up_key,
     stable_id,
+    terminal_collection_blocker,
+    terminal_provider_blocker,
 )
 
 if TYPE_CHECKING:
@@ -74,12 +84,26 @@ class CoordinatorAgent:
         self.blackboard = blackboard
         self.audit_identity = audit_identity
 
+    @classmethod
+    def continuation_actionable(cls, result, gap):
+        if cls.actionable_gap(gap, result.invocations):
+            return True
+        # A fresh manager-reserved attempt may recover an essential execution
+        # failure; terminal contracts/quotas and unchanged bound repairs cannot.
+        calls = [r for r in result.invocations if r.assignment.investigator_id == gap.investigator_id]
+        return bool(gap.kind == "essential_failure" and not gap.commitments and calls
+            and not terminal_provider_blocker(calls[-1].result) and not terminal_collection_blocker(calls[-1]))
+
 class CoordinatorExecution(ABC):
     """Shared dispatch, reservations, provenance, collection and synthesis.
 
     Concrete coordinators bind their own registry, contracts, policies and graph.
     No audit dimension is imported or selected by this runtime.
     """
+
+    analysis_fields: ClassVar[dict[str, tuple[str, ...]]] = {}
+    binding_fields: ClassVar[dict[str, tuple[str, ...]]] = {}
+    source_issue_tokens = ("source_not_inspected",)
 
     @abstractmethod
     def build_graph(self):
@@ -95,6 +119,19 @@ class CoordinatorExecution(ABC):
         self.started = monotonic()
         self.transitions = []
         self.spent = Consumption()
+        continuation = getattr(agent, "continuation", None)
+        self.baseline = continuation.assessment if continuation is not None else None
+        self.continuation_gap_ids = set(continuation.gap_ids) if continuation is not None else set()
+        self.baseline_count = len(self.baseline.invocations) if self.baseline is not None else 0
+        self.round_limit = self.config.max_rounds + (self.baseline.rounds_completed if self.baseline is not None else 0)
+        if self.baseline is not None:
+            snapshot = tools.accessible_snapshot
+            if (self.baseline.repository_id != snapshot.repository.name or self.baseline.snapshot_hash != snapshot.repository.snapshot_hash
+                    or self.baseline.commit != snapshot.repository.commit or self.baseline.targets != request.targets):
+                raise ValueError("Continuation baseline does not match repository revision/scope.")
+            if self.publication is not None and continuation.publication is not None:
+                self.publication.reuse_children(continuation.publication,
+                    [r.assignment.invocation_id for r in self.baseline.invocations])
         self.global_budget = tools.context.input.budget
         if tools.timing is None:
             tools.timing = ActiveDeadline(self.config.timeout_seconds,
@@ -157,19 +194,34 @@ class CoordinatorExecution(ABC):
         remaining = self.resources()
         # Reserve the whole per-invocation envelope before dispatch, not after parallel calls.
         limits = self.config.invocation_limits
-        return (len(records) < self.config.max_invocations and self.remaining() > 0
+        return (len(records) - self.baseline_count < self.config.max_invocations and self.remaining() > 0
                 and remaining["calls"] >= limits.max_model_calls
                 and remaining["tokens"] >= (1 if self.token_budget is not None else limits.max_total_tokens)
                 and remaining["tools"] >= limits.max_tool_calls)
 
     def initial_state(self):
-        return {"assessment_id": self.assessment_identity(), "repository_id": self.tools.accessible_snapshot.repository.name,
+        state = {"assessment_id": self.assessment_identity(), "repository_id": self.tools.accessible_snapshot.repository.name,
             "snapshot_hash": self.tools.context.input.snapshot_hash, "scope": self.request.targets,
             "investigator_registry": [s.capability for s in self.registry.values()], "rounds_completed": 0,
-            "max_rounds": self.config.max_rounds, "budgets": {}, "pending_assignments": [], "completed_assignments": [],
+            "max_rounds": self.round_limit, "budgets": {}, "pending_assignments": [], "completed_assignments": [],
             "invocation_status": {}, "investigation_results": [], "execution_records": [], "collected_count": 0,
             "initial_plan": [], "consolidated_findings": [], "material_gaps": [], "actionable_followups": [],
             "resolved_gap_ids": [], "withdrawn_finding_refs": [], "summary": "", "messages": [], "termination_reason": ""}
+        if self.baseline is not None:
+            state.update(investigation_results=list(self.baseline.invocations), initial_plan=list(self.baseline.initial_plan),
+                rounds_completed=self.baseline.rounds_completed, material_gaps=list(self.baseline.material_gaps),
+                consolidated_findings=list(self.baseline.consolidated_findings), resolved_gap_ids=list(self.baseline.resolved_gap_ids),
+                withdrawn_finding_refs=list(self.baseline.withdrawn_finding_refs))
+        return state
+
+    @property
+    def reported_consumption(self):
+        if self.baseline is None:
+            return self.spent
+        previous = self.baseline.consumption
+        return Consumption(**{key: getattr(previous, key) + getattr(self.spent, key)
+            for key in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")},
+            model_calls_estimated=previous.model_calls_estimated or self.spent.model_calls_estimated)
 
     def assignment(self, investigator, question, round_number, targets, refs=None, gaps=None):
         return self.assignment_type(invocation_id=uuid4().hex, investigator_id=investigator, round=round_number,
@@ -177,9 +229,41 @@ class CoordinatorExecution(ABC):
 
     def plan_assessment(self, state):
         self.tick("plan_assessment")
+        if self.baseline is not None:
+            grouped = {}
+            for gap in self.baseline.material_gaps:
+                if gap.id in self.continuation_gap_ids and self.agent.continuation_actionable(self.baseline, gap):
+                    grouped.setdefault(follow_up_key(gap), []).append(gap)
+            plan = [self.follow_up_assignment(group, state["rounds_completed"] + 1) for group in grouped.values()]
+            return {"pending_assignments": plan, "initial_plan": list(self.baseline.initial_plan)}
         plan = [self.assignment(key, self.request.objective + "\n" + spec.capability.capability,
                                1, self.request.targets) for key, spec in self.registry.items()]
         return {"pending_assignments": plan, "initial_plan": plan}
+
+    def project_record(self, record):
+        projection = project(record, self.analysis_fields.get(record.assignment.investigator_id, ()),
+            self.binding_fields.get(record.assignment.investigator_id, ()))
+        if record.result is not None:
+            snapshot = self.tools.accessible_snapshot
+            ranges = {s.id: (s.file_id, s.start_line, s.end_line) for s in snapshot.symbols}
+            ranges.update({f.id: (f.id, 1, f.line_count) for f in snapshot.files})
+            projection["source_inspected_subject_ids"] = sorted({i for c in projection["commitments"] for i in c["subject_ids"]
+                if i in ranges and covered(record.evidence, *ranges[i])})
+        return projection
+
+    def follow_up_assignment(self, gaps, round_number):
+        first = gaps[0]
+        commitments = {item.model_dump_json(): item for gap in gaps for item in gap.commitments}
+        assignment = self.assignment(first.investigator_id, first.question, round_number, first.targets,
+            list(dict.fromkeys(ref for gap in gaps for ref in gap.evidence_refs))[:8], [gap.id for gap in gaps])
+        return assignment.model_copy(update={"commitments": list(commitments.values())[:40],
+            "diagnostics": list(dict.fromkeys(text for gap in gaps for text in gap.diagnostics))})
+
+    def task_question(self, commitment, task):
+        prefix = ("Obtain unavailable external context for " if task == "external_context" else
+            "Complete source inspection for " if task in {"source_inspection", "deferred_work"}
+            else "Repair and independently review the assessment of ")
+        return prefix + ", ".join(commitment.subject_ids) + ". Original question: " + commitment.question
 
     async def delegate_investigations(self, state):
         from ...services.execution_failures import (
@@ -191,7 +275,7 @@ class CoordinatorExecution(ABC):
         self.tick("delegate_investigations")
         semaphore = asyncio.Semaphore(self.config.max_parallel)
         reserved = dict(self.resources())
-        existing = len(state["investigation_results"])
+        existing = len(state["investigation_results"]) - self.baseline_count
         limits = self.config.invocation_limits
         dispatch = []
         failures = {}
@@ -349,7 +433,8 @@ class CoordinatorExecution(ABC):
         return result
 
     def investigator_request(self, spec, assignment, context):
-        args = {"objective": assignment.question, "architectural_context": context}
+        args = {"objective": assignment.question, "architectural_context": context, "follow_up": assignment.commitments,
+            "follow_up_diagnostics": assignment.diagnostics}
         if self.request.criteria:
             args["criteria"] = self.request.criteria
         return spec.request_class(**args)
@@ -389,6 +474,19 @@ class CoordinatorExecution(ABC):
                     raise ExecutionValidationError("evidence_provenance_mismatch", "La evidencia no corresponde a los archivos y revisión del snapshot.")
 
     def result_status(self, result):
+        if getattr(result, "status", "completed") == "failed":
+            return "failed"
+        if getattr(result, "status", "completed") != "completed" or getattr(result, "tool_failures", []):
+            return "partial"
+        if getattr(result, "evaluation_evidence_status", None) == "stale" or getattr(result, "pending_evaluation_evidence_ids", []):
+            return "partial"
+        coverage = getattr(result, "coverage", None)
+        if coverage and any(getattr(coverage, key, []) for key in ("unassessed_candidates", "unassessed_groups", "unassessed_components")):
+            return "partial"
+        analyses = [a for fields in self.analysis_fields.values() for field in fields for a in getattr(result, field, [])]
+        if any(getattr(a, "validation_status", None) != "source_backed" or getattr(a, "validation_issues", [])
+                or getattr(a, "conclusion", getattr(a, "cohesion", None)) in {"unknown", "inconclusive"} for a in analyses):
+            return "partial"
         return "completed" if (result.termination_reason == "sufficient_evidence" and result.plan
             and not result.missing_information and not any(h.status in {"pending", "inconclusive"} for h in result.hypotheses)
             and not getattr(result, "inconclusive_investigations", [])
@@ -444,6 +542,10 @@ class CoordinatorExecution(ABC):
             record = self.invocation_record_type(assignment=assignment, status=status, result=result, evidence=evidence,
                 consumption=usage, error=error, failure=failure, duration_seconds=raw.duration_seconds,
                 warnings=result.limitations if result else [])
+            if result is not None and assignment.commitments and status == "completed" and not all(
+                    commitment_resolved(c, self.project_record(record)) for c in assignment.commitments):
+                record = record.model_copy(update={"status": "partial", "warnings": [*record.warnings,
+                    "Follow-up did not validly resolve its assigned subjects/boundary/context; original task remains open."]})
             records.append(record)
             self._collected_records[assignment.invocation_id] = record
             self.synth.logger.info("%s invocation=%s investigator=%s round=%s status=%s duration=%.3f tokens=%s",
@@ -462,10 +564,16 @@ class CoordinatorExecution(ABC):
         gaps = {g.id: g for g in state["material_gaps"]}
         resolved = set(state["resolved_gap_ids"])
         withdrawn = set(state["withdrawn_finding_refs"])
+        projections = {r.assignment.invocation_id: self.project_record(r) for r in records}
+        tasks = {r.assignment.invocation_id: task_specs(r, projections[r.assignment.invocation_id],
+            self.source_issue_tokens, self.task_question) for r in records}
         for key in self.registry:
             calls = [r for r in records if r.assignment.investigator_id == key]
             gap_id = "essential-" + key
             if any(r.status == "completed" and r.assignment.round == 1 for r in calls):
+                gaps.pop(gap_id, None)
+            elif any(spec.get("commitments") for r in calls for spec in tasks[r.assignment.invocation_id]):
+                # Subject-bound tasks replace a broad repeat of the initial audit.
                 gaps.pop(gap_id, None)
             elif not any(r.status == "completed" and gap_id in r.assignment.gap_ids for r in calls):
                 gaps[gap_id] = self.gap_type(id=gap_id, kind="essential_failure", investigator_id=key,
@@ -475,11 +583,9 @@ class CoordinatorExecution(ABC):
                 resolved.add(gap_id)
         for record in records:
             if record.result:
-                for question in record.result.missing_information:
-                    gid = stable_id("missing", [record.assignment.invocation_id, question])
-                    if gid not in resolved:
-                        gaps[gid] = self.gap_type(id=gid, kind="missing_evidence", investigator_id=record.assignment.investigator_id,
-                            question=question, targets=record.assignment.targets)
+                for spec in tasks[record.assignment.invocation_id]:
+                    if spec["id"] not in resolved:
+                        gaps.setdefault(spec["id"], self.gap_type(**spec))
         for gap in self.detect_contradictions(records, withdrawn):
             if gap.id not in resolved:
                 gaps[gap.id] = gap
@@ -488,9 +594,11 @@ class CoordinatorExecution(ABC):
         context = {"objective": self.request.objective, "scope": self.request.targets,
             "invocations": [{"invocation_id": r.assignment.invocation_id, "investigator_id": r.assignment.investigator_id,
                 "status": r.status, "gap_ids": r.assignment.gap_ids, "error": r.error,
-                "missing_information": r.result.missing_information if r.result else [], "warnings": r.warnings[:8]} for r in records],
+                "missing_information": r.result.missing_information if r.result else [], "warnings": r.warnings[:8],
+                **projections[r.assignment.invocation_id]} for r in records],
             "findings": {ref: {"title": c.finding.title, "description": c.finding.description[:1200],
                 "components": c.finding.components, "validation_status": c.finding.validation_status,
+                "details": c.finding.model_dump(exclude={"evidence", "criterion"}),
                 "evidence_refs": [f"{c.invocation_id}/{e.id}" for e in c.finding.evidence]} for ref, c in findings.items()},
             "evidence": {ref: e.model_dump() for ref, e in index.items()}, "gaps": [g.model_dump() for g in gaps.values()]}
         before = self.synth.calls, self.synth.tokens, self.synth.estimates
@@ -511,10 +619,15 @@ class CoordinatorExecution(ABC):
                 gap = gaps.get(resolution.gap_id)
                 record = next((r for r in records if r.assignment.invocation_id == resolution.invocation_id), None)
                 new_refs = {f"{record.assignment.invocation_id}/{e.id}" for e in record.evidence if e.kind == "source"} if record else set()
-                old_keys = {evidence_key(index[r]) for r in gap.evidence_refs if r in index} if gap else set()
-                if (gap and record and record.status == "completed" and gap.id in record.assignment.gap_ids
+                bound = bool(gap and record and gap.commitments and all(
+                    commitment_resolved(c, projections[record.assignment.invocation_id]) for c in gap.commitments))
+                repaired = bool(gap and record and validation_progress(gap, record, records, self.project_record))
+                fresh = bool(record and new_source(resolution, record, records, index))
+                # Repairs require a validated transition, not a fresh retrieval UUID.
+                if (gap and record and (record.status == "completed" or bound and record.status == "partial")
+                        and gap.id in record.assignment.gap_ids
                         and set(resolution.evidence_refs) <= new_refs
-                        and any(evidence_key(index[r]) not in old_keys for r in resolution.evidence_refs)
+                        and (fresh or repaired) and (not gap.commitments or bound)
                         and set(resolution.withdrawn_finding_refs) <= set(gap.finding_refs)
                         and (gap.kind != "contradiction" or resolution.withdrawn_finding_refs)):
                     gaps.pop(gap.id)
@@ -527,7 +640,19 @@ class CoordinatorExecution(ABC):
                     continue
                 gid = stable_id("gap", [proposal.investigator_id, proposal.question.casefold(), sorted(proposal.targets)])
                 if gid not in resolved:
-                    gaps[gid] = self.gap_type(id=gid, **proposal.model_dump())
+                    commitments = {}
+                    for ref in proposal.finding_refs:
+                        contribution = findings[ref]
+                        if contribution.investigator_id != proposal.investigator_id:
+                            continue
+                        finding = contribution.finding
+                        ids = set(getattr(finding, "assessment_ids", []))
+                        group_id = getattr(finding, "group_id", None)
+                        for c in projections[contribution.invocation_id].get("commitments", []):
+                            if ids & set(c["assessment_ids"]) or group_id and group_id in c["subject_ids"]:
+                                commitments[stable_id("commitment", c)] = c
+                    gaps[gid] = self.gap_type(id=gid, **proposal.model_dump(), commitments=list(commitments.values()),
+                        task_type="contradiction" if proposal.kind == "contradiction" else "source_inspection" if commitments else "investigation")
         else:
             gaps["synthesis-failure"] = self.gap_type(id="synthesis-failure", kind="synthesis_failure",
                 investigator_id=None, question="Synthesis unavailable: " + (self.synth.stop or "invalid_response"))

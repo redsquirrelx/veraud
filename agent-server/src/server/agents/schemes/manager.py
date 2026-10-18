@@ -9,6 +9,7 @@ from . import coordinator as shared
 from .base import (
     Contract,
     EvidenceReference,
+    InvestigationCommitment,
     ScopedAuditRequest,
     TargetContext,
 )
@@ -53,6 +54,8 @@ class AuditAssignment(shared.DelegationAssignment[Dimension]):
     attempt: int = Field(ge=1)
     requested_evidence: list[str]
     success_criteria: list[str]
+    baseline_invocation_id: str | None = None
+    subordinate_gap_ids: list[str] = Field(default_factory=list)
 
 
 # Manager-side adapter for a modularity assessment: restores concrete investigator results/findings from JSON.
@@ -128,6 +131,11 @@ class CoverageGap(Contract):
     finding_refs: list[str] = Field(default_factory=list, max_length=12)
     evidence_refs: list[str] = Field(default_factory=list, max_length=12)
     blocking: bool = True
+    task_type: Literal["investigation", "source_inspection", "validation_repair", "external_context", "deferred_work", "contradiction"] = "investigation"
+    source_assessment_invocation_id: str | None = None
+    subordinate_gap_ids: list[str] = Field(default_factory=list)
+    commitments: list[InvestigationCommitment] = Field(default_factory=list, max_length=40)
+    diagnostics: list[str] = Field(default_factory=list)
 
 
 # Cross-assessment relationship: links findings by overlap, trade-off or contradiction with a rationale.

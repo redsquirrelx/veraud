@@ -1,6 +1,7 @@
 """Exact five-node coordination graph plus a deterministic conditional decision."""
 
 from time import monotonic
+from typing import ClassVar
 from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
@@ -8,9 +9,10 @@ from langgraph.graph import END, START, StateGraph
 from .....runtimes.coordination.execution import (
     CoordinatorExecution,
 )
+from .....runtimes.coordination.knowledge import covered
 from .....runtimes.coordination.synthesis import (
     evidence_key,
-    request_key,
+    follow_up_key,
     semantic_key,
     stable_id,
 )
@@ -40,6 +42,11 @@ def route_after_synthesis(state) -> Route:
 
 
 class ReusabilityExecution(CoordinatorExecution):
+    analysis_fields: ClassVar = {"abstraction": ("abstractions_investigated",), "reuse_opportunity": ("examined_groups",),
+        "component_adaptability": ("examined_constraints",)}
+    binding_fields: ClassVar = {"abstraction": ("declaration_ids",), "reuse_opportunity": ("group_ids",),
+        "component_adaptability": ("component_ids",)}
+    source_issue_tokens = ("body_not_inspected", "source_not", "input_preparation", "usage_or_configuration", "participant")
     registry = INVESTIGATORS
     assignment_type = Assignment
     raw_invocation_type = RawInvocation
@@ -52,10 +59,25 @@ class ReusabilityExecution(CoordinatorExecution):
     consolidate = staticmethod(synthesis.consolidate)
     actionable = staticmethod(synthesis.actionable)
 
+    def task_question(self, commitment, task):
+        if task == "source_inspection" and any("input_preparation" in issue for issue in commitment.validation_issues):
+            return "Inspect representative callers and input preparation for " + ", ".join(commitment.subject_ids) + ". Original question: " + commitment.question
+        return super().task_question(commitment, task)
+
+    def project_record(self, record):
+        projection = super().project_record(record)
+        if record.result and record.assignment.investigator_id == "reuse_opportunity" and record.result.coverage:
+            inspected = set(projection["source_inspected_subject_ids"])
+            for group in record.result.coverage.selected_groups:
+                if group.members and all(covered(record.evidence, member.file_id, member.start_line, member.end_line) for member in group.members):
+                    inspected.add(group.id)
+            projection["source_inspected_subject_ids"] = sorted(inspected)
+        return projection
+
     def initial_state(self):
         state = super().initial_state()
         self.assessment_id = state["assessment_id"]
-        state.update(synthesis_history=[], continuation_decision=ContinuationDecision(route=Route.NO,
+        state.update(synthesis_history=list(self.baseline.synthesis_history) if self.baseline is not None else [], continuation_decision=ContinuationDecision(route=Route.NO,
             reason="not_synthesized", material_gap_ids=[], pending_request_ids=[]))
         return state
 
@@ -71,11 +93,14 @@ class ReusabilityExecution(CoordinatorExecution):
 
     def investigator_request(self, spec, assignment, context):
         context += "\nEvidence expectations: " + "; ".join(assignment.evidence_expectations)
-        args = {"objective": assignment.question, "architectural_context": context, "targets": assignment.targets}
+        args = {"objective": assignment.question, "architectural_context": context, "targets": assignment.targets,
+            "follow_up": assignment.commitments, "follow_up_diagnostics": assignment.diagnostics}
         if self.request.criteria:
             args["criteria"] = self.request.criteria
         if assignment.investigator_id == "component_adaptability":
             args["target_context"] = self.request.target_context
+            if assignment.commitments:
+                args["component_ids"] = sorted({i for c in assignment.commitments for i in c.subject_ids})
         return spec.request_class(**args)
 
     def invocation_metadata(self, assignment, state):
@@ -164,8 +189,20 @@ class ReusabilityExecution(CoordinatorExecution):
     def synthesis_context(self, context, state, records):
         index = self.finding_index(records)
         for ref, contribution in index.items():
+            record = next(r for r in records if r.assignment.invocation_id == contribution.invocation_id)
+            analyses = self.project_record(record)["analyses"]
+            finding = contribution.finding
+            linked = [a for a in analyses if a["id"] in getattr(finding, "assessment_ids", [])
+                or getattr(finding, "group_id", None) and a.get("group_id") == finding.group_id]
+            roots = sorted({a.get("constraint_key") or a.get("declaration_id") or a.get("group_id") for a in linked
+                if a.get("constraint_key") or a.get("declaration_id") or a.get("group_id")})
             context["findings"][ref].update(investigator_id=contribution.investigator_id,
                 polarity=synthesis.polarity(contribution.finding),
+                grouping_identity={"roots": roots, "boundaries": sorted({a["proposed_boundary"] for a in linked if a.get("proposed_boundary")}
+                    | ({finding.sharing_boundary} if getattr(finding, "sharing_boundary", "") else set())),
+                    "context": getattr(finding, "assessed_context", ""), "conditions": sorted(getattr(finding, "conditions", [])),
+                    "assumptions": sorted(getattr(finding, "assumptions", [])), "components": sorted(finding.components)},
+                required_qualifications=synthesis.shared.qualifications(finding),
                 details=contribution.finding.model_dump(exclude={"evidence", "criterion"}))
         rounds = {r.assignment.invocation_id: r.assignment.round for r in records}
         for invocation in context["invocations"]:
@@ -196,7 +233,7 @@ class ReusabilityExecution(CoordinatorExecution):
         gaps = update["material_gaps"]
         followups = update["actionable_followups"]
         reason = ("sufficient_evidence" if not gaps else
-                  "round_limit" if state["rounds_completed"] >= self.config.max_rounds else
+                   "round_limit" if state["rounds_completed"] >= self.round_limit else
                   "resource_limit" if not update["budgets"]["can_dispatch"] else
                   "zero_progress" if not self.made_progress(state, update) else
                   "no_useful_follow_up" if not followups else "targeted_follow_up")
@@ -204,11 +241,9 @@ class ReusabilityExecution(CoordinatorExecution):
         if reason == "targeted_follow_up":
             grouped = {}
             for gap in followups:
-                grouped.setdefault(request_key(gap.investigator_id, gap.question, gap.targets), []).append(gap)
+                grouped.setdefault(follow_up_key(gap), []).append(gap)
             for group in list(grouped.values())[:len(self.registry)]:
-                first = group[0]
-                pending.append(self.assignment(first.investigator_id, first.question, state["rounds_completed"] + 1,
-                    first.targets, list(dict.fromkeys(ref for g in group for ref in g.evidence_refs))[:8], [g.id for g in group]))
+                pending.append(self.follow_up_assignment(group, state["rounds_completed"] + 1))
         decision = ContinuationDecision(route=Route.YES if pending else Route.NO, reason=reason,
             rationale=("Targeted material questions: " + "; ".join(g.question for g in followups)) if pending else
                       f"No further dispatch ({reason}); {len(gaps)} material question(s) remain.",
@@ -252,7 +287,8 @@ class ReusabilityExecution(CoordinatorExecution):
             material_gaps=state["material_gaps"], resolved_gap_ids=state["resolved_gap_ids"], withdrawn_finding_refs=state["withdrawn_finding_refs"],
             conclusions=list(conclusions.values()), finding_relationships=list(relationships.values()), synthesis_history=state["synthesis_history"],
             continuation_decision=state["continuation_decision"], limitations=limitations, rounds_completed=state["rounds_completed"],
-            consumption=self.spent, duration_seconds=monotonic() - self.started, node_transitions=self.transitions, coverage=coverage)}
+            consumption=self.reported_consumption, duration_seconds=monotonic() - self.started, node_transitions=self.transitions, coverage=coverage,
+            baseline_assessment_id=self.baseline.assessment_id if self.baseline is not None else None)}
 
     def build_graph(self):
         graph = StateGraph(ReusabilityState)

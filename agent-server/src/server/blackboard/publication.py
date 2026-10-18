@@ -92,6 +92,17 @@ class Publication:
             raise ValueError("Publication invocation belongs to another agent.")
         return child
 
+    def reuse_children(self, previous: "Publication", invocation_ids) -> None:
+        """Reference original immutable receipts when continuing a coordinator."""
+        if self.blackboard is not previous.blackboard or self.run_id != previous.run_id:
+            raise ValueError("Continuation publications must belong to the same audit.")
+        for identifier in invocation_ids:
+            if identifier in previous._children:
+                original = previous._children[identifier]
+                if identifier in self._children and self._children[identifier] is not original:
+                    raise ValueError("Cannot replace a published child invocation.")
+                self._children[identifier] = original
+
     def record_id(self, entity: str, local_id: str) -> str:
         # A coordinator/manager has one final assessment per invocation, even if
         # a retry presents a different report-local assessment ID.

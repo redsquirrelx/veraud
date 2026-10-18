@@ -14,6 +14,7 @@ class ReusabilityAgent(CoordinatorAgent):
     config_type = ReusabilityConfig
     trace_name = "reusability"
     agent_type = "reusability"
+    actionable_gap = staticmethod(ReusabilityExecution.actionable)
 
     async def run(self, tools, request=None):
         if tools.budget_usage.tool_calls:

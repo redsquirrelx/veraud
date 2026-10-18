@@ -14,6 +14,7 @@ from .base import (
     Contract,
     EvidenceReference,
     Finding,
+    InvestigationCommitment,
     ScopedAuditRequest,
     TargetContext,
 )
@@ -67,6 +68,8 @@ class DelegationAssignment[AgentIdT: str](Contract):
     evidence_refs: list[str] = Field(default_factory=list)
     gap_ids: list[str] = Field(default_factory=list)
     budget: ExecutionBudget | None = None
+    commitments: list[InvestigationCommitment] = Field(default_factory=list, max_length=40)
+    diagnostics: list[str] = Field(default_factory=list)
 
 
 # Modularity assignment: narrows allowed agent IDs without changing the shared delegation structure.
@@ -130,6 +133,9 @@ class CoordinatorEvidenceGap[AgentIdT: str](Contract):
     evidence_refs: list[str] = Field(default_factory=list)
     finding_refs: list[str] = Field(default_factory=list)
     material: bool = True
+    task_type: Literal["investigation", "source_inspection", "validation_repair", "external_context", "deferred_work", "contradiction"] = "investigation"
+    commitments: list[InvestigationCommitment] = Field(default_factory=list, max_length=40)
+    diagnostics: list[str] = Field(default_factory=list)
 
 
 # Modularity gap: attributes missing information or contradictions to an investigator when applicable.
@@ -261,6 +267,7 @@ class CoordinatorResult[
     consumption: Consumption
     duration_seconds: float
     node_transitions: list[str]
+    baseline_assessment_id: str | None = None
 
 
 # Final modularity assessment: binds the common envelope to the three modularity investigators' types.

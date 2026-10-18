@@ -87,12 +87,21 @@ Partial, timeout, skipped and failed results never silently become complete.
   resolution. Host-rejected duplicate findings are not treated as semantic contradictions.
   Conflict relationships retain unresolved/resolved state and synthesis history.
 - Synthesis prepares only targeted follow-ups for material gaps, deduplicated by
-  investigator/question/targets. Empty proposed target lists inherit assessment scope.
+  investigator/question/targets/task/subjects. Empty proposed target lists inherit assessment scope.
   Equivalent completed questions cannot repeat without genuinely new source evidence.
   An essential initial failure gets at most one same-question retry without new evidence.
-- Gap closure requires a completed invocation assigned to that gap and new source
-  content/ranges, not merely new retrieval UUIDs. Contradictions additionally require
-  justified withdrawal refs. Earlier evidence/results remain append-only.
+- Follow-ups carry original declaration/group/component commitments, question, assessed
+  context and sharing boundary. Discovery prioritizes committed declarations/groups;
+  adaptability receives exact component IDs. An unrelated completion cannot close them.
+- Source gaps require new source content/ranges, not merely new retrieval UUIDs.
+  Validation repairs can close with previously read source only after a host-verified
+  invalid-to-valid transition of the assigned commitment and resolved final hypothesis.
+  Contradictions additionally require justified withdrawal refs. Earlier evidence/results
+  remain append-only. Provider-terminal and collection-contract blockers prevent retries.
+- Synthesis receives final host hypotheses/analyses, not raw review approval. Repeated
+  candidate/assessment/hypothesis diagnostics become a single bound repair task. External
+  context remains a limitation. Conditions, unknowns and the exact sharing boundary are
+  retained in findings/consolidation and passed through the manager's synthesis context.
 - After the first follow-up, no new source, finding judgment or supported gap resolution
   stops the cycle as `zero_progress`. Maximum rounds/invocations, aggregate budgets and
   deadlines also guard continuation. Limits always follow the normal `no` edge.

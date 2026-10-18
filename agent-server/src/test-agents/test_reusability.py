@@ -384,6 +384,8 @@ def test_real_three_investigator_graphs_models_only_simulated(repo):
     from test_abstraction import plan as abstraction_plan
     from test_abstraction import reads as abstraction_reads
     from test_abstraction import review as abstraction_review
+    from test_component_adaptability import plan as adaptability_plan
+    from test_component_adaptability import review as adaptability_review
 
     from server.runtimes.investigation.provider import ProviderPacer
     from server.runtimes.investigation.schemas import ProviderRateLimits
@@ -410,12 +412,13 @@ def test_real_three_investigator_graphs_models_only_simulated(repo):
             else:
                 def clear(messages):
                     context = json.loads(messages[1].content)
-                    return {"sufficient": True, "hypotheses": [], "candidates": [], "constraint_assessments": [],
+                    return {"sufficient": True, "hypotheses": [{"id": "h1", "question": "Is backend substitution blocked by the public construction path?",
+                        "criterion_id": "component-adaptability", "status": "discarded", "rationale": "The inspected scoped policy has no backend dependency."}], "candidates": [], "constraint_assessments": [],
                         "cleared_components": [c["component_id"] for c in context["selected_components"]],
                         "coverage_rationale": "Inspected policy body, no demonstrated backend dependency in this bounded fixture.", "missing_information": []}
-                replies = [plan, {"action": "use_tools", "tool_requests": [{"name": "get_source_excerpt",
+                replies = [adaptability_plan(), {"action": "use_tools", "tool_requests": [{"name": "get_source_excerpt",
                     "arguments_json": json.dumps({"path": "policy.py", "start_line": 1, "end_line": 3})}]},
-                    {"action": "validate", "tool_requests": []}, clear, review]
+                    {"action": "validate", "tool_requests": []}, clear, adaptability_review()]
         investigator = INVESTIGATORS[key].agent_class(NativeStructuredModel(replies), limits)
         created.append(investigator)
         return investigator

@@ -63,20 +63,35 @@ def _validate_nested_evidence(value, invocation_id, known, check_reference, loca
             _validate_nested_evidence(item, invocation_id, known, check_reference, f"{location}[{index}]")
 
 
-def validate_assessment(result, assignment, *, snapshot, request, check_reference, verify_references):
+def validate_assessment(result, assignment, *, snapshot, request, check_reference, verify_references, baseline=None):
     """Reject mismatched or unsupported coordinator output before it contributes knowledge."""
     if (result.repository_id != snapshot.name or result.commit != snapshot.commit or result.snapshot_hash != snapshot.snapshot_hash
             or result.objective != assignment.question or result.targets != assignment.targets):
         raise ExecutionValidationError("coordinator_provenance_mismatch", "El alcance o procedencia del coordinador no coincide con su asignación.")
     if assignment.investigator_id == "reusability" and result.target_context != request.target_context:
         raise ExecutionValidationError("target_context_mismatch", "El contexto objetivo del resultado no coincide con la solicitud.")
-    validate_accounting(result, assignment.budget)
+    validate_accounting(result, assignment.budget, baseline=baseline)
     _validate_invocations(result, snapshot, check_reference, verify_references)
     _validate_consolidated_findings(result, check_reference)
 
 
-def validate_accounting(result, budget):
+def validate_accounting(result, budget, *, baseline=None):
     usage = result.consumption
+    if baseline is not None:
+        if (result.baseline_assessment_id != baseline.assessment_id or result.initial_plan != baseline.initial_plan
+                or result.targets != baseline.targets or not set(baseline.resolved_gap_ids) <= set(result.resolved_gap_ids)):
+            raise ExecutionValidationError("invalid_continuation_baseline", "La continuación no conserva la evaluación base y su alcance.")
+        records = {r.assignment.invocation_id: r for r in result.invocations}
+        if any(r.assignment.invocation_id not in records or records[r.assignment.invocation_id] != r for r in baseline.invocations):
+            raise ExecutionValidationError("modified_baseline_receipt", "La continuación modificó u omitió una investigación histórica.")
+        usage = usage.model_copy(update={key: getattr(usage, key) - getattr(baseline.consumption, key)
+            for key in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")})
+        old_ids = {r.assignment.invocation_id for r in baseline.invocations}
+        if any(sum(getattr(r.consumption, key) for r in result.invocations if r.assignment.invocation_id not in old_ids)
+                > getattr(usage, key) for key in ("model_calls", "tool_calls", "accounted_tokens")):
+            raise ExecutionValidationError("underreported_continuation_usage", "La continuación no contabiliza sus nuevas investigaciones.")
+    elif result.baseline_assessment_id is not None:
+        raise ExecutionValidationError("unknown_continuation_baseline", "La evaluación declara una base que no fue asignada por el manager.")
     if budget is None or any(getattr(usage, k) < 0 for k in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")):
         raise ExecutionValidationError("invalid_accounting", "El consumo declarado o la reserva de recursos no es válido.")
     if (usage.model_calls > budget.max_model_calls or usage.tool_calls > budget.max_tool_calls
@@ -84,9 +99,10 @@ def validate_accounting(result, budget):
         raise ExecutionValidationError("usage_exceeded_envelope", "El consumo declarado supera el presupuesto reservado.")
     if len({r.assignment.invocation_id for r in result.invocations}) != len(result.invocations):
         raise ExecutionValidationError("duplicate_invocations", "El resultado contiene identificadores de invocación duplicados.")
-    if any(sum(getattr(r.consumption, k) for r in result.invocations) > getattr(usage, k)
+    if any(sum(getattr(r.consumption, k) for r in result.invocations) > getattr(result.consumption, k)
            for k in ("model_calls", "tool_calls", "accounted_tokens")):
         raise ExecutionValidationError("underreported_nested_usage", "El consumo del coordinador es menor que el de sus investigaciones.")
+    return usage
 
 
 def _validate_invocations(result, snapshot, check_reference, verify_references):
