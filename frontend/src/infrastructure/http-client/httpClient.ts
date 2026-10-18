@@ -325,6 +325,8 @@ export interface AgentConfiguration {
 
 export interface AgentSettings {
   agentType: string
+  qualityAttributes: string[]
+  workflowIds: string[]
   configured: boolean
   configuration: AgentConfiguration | null
   verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null }

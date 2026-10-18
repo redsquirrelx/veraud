@@ -11,7 +11,7 @@ const providers: AiProviderDetail[] = [
   { id: 2, name: "Google", models: [{ id: 12, name: "model-c", inUse: false }], credentials: [{ id: 21, name: "google-key", apiKeyPreview: "****5678", inUse: false }] },
 ]
 const savedAgent: AgentSettings = {
-  agentType: "dummy", configured: true,
+  agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: true,
   configuration: {
     model: { id: 12, name: "model-c", providerId: 2, providerName: "Google" },
     credential: { id: 21, name: "google-key", providerId: 2, providerName: "Google" },
@@ -20,7 +20,7 @@ const savedAgent: AgentSettings = {
 }
 
 function EditableCard() {
-  const [agent, setAgent] = useState<AgentSettings>({ agentType: "dummy", configured: false, configuration: null })
+  const [agent, setAgent] = useState<AgentSettings>({ agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: false, configuration: null })
   return <AgentSettingsCard agent={agent} providers={providers} providersLoading={false} onSaved={setAgent} onVerified={setAgent} onConfigure={() => {}} />
 }
 
@@ -87,7 +87,7 @@ describe("AgentSettingsCard Spanish", () => {
 
   it("translates status, selectors and actions to Spanish", async () => {
     await changeLanguage("es")
-    render(<AgentSettingsCard agent={{ agentType: "dummy", configured: false, configuration: null }} providers={providers} providersLoading={false} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
+    render(<AgentSettingsCard agent={{ agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: false, configuration: null }} providers={providers} providersLoading={false} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
 
     expect(screen.getByText("Sin configurar")).toBeDefined()
     expect(screen.getByRole("button", { name: "Selecciona un modelo…" })).toBeDefined()

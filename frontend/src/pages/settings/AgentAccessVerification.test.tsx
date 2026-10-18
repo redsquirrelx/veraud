@@ -6,7 +6,7 @@ import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import type { AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { changeLanguage } from "../../shared/i18n/index.ts"
 
-const agent: AgentSettings = { agentType: "analyzer", configured: true, configuration: {
+const agent: AgentSettings = { agentType: "analyzer", qualityAttributes: [], workflowIds: [], configured: true, configuration: {
   model: { id: 1, name: "model", providerId: 1, providerName: "OpenAI" },
   credential: { id: 2, name: "credential", providerId: 1, providerName: "OpenAI" },
   temperature: null, maxTokens: null,
