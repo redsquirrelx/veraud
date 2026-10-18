@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from test_audit_diagnostics import incomplete_board
 from test_audit_report import assessment, build, evidence, finding, populated
 
+from server.agents.audit_report.config import ReportPresentationConfig
 from server.api.audits import get_audit_service, router
 from server.app.audit_service import AuditService, AuditState
 from server.blackboard.impls.memory import MemoryBlackboard
@@ -178,3 +179,63 @@ def test_docx_endpoint_downloads_blackboard_report_and_returns_404_for_unknown_a
         assert client.get("/api/audits/unknown/report.docx").status_code == 404
         # JSON remains the canonical representation and has its original endpoint.
         assert client.get("/api/audits/audit/report").json()["schema_version"] == "1.0"
+
+
+def test_large_security_report_is_readable_without_expanding_raw_evidence_and_execution_logs():
+    board = MemoryBlackboard()
+    for number in range(1000):
+        board.publish_evidence(evidence(f"security-evidence-{number}", agent_id="security", invocation_id="security-run",
+            source=f"src/module-{number}.py", file_id=f"file-{number}",
+            content=f"original source {number}\n" * 200))
+    for number in range(200):
+        board.publish_finding(finding(f"security-finding-{number}", "insufficient_evidence", agent_id="security",
+            invocation_id="security-run", kind="design_observation", evidence_ids=(f"security-evidence-{number}",),
+            title="Candidato heurístico de seguridad", details={"quality_attribute": "security",
+                "validation_status": "insufficient_evidence", "security_finding": {"rule_id": "SAST-1",
+                    "file_path": f"src/module-{number}.py", "line_number": 2,
+                    "remediation": {"patch_code": "EXPENSIVE_RAW_PATCH\n" * 200}}}))
+    board.publish_assessment(assessment("security-run", agent_id="security", invocation_id="security-run",
+        quality_attribute="security", status="partial", termination_reason="security_retrieval_limit",
+        finding_ids=tuple(f"security-finding-{number}" for number in range(200)),
+        evidence_ids=tuple(f"security-evidence-{number}" for number in range(1000)),
+        limitations=("DAST no ejecutado.", *[f"security_source_read: repeated-incident-{number}; content_budget_exhausted"
+            for number in range(500)]), details={"security_analysis": {"scanned_files": [f"src/module-{n}.py" for n in range(1000)]}}))
+    report = build(board)
+    original_json = report.model_dump_json()
+    output = render_audit_report_docx(report)
+    assert report.model_dump_json() == original_json
+    assert len(report.quality_results.findings) == 200
+    assert len(report.annexes_and_traceability.evidence_inventory) == 1000
+    assert "EXPENSIVE_RAW_PATCH" in original_json
+    with ZipFile(BytesIO(output)) as archive:
+        xml = archive.read("word/document.xml")
+        root = ElementTree.fromstring(xml)
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    visible = " ".join(node.text or "" for node in root.findall(".//w:t", ns))
+    assert "Se desarrollan 1 de 200 hallazgos" in visible
+    assert "Se muestran 8 de 1000 evidencias" in visible
+    assert "EXPENSIVE_RAW_PATCH" not in visible
+    assert "DAST no ejecutado" in visible
+    assert "no representan defectos confirmados" in visible
+    assert "presupuesto acumulado" in visible
+    assert visible.count("repeated-incident-") < 20
+    assert len(xml) < 1_500_000
+    name = lambda key: f"{{{ns['w']}}}{key}"
+    anchors = {node.get(name("name")) for node in root.findall(".//w:bookmarkStart", ns)}
+    assert all(node.get(name("anchor")) in anchors for node in root.findall(".//w:hyperlink", ns))
+    assert len(Document(BytesIO(output)).tables) < 100
+
+
+def test_editorial_selection_prioritizes_current_verified_findings_and_retains_qualifications():
+    board = populated()
+    board.publish_finding(finding("candidate", "insufficient_evidence", severity="critical", title="Candidato sin validar"))
+    board.publish_finding(finding("verified", title="Hallazgo prioritario", severity="critical", details={
+        "validation_status": "accepted", "conditions": ["Solo bajo carga concurrente"],
+        "unknowns": ["No se probó en producción"]}))
+    report = build(board)
+    content = document_text(Document(BytesIO(render_audit_report_docx(report,
+        config=ReportPresentationConfig(max_detailed_findings=1)))))
+    assert "Hallazgo prioritario" in content
+    assert "Solo bajo carga concurrente" in content
+    assert "No se probó en producción" in content
+    assert "Se desarrollan 1 de 3 hallazgos" in content

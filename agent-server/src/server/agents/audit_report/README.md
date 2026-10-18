@@ -157,10 +157,29 @@ Los identificadores completos permanecen en el JSON y en la información emergen
 Las identidades sin nombre o con metadatos contradictorios reciben una etiqueta explícita
 «nombre no publicado»; no se inventan símbolos. Los fragmentos fuente no se reescriben.
 
-El DOCX incorpora encabezados plegables para inventario de evidencias, cobertura, diagnósticos,
-análisis técnicos, decisiones y tablas de más de doce registros. Word de escritorio compatible
-permite expandir/contraer mediante la flecha del encabezado o su menú contextual; otros visores
-pueden mostrar todo expandido. No se eliminan ni se ocultan permanentemente filas o evidencias.
+El DOCX conserva encabezados plegables para anexos, cobertura y tablas extensas. La presentación
+2.0.0 es una versión de lectura: no despliega el registro técnico completo. La selección se
+indica expresamente y el JSON canónico conserva íntegros los resultados y el snapshot original.
+Los visores que expanden todo el documento también reciben una proyección acotada.
+
+`config.py` declara `ReportPresentationConfig`, una política editorial de desarrollador que
+consume el renderer. Por defecto desarrolla hasta doce hallazgos, priorizando vigentes,
+verificados y mayor severidad. Los candidatos de seguridad repetidos por criterio, severidad,
+verificación y vigencia se ilustran con un representante y se cuentan en una tabla agrupada;
+no se convierten en vulnerabilidades confirmadas. Las condiciones, desconocidos y limitaciones
+siguen acompañando a los hallazgos y acciones, con aviso si el texto/lista se abrevia.
+
+Se muestran hasta ocho evidencias, priorizando las asociadas a los hallazgos desarrollados;
+los fragmentos se limitan a 1.200 caracteres. Las tablas muestran hasta veinte filas, las
+listas hasta seis elementos y los textos hasta 1.400 caracteres. Las estructuras técnicas
+anidadas tienen profundidad acotada. Cada selección/abreviación remite al JSON completo.
+Los diagnósticos se agrupan por agente, motivo y explicación; no se vuelcan cientos de
+intentos del proveedor o de lecturas fallidas. Configuraciones, parches propuestos, resultados
+brutos y decisiones individuales se consultan en el análisis/JSON, sin repetirse en Word.
+
+Los enlaces a registros seleccionados conservan sus destinos individuales. Los demás enlazan
+al índice del registro completo, con marcadores reales e ID original en el tooltip para
+localizarlos en el JSON. El renderizado no elimina ni modifica registros del modelo canónico.
 
 El servicio retiene cada generación por separado durante la vida del proceso:
 
@@ -180,7 +199,7 @@ dentro de su artefacto JSON persistido. El DOCX presenta el registro y la matriz
 sin repetir el snapshot bruto completo. Cada nueva generación tiene ID/fecha propios;
 el digest y el contenido técnico son reproducibles para la misma entrada y versión.
 
-Los anexos preservan archivo, líneas, símbolos, hash, snapshot, commit, verificación
+Los anexos canónicos preservan archivo, líneas, símbolos, hash, snapshot, commit, verificación
 Git, productor, ejecución y llamada de herramienta. También mantienen métricas,
 diagramas y grafos cuando existen; no crean artefactos que no fueron publicados.
 Campos desconocidos (por ejemplo descripción comercial o URL remota) quedan
@@ -214,15 +233,17 @@ Invoke-WebRequest "http://localhost:8000/api/audits/$runId/report.docx" -OutFile
 El conversor `services/audit_report_docx.py` presenta las diez secciones con estilos,
 tablas y referencias, sin llamadas LLM ni cambios en los resultados. La conversión
 se ejecuta fuera del event loop y no utiliza archivos temporales. Para el mismo JSON,
-produce bytes idénticos: fija metadatos y fechas internas del contenedor DOCX. Dos
+produce bytes idénticos con la misma política y versión de presentación: fija metadatos y fechas internas del contenedor DOCX. Dos
 peticiones pueden tener distinta fecha de emisión, porque cada una obtiene un nuevo
 JSON del agente; la garantía de reproducibilidad corresponde al mismo documento JSON.
 
 Objetos y listas se presentan como tablas Word y viñetas, también en los campos
 anidados, métricas y referencias. Los inventarios de tecnologías, dependencias y
 entorno tienen tablas específicas y los encabezados de tabla se repiten por página.
-No se serializan objetos JSON dentro de celdas. El informe incluye un diagnóstico
-por agente, con incidencias técnicas y registros de origen en los anexos.
+No se serializan objetos JSON dentro de celdas. El informe incluye causas de ejecución
+agrupadas por agente y referencias al registro completo. La construcción de tablas reutiliza
+las celdas ya creadas para evitar recorrer repetidamente todas sus filas; la búsqueda de
+etiquetas no vuelve a recorrer el snapshot bruto capturado en la generación.
 
 Las tablas usan ancho fijo dentro del área útil de una página A4, celdas alineadas
 arriba y contenido anidado aplanado en párrafos; no se crean tablas dentro de celdas.
