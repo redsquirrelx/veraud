@@ -38,6 +38,67 @@ y archivos dejan cobertura parcial explícita. `SecurityAuditConfig`, en
 `config.py`, compone los controles comunes de ejecución y añade `max_scan_files`.
 `SecurityConfig` conserva la política del módulo legacy.
 
+## Configuración operativa
+
+La API directa, el input del pipeline `quality-audit` y
+`POST /api/projects/{projectId}/audits` aceptan las mismas opciones operativas:
+
+- `agent_defaults`: contexto, tokens personales, llamadas al modelo y llamadas a
+  herramientas. En seguridad se aplican directamente. En mantenibilidad se conserva
+  la semántica de la jerarquía: los límites comunes de llamadas se aplican a los
+  investigadores y `call_limits` ajusta los presupuestos agregados.
+- `security_config`: campos específicos que sobrescriben los comunes solo para
+  seguridad. Los campos omitidos conservan los valores resueltos. Las cuotas
+  `provider_rate_limits` también se combinan por campo, incluido `null` para
+  desactivar una cuota concreta. Requiere seleccionar `security`.
+- `audit_budget.max_total_tokens`: presupuesto global compartido, independiente del
+  límite local `max_total_tokens` de seguridad. Se respetan ambos; aumentar uno no
+  aumenta el otro. Su omisión conserva el presupuesto global predeterminado del
+  servidor, independientemente de `agent_defaults` y `security_config`.
+- `call_limits`: exclusivo de la jerarquía de mantenibilidad. Para seguridad se
+  utilizan `agent_defaults` o `security_config`.
+
+Por ejemplo, este body ya es válido para la API directa:
+
+```json
+{
+  "repository_path": "C:/workspace/repositorio",
+  "agent_config": "dummy",
+  "attributes": ["security"],
+  "agent_defaults": {
+    "max_context_characters": 20000000,
+    "max_total_tokens": 80000000,
+    "max_model_calls": 20,
+    "max_tool_calls": 30
+  },
+  "audit_budget": {"max_total_tokens": 3000000000},
+  "security_config": {
+    "max_scan_files": 30,
+    "max_source_lines": 200
+  }
+}
+```
+
+`security_config` deriva su esquema y restricciones de `SecurityAuditConfig`, y
+la configuración completa se revalida con el catálogo antes de aceptar la tarea.
+Incluye los cuatro límites comunes, `max_output_tokens`, `max_scan_files`,
+`max_source_lines`, `max_source_characters`, duración, cuotas y política de
+reintentos del proveedor. Las opciones sin consumidor en seguridad, prompts y
+credenciales no se aceptan como controles. Los paneles de usuario continúan usando
+`describe_agent_config`/`validate_agent_config` con nivel `user`; estas opciones de
+auditoría de bajo nivel se identifican como configuración de desarrollador.
+
+Los límites de contexto del modelo, archivos, herramientas y fragmentos de código
+son independientes. El toolset también conserva sus límites de respuesta y de
+recuperación acumulada; una lectura que no cabe queda documentada como pendiente.
+El timeout de `config` acota la ejecución completa; un timeout específico menor en
+`security_config` puede acortar seguridad. En ejecución conjunta, cada atributo
+conserva su propio límite y ambos están acotados por el plazo global.
+
+`Assessment.details.security_analysis.effective_config` conserva los valores
+resueltos y `audit_token_limit` conserva el presupuesto global, sin credenciales.
+Estos datos viajan con el análisis exportado y con la trazabilidad documental.
+
 Las propuestas usan el modelo seleccionado, pacing/reintentos acotados, cuotas y
 el presupuesto compartido; los fallos conservan el parche local. Los intentos sin
 consumo comunicado retienen su reserva estimada. La cancelación conserva evidencia,

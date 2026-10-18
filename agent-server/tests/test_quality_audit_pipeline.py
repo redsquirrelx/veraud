@@ -129,6 +129,55 @@ def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts
     assert "security-key" not in str(payload)
 
 
+def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolsets(audit_environment, monkeypatch):
+    root = audit_environment.root
+    (root / "extra.py").write_text("first = 1\nsecond = 2\n", encoding="utf-8")
+    commit = _committed_checkout(root)
+    monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    captured = {}
+
+    class Manager:
+        def __init__(self, selected_model, limits, *, blackboard, audit_identity, tracing_backend):
+            captured["limits"] = limits
+            self.board, self.identity = blackboard, audit_identity
+
+        async def run(self, tools, request):
+            captured["audit_tokens"] = tools.token_budget.root.limit
+            self.board.publish_assessment(Assessment(agent_id="maintainability_manager", run_id=self.identity.run_id,
+                invocation_id=self.identity.invocation_id, quality_attribute="maintainability",
+                repository_id=tools.context.snapshot.repository.name, snapshot_hash=tools.context.input.snapshot_hash,
+                objective=request.objective, status="complete", termination_reason="sufficient_coverage"))
+            return SimpleNamespace(status="complete")
+
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
+
+    async def execute():
+        return (await GenericPipelineService(tracing_backend=NoOpTracingBackend()).run("quality-audit", {
+            "root_path": str(root), "commit_hash": commit, "attributes": ["maintainability", "security"],
+            "agent_defaults": {"max_context_characters": 40000, "max_total_tokens": 60000,
+                "max_model_calls": 8, "max_tool_calls": 8},
+            "security_config": {"max_tool_calls": 1, "max_source_lines": 1, "max_total_tokens": 2000},
+            "audit_budget": {"max_total_tokens": 50000},
+        }, ExecutionConfig()))["audit"]
+
+    payload = asyncio.run(execute())
+    assert payload["status"] == "partial"
+    assert captured["limits"].max_context_characters == 40000
+    assert captured["limits"].invocation_limits.invocation_limits.max_model_calls == 8
+    assert captured["limits"].invocation_limits.invocation_limits.max_tool_calls == 8
+    assert captured["audit_tokens"] == 50000
+    security = next(item for item in payload["blackboard"]["assessments"] if item["agent_id"] == "security")
+    analysis = security["details"]["security_analysis"]
+    assert analysis["effective_config"]["max_tool_calls"] == 1
+    assert analysis["effective_config"]["max_model_calls"] == 8
+    assert analysis["effective_config"]["max_total_tokens"] == 2000
+    assert analysis["audit_token_limit"] == 50000
+    assert security["consumption"]["tool_calls"] == 1
+    assert {"security_source_truncated", "tool_call_limit"} <= set(analysis["incomplete_reasons"])
+
+
 @pytest.mark.parametrize("failed_attribute", [None, "maintainability", "security", "security_timeout", "shared_token_limit"])
 def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_environment, monkeypatch, failed_attribute):
     root = audit_environment.root

@@ -78,6 +78,8 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         reserve = max(1, len(prompt)) + limits.max_output_tokens
         if calls >= limits.max_model_calls:
             raise ValueError("security_remediation_call_budget_exhausted")
+        if tools.token_budget.used + reserve > limits.max_total_tokens:
+            raise ValueError("security_remediation_local_budget_exhausted")
         reservation = tools.token_budget.reserve(reserve)
         if reservation is None:
             raise ValueError("security_remediation_budget_exhausted")
@@ -101,6 +103,8 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                 "model_calls_estimated": False},
             details={"quality_attribute": "security", "subcharacteristic": "static_security",
                 "security_analysis": {"scanned_files": scanned, "incidents": incidents, "provider_calls": gateway.calls,
+                    "effective_config": limits.model_dump(mode="json"),
+                    "audit_token_limit": tools.token_budget.root.limit,
                     "incomplete_reasons": list(incomplete_reasons),
                     "remediation": "proposal_only", "dast": "not_evaluated"}})
         # A synchronous terminal receipt records consumed resources even after
@@ -172,6 +176,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                         reason = {
                             "security_remediation_call_budget_exhausted": "model_call_limit",
                             "security_remediation_budget_exhausted": "audit_token_limit",
+                            "security_remediation_local_budget_exhausted": "token_limit",
                             "security_remediation_context_limit": "context_limit",
                         }.get(str(error), "security_remediation_fallback")
                         record_incident(reason, f"Remediación local para {source.path}: {type(error).__name__}.")

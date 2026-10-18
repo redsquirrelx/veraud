@@ -2,16 +2,14 @@ import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
-
-from config.agents.audit import AuditAgentDefaults, AuditCallLimits
-from config.agents.budgets import TokenBudgetConfig
+from pydantic import Field
 
 from ..agents.audit_report import SoftwareAuditReport
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.schemes.report import ReportGenerationSummary
 from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_attributes import QualityAttributes
+from ..app.audit_options import AuditExecutionOptions
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.execution_service import InvalidConfigError
 from ..services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
@@ -21,7 +19,7 @@ from .schemas import DomainError, ExecutionConfig, RequestValidationErrorRespons
 router = APIRouter(prefix="/api/audits", tags=["Audits"])
 
 
-class StartAuditRequest(BaseModel):
+class StartAuditRequest(AuditExecutionOptions):
     """Repository scope and model selection for a background quality audit."""
 
     repository_path: str = Field(min_length=1, pattern=r"\S")
@@ -33,14 +31,6 @@ class StartAuditRequest(BaseModel):
     agent_configs: dict[str, ExecutionConfig] | None = Field(default=None,
         description="Explicit model and API key for all selected participants: nine maintainability agent IDs, security, or all ten for a joint audit. Keys are never included in audit results.")
     agent_config: str = Field(default="dummy", min_length=1, description="Server YAML entry supplying model defaults.")
-    agent_defaults: AuditAgentDefaults | None = Field(default=None,
-        description="Developer defaults: context and personal token allowance at all levels; max_model_calls and max_tool_calls apply only to investigators. Aggregate manager/coordinator call budgets retain their defaults unless call_limits overrides them. Omitted fields retain existing defaults.",
-        json_schema_extra={"x-config-level": "developer"})
-    audit_budget: TokenBudgetConfig | None = Field(default=None,
-        description="Shared token cap across all agents, enforced per provider attempt. When omitted, uses the manager's server-default token budget, independently of agent_defaults.")
-    call_limits: AuditCallLimits | None = Field(default=None,
-        description="Developer call envelopes by hierarchy level: manager, coordinator and investigator. Each object accepts max_model_calls and max_tool_calls. Overrides take precedence over common investigator defaults; parent budgets must cover the initial child wave and model synthesis. Tool consumption by descendants counts against parent limits.",
-        json_schema_extra={"x-config-level": "developer"})
 
 
 def get_audit_service(request: Request) -> AuditService:
@@ -85,7 +75,7 @@ async def start_audit(body: StartAuditRequest, response: Response, service: Serv
         state = service.start(body.repository_path,
             (body.security_request or SecurityAuditRequest()) if security_only else body.request, body.config, body.agent_config,
             body.agent_defaults, body.audit_budget, body.call_limits, agent_configs=body.agent_configs,
-            attributes=body.attributes, security_request=body.security_request)
+            attributes=body.attributes, security_request=body.security_request, security_config=body.security_config)
     except (InvalidConfigError, FileNotFoundError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     response.headers["Location"] = f"/api/audits/{state.run_id}"

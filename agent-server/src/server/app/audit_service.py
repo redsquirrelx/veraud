@@ -36,7 +36,11 @@ from ..agents.security.audit import (
     SecurityAuditRequest,
     run_security_audit,
 )
-from ..agents.security.config import SecurityAuditConfig
+from ..agents.security.config import (
+    SecurityAuditConfig,
+    SecurityAuditOverrides,
+    resolve_security_audit_config,
+)
 from ..api.schemas import ExecutionConfig
 from ..blackboard.identity import AuditIdentity
 from ..blackboard.interface import Blackboard
@@ -182,7 +186,8 @@ class AuditService:
               audit_budget: TokenBudgetConfig | None = None,
               call_limits: AuditCallLimits | None = None, *,
               agent_configs: dict[str, ExecutionConfig] | None = None,
-              attributes: list[str] | None = None, security_request: SecurityAuditRequest | None = None) -> AuditState:
+              attributes: list[str] | None = None, security_request: SecurityAuditRequest | None = None,
+              security_config: SecurityAuditOverrides | None = None) -> AuditState:
         """Validate before acceptance and retain a task until its owned resources are closed."""
         if self._closing:
             raise RuntimeError("Audit service is shutting down.")
@@ -198,6 +203,10 @@ class AuditService:
         if security:
             request = security_request or (request if isinstance(request, SecurityAuditRequest) else SecurityAuditRequest())
         validate_model_configs(agent_configs, attributes)
+        if security_config is not None and "security" not in attributes:
+            raise InvalidConfigError("security_config requires security in attributes.")
+        if security and call_limits is not None:
+            raise InvalidConfigError("call_limits requires maintainability; use security_config for security call limits.")
         root = Path(repository_path).expanduser().resolve()
         workspace = resolve_workspace_root()
         if root.parent != workspace:
@@ -206,9 +215,18 @@ class AuditService:
             raise FileNotFoundError("Repository directory not found.")
         limits = SecurityAuditConfig() if security else MaintainabilityConfig()
         total_tokens = audit_budget.max_total_tokens if audit_budget is not None else limits.max_total_tokens
-        if agent_defaults is not None or call_limits is not None:
+        security_limits = None
+        if "security" in attributes:
+            try:
+                if security_config is not None:
+                    security_config = SecurityAuditOverrides.model_validate(security_config)
+                security_limits = resolve_security_audit_config(defaults=agent_defaults, overrides=security_config,
+                    base=limits if security else SecurityAuditConfig())
+            except ValidationError:
+                raise InvalidConfigError("Invalid security operating configuration.") from None
             if security:
-                raise InvalidConfigError("Hierarchy defaults are exclusive to maintainability audits.")
+                limits = security_limits
+        if not security and (agent_defaults is not None or call_limits is not None):
             try:
                 if agent_defaults is not None:
                     limits = apply_audit_defaults(limits, agent_defaults)
@@ -223,8 +241,11 @@ class AuditService:
                 raise InvalidConfigError(str(error)) from None
         if config.timeout_seconds is not None:
             try:
+                timeout = config.timeout_seconds
+                if security and security_config is not None and "timeout_seconds" in security_config.model_fields_set:
+                    timeout = min(timeout, limits.timeout_seconds)
                 limits = validate_agent_config("security" if security else "maintainability_manager",
-                    {"timeout_seconds": config.timeout_seconds}, base=limits)
+                    {"timeout_seconds": timeout}, base=limits)
             except ValidationError:
                 raise InvalidConfigError("Invalid audit timeout.") from None
         root_config = (agent_configs or {}).get("security" if security else "maintainability_manager", config)
@@ -245,7 +266,8 @@ class AuditService:
         self._states[identity.run_id] = state
         task = asyncio.create_task(
             self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections,
-                security_request=(security_request or SecurityAuditRequest()) if combined else None), name=f"audit-{identity.run_id}",
+                security_request=(security_request or SecurityAuditRequest()) if combined else None,
+                security_limits=security_limits), name=f"audit-{identity.run_id}",
         )
         self._tasks[identity.run_id] = task
         task.add_done_callback(lambda _: self._tasks.pop(identity.run_id, None))
@@ -259,7 +281,7 @@ class AuditService:
 
     async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest | SecurityAuditRequest,
                        limits: MaintainabilityConfig | SecurityAuditConfig, settings: ModelSettings, credentials: ModelCredentials,
-                       total_tokens: int, model_selections=None, *, security_request=None) -> None:
+                       total_tokens: int, model_selections=None, *, security_request=None, security_limits=None) -> None:
         model = None
         clients = {}
         self._update(identity.run_id, "running")
@@ -282,16 +304,20 @@ class AuditService:
                     "security" if isinstance(request, SecurityAuditRequest) else "maintainability"])
             if security_request is not None:
                 return await self._run_combined(identity, root, snapshot, request, security_request, limits,
-                    settings, credentials, total_tokens, model_selections, timing, clients)
+                    settings, credentials, total_tokens, model_selections, timing, clients, security_limits)
             budget = ExecutionBudget(
-                max_model_calls=limits.max_model_calls, max_tool_calls=limits.max_tool_calls,
+                max_model_calls=limits.max_model_calls, max_tool_calls=max(1, limits.max_tool_calls),
                 max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
                 max_input_tokens_per_call=max(500, limits.max_context_characters // 2),
                 max_output_tokens_per_call=limits.max_output_tokens, max_elapsed_seconds=limits.timeout_seconds,
             )
+            tool_limits = ToolLimits(compact=True)
+            if isinstance(request, SecurityAuditRequest):
+                tool_limits = ToolLimits(compact=True, max_source_lines=limits.max_source_lines,
+                    max_source_characters=limits.max_source_characters)
             tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
                 snapshot_hash=snapshot.repository.snapshot_hash, budget=budget,
-            )), workspace_root=root.parent, limits=ToolLimits(compact=True),
+            )), workspace_root=root.parent, limits=tool_limits,
                 token_budget=SharedTokenBudget(total_tokens), timing=timing)
             def client(selected, access):
                 key = (selected.model_dump_json(), access.api_key)
@@ -304,7 +330,7 @@ class AuditService:
             if isinstance(request, SecurityAuditRequest):
                 with timing.stage("security_audit"):
                     return await tracing.wrap_stage(run_security_audit(tools, request,
-                        limits.model_copy(update={"max_total_tokens": total_tokens}),
+                        limits,
                         model.bind(max_tokens=limits.max_output_tokens), self.blackboard, identity),
                         name="security-audit", audit_id=identity.run_id, invocation_id=identity.invocation_id,
                         repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash)
@@ -345,7 +371,7 @@ class AuditService:
                 self._timings.pop(identity.run_id, None)
 
     async def _run_combined(self, identity, root, snapshot, request, security_request, limits,
-                            settings, credentials, total_tokens, model_selections, timing, clients):
+                            settings, credentials, total_tokens, model_selections, timing, clients, security_limits):
         """One snapshot and token ledger; attribute failures do not cancel their sibling."""
         shared_tokens = SharedTokenBudget(total_tokens)
         tracing = LangSmithTracingBackend()
@@ -366,18 +392,22 @@ class AuditService:
                 cancellation_grace_seconds=policy.cancellation_grace_seconds)
 
             async def execute():
-                budget = ExecutionBudget(max_model_calls=policy.max_model_calls, max_tool_calls=policy.max_tool_calls,
+                budget = ExecutionBudget(max_model_calls=policy.max_model_calls, max_tool_calls=max(1, policy.max_tool_calls),
                     max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
                     max_input_tokens_per_call=max(500, policy.max_context_characters // 2),
                     max_output_tokens_per_call=policy.max_output_tokens, max_elapsed_seconds=policy.timeout_seconds)
+                tool_limits = ToolLimits(compact=True)
+                if attribute == "security":
+                    tool_limits = ToolLimits(compact=True, max_source_lines=policy.max_source_lines,
+                        max_source_characters=policy.max_source_characters)
                 tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
                     snapshot_hash=snapshot.repository.snapshot_hash, budget=budget)), workspace_root=root.parent,
-                    limits=ToolLimits(compact=True), token_budget=shared_tokens.fork(), timing=deadline)
+                    limits=tool_limits, token_budget=shared_tokens.fork(), timing=deadline)
                 selected, access = (model_selections or {}).get(agent_id, (settings, credentials))
                 model = client(selected, access)
                 if attribute == "security":
                     operation = run_security_audit(tools, selected_request,
-                        policy.model_copy(update={"max_total_tokens": total_tokens}),
+                        policy,
                         model.bind(max_tokens=policy.max_output_tokens), self.blackboard, child)
                 else:
                     manager = MaintainabilityManagerAgent(model, policy, blackboard=self.blackboard,
@@ -405,7 +435,7 @@ class AuditService:
                 return "failed"
 
         statuses = await asyncio.gather(evaluate("maintainability", request, limits),
-            evaluate("security", security_request, SecurityAuditConfig()))
+            evaluate("security", security_request, security_limits))
         status = "completed" if all(value in {"complete", "completed"} for value in statuses) else (
             "failed" if all(value == "failed" for value in statuses) else "partial")
         return SimpleNamespace(status=status)

@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from config.agents.budgets import TokenBudgetConfig
+from config.agents.catalog import describe_agent_config, validate_agent_config
 from server.agents.maintainability.manager import MaintainabilityRequest
 from server.agents.security.audit import SecurityAuditRequest
 from server.api.schemas import ExecutionConfig
@@ -97,7 +98,8 @@ def test_cancellation_keeps_the_candidate_and_closes_provider(audit_environment)
     audit_environment.async_client.aclose.assert_awaited_once()
 
 
-def test_token_budget_falls_back_without_losing_detection(audit_environment):
+@pytest.mark.parametrize("local, shared, reason", [(100_000, 1000, "audit_token_limit"), (1000, 100_000, "token_limit")])
+def test_token_budget_falls_back_without_losing_detection(audit_environment, local, shared, reason):
     (audit_environment.root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
     model = audit_environment.model
     model.bind = lambda **kwargs: model
@@ -106,17 +108,131 @@ def test_token_budget_falls_back_without_losing_detection(audit_environment):
     async def execute():
         service = AuditService(MemoryBlackboard())
         state = service.start(str(audit_environment.root), SecurityAuditRequest(), ExecutionConfig(), "security",
-            audit_budget=TokenBudgetConfig(max_total_tokens=1000))
+            audit_budget=TokenBudgetConfig(max_total_tokens=shared), security_config={"max_total_tokens": local})
         await service.wait(state.run_id)
         snapshot = service.snapshot(state.run_id)
         assert snapshot.status == "partial"
-        assert snapshot.assessments[0].termination_reason == "audit_token_limit"
-        assert "presupuesto compartido" in snapshot.execution_issues[0].explanation
+        assert snapshot.assessments[0].termination_reason == reason
+        assert "presupuesto" in snapshot.execution_issues[0].explanation
         assert snapshot.findings[0].details["security_finding"]["remediation"]["llm_generated"] is False
         model.ainvoke.assert_not_awaited()
         await service.aclose()
 
     asyncio.run(execute())
+
+
+def test_http_accepts_the_common_security_defaults_and_records_the_effective_policy(audit_environment):
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={
+            "repository_path": str(audit_environment.root), "agent_config": "dummy", "attributes": ["security"],
+            "agent_defaults": {"max_context_characters": 20_000_000, "max_total_tokens": 80_000_000,
+                "max_model_calls": 20, "max_tool_calls": 30},
+            "audit_budget": {"max_total_tokens": 3_000_000_000},
+        })
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "completed"
+        analysis = snapshot["assessments"][0]["details"]["security_analysis"]
+        policy = analysis["effective_config"]
+        assert policy["max_context_characters"] == 20_000_000
+        assert policy["max_total_tokens"] == 80_000_000
+        assert policy["max_model_calls"] == 20
+        assert policy["max_tool_calls"] == 30
+        assert analysis["audit_token_limit"] == 3_000_000_000
+        assert "private-key" not in str(snapshot)
+
+
+def test_security_specific_call_limit_overrides_common_defaults_and_preserves_all_candidates(audit_environment):
+    (audit_environment.root / "main.py").write_text('password = "example-secret"\n' * 6, encoding="utf-8")
+    model = audit_environment.model
+    model.bind = Mock(return_value=model)
+    model.ainvoke = AsyncMock(return_value='{"patch_code": "safe()", "explanation": "Revisar contexto"}')
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "agent_defaults": {"max_model_calls": 20, "max_tool_calls": 30},
+            "security_config": {"max_model_calls": 4, "max_output_tokens": 256,
+                "provider_rate_limits": {"requests_per_minute": None}},
+        })
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "partial"
+        assert len(snapshot["findings"]) == 6
+        assert snapshot["assessments"][0]["termination_reason"] == "model_call_limit"
+        assert model.ainvoke.await_count == 4
+        model.bind.assert_called_once_with(max_tokens=256)
+        policy = snapshot["assessments"][0]["details"]["security_analysis"]["effective_config"]
+        assert policy["max_tool_calls"] == 30
+        assert policy["provider_rate_limits"]["requests_per_minute"] is None
+        assert policy["provider_rate_limits"]["tokens_per_minute"] is not None
+
+
+@pytest.mark.parametrize("context, status, calls", [(4000, "partial", 0), (20_000_000, "completed", 1)])
+def test_security_context_limit_bounds_the_actual_provider_prompt(audit_environment, context, status, calls):
+    (audit_environment.root / "main.py").write_text("pickle.loads(payload) # " + "x" * 6000 + "\n", encoding="utf-8")
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock(return_value='{"patch_code": "safe()", "explanation": "Revisar contexto"}')
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": {"max_context_characters": context}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == status
+        assert model.ainvoke.await_count == calls
+        assert snapshot["assessments"][0]["termination_reason"] == (
+            "context_limit" if calls == 0 else "security_scope_completed")
+
+
+def test_security_catalog_keeps_developer_controls_out_of_the_user_panel():
+    user = describe_agent_config("security")
+    developer = describe_agent_config("security", level="developer")
+    assert "max_total_tokens" in user["config_schema"]["properties"]
+    for name in ("max_scan_files", "max_source_lines", "max_context_characters", "max_model_calls"):
+        assert name not in user["config_schema"]["properties"]
+        assert name in developer["config_schema"]["properties"]
+        with pytest.raises(ValueError):
+            validate_agent_config("security", {name: 8})
+
+
+@pytest.mark.parametrize("overrides", [{"max_scan_files": 501}, {"max_model_calls": 101},
+    {"max_source_lines": 0}, {"timeout_seconds": -1}, {"api_key": "must-not-be-a-control"},
+    {"prompts": {"unused_node": "ignored"}}])
+def test_security_overrides_reject_invalid_or_ineffective_controls_before_execution(audit_environment, overrides):
+    with TestClient(app) as client:
+        result = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": overrides})
+        assert result.status_code == 422
+        assert not app.state.audit_service._states
+    audit_environment.factory.assert_not_called()
+
+
+@pytest.mark.parametrize("controls, status, end_line", [
+    ({"max_source_lines": 1}, "partial", 1),
+    ({"max_source_lines": 10}, "completed", 2),
+    ({"max_tool_calls": 0}, "partial", None),
+])
+def test_security_transport_controls_bound_the_actual_source_reads(audit_environment, controls, status, end_line):
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": controls})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == status
+        sources = [item for item in snapshot["evidence"] if item["kind"] == "source"]
+        assert ([item["end_line"] for item in sources] if end_line is not None else sources) == (
+            [end_line] if end_line is not None else [])
 
 
 @pytest.mark.parametrize("case, expected", [
@@ -129,14 +245,14 @@ def test_token_budget_falls_back_without_losing_detection(audit_environment):
 ])
 def test_real_security_incompleteness_retains_specific_reasons(audit_environment, monkeypatch, case, expected):
     root = audit_environment.root
-    config = audit_service.SecurityAuditConfig()
+    overrides = {}
     request = SecurityAuditRequest()
     if case == "files":
         (root / "extra.py").write_text("value = 1\n", encoding="utf-8")
-        config = config.model_copy(update={"max_scan_files": 1})
+        overrides = {"max_scan_files": 1}
     elif case == "tools":
         (root / "extra.py").write_text("value = 1\n", encoding="utf-8")
-        config = config.model_copy(update={"max_tool_calls": 1})
+        overrides = {"max_tool_calls": 1}
     elif case == "truncated":
         (root / "main.py").write_text("value = 1\n" * 200, encoding="utf-8")
     elif case == "read_failure":
@@ -146,14 +262,13 @@ def test_real_security_incompleteness_retains_specific_reasons(audit_environment
         request = SecurityAuditRequest(targets=["missing.py"])
     else:
         (root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
-    monkeypatch.setattr(audit_service, "SecurityAuditConfig", lambda: config)
     model = audit_environment.model
     model.bind = lambda **kwargs: model
     model.ainvoke = AsyncMock(return_value="invalid structured response")
 
     async def execute():
         service = AuditService(MemoryBlackboard())
-        state = service.start(str(root), request, ExecutionConfig(), "security")
+        state = service.start(str(root), request, ExecutionConfig(), "security", security_config=overrides)
         await service.wait(state.run_id)
         snapshot = service.snapshot(state.run_id)
         assert snapshot.status == "partial", snapshot

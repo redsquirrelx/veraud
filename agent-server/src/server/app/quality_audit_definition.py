@@ -5,7 +5,7 @@ import base64
 import subprocess
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ConfigDict, Field, ValidationError
 
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
@@ -14,11 +14,12 @@ from ..config.settings import resolve_workspace_root
 from ..services.audit_report_docx import render_audit_report_docx
 from .audit_attributes import QualityAttributes
 from .audit_models import validate_model_configs
+from .audit_options import AuditExecutionOptions
 from .audit_service import AuditService
 from .execution_service import InvalidConfigError
 
 
-class QualityAuditInput(BaseModel):
+class QualityAuditInput(AuditExecutionOptions):
     model_config = ConfigDict(extra="forbid")
 
     root_path: str
@@ -69,7 +70,9 @@ class QualityAuditRunner:
         state = None
         try:
             state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
-                agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request)
+                parsed.agent_defaults, parsed.audit_budget, parsed.call_limits,
+                agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request,
+                security_config=parsed.security_config)
             if hooks:
                 await hooks.on_audit_start(stage, state.run_id)
             await service.wait(state.run_id)
