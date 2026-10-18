@@ -6,6 +6,7 @@
     <title>{{ title }} | Veraud</title>
     <link rel="stylesheet" href="{{ url_for('web_static', path='styles.css') }}">
     <script src="{{ url_for('web_static', path='blackboard.js') }}" defer></script>
+    <script src="{{ url_for('web_static', path='snapshot-report.js') }}" defer></script>
 </head>
 <body>
     <main>
@@ -17,6 +18,22 @@
             <button type="submit">Consultar</button>
         </form>
         <p id="connection" role="status">Introduce el run_id para consultar una auditoría.</p>
+        <section aria-labelledby="snapshot-heading">
+            <h2 id="snapshot-heading">Generar informe desde JSON</h2>
+            <p>Carga un análisis exportado del Blackboard. No requiere una auditoría activa ni vuelve a ejecutar los agentes.</p>
+            <form id="snapshot-report-form">
+                <label for="snapshot-file">Análisis del Blackboard (.json)</label>
+                <input id="snapshot-file" type="file" accept=".json,application/json" required>
+                <label for="snapshot-format">Formato del informe</label>
+                <select id="snapshot-format">
+                    <option value="docx">Word (.docx)</option>
+                    <option value="json">JSON del informe (.json)</option>
+                </select>
+                <button id="generate-snapshot-report" type="submit">Generar informe</button>
+            </form>
+            <p id="snapshot-report-status" role="status" aria-live="polite"></p>
+            <a id="snapshot-generation-json" hidden>Descargar JSON de esta generación y su registro</a>
+        </section>
         <section id="audit" hidden>
             <h2>Estado: <span id="audit-status"></span></h2>
             <p id="audit-error" role="alert" hidden></p>
@@ -26,9 +43,12 @@
             <p id="audit-meta"></p>
             <p id="updated-at"></p>
             <div class="report-actions">
+                <button id="download-analysis" type="button" disabled aria-describedby="analysis-status">Descargar análisis JSON</button>
+                <p id="analysis-status" role="status" aria-live="polite">La descarga del análisis completo estará disponible cuando termine la ejecución.</p>
                 <button id="download-report" type="button" disabled aria-describedby="report-hint report-status">Descargar informe Word</button>
                 <p id="report-hint">El informe se genera con los registros publicados de esta auditoría.</p>
                 <p id="report-status" role="status" aria-live="polite"></p>
+                <a id="report-generation-json" hidden>Descargar JSON de esta generación y su registro</a>
             </div>
             <section><h2>Evidencias (<span id="evidence-count">0</span>)</h2><div id="evidence"></div></section>
             <section><h2>Hallazgos (<span id="findings-count">0</span>)</h2><div id="findings"></div></section>

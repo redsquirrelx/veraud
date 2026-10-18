@@ -31,7 +31,7 @@ async function viewer(responses, search = "?run_id=audit") {
     const revoked = [];
     const body = new Element();
     runInNewContext(source, {
-        URLSearchParams, AbortSignal,
+        URLSearchParams, AbortSignal, Blob,
         URL: {
             createObjectURL(blob) { downloads.push(blob); return "blob:report"; },
             revokeObjectURL(url) { revoked.push(url); },
@@ -226,4 +226,34 @@ test("download errors are visible and retryable; missing audits disable the butt
     assert.equal(button.disabled, true);
     const missing = await viewer([{status: 404}]);
     assert.equal(missing.elements.get("download-report").disabled, true);
+});
+
+test("downloads a fresh complete snapshot only after termination, preserving nested knowledge", async () => {
+    const final = ok("partial");
+    const snapshot = await final.json();
+    snapshot.assessments = [{id: "manager", details: {report: {assessments: [{invocations: [{result: {
+        hypotheses: [{status: "inconclusive"}], validation_issues: ["missing caller inspection"],
+    }}]}]}}}];
+    final.json = async () => snapshot;
+    const view = await viewer([ok("running"), ok("partial"), final]);
+    const button = view.elements.get("download-analysis");
+    assert.equal(button.disabled, true);
+    await button.click();
+    assert.equal(view.calls.length, 1);
+    await view.timers.shift().callback();
+    assert.equal(button.disabled, false);
+    await button.click();
+    assert.equal(view.calls[2].url, "/api/audits/audit");
+    assert.deepEqual(JSON.parse(await view.downloads[0].text()), snapshot);
+    assert.equal(view.body.children.length, 0);
+    await view.timers.shift().callback();
+    assert.deepEqual(view.revoked, ["blob:report"]);
+});
+
+test("snapshot download failure remains retryable without downloading stale cached data", async () => {
+    const view = await viewer([ok("failed"), {ok: false, status: 404}]);
+    await view.elements.get("download-analysis").click();
+    assert.equal(view.downloads.length, 0);
+    assert.match(view.elements.get("analysis-status").textContent, /No se pudo/);
+    assert.equal(view.elements.get("download-analysis").disabled, false);
 });

@@ -8,6 +8,10 @@
     const connection = element("connection");
     const reportButton = element("download-report");
     const reportStatus = element("report-status");
+    const analysisButton = element("download-analysis");
+    const analysisStatus = element("analysis-status");
+    let auditFinished = false;
+    let downloadingAnalysis = false;
     let auditAvailable = false;
     let downloadingReport = false;
     const labels = {
@@ -18,6 +22,36 @@
     // Keep existing nodes so open details and selection survive a refresh.
     const records = new Map();
     const failureNodes = new Map();
+
+    analysisButton.addEventListener("click", async () => {
+        if (!auditAvailable || !auditFinished || downloadingAnalysis) return;
+        downloadingAnalysis = true;
+        analysisButton.disabled = true;
+        analysisStatus.textContent = "Preparando el análisis jerárquico completo…";
+        try {
+            const response = await fetch(`/api/audits/${encodeURIComponent(runId)}`, {
+                cache: "no-store", signal: AbortSignal.timeout(120000),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const snapshot = await response.json();
+            if (active.has(snapshot.status)) throw new Error("La ejecución sigue en curso.");
+            const blob = new Blob([JSON.stringify(snapshot, null, 2) + "\n"], {type: "application/json;charset=utf-8"});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `blackboard-${runId.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            analysisStatus.textContent = "Descarga del análisis completo iniciada. Puedes usarlo para generar el informe por separado.";
+        } catch {
+            analysisStatus.textContent = "No se pudo descargar el análisis. Comprueba la ejecución e inténtalo de nuevo.";
+        } finally {
+            downloadingAnalysis = false;
+            analysisButton.disabled = !auditAvailable || !auditFinished;
+        }
+    });
 
     function renderFailures(audit) {
         const incomplete = new Set(["partial", "failed", "timeout", "skipped", "cancelled"]);
@@ -68,6 +102,7 @@
         reportButton.disabled = true;
         reportButton.textContent = "Generando informe…";
         reportStatus.textContent = "Preparando el documento Word con los registros publicados…";
+        element("report-generation-json").hidden = true;
         try {
             const response = await fetch(`/api/audits/${encodeURIComponent(runId)}/report.docx`, {
                 cache: "no-store", signal: AbortSignal.timeout(120000),
@@ -89,6 +124,14 @@
             link.remove();
             window.setTimeout(() => URL.revokeObjectURL(url), 1000);
             reportStatus.textContent = "Descarga del informe iniciada.";
+            const generationId = response.headers?.get("X-Report-Generation-ID");
+            if (generationId) {
+                const receipt = element("report-generation-json");
+                receipt.href = `/api/audits/${encodeURIComponent(runId)}/report-generations/${encodeURIComponent(generationId)}`;
+                receipt.download = `informe-${generationId}.json`;
+                receipt.hidden = false;
+                reportStatus.textContent += ` Generación: ${generationId}.`;
+            }
         } catch {
             reportStatus.textContent = "No se pudo descargar el informe. Inténtalo de nuevo.";
         } finally {
@@ -138,6 +181,7 @@
             if (response.status === 404) {
                 auditAvailable = false;
                 reportButton.disabled = true;
+                analysisButton.disabled = true;
                 connection.textContent = "Auditoría no encontrada en este servidor. Comprueba el run_id; los datos en memoria se pierden al reiniciar.";
                 retry = false;
                 return;
@@ -145,6 +189,8 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const audit = await response.json();
             auditAvailable = true;
+            auditFinished = !active.has(audit.status);
+            analysisButton.disabled = downloadingAnalysis || !auditFinished;
             reportButton.disabled = downloadingReport;
             element("report-hint").textContent = active.has(audit.status)
                 ? "La auditoría sigue en curso. El informe reflejará los resultados parciales publicados hasta su generación."
