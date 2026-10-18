@@ -22,7 +22,15 @@ export interface AgentInvoker {
 
 /** What the pipeline needs: only the repository root. Stage inputs are
  *  derived server-side from previous stages. */
-export interface PipelineInput {
+/** Opaque operating patches; agent-server validates effective catalog contracts. */
+export interface AuditOperatingOptions {
+  agent_defaults?: Record<string, unknown>
+  security_config?: Record<string, unknown>
+  audit_budget?: Record<string, unknown>
+  call_limits?: Record<string, unknown>
+}
+
+export interface PipelineInput extends AuditOperatingOptions {
   root_path: string
   attributes?: string[]
   commit_hash?: string

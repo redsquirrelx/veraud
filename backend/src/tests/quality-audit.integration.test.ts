@@ -52,7 +52,12 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     const version = await db.projectVersion.create({ data: { projectId, branch: "main", commitHash: hash, analysisStatus: "Completed" } })
     const architecture = await db.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
     const url = `/api/projects/${projectId}/audits`
-    const body = { branch: "main", commitHash: hash, attributes }
+    const options = {
+      agent_defaults: { max_context_characters: 20000000, max_total_tokens: 80000000, max_model_calls: 20, max_tool_calls: 30 },
+      audit_budget: { max_total_tokens: 3000000000 },
+      ...(attributes.includes("security") ? { security_config: { max_scan_files: 30, max_source_lines: 200 } } : {}),
+    }
+    const body = { branch: "main", commitHash: hash, attributes, ...options }
     assert.equal((await app.inject({ method: "POST", url, payload: { ...body, attributes: ["unsupported"] } })).statusCode, 400)
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     assert.equal(await db.evaluation.count(), 1, "invalid configurations create no audit rows")
@@ -70,6 +75,9 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     for (let i = 0; !seen && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 10))
     assert.deepEqual(seen?.attributes, attributes)
+    assert.deepEqual(seen?.agent_defaults, options.agent_defaults)
+    assert.deepEqual(seen?.audit_budget, options.audit_budget)
+    assert.deepEqual(seen?.security_config, options.security_config)
     assert.equal(seen?.commit_hash, hash)
     const waiting = await app.inject({ url })
     assert.equal(waiting.json()[0].reportAvailable, false)

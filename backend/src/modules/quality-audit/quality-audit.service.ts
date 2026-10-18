@@ -1,4 +1,5 @@
 import type { AgentExecutionService } from "../agent-execution/agent-execution.service.js"
+import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { InvalidGitRequestError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 
@@ -39,14 +40,20 @@ function summary(row: AuditRow) {
 export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService) {}
 
-  async start(projectId: number, branch: string, commitHash: string, attributes: string[]) {
+  async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     if (!attributes.length || new Set(attributes).size !== attributes.length
       || attributes.some((attribute) => !["maintainability", "security"].includes(attribute))) {
       throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security")
     }
+    if (options.security_config && !attributes.includes("security")) {
+      throw new InvalidGitRequestError("security_config requires security in attributes")
+    }
+    if (options.call_limits && !attributes.includes("maintainability")) {
+      throw new InvalidGitRequestError("call_limits requires maintainability; use security_config for security")
+    }
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)
-    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes)
+    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, options)
   }
 
   async list(projectId: number) {

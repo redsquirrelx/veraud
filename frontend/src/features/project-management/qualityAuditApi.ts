@@ -26,10 +26,18 @@ export function listQualityAudits(projectId: number) {
   return json<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`)
 }
 
-export function startQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[]) {
+/** Optional operating patches; schemas and numeric bounds are owned by agent-server. */
+export interface AuditOperatingOptions {
+  agent_defaults?: Record<string, unknown>
+  security_config?: Record<string, unknown>
+  audit_budget?: Record<string, unknown>
+  call_limits?: Record<string, unknown>
+}
+
+export function startQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
   return json<{ executionId: number }>(`/api/projects/${projectId}/audits`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, commitHash, attributes }),
+    body: JSON.stringify({ ...options, branch, commitHash, attributes }),
   })
 }
 

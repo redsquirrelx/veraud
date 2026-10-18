@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify"
+import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { errorResponses, objectResponse, branchInput } from "../../infrastructure/openapi/routeSchemas.js"
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
@@ -34,19 +35,24 @@ function failure(error: unknown) {
 export function registerQualityAuditRoutes(app: FastifyInstance, service: QualityAuditService) {
   app.post("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "Start a quality audit for a project revision",
-    description: "Select one or more supported quality attributes. Currently only maintainability is implemented. Runs asynchronously and persists the existing Blackboard-derived report and Word document, including partial results. Configure maintainability_manager in Agent Settings first.",
+    description: "Run maintainability, security or both with one report. Configure model access for each selected attribute first. Optional operating patches are validated against agent-server's catalog; security_config overrides common agent_defaults for security. Developer controls are not exposed as user-panel settings.",
     params,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
       attributes: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security"] } },
+      agent_defaults: { type: "object", additionalProperties: true, description: "Developer-level common overrides; validated by agent-server." },
+      security_config: { type: "object", additionalProperties: true, description: "Developer-level security overrides; validated by agent-server." },
+      audit_budget: { type: "object", additionalProperties: true },
+      call_limits: { type: "object", additionalProperties: true, description: "Developer-level maintainability call envelopes; validated by agent-server." },
     } },
     response: { 202: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, executionId: { type: "integer" } }),
       ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
   } }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const body = request.body as { branch: string, commitHash: string, attributes: string[] }
+    const { branch, commitHash, attributes, ...options } = request.body as AuditOperatingOptions & {
+      branch: string, commitHash: string, attributes: string[] }
     try {
-      return reply.code(202).send(await service.start(Number(id), body.branch, body.commitHash, body.attributes))
+      return reply.code(202).send(await service.start(Number(id), branch, commitHash, attributes, options))
     } catch (error) {
       return reply.code(failure(error)).send({ message: (error as Error).message, ...(error instanceof AgentConfigurationError ? { agents: error.agents } : {}) })
     }

@@ -1,6 +1,6 @@
 import { logger } from "../../config/logger.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
-import type { AgentInput, AgentInvoker } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
@@ -129,7 +129,7 @@ export class AgentExecutionService {
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
-  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[]) {
+  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE : SECURITY_AGENT_TYPE
     const configurations = await this.settings.prepareExecution([
       ...(attributes.includes("maintainability") ? [MAINTAINABILITY_AGENT_TYPE] : []),
@@ -145,16 +145,17 @@ export class AgentExecutionService {
       for (const participant of participants) configs[participant] = configuration.transport
     }
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
-    void this.dispatchQualityAudit(execution, configs, commitHash, attributes)
+    void this.dispatchQualityAudit(execution, configs, commitHash, attributes, options)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
   }
 
-  private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[]) {
+  private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {
     try {
       if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
       const input = await this.targets.resolve(execution.evaluationId)
       await this.markRunning(execution.id)
       const payload = await this.agents.runPipelineByName("quality-audit", {
+        ...options,
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
       }, { [execution.agentType]: execution.id }, configs)
       const audit = payload["audit"]
