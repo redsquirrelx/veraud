@@ -159,9 +159,11 @@ class PipelineDefinition:
 
 def default_pipeline_registry() -> dict[str, PipelineDefinition]:
     from .project_architecture_definition import project_architecture_definition
+    from .functional_adequacy_definition import functional_adequacy_definition
 
     return {
         "project-architecture": project_architecture_definition(),
+        "functional-adequacy": functional_adequacy_definition(),
     }
 
 

@@ -1,0 +1,37 @@
+{
+  "evaluated_attribute": "functional_adequacy",
+  "score": 100.0,
+  "total_requirements": 1,
+  "fulfilled_requirements": 1,
+  "results": [
+    {
+      "requirement_id": "REQ-FL-001",
+      "description": "Flask debe permitir almacenar un valor en la sesión durante una petición POST, recuperarlo mediante una petición GET posterior y reflejar el acceso a la sesión mediante la cabecera Vary: Cookie.",
+      "status": "cumple",
+      "justification": "La evidencia demuestra el cumplimiento íntegro del requisito. En 'src/flask/sessions.py' (fragmentos FL-001-OPEN y FL-001-SAVE), el método 'save_session' comprueba si la sesión fue accedida mediante la condición 'if session.accessed:' y añade la cabecera correspondiente con 'response.vary.add(\"Cookie\")', además de persistir la sesión serializada con 'response.set_cookie'. El método 'open_session' permite deserializar la cookie en peticiones posteriores. Este comportamiento se valida explícitamente en el test 'test_session_accessed' ('tests/test_basic.py'), donde se almacena un valor en sesión mediante una petición POST ('flask.session[\"value\"] = ...'), se recupera con una petición GET posterior comprobando que devuelve el valor esperado ('assert rv.text == \"42\"'), y se verifica en ambas respuestas la presencia de la cabecera 'Vary: Cookie' mediante 'assert \"cookie\" in rv.vary'.",
+      "evidence": [
+        {
+          "fragment_id": "FL-001-OPEN",
+          "file_path": "src/flask/sessions.py:323-351",
+          "similarity": 0.4886610805988312
+        },
+        {
+          "fragment_id": "FL-001-TEST",
+          "file_path": "tests/test_basic.py:237-276",
+          "similarity": 0.4694266617298126
+        },
+        {
+          "fragment_id": "FL-001-SAVE",
+          "file_path": "src/flask/sessions.py:337-375",
+          "similarity": 0.4691646993160248
+        },
+        {
+          "fragment_id": "FL-001-SESSION",
+          "file_path": "src/flask/sessions.py:57-80",
+          "similarity": 0.35377007722854614
+        }
+      ]
+    }
+  ],
+  "recommendations": []
+}

@@ -209,7 +209,7 @@ def test_status_and_list_responses(api):
     client, _, _ = api
     for path, expected in [
         ("/api/status", {"status": "ok", "service": "agent-server"}),
-        ("/api/agents", ["dummy"]),
+        ("/api/agents", ["dummy", "functional_adequacy"]),
     ]:
         response = client.get(path)
         assert response.status_code == 200
