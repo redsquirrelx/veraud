@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
-import { MAINTAINABILITY_AGENT_TYPE } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
@@ -170,7 +170,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     })
 
     if (runId) await this.db.agentExecution.updateMany({
-      where: { id, status: "Running", agentType: MAINTAINABILITY_AGENT_TYPE, result: null },
+      where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE] }, result: null },
       data: { result: JSON.stringify({ run_id: runId }) },
     })
 

@@ -6,7 +6,7 @@ import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { MAINTAINABILITY_AGENT_TYPE, MAINTAINABILITY_AUDIT_AGENTS, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, MAINTAINABILITY_AUDIT_AGENTS, SECURITY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -130,9 +130,10 @@ export class AgentExecutionService {
   }
 
   async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[]) {
-    const configurations = await this.settings.prepareExecution([MAINTAINABILITY_AGENT_TYPE])
+    const agentType = attributes[0] === "security" ? SECURITY_AGENT_TYPE : MAINTAINABILITY_AGENT_TYPE
+    const configurations = await this.settings.prepareExecution([agentType])
     const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations, "QualityAudit")
-    const execution = result.executions[MAINTAINABILITY_AGENT_TYPE]!
+    const execution = result.executions[agentType]!
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
     void this.dispatchQualityAudit(execution, configurations[0]!.transport, commitHash, attributes)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
@@ -145,8 +146,8 @@ export class AgentExecutionService {
       await this.markRunning(execution.id)
       const payload = await this.agents.runPipelineByName("quality-audit", {
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
-      }, { [MAINTAINABILITY_AGENT_TYPE]: execution.id },
-      Object.fromEntries(MAINTAINABILITY_AUDIT_AGENTS.map((agentType) => [agentType, config])))
+      }, { [execution.agentType]: execution.id },
+      Object.fromEntries((execution.agentType === SECURITY_AGENT_TYPE ? [SECURITY_AGENT_TYPE] : MAINTAINABILITY_AUDIT_AGENTS).map((agentType) => [agentType, config])))
       const audit = payload["audit"]
       if (!audit || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
         throw new Error("Quality-audit pipeline returned no report")
@@ -354,7 +355,7 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     status: execution.status,
     // Audit artifacts are retrieved through project-scoped report endpoints;
     // avoid broadcasting source inventories and binary base64 to every client.
-    result: execution.agentType === MAINTAINABILITY_AGENT_TYPE ? null : execution.result,
+    result: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE].includes(execution.agentType) ? null : execution.result,
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,

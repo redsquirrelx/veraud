@@ -10,7 +10,10 @@ import { auditResponseSerialization } from "./helpers/responseSerializationAudit
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
 import { MAINTAINABILITY_AUDIT_AGENTS } from "../modules/agent-settings/agent-types.js"
 
-it("runs a maintainability audit and persists its original partial report and Word artifact independently of architecture", async () => {
+for (const attribute of ["maintainability", "security"]) {
+it(`runs a ${attribute} audit and persists its original partial report and Word artifact independently of architecture`, async () => {
+  const agentType = attribute === "security" ? "security" : "maintainability_manager"
+  const agents = attribute === "security" ? ["security"] : [...MAINTAINABILITY_AUDIT_AGENTS]
   const dir = mkdtempSync(join(tmpdir(), "veraud-quality-"))
   const databaseUrl = `file:${join(dir, "test.db")}`
   execSync("pnpm prisma migrate deploy", {
@@ -26,12 +29,12 @@ it("runs a maintainability audit and persists its original partial report and Wo
   const { app, db } = await buildApp({ ...options, makeAgentInvoker: () => ({
     run: async () => ({}), runPipelineByName: async (name, input, ids, configs) => {
       assert.equal(name, "quality-audit")
-      assert.ok(ids.maintainability_manager)
-      assert.equal(configs.maintainability_manager?.api_key, "secret-test-key")
-      assert.deepEqual(Object.keys(configs).sort(), [...MAINTAINABILITY_AUDIT_AGENTS].sort())
-      for (const agentType of MAINTAINABILITY_AUDIT_AGENTS) {
-        assert.deepEqual(configs[agentType], configs.maintainability_manager,
-          `${agentType} must receive the common model and credential explicitly`)
+       assert.ok(ids[agentType])
+       assert.equal(configs[agentType]?.api_key, "secret-test-key")
+       assert.deepEqual(Object.keys(configs).sort(), agents.sort())
+       for (const participant of agents) {
+         assert.deepEqual(configs[participant], configs[agentType],
+           `${participant} must receive the common model and credential explicitly`)
       }
       seen = input
       return pending
@@ -49,20 +52,20 @@ it("runs a maintainability audit and persists its original partial report and Wo
     const version = await db.projectVersion.create({ data: { projectId, branch: "main", commitHash: hash, analysisStatus: "Completed" } })
     const architecture = await db.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
     const url = `/api/projects/${projectId}/audits`
-    const body = { branch: "main", commitHash: hash, attributes: ["maintainability"] }
-    assert.equal((await app.inject({ method: "POST", url, payload: { ...body, attributes: ["security"] } })).statusCode, 400)
+    const body = { branch: "main", commitHash: hash, attributes: [attribute] }
+    assert.equal((await app.inject({ method: "POST", url, payload: { ...body, attributes: ["unsupported"] } })).statusCode, 400)
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     assert.equal(await db.evaluation.count(), 1, "invalid configurations create no audit rows")
     const provider = await db.aiProvider.create({ data: { name: "test" } })
     const model = await db.aiModel.create({ data: { name: "test-model", aiProviderId: provider.id } })
     const credential = await db.aiCredential.create({ data: { name: "test-key", apiKey: "secret-test-key", aiProviderId: provider.id } })
-    await db.agentSettings.update({ where: { agentType: "maintainability_manager" }, data: { aiModelId: model.id, aiCredentialId: credential.id } })
+    await db.agentSettings.update({ where: { agentType }, data: { aiModelId: model.id, aiCredentialId: credential.id } })
     const opened = await app.inject({ method: "POST", url, payload: body })
     assert.equal(opened.statusCode, 202, opened.body)
     executionId = opened.json().executionId
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     for (let i = 0; !seen && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 10))
-    assert.deepEqual(seen?.attributes, ["maintainability"])
+    assert.deepEqual(seen?.attributes, [attribute])
     assert.equal(seen?.commit_hash, hash)
     const waiting = await app.inject({ url })
     assert.equal(waiting.json()[0].reportAvailable, false)
@@ -75,7 +78,7 @@ it("runs a maintainability audit and persists its original partial report and Wo
     assert.equal((await app.inject({ url })).json()[0].runId, "b".repeat(32))
     assert.equal((await app.inject({ method: "POST", url: `/api/agent-executions/${executionId}/running`,
       payload: { runId: "not-a-run-id" } })).statusCode, 400)
-    finish({ audit: { attributes: ["maintainability"], status: "partial", run_id: "audit-123", report,
+    finish({ audit: { attributes: [attribute], status: "partial", run_id: "audit-123", report,
       blackboard: { evidence: [{ id: "source-1", commit: hash }] }, docx_base64: word.toString("base64") } })
     for (let i = 0; i < 100; i++) {
       if ((await db.agentExecution.findUniqueOrThrow({ where: { id: executionId } })).status === "Completed") break
@@ -104,3 +107,4 @@ it("runs a maintainability audit and persists its original partial report and Wo
     assert.equal((await restarted.app.inject({ url: `/api/projects/999/audits/${executionId}/report` })).statusCode, 404)
   } finally { await restarted.app.close(); await restarted.db.$disconnect() }
 })
+}

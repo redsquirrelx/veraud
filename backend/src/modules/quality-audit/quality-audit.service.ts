@@ -26,7 +26,7 @@ function summary(row: AuditRow) {
     evaluationId: row.evaluationId,
     branch: row.evaluation!.projectVersion.branch,
     commitHash: row.evaluation!.projectVersion.commitHash,
-    attributes: result?.attributes ?? ["maintainability"],
+    attributes: result?.attributes ?? [row.agentType === "security" ? "security" : "maintainability"],
     executionStatus: row.status,
     auditStatus: result?.status ?? null,
     error: row.error,
@@ -40,8 +40,8 @@ export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService) {}
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[]) {
-    if (attributes.length !== 1 || attributes[0] !== "maintainability") {
-      throw new InvalidGitRequestError("Select supported quality attributes: maintainability")
+    if (attributes.length !== 1 || !["maintainability", "security"].includes(attributes[0]!)) {
+      throw new InvalidGitRequestError("Select one supported quality attribute: maintainability or security")
     }
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)
