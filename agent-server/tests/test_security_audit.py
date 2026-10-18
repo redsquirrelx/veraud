@@ -8,6 +8,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableLambda
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import describe_agent_config, validate_agent_config
@@ -25,6 +29,103 @@ from server.services.audit_report_snapshot import (
 )
 
 pytest_plugins = ["test_audits"]
+
+
+class StrictNativeSecurityModel(BaseChatModel):
+    """Offline provider double that rejects the Gemini-incompatible call option."""
+
+    max_output_tokens: int = 700
+    timeout: float = 120
+
+    @property
+    def _llm_type(self):
+        return "strict-native-security"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise AssertionError("Expected native structured output")
+
+    def with_structured_output(self, schema, **kwargs):
+        assert kwargs == {"method": "json_schema", "include_raw": True}
+        assert "patch_code" in schema["properties"]
+
+        def invoke(messages, **options):
+            assert options == {}, "Gemini rejects call-time max_tokens"
+            assert self.max_output_tokens == 256
+            assert self.timeout == 90
+            assert isinstance(messages[0], SystemMessage)
+            assert isinstance(messages[1], HumanMessage)
+            return {"raw": AIMessage(content="", usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}),
+                "parsed": {"patch_code": "safe()", "explanation": "Revisar contexto"}, "parsing_error": None}
+
+        return RunnableLambda(invoke)
+
+
+@pytest.mark.parametrize("attributes", [["security"], ["maintainability", "security"]])
+def test_security_uses_native_model_limits_and_structured_messages_in_both_dispatch_paths(audit_environment, monkeypatch, attributes):
+    (audit_environment.root / "main.py").write_text("pickle.loads(payload)\n", encoding="utf-8")
+    model = StrictNativeSecurityModel()
+    audit_environment.factory.return_value = model
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Mock(return_value=SimpleNamespace(
+        run=AsyncMock(return_value=SimpleNamespace(status="complete")))))
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": attributes, "security_config": {"max_output_tokens": 256}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "completed", snapshot
+        assessment = next(item for item in snapshot["assessments"] if item["agent_id"] == "security")
+        assert assessment["consumption"]["accounted_tokens"] == 15
+        assert assessment["consumption"]["estimated_tokens"] == 0
+        assert snapshot["findings"][0]["details"]["security_finding"]["remediation"]["llm_generated"]
+    assert model.max_output_tokens == 700
+    assert model.timeout == 120
+
+
+@pytest.mark.parametrize("retries", [0, 1])
+def test_security_repairs_invalid_schema_with_bounded_accounted_calls(audit_environment, retries):
+    (audit_environment.root / "main.py").write_text("pickle.loads(payload)\n", encoding="utf-8")
+    model = audit_environment.model
+    model.ainvoke = AsyncMock(side_effect=['{"explanation": "missing patch"}',
+        '{"patch_code": "safe()", "explanation": "Revisar contexto"}'])
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root), "attributes": ["security"],
+            "security_config": {"max_schema_retries": retries}})
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == ("completed" if retries else "partial"), snapshot
+        assert snapshot["assessments"][0]["consumption"]["model_calls"] == 1 + retries
+        assert model.ainvoke.await_count == 1 + retries
+        errors = snapshot["assessments"][0]["details"]["security_analysis"]["remediation_errors"]
+        assert errors[0]["stage"] == "response_schema"
+        assert errors[0]["retrying"] is bool(retries)
+        assert "patch_code: missing" in errors[0]["diagnostic"]
+
+
+def test_security_retains_original_provider_validation_failure_for_skipped_remediations(audit_environment):
+    class ProviderOptions(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    with pytest.raises(ValidationError) as captured:
+        ProviderOptions.model_validate({"max_tokens": "PRIVATE-PROVIDER-INPUT"})
+    (audit_environment.root / "main.py").write_text("pickle.loads(payload)\n" * 4, encoding="utf-8")
+    audit_environment.model.ainvoke = AsyncMock(side_effect=captured.value)
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root), "attributes": ["security"]})
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "partial"
+        assert len(snapshot["findings"]) == 4
+        assert snapshot["assessments"][0]["consumption"]["model_calls"] == 1
+        errors = snapshot["assessments"][0]["details"]["security_analysis"]["remediation_errors"]
+        assert [item["skipped"] for item in errors] == [False, True, True, True]
+        assert all("max_tokens: extra_forbidden" in item["diagnostic"] for item in errors)
+        assert "PRIVATE-PROVIDER-INPUT" not in str(snapshot)
+        assert "RuntimeError" not in str(snapshot)
+        assert any("max_tokens: extra_forbidden" in item for item in snapshot["execution_issues"][0]["diagnostics"])
 
 
 def test_security_scanners_publish_portable_candidates_without_claiming_verification(audit_environment):
@@ -77,7 +178,7 @@ def test_cancellation_keeps_the_candidate_and_closes_provider(audit_environment)
     async def execute():
         entered = asyncio.Event()
 
-        async def blocked(prompt):
+        async def blocked(prompt, **kwargs):
             entered.set()
             await asyncio.Event().wait()
 
@@ -165,7 +266,8 @@ def test_security_specific_call_limit_overrides_common_defaults_and_preserves_al
         assert len(snapshot["findings"]) == 6
         assert snapshot["assessments"][0]["termination_reason"] == "model_call_limit"
         assert model.ainvoke.await_count == 4
-        model.bind.assert_called_once_with(max_tokens=256)
+        model.bind.assert_not_called()
+        assert all(call.kwargs == {"max_tokens": 256} for call in model.ainvoke.await_args_list)
         policy = snapshot["assessments"][0]["details"]["security_analysis"]["effective_config"]
         assert policy["max_tool_calls"] == 30
         assert policy["provider_rate_limits"]["requests_per_minute"] is None
@@ -420,7 +522,7 @@ def test_joint_cancellation_stops_both_attributes_and_retains_the_shared_analysi
 
         manager = SimpleNamespace(run=lambda *args: block("maintainability", manager_entered))
         monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Mock(return_value=manager))
-        model.ainvoke = lambda prompt: block("security", security_entered)
+        model.ainvoke = lambda prompt, **kwargs: block("security", security_entered)
         service = AuditService(MemoryBlackboard())
         state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(), "offline",
             attributes=["maintainability", "security"])

@@ -6,11 +6,23 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
-from ...runtimes.investigation.provider import ProviderPacer
+from ...infrastructure.llm.chat import prepare_chat_model
+from ...runtimes.investigation.provider import (
+    ProviderPacer,
+    lean_schema,
+    provider_diagnostic,
+)
+from ...runtimes.investigation.structured import (
+    finish_diagnostic,
+    parse_structured,
+    safe_diagnostic,
+)
 from ...runtimes.repository.model_runtime import ModelGateway
 from ...runtimes.repository.timing import within_deadline
 from ..schemes.base import AuditRequest, Criterion
@@ -29,6 +41,12 @@ class SecurityAuditResult(BaseModel):
     status: str
 
 
+class SecurityRemediationProposal(BaseModel):
+    finding_id: str = ""
+    patch_code: str = Field(min_length=1)
+    explanation: str
+
+
 def redact(value):
     """Keep credential values out of prompts, portable snapshots and reports."""
     import re
@@ -44,6 +62,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     evidence_ids, finding_ids, incidents, scanned = [], [], [], []
     incomplete_reasons = []
     read_errors = []
+    remediation_errors = []
 
     def record_incident(reason, description):
         if reason not in incomplete_reasons:
@@ -56,14 +75,25 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     # ambient OPENAI_API_KEY through the legacy synchronous remediation path.
     supervisor.remediation_agent.api_key = None
     reservations = []
+    model, invoke_options, output_limit = prepare_chat_model(model,
+        max_output_tokens=min(limits.max_output_tokens, tools.context.input.budget.max_output_tokens_per_call),
+        request_timeout_seconds=limits.provider_request_timeout_seconds)
+    selected_model, native, last_response = model, False, None
+    messages = []
+    terminal_failure = None
+    remediation_stage = "structured_output_setup"
+    schema_text = json.dumps(SecurityRemediationProposal.model_json_schema())
+    configured = False
     pacer = ProviderPacer(rate_limits=limits.provider_rate_limits, provider_config=limits)
 
     async def generate(prompt):
+        nonlocal last_response
         with tools.timing.quota_wait() as waiting:
-            quota = await within_deadline(pacer.acquire(max(1, len(prompt)) + limits.max_output_tokens,
+            quota = await within_deadline(pacer.acquire(max(1, len(prompt)) + output_limit,
                 on_wait=lambda seconds, reasons: waiting.update(reason="+".join(reasons),
                     until=tools.timing.clock() + seconds, source="local_rolling_window")), tools.timing)
-        response = await model.ainvoke(prompt)
+        last_response = await selected_model.ainvoke(messages, **invoke_options)
+        response = last_response.get("raw") if native else last_response
         usage = getattr(response, "usage_metadata", None)
         if isinstance(usage, dict) and usage.get("input_tokens") is not None and usage.get("output_tokens") is not None:
             actual = usage["input_tokens"] + usage["output_tokens"]
@@ -76,7 +106,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
 
     def guard(prompt, attempt):
         nonlocal calls
-        reserve = max(1, len(prompt)) + limits.max_output_tokens
+        reserve = max(1, len(prompt)) + output_limit
         if calls >= limits.max_model_calls:
             raise ValueError("security_remediation_call_budget_exhausted")
         if tools.token_budget.used + reserve > limits.max_total_tokens:
@@ -88,6 +118,49 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         calls += 1
 
     gateway.request_guard = guard
+
+    async def propose(original):
+        nonlocal selected_model, native, messages, configured, remediation_stage, schema_text
+        if not configured:
+            remediation_stage = "structured_output_setup"
+            factory = getattr(model, "with_structured_output", None)
+            if callable(factory):
+                try:
+                    provider_schema = lean_schema(SecurityRemediationProposal) if isinstance(model, BaseChatModel) else SecurityRemediationProposal
+                    selected_model = factory(provider_schema, method="json_schema", include_raw=True)
+                    native = True
+                    schema_text = json.dumps(provider_schema if isinstance(provider_schema, dict) else provider_schema.model_json_schema())
+                except NotImplementedError:
+                    pass
+            configured = True
+        instructions = policy.remediation_system_prompt
+        if not native:
+            instructions += "\nReturn only valid JSON matching this schema:\n" + schema_text
+        messages = [SystemMessage(content=instructions),
+            HumanMessage(content=json.dumps(original.to_dict(), ensure_ascii=False))]
+        for attempt in range(1 + limits.max_schema_retries):
+            prompt = json.dumps([message.model_dump(mode="json") for message in messages], ensure_ascii=False)
+            if native:
+                prompt += schema_text
+            if len(prompt) > limits.max_context_characters:
+                raise ValueError("security_remediation_context_limit")
+            remediation_stage = "provider_request"
+            with tools.timing.stage("security_remediation"):
+                await gateway(prompt)
+            remediation_stage = "response_schema"
+            try:
+                return parse_structured(last_response, SecurityRemediationProposal, native)
+            except Exception as error:
+                diagnostic = safe_diagnostic(error, SecurityRemediationProposal) + finish_diagnostic(
+                    last_response.get("raw") if native else last_response)
+                remediation_errors.append({"path": original.file_path, "finding_id": original.finding_id,
+                    "stage": remediation_stage, "diagnostic": diagnostic, "attempt": attempt + 1,
+                    "retrying": attempt < limits.max_schema_retries, "skipped": False})
+                if attempt >= limits.max_schema_retries:
+                    raise
+                messages.append(HumanMessage(content="The previous response failed validation: " + diagnostic
+                    + ". Regenerate the complete JSON with patch_code and explanation matching the schema. "
+                    "Do not invent evidence or claim the proposed patch is technically verified."))
 
     def publish_assessment(status, reason):
         record = Assessment(**publication._identity("assessment", "security"), repository_id=snapshot.repository.name,
@@ -110,6 +183,8 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                     "audit_token_limit": tools.token_budget.root.limit,
                      "incomplete_reasons": list(incomplete_reasons),
                      "read_errors": read_errors,
+                     "remediation_errors": remediation_errors,
+                     "effective_output_tokens": output_limit,
                     "remediation": "proposal_only", "dast": "not_evaluated"}})
         # A synchronous terminal receipt records consumed resources even after
         # the host revokes further work. Provider tasks cannot publish records.
@@ -228,15 +303,18 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                     fallback = supervisor.remediation_agent._fallback_patch(original)
                     interrupted = None
                     try:
-                        prompt = policy.remediation_system_prompt + "\n" + json.dumps(original.to_dict(), ensure_ascii=False)
-                        if len(prompt) > limits.max_context_characters:
-                            raise ValueError("security_remediation_context_limit")
-                        with tools.timing.stage("security_remediation"):
-                            proposed = json.loads(await gateway(prompt))
-                        if not isinstance(proposed, dict) or not isinstance(proposed.get("patch_code"), str):
-                            raise TypeError("invalid_security_remediation")
-                        original.remediation = {"llm_generated": True, "validated_by_sast": False,
-                            "patch_code": redact(proposed["patch_code"]), "explanation": redact(str(proposed.get("explanation", "")))}
+                        if terminal_failure is not None:
+                            remediation_errors.append({**terminal_failure, "path": source.path,
+                                "finding_id": original.finding_id, "skipped": True, "retrying": False,
+                                "cause_path": terminal_failure["path"], "cause_finding_id": terminal_failure["finding_id"]})
+                            record_incident("security_remediation_unavailable", f"security_remediation: {source.path}; "
+                                "omitida por el fallo terminal previo: " + terminal_failure["diagnostic"])
+                            original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False,
+                                "failure": {**terminal_failure, "skipped": True}}
+                        else:
+                            proposed = await propose(original)
+                            original.remediation = {"llm_generated": True, "validated_by_sast": False,
+                                "patch_code": redact(proposed.patch_code), "explanation": redact(proposed.explanation)}
                     except asyncio.CancelledError as error:
                         interrupted = error
                         original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False,
@@ -248,8 +326,15 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                             "security_remediation_local_budget_exhausted": "token_limit",
                             "security_remediation_context_limit": "context_limit",
                         }.get(str(error), "security_remediation_fallback")
-                        record_incident(reason, f"Remediación local para {source.path}: {type(error).__name__}.")
-                        original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False}
+                        diagnostic = safe_diagnostic(error, SecurityRemediationProposal) + provider_diagnostic(error)
+                        failure = {"path": source.path, "finding_id": original.finding_id, "stage": remediation_stage,
+                            "diagnostic": diagnostic, "skipped": False, "retrying": False}
+                        if gateway.stopped or remediation_stage == "structured_output_setup":
+                            terminal_failure = failure
+                        if remediation_stage != "response_schema":
+                            remediation_errors.append(failure)
+                        record_incident(reason, f"security_remediation: {source.path}; stage={remediation_stage}; {diagnostic}.")
+                        original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False, "failure": failure}
                     supervisor.validator_agent.validate_patches([original])
                     kept = bool(supervisor.verifier_agent.filter_false_positives([original]))
                     local_id = f"{source.id}/{original.rule_id}/{original.line_number}/{number}"

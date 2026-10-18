@@ -129,6 +129,26 @@ el presupuesto compartido; los fallos conservan el parche local. Los intentos si
 consumo comunicado retienen su reserva estimada. La cancelación conserva evidencia,
 el candidato en curso y un recibo terminal de consumo.
 
+La preparación del cliente usa `prepare_chat_model`, compartida con los
+investigadores: respeta el límite de salida del modelo seleccionado, el del agente
+y el del presupuesto por llamada, y configura el timeout sobre una copia del
+cliente. En Gemini aplica `max_output_tokens` en el modelo y no envía el argumento
+incompatible `max_tokens` en la invocación. No se modifica el cliente original.
+Las peticiones usan mensajes de sistema/usuario y salida estructurada nativa cuando
+el adaptador la soporta; los adaptadores sin esa capacidad usan JSON validado con
+el mismo parser compartido. `security_config.max_schema_retries` permite corregir
+una respuesta inválida (una corrección por defecto); cada intento sigue consumiendo
+el presupuesto de llamadas y tokens y respetando cuotas, contexto y duración.
+
+`details.security_analysis.remediation_errors` registra la etapa, el candidato y
+diagnósticos seguros de los fallos de configuración, proveedor o esquema. No publica
+payloads ni entradas de validación del proveedor. Si el proveedor queda detenido por
+un error terminal, los siguientes candidatos conservan su propuesta local y quedan
+marcados como omitidos, vinculados mediante `cause_path`/`cause_finding_id` al fallo
+inicial, sin generar nuevos errores genéricos `RuntimeError`. Los fallos ya
+recuperados del esquema permanecen como historial y no convierten por sí solos la
+ejecución en parcial. `effective_output_tokens` registra el límite de salida resuelto.
+
 Blackboard conserva reglas, severidad, OWASP, CWE, remediación, resultado del filtro
 y el campo `verified` legacy en `details.security_finding`. Ese campo no equivale
 a validación técnica: los candidatos se publican como `insufficient_evidence`,

@@ -30,6 +30,7 @@ class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig, SourceLin
 # user-level schema rather than this explicitly developer-level audit endpoint.
 SECURITY_AUDIT_CONTROLS = {
     "max_context_characters", "max_total_tokens", "max_model_calls", "max_tool_calls", "max_output_tokens",
+    "max_schema_retries",
     "timeout_seconds", "provider_rate_limits", "max_scan_files", "max_source_lines", "max_source_characters",
     "max_retrieved_characters",
     *ExecutionTimingConfig.model_fields, *ProviderRetryConfig.model_fields,

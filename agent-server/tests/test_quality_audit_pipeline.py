@@ -194,7 +194,7 @@ def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_
     if failed_attribute == "security_timeout":
         policy = audit_service.SecurityAuditConfig(timeout_seconds=0.05)
         monkeypatch.setattr(audit_service, "SecurityAuditConfig", lambda: policy)
-        async def blocked(prompt):
+        async def blocked(prompt, **kwargs):
             await asyncio.Event().wait()
 
         model.ainvoke = blocked

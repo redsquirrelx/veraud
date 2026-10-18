@@ -333,7 +333,7 @@ class AuditService:
                 with timing.stage("security_audit"):
                     return await tracing.wrap_stage(run_security_audit(tools, request,
                         limits,
-                        model.bind(max_tokens=limits.max_output_tokens), self.blackboard, identity),
+                        model, self.blackboard, identity),
                         name="security-audit", audit_id=identity.run_id, invocation_id=identity.invocation_id,
                         repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash)
             models = {agent_type: client(selected, access)
@@ -412,7 +412,7 @@ class AuditService:
                 if attribute == "security":
                     operation = run_security_audit(tools, selected_request,
                         policy,
-                        model.bind(max_tokens=policy.max_output_tokens), self.blackboard, child)
+                        model, self.blackboard, child)
                 else:
                     manager = MaintainabilityManagerAgent(model, policy, blackboard=self.blackboard,
                         audit_identity=child, tracing_backend=tracing)

@@ -17,6 +17,7 @@ REASONS = {
     "security_source_truncated": "Parte del código se inspeccionó mediante fragmentos truncados; la cobertura de seguridad es parcial.",
     "security_scope_incomplete": "Quedan archivos del alcance de seguridad sin inspeccionar.",
     "security_remediation_fallback": "No se completó una propuesta de remediación con el modelo; se conservaron el candidato y la propuesta local.",
+    "security_remediation_unavailable": "Propuesta del modelo omitida por un fallo terminal previo; se conservaron el candidato, la causa original y la propuesta local.",
     "security_interrupted": "El análisis de seguridad se interrumpió; se conservó el trabajo parcial.",
     "round_limit": "Se alcanzó el límite de rondas sin completar la cobertura requerida.",
     "model_call_limit": "Se alcanzó el límite de llamadas al modelo.",
@@ -46,7 +47,7 @@ REASONS = {
     "unresolved_no_useful_follow_up": "Quedan aspectos sin resolver, sin un seguimiento útil disponible.",
 }
 INCOMPLETE = {"partial", "failed", "timeout", "skipped", "cancelled"}
-EVENT = re.compile(r"security_source_read:|resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_(?:wait|token|call|wall_time)_limit:|"
+EVENT = re.compile(r"security_remediation:|security_source_read:|resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_(?:wait|token|call|wall_time)_limit:|"
     r"provider_recovery_(?:budget|exhausted):|source_not_inspected|boundary_[a-z_]+|review_unknown_candidates|unknown component ID")
 
 
