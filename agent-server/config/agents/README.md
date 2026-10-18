@@ -220,12 +220,24 @@ transitorios como para recuperación de cuota. Es independiente del tiempo activ
 y nunca extiende una fecha límite absoluta. `max_provider_retries` admite cuatro
 reintentos transitorios por defecto; las esperas exponenciales habituales son
 2, 4, 8 y 16 segundos. Se siguen respetando los presupuestos de llamadas y tokens.
+Para errores transitorios distintos de 429, primero se comprueba si queda un reintento
+permitido y admisible por recursos, y solo entonces se autoriza su espera. Cinco 503
+con la configuración predeterminada cierran con `provider_recovery_exhausted`: no se
+atribuye el cierre a una sexta solicitud o una espera de 32 segundos que ya no estaban
+permitidas. `provider_recovery_budget` corresponde a una espera que excedería el
+presupuesto acumulado mientras todavía queda un reintento elegible. La recuperación
+de cuota 429 conserva su política específica de admisión.
 Los HTTP 503 se reintentan en la misma etapa, con el mismo estado y evidencia,
 sin volver a planificar ni repetir lecturas. Si se agota la recuperación, la etapa
 se conserva en `deferred_stages` con motivo `provider_recovery_exhausted` o
 `provider_recovery_budget`; no se confunde con un error de esquema ni se cancelan
 las investigaciones hermanas. No hay reanudación persistente después de reiniciar
 el servidor: el resultado parcial documenta lo pendiente.
+
+Si no se obtiene un plan válido, los investigadores pasan directamente a finalización
+(o a su finalización limitada especializada). Investigación, evaluación y revisión se
+declaran no iniciadas, sin incrementar `iterations` ni generar un fallo ficticio de
+evaluación. El motivo original y los intentos del proveedor permanecen en el resultado.
 
 La ejecución jerárquica distingue tres límites de tiempo, todos declarados una sola
 vez y con los controles nuevos reservados al nivel desarrollador:

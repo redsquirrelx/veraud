@@ -118,6 +118,7 @@ class InvestigationExecution:
     tool_prefix = "modularity"
     prompt_directory: Path
     evaluation_schema = Evaluation
+    plan_schema = InvestigationPlan
     review_schema = Review
     finding_schema = Finding
     result_schema = AuditResult
@@ -181,7 +182,12 @@ class InvestigationExecution:
             if self.remaining_seconds() <= 0 or self.tools.budget_usage.tool_calls >= self.tool_limit:
                 return json.dumps({"status": "error", "error": "audit_budget_exhausted"})
             response = self.tools.execute(name, arguments, tool_call_id=self.tool_prefix + "-" + uuid4().hex)
-            return json.dumps(self.tools.model_view(response), ensure_ascii=False)
+            view = self.tools.model_view(response)
+            if response.error:
+                # Correlate a compact error with its ledger receipt and provider
+                # ToolMessage; otherwise one failed call looks like two incidents.
+                view["tool_call_id"] = response.tool_call_id
+            return json.dumps(view, ensure_ascii=False)
 
         return StructuredTool.from_function(
             func=execute, name=name, args_schema=TOOL_SCHEMAS[name],
@@ -235,6 +241,8 @@ class InvestigationExecution:
             "snapshot_hash": snapshot.repository.snapshot_hash,
             "objective": state["objective"], "architectural_context": state["architectural_context"],
             "criteria": state["criteria"],
+            "follow_up_commitments": [item.model_dump() for item in self.request.follow_up],
+            "follow_up_diagnostics": self.request.follow_up_diagnostics,
             "inventory": {"file_count": len(snapshot.files),
                           "projects": [p.model_dump() for p in snapshot.projects[:20]],
                           "directories": [d.path for d in snapshot.directories[:60]],
@@ -560,43 +568,52 @@ class InvestigationExecution:
                     return None
                 self.retryable_failure = transient(error)
                 if self.retryable_failure:
+                    quota_recovery = provider_status(error) == 429
+                    # A hypothetical next sleep cannot exhaust recovery allowance
+                    # when no further transient retry is permitted in the first place.
+                    if not quota_recovery and retry >= self.config.max_provider_retries:
+                        self.defer_provider_stage(node, "provider_recovery_exhausted", error, 0, retry + 1)
+                        return None
+                    if quota_recovery and (self.calls >= self.call_limit - reserved_calls
+                                           or self.tokens + reserve > self.token_limit):
+                        # Keep 429 recovery's existing admission/termination policy.
+                        continue
+                    if not quota_recovery and (self.calls >= self.call_limit - reserved_calls
+                                               or self.tokens + reserve > self.token_limit):
+                        reason = ("provider_retry_call_limit" if self.calls >= self.call_limit - reserved_calls
+                            else "provider_retry_token_limit")
+                        self.defer_provider_stage(node, reason, error, 0, retry + 1)
+                        return None
                     delay = max(retry_delay(error), min(120, self.provider_pacer.backoff * 2 ** retry))
                     if delay > self.config.provider_max_retry_wait_seconds:
                         self.retryable_failure = False
                         self.defer_provider_stage(node, "provider_retry_wait_limit", error, delay, retry + 1)
                         return None
-                    quota_recovery = provider_status(error) == 429
-                    if quota_recovery and (self.calls >= self.call_limit - reserved_calls
-                                           or self.tokens + reserve > self.token_limit):
-                        # Re-enter admission checks to report the actual exhausted
-                        # execution budget without starting a pointless long sleep.
-                        continue
+                    if not quota_recovery and delay >= self.timing.wall_remaining:
+                        self.defer_provider_stage(node, "provider_retry_wall_time_limit", error, delay, retry + 1)
+                        return None
                     if self.recovery_wait_seconds + delay > self.config.provider_recovery_budget_seconds:
                         self.defer_provider_stage(node, "provider_recovery_budget", error, delay, retry + 1)
                         return None
-                    if (quota_recovery or retry < self.config.max_provider_retries and delay < self.timing.wall_remaining
-                            and self.calls < self.call_limit - reserved_calls and self.tokens + reserve <= self.token_limit):
-                        hint = retry_hint(error)
-                        source = hint.source if hint is not None else "exponential_backoff"
-                        reason = "provider_retry_after" if hint is not None else "provider_backoff"
-                        self.logger.warning("%s: provider_recovery_wait seconds=%g source=%s scope=invocation", node, delay, source)
+                    hint = retry_hint(error)
+                    source = hint.source if hint is not None else "exponential_backoff"
+                    reason = "provider_retry_after" if hint is not None else "provider_backoff"
+                    self.logger.warning("%s: provider_recovery_wait seconds=%g source=%s scope=invocation", node, delay, source)
 
-                        async def recover(reason=reason, delay=delay, source=source):
-                            with self.timing.quota_wait(reason=reason, seconds=delay, source=source):
-                                await getattr(self.provider_pacer, "sleep", asyncio.sleep)(delay)
+                    async def recover(reason=reason, delay=delay, source=source):
+                        with self.timing.quota_wait(reason=reason, seconds=delay, source=source):
+                            await getattr(self.provider_pacer, "sleep", asyncio.sleep)(delay)
 
-                        try:
-                            # Reserve before sleeping: concurrent siblings keep
-                            # their own allowances and no wait holds the pacer lock.
-                            self.recovery_wait_seconds += delay
-                            await within_deadline(recover(), self.timing)
-                        except TimeoutError:
-                            self.stop = "time_limit"
-                            return None
-                        retry += 1
-                        continue
-                    self.defer_provider_stage(node, "provider_recovery_exhausted", error, delay, retry + 1)
-                    return None
+                    try:
+                        # Reserve before sleeping: concurrent siblings keep
+                        # their own allowances and no wait holds the pacer lock.
+                        self.recovery_wait_seconds += delay
+                        await within_deadline(recover(), self.timing)
+                    except TimeoutError:
+                        self.stop = "time_limit"
+                        return None
+                    retry += 1
+                    continue
                 self.stop = "time_limit" if isinstance(error, TimeoutError) else "model_or_schema_error"
                 return None
             raw = response.get("raw") if isinstance(response, dict) else response
@@ -625,7 +642,7 @@ class InvestigationExecution:
             "Etapa pendiente por indisponibilidad del proveedor; evidencias, hipótesis y resultados parciales conservados.")
 
     async def plan_investigation(self, state):
-        plan = await self.call("plan_investigation", state, InvestigationPlan)
+        plan = await self.call("plan_investigation", state, self.plan_schema)
         if plan:
             try:
                 _unique(plan.hypotheses, "hypothesis")
@@ -647,7 +664,14 @@ class InvestigationExecution:
                 self.issues.append(str(error))
                 self.stop = "invalid_plan"
                 plan = None
-        return {"plan": plan, "hypotheses": plan.hypotheses if plan else [], "model_calls": self.calls}
+        update = {"plan": plan, "hypotheses": plan.hypotheses if plan else [], "model_calls": self.calls}
+        if plan is None:
+            update.update(termination_reason=self.stop or "invalid_plan", missing_information=[
+                "A valid investigation plan could not be produced; investigation, evidence evaluation and critical review were not started."])
+        return update
+
+    def route_plan(self, state):
+        return "investigate" if state["plan"] is not None and not self.stop else "finalize"
 
     async def investigate(self, state):
         # Leave an evaluation and a correctable critical review available.
@@ -702,14 +726,18 @@ class InvestigationExecution:
                 reason = "time_limit"
         return "review_findings" if reason else "investigate"
 
-    async def review_findings(self, state):
+    def review_termination_reason(self, state):
         reason = self.stop or ("provenance_unverifiable" if self.provenance_blocked else "")
         if not reason:
             evaluation = state["evaluation"]
             reason = ("sufficient_evidence" if evaluation and evaluation.sufficient and not evaluation.missing_information
                       else "iteration_limit" if state["iterations"] >= self.config.max_iterations
                       else "tool_call_limit" if self.tools.budget_usage.tool_calls >= self.tool_limit
-                      else "model_call_limit")
+                       else "model_call_limit")
+        return reason
+
+    async def review_findings(self, state):
+        reason = self.review_termination_reason(state)
         # Budget termination can still leave room for review; provider/schema failures do not.
         closing_stop = self.stop if self.can_review_stopped(state) else ""
         if closing_stop:
@@ -884,7 +912,9 @@ class InvestigationExecution:
             hypotheses.append(hypothesis)
         if any(h.status == "inconclusive" for h in hypotheses):
             limitations.append("Some hypotheses remain inconclusive; absence of findings does not establish boundary compliance.")
-        if not state["review"]:
+        if state["plan"] is None and state["iterations"] == 0:
+            limitations.append("Investigation, evidence evaluation and critical review were not started because no valid plan was available.")
+        elif not state["review"]:
             limitations.append("Critical review was not completed; no candidate is accepted.")
         termination_reason = state["termination_reason"]
         if termination_reason == "sufficient_evidence" and (
@@ -915,7 +945,7 @@ class InvestigationExecution:
             graph.add_node(name, getattr(self, name))
         graph.add_node("tools", ToolNode(self.native_tools, handle_tool_errors=True))
         graph.add_edge(START, "plan_investigation")
-        graph.add_edge("plan_investigation", "investigate")
+        graph.add_conditional_edges("plan_investigation", self.route_plan, ["investigate", "finalize"])
         graph.add_conditional_edges("investigate", self.route_investigation,
                                    ["tools", "evaluate_evidence", "review_findings"])
         graph.add_edge("tools", "investigate")

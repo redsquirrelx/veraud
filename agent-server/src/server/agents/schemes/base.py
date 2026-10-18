@@ -21,12 +21,28 @@ class Criterion(Contract):
     provenance: str = Field(min_length=1)
 
 
+class InvestigationCommitment(Contract):
+    """A prior host-resolved subject to revisit, never reusable proof of its claims."""
+
+    source_invocation_id: str
+    hypothesis_id: str | None = None
+    question: str = ""
+    subject_ids: list[str] = Field(default_factory=list, max_length=80)
+    assessment_ids: list[str] = Field(default_factory=list, max_length=40)
+    paths: list[str] = Field(default_factory=list, max_length=80)
+    boundary: str = ""
+    assessed_context: str = ""
+    validation_issues: list[str] = Field(default_factory=list)
+
+
 # Common investigation input: carries the objective, architectural context and applicable criteria.
 # InvestigationAgent.run() accepts this envelope and each investigator specializes its request.
 class AuditRequest(Contract):
     objective: str = "Audit software modularity using source-backed evidence."
     architectural_context: str = Field(default="", max_length=12_000)
     criteria: list[Criterion] = Field(default_factory=list, max_length=40)
+    follow_up: list[InvestigationCommitment] = Field(default_factory=list, max_length=40)
+    follow_up_diagnostics: list[str] = Field(default_factory=list)
 
 
 # Bounded audit request: adds targets and limits shared architectural context to 6000 characters.

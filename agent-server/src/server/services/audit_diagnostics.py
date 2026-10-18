@@ -15,6 +15,9 @@ REASONS = {
     "provider_request_timeout": "Etapa pendiente: el proveedor no respondió dentro del plazo de la petición; se conserva el trabajo parcial.",
     "provider_recovery_budget": "Etapa pendiente: se agotó el tiempo de recuperación del proveedor; el trabajo recopilado se conserva.",
     "provider_recovery_exhausted": "Etapa pendiente: el proveedor siguió fallando tras los reintentos permitidos; el trabajo recopilado se conserva.",
+    "provider_retry_token_limit": "Etapa pendiente: tras el fallo del proveedor no quedan tokens suficientes para reintentar; el trabajo recopilado se conserva.",
+    "provider_retry_call_limit": "Etapa pendiente: tras el fallo del proveedor no quedan llamadas disponibles para reintentar; el trabajo recopilado se conserva.",
+    "provider_retry_wall_time_limit": "Etapa pendiente: la espera de recuperación supera el plazo restante; el trabajo recopilado se conserva.",
     "provider_tpm_request_limit": "La petición supera la cuota de tokens por minuto configurada.",
     "model_or_schema_error": "No pudo completarse una petición al modelo o la validación de su respuesta.",
     "schema_recovery_exhausted": "Se agotaron los intentos de corrección de la respuesta estructurada.",
@@ -30,7 +33,7 @@ REASONS = {
     "unresolved_no_useful_follow_up": "Quedan aspectos sin resolver, sin un seguimiento útil disponible.",
 }
 INCOMPLETE = {"partial", "failed", "timeout", "skipped", "cancelled"}
-EVENT = re.compile(r"resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_wait_limit:|"
+EVENT = re.compile(r"resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_(?:wait|token|call|wall_time)_limit:|"
     r"provider_recovery_(?:budget|exhausted):|source_not_inspected|boundary_[a-z_]+|review_unknown_candidates|unknown component ID")
 
 

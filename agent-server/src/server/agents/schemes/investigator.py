@@ -17,6 +17,7 @@ from .base import (
     Finding,
     FindingReview,
     Hypothesis,
+    InvestigationPlan,
     Review,
     TargetContext,
 )
@@ -29,6 +30,8 @@ class BoundarySupport(Contract):
     evidence_id: str
     role: Literal["declaration", "implementation", "usage", "composition", "dependency"]
     observation: str = Field(min_length=1, max_length=2000)
+    symbol_id: str | None = Field(default=None,
+        description="For behavior claims, identify the implemented function/method whose delivered body supports this specific observation, not the module's presumed purpose.")
 
 
 class BoundaryClaimCheck(Contract):
@@ -55,8 +58,18 @@ class BoundaryFindingReview(FindingReview):
     unverified_claims: list[str] = Field(default_factory=list, max_length=20)
 
 
+class BoundaryHypothesisReview(Contract):
+    hypothesis_id: str
+    status: Literal["supported", "inconclusive"]
+    rationale: str = Field(min_length=1, max_length=4000)
+    scope_supported: bool = False
+    checked_evidence_ids: list[str] = Field(default_factory=list, max_length=80)
+    unverified_claims: list[str] = Field(default_factory=list, max_length=20)
+
+
 class BoundaryReview(Review):
     findings: list[BoundaryFindingReview]
+    hypotheses: list[BoundaryHypothesisReview] = Field(default_factory=list, max_length=60)
     validation_issues: list[str] = Field(default_factory=list)
     validation_feedback: ClassVar[dict[str, str]] = Review.validation_feedback | {
         "boundary_review_support_required": "An accepted boundary candidate requires scope_supported=true, no unverified_claims, and checked_evidence_ids covering every support item in its claim_check. Otherwise mark insufficient_evidence or rejected; do not invent verification.",
@@ -76,6 +89,11 @@ class BoundaryResult(AuditResult):
     critical_review: BoundaryReview | None = None
     failed_evaluation_attempt: BoundaryEvaluation | None = None
     evaluation_attempt_issues: list[dict[str, str]] = Field(default_factory=list)
+    evaluation_evidence_status: Literal["not_evaluated", "current", "stale"] = "not_evaluated"
+    evaluated_evidence_ids: list[str] = Field(default_factory=list,
+        description="Delivered evidence available to the last structurally valid evaluation; not necessarily cited or verified.")
+    pending_evaluation_evidence_ids: list[str] = Field(default_factory=list,
+        description="Retained evidence not available to that evaluation. Its presence does not update prior conclusions.")
 
 
 # Default design-principle criteria for the responsibility investigator's request.
@@ -150,6 +168,20 @@ class ResponsibilityFinding(Finding):
     basis: Literal["behavioral", "metrics_only", "names_only"]
 
 
+class ResponsibilityHypothesisReview(Contract):
+    hypothesis_id: str
+    status: Literal["supported", "inconclusive"]
+    rationale: str = Field(min_length=1)
+    assessment_ids: list[str] = Field(default_factory=list)
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    scope_supported: bool = False
+    unverified_claims: list[str] = Field(default_factory=list)
+
+
+class ResponsibilityReview(Review):
+    hypotheses: list[ResponsibilityHypothesisReview] = Field(default_factory=list)
+
+
 # Host-enriched component analysis: resolves file/symbol location and evidence, recording validation issues.
 # Built by the responsibility investigator's finalize step and retained even when evidence is insufficient.
 class InvestigatedComponent(ComponentAssessment):
@@ -168,6 +200,9 @@ class ResponsibilityResult(AuditResult):
     components_investigated: list[InvestigatedComponent] = Field(default_factory=list)
     discarded_hypotheses: list[Hypothesis] = Field(default_factory=list)
     inconclusive_investigations: list[str] = Field(default_factory=list)
+    unresolved_component_assessments: list[ComponentAssessment] = Field(default_factory=list,
+        description="Retained inconclusive assessments whose component identity could not be resolved.")
+    critical_review: ResponsibilityReview | None = None
 
 
 # Architectural-boundary input: supplies the boundary objective and default design-principle criterion.
@@ -267,6 +302,20 @@ class DependencyImpactFinding(Finding):
     basis: FindingBasis
 
 
+class DependencyHypothesisReview(Contract):
+    hypothesis_id: str
+    status: Literal["supported", "inconclusive"]
+    rationale: str = Field(min_length=1)
+    assessment_ids: list[str] = Field(default_factory=list)
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    scope_supported: bool = False
+    unverified_claims: list[str] = Field(default_factory=list)
+
+
+class DependencyImpactReview(Review):
+    hypotheses: list[DependencyHypothesisReview] = Field(default_factory=list)
+
+
 # Resolved endpoint location: identifies a repository component, file and optional symbol.
 # The dependency-impact finalizer attaches it to both endpoints of an InvestigatedDependency.
 class DependencyComponentReference(Contract):
@@ -306,6 +355,7 @@ class DependencyImpactResult(AuditResult):
     dependency_assessments: list[InvestigatedImpact] = Field(default_factory=list)
     discarded_hypotheses: list[Hypothesis] = Field(default_factory=list)
     inconclusive_investigations: list[str] = Field(default_factory=list)
+    critical_review: DependencyImpactReview | None = None
 
 
 # Categories of abstraction findings; a useful abstraction may be reported as a design observation.
@@ -336,6 +386,21 @@ class AbstractionCandidateTarget(Contract):
     start_line: int | None
     end_line: int | None
     relationship_ids: list[str]
+
+
+class AbstractionHypothesis(Hypothesis):
+    declaration_ids: list[str] = Field(default_factory=list, max_length=40,
+        description="Selected declaration IDs this question commits to investigate. Discovery candidates alone are not commitments.")
+
+
+class AbstractionPlan(InvestigationPlan):
+    hypotheses: list[AbstractionHypothesis]
+
+
+class AbstractionHypothesisValidation(Contract):
+    iteration: int
+    proposed: Hypothesis
+    validated: Hypothesis
 
 
 # Abstraction participant: explains a component's role and its evidence-backed relationship to a declaration.
@@ -386,6 +451,21 @@ class AbstractionEvaluation(Evaluation):
     abstraction_assessments: list[AbstractionAssessment] = Field(max_length=40)
 
 
+class AbstractionHypothesisReview(Contract):
+    hypothesis_id: str
+    status: Literal["supported", "inconclusive"]
+    rationale: str = Field(min_length=1)
+    assessment_ids: list[str] = Field(default_factory=list)
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    scope_supported: bool = False
+    unverified_claims: list[str] = Field(default_factory=list)
+    resolution: Literal["confirmed", "discarded", "inconclusive"] = "inconclusive"
+
+
+class AbstractionReview(Review):
+    hypotheses: list[AbstractionHypothesisReview] = Field(default_factory=list)
+
+
 # Resolved abstraction location: carries the component/file IDs, path and nullable symbol name.
 # Used by the abstraction finalizer to locate declarations and inspected participants in the report.
 class AbstractionComponentReference(Contract):
@@ -433,6 +513,8 @@ class AbstractionCoverage(Contract):
     omitted_candidates: int = 0
     inspected_paths: list[str] = Field(default_factory=list)
     assessed_declarations: list[str] = Field(default_factory=list)
+    planned_declarations: list[str] = Field(default_factory=list)
+    unplanned_candidates: list[str] = Field(default_factory=list)
     unassessed_candidates: list[str] = Field(default_factory=list)
     exhaustive: bool = False
 
@@ -440,6 +522,7 @@ class AbstractionCoverage(Contract):
 # Abstraction investigator output: includes reviewed findings, technical analyses, coverage and tool failures.
 # Returned by AbstractionAgent.run(); its investigator discriminator selects this type in reusability collection.
 class AbstractionResult(AuditResult):
+    plan: AbstractionPlan | None
     findings: list[AbstractionFinding]
     investigator: Literal["AbstractionAgent"] = "AbstractionAgent"
     quality_attribute: Literal["reusability"] = "reusability"
@@ -448,6 +531,8 @@ class AbstractionResult(AuditResult):
     coverage: AbstractionCoverage = Field(default_factory=AbstractionCoverage)
     inconclusive_investigations: list[str] = Field(default_factory=list)
     tool_failures: list[str] = Field(default_factory=list)
+    critical_review: AbstractionReview | None = None
+    hypothesis_validation_history: list[AbstractionHypothesisValidation] = Field(default_factory=list)
 
 
 # Qualifies whether a shared implementation is advisable, conditional or unsuitable for an examined group.
@@ -501,6 +586,15 @@ class ReuseGroup(Contract):
     discovery_signals: list[str]
 
 
+class ReuseHypothesis(Hypothesis):
+    group_ids: list[str] = Field(default_factory=list, max_length=20,
+        description="Exact selected group IDs committed to this question; discovery alone is not a commitment.")
+
+
+class ReusePlan(InvestigationPlan):
+    hypotheses: list[ReuseHypothesis]
+
+
 # Implementation semantics: records purpose, contracts, effects, failure behavior and dependencies with evidence.
 # Two such records form the core comparison inside a reuse-opportunity ReuseAssessment.
 class ImplementationComparison(Contract):
@@ -513,6 +607,7 @@ class ImplementationComparison(Contract):
     side_effects: str = Field(min_length=1, max_length=1500)
     dependencies: str = Field(min_length=1, max_length=1500)
     invariants: str = Field(min_length=1, max_length=1500)
+    behavior_basis: Literal["implementation", "contract_only"] = "implementation"
 
 
 # Caller constraints: links an implementation to an actual caller/relationship and supporting evidence.
@@ -543,6 +638,8 @@ class ReuseAssessment(Contract):
     counterevidence_analysis: str = Field(min_length=1, max_length=2000)
     rationale: str = Field(min_length=1, max_length=2500)
     unknowns: list[str] = Field(default_factory=list, max_length=16)
+    conditions: list[str] = Field(default_factory=list, max_length=16,
+        description="Concrete prerequisites for the proposed boundary; conditional does not authorize immediate extraction.")
     limitations: list[str] = Field(default_factory=list, max_length=16)
 
 
@@ -563,6 +660,8 @@ class ReuseEvaluation(Evaluation):
 # Host-enriched group analysis: attaches candidate locations, resolved evidence and validation outcomes.
 # Built by the reuse-opportunity finalizer and retained in ReuseOpportunityResult.examined_groups.
 class ExaminedGroup(ReuseAssessment):
+    qualification_notes: list[str] = Field(default_factory=list)
+    proposed_evidence_ids: dict[str, list[str]] = Field(default_factory=dict)
     members: list[CandidateLocation]
     evidence: list[EvidenceReference]
     validation_issues: list[str]
@@ -576,11 +675,15 @@ class ReuseFinding(Finding):
     classification: Classification
     stable_id: str = ""
     duplicate_of: str | None = None
+    conditions: list[str] = Field(default_factory=list)
+    sharing_boundary: str = ""
+    unknowns: list[str] = Field(default_factory=list)
 
 
 # Reuse discovery coverage: counts eligible/shortlisted symbols, comparisons, omissions and unassessed groups.
 # Included in the reuse-opportunity result to expose the limits of the search and inspected scope.
 class DiscoveryCoverage(Contract):
+    indexed_languages: list[str] = Field(default_factory=list)
     indexed_eligible_symbols: int
     shortlisted_symbols: int
     compared_pairs: int
@@ -590,12 +693,46 @@ class DiscoveryCoverage(Contract):
     selected_groups: list[ReuseGroup]
     inspected_paths: list[str] = Field(default_factory=list)
     unassessed_groups: list[str] = Field(default_factory=list)
+    planned_groups: list[str] = Field(default_factory=list)
+    unplanned_groups: list[str] = Field(default_factory=list)
     exhaustive: bool = False
+
+
+class ReuseHypothesisReview(Contract):
+    hypothesis_id: str
+    assessment_group_ids: list[str] = Field(default_factory=list)
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    scope_supported: bool = False
+    resolution: Literal["confirmed", "discarded", "inconclusive"] = "inconclusive"
+    sharing_supported: bool | None = Field(default=None,
+        description="Answer feasibility of sharing the original scoped responsibility, not mere syntactic similarity.")
+    supporting_group_ids: list[str] = Field(default_factory=list)
+    supported_boundary: str = Field(default="", max_length=2000,
+        description="Concrete assessed sharing boundary supporting confirmation; empty for discarded/inconclusive.")
+    rationale: str = Field(min_length=1)
+    unverified_claims: list[str] = Field(default_factory=list)
+
+
+class ReuseReview(Review):
+    hypotheses: list[ReuseHypothesisReview] = Field(default_factory=list)
+
+
+class ReuseToolFailure(Contract):
+    tool: str
+    call_id: str
+    provider_call_id: str | None = None
+    stage: Literal["repository", "tool_node"]
+    code: str
+    message: str
+    path: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 # Reuse-opportunity output: retains findings, examined groups, coverage, tool failures and execution trace.
 # Returned by ReuseOpportunityAgent.run() and discriminated by investigator during reusability collection.
 class ReuseOpportunityResult(AuditResult):
+    plan: ReusePlan | None
     investigator: Literal["ReuseOpportunityAgent"] = "ReuseOpportunityAgent"
     quality_attribute: Literal["reusability"] = "reusability"
     status: Literal["completed", "partial", "failed"] = "partial"
@@ -603,6 +740,9 @@ class ReuseOpportunityResult(AuditResult):
     examined_groups: list[ExaminedGroup] = Field(default_factory=list)
     coverage: DiscoveryCoverage | None = None
     tool_failures: list[str] = Field(default_factory=list)
+    tool_failure_details: list[ReuseToolFailure] = Field(default_factory=list)
+    critical_review: ReuseReview | None = None
+    hypothesis_validation_issues: dict[str, list[str]] = Field(default_factory=dict)
     execution_trace: list[str] = Field(default_factory=list)
 
 
@@ -686,6 +826,46 @@ class ComponentTarget(Contract):
     start_line: int
     end_line: int
     signals: list[DiscoverySignal]
+    source_role: Literal["implementation", "fixture", "configuration", "auxiliary"] = "implementation"
+
+
+class AdaptabilityHypothesis(Hypothesis):
+    component_ids: list[str] = Field(default_factory=list, max_length=20,
+        description="Exact selected component IDs committed to the original question.")
+
+
+class AdaptabilityPlan(InvestigationPlan):
+    hypotheses: list[AdaptabilityHypothesis]
+
+
+class AdaptabilityHypothesisReview(Contract):
+    hypothesis_id: str
+    assessment_ids: list[str] = Field(default_factory=list)
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    scope_supported: bool = False
+    resolution: Literal["confirmed", "discarded", "inconclusive"] = "inconclusive"
+    contract_and_fixture_claims_supported: bool = False
+    rationale: str = Field(min_length=1)
+    unverified_claims: list[str] = Field(default_factory=list)
+
+
+class AdaptationClaimReview(Contract):
+    assessment_id: str
+    checked_evidence_ids: list[str] = Field(default_factory=list)
+    required_change: str = ""
+    existing_seams: str = ""
+    why_seams_insufficient: str = ""
+    target_mismatch_supported: bool = False
+    input_normalization_suffices: bool | None = None
+    change_scope: Literal["content_only", "input_normalization", "component_logic", "unknown"] = "unknown"
+    qualified_impact: str = Field(default="", max_length=2500,
+        description="Local, context-qualified adaptation consequence; do not infer impossibility or complete rewrites from domain-specific content.")
+    qualified_recommendation: str = Field(default="", max_length=2500)
+
+
+class AdaptabilityReview(Review):
+    hypotheses: list[AdaptabilityHypothesisReview] = Field(default_factory=list)
+    adaptation_checks: list[AdaptationClaimReview] = Field(default_factory=list)
 
 
 # Observed component usage: links a caller/relationship to instantiation or configuration evidence.
@@ -705,6 +885,9 @@ class ConstraintAssessment(Contract):
     hypothesis_id: str
     constraint_type: ConstraintType
     constraint_key: str = Field(min_length=1, max_length=160)
+    schema_dependency_basis: Literal["input_contract", "fixed_domain_schema", "fixture_only", "unknown"] = "unknown"
+    schema_adaptation_analysis: str = Field(default="", max_length=2500,
+        description="For data_schema, distinguish input shape from fixed domain values and explain why existing parameters/mappings do not suffice for the assessed context.")
     conclusion: Conclusion
     assessed_context: str = Field(min_length=1, max_length=6000)
     context_basis: Literal["explicit", "plausible"]
@@ -726,6 +909,7 @@ class ConstraintAssessment(Contract):
 # Proposed adaptation finding: cites constraint analyses and distinguishes verified obstacles from contextual risks.
 # Produced in AdaptabilityEvaluation before review and context/evidence validation by the host.
 class AdaptabilityCandidate(CandidateFinding):
+    split_from: str | None = None
     assessment_ids: list[str] = Field(min_length=1, max_length=16)
     constraint_type: ConstraintType
     classification: Literal["verified_obstacle", "context_dependent_risk"]
@@ -743,6 +927,7 @@ class AdaptabilityEvaluation(Evaluation):
     coverage_rationale: str = Field(min_length=1, max_length=3000)
     can_investigate_further: bool = True
     continuation_reason: str = Field(default="", max_length=2000)
+    continuation_blocker: Literal["none", "external_context", "unavailable_source", "dynamic_behavior"] = "none"
 
     @model_validator(mode="after")
     def explain_blocker(self):
@@ -764,6 +949,8 @@ class ExaminedConstraint(ConstraintAssessment):
 # Reviewed adaptation finding: retains context-qualified impact/effort, assumptions, mitigations and duplicate identity.
 # Returned in ComponentAdaptabilityResult and used by the reusability coordinator without losing context.
 class AdaptabilityFinding(Finding):
+    split_from: str | None = None
+    validation_issues: list[str] = Field(default_factory=list)
     assessment_ids: list[str]
     constraint_type: ConstraintType
     classification: Literal["verified_obstacle", "context_dependent_risk"]
@@ -779,6 +966,8 @@ class AdaptabilityFinding(Finding):
 # Adaptability coverage: records eligible/selected/omitted components, file-scan truncation and unassessed targets.
 # Included in the investigator's result to distinguish bounded inspection from exhaustive coverage.
 class AdaptabilityCoverage(Contract):
+    planned_components: list[str] = Field(default_factory=list)
+    unplanned_components: list[str] = Field(default_factory=list)
     selected_components: list[ComponentTarget]
     eligible_components: int
     omitted_components: int
@@ -803,6 +992,10 @@ class ToolActivity(Contract):
 # Adaptability output: retains context, findings, examined constraints, coverage, blockers and execution telemetry.
 # Returned by ComponentAdaptabilityAgent.run() and validated as a concrete investigator result by reusability coordination.
 class ComponentAdaptabilityResult(AuditResult):
+    candidate_split_history: dict[str, AdaptabilityCandidate] = Field(default_factory=dict)
+    plan: AdaptabilityPlan | None
+    critical_review: AdaptabilityReview | None = None
+    hypothesis_validation_issues: dict[str, list[str]] = Field(default_factory=dict)
     investigator: Literal["ComponentAdaptabilityAgent"] = "ComponentAdaptabilityAgent"
     quality_attribute: Literal["reusability"] = "reusability"
     status: Literal["completed", "partial", "failed"] = "partial"
