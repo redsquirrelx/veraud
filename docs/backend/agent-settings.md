@@ -59,6 +59,36 @@ when absent), `name`, `role`, `requiresModel`, `modelConfigurationAgentType`,
 model, such as `remediation_synthesizer` using `security`, is configured through
 that owner. PUT/verify reject participants without an available independent model.
 
+## Quality and workflow context for clients
+
+Agent-server declares `quality_attributes` and `workflow_ids` on every catalog
+entry. The backend validates both as lists of unique nonempty strings and persists
+them without deriving membership from names, roles or parents. The public settings
+response (GET, synchronization, save and verification) exposes camel-case fields:
+
+```json
+{
+  "agentType": "audit_report",
+  "qualityAttributes": ["maintainability", "security"],
+  "workflowIds": ["quality-audit"]
+}
+```
+
+The example shows the contextual portion of a settings record. Frontend
+`AgentSettings` types include both arrays, ready for filtering/grouping. An agent
+may support several attributes; an empty quality list does not mean security or
+maintainability by default. Project analysis stages use `workflowIds` to identify
+`project-architecture`; functional adequacy declares `functional_adequacy`.
+These are declared capabilities, not the selected attributes or actual participants
+of a specific run. Availability remains separate (DAST is still `not_executed`).
+
+Migration `20261018010000_agent_execution_context` adds JSON-array columns with
+empty defaults. Existing settings/verification/history survive. Restart agent-server
+and backend and synchronize to populate real context; no legacy membership is
+invented. Updated discovery requires both context fields, so an older server response
+is rejected and the last synchronized catalog is retained. The catalog remains
+version `1.0` with additive descriptor metadata. Offline reads retain saved context.
+
 ## Saved settings
 
 `agent-settings.repository.ts` queries the existing Prisma `AgentSettings` model

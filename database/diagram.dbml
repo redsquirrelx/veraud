@@ -104,6 +104,8 @@ Table agent_settings {
   requires_model boolean [not null, default: false]
   model_configuration_agent_type varchar
   execution_modes text [not null, default: '[]']
+  quality_attributes text [not null, default: '[]']
+  workflow_ids text [not null, default: '[]']
   availability varchar [not null, default: 'not_executed']
 
   ai_model_id int

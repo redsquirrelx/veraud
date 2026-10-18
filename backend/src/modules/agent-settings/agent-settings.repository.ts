@@ -19,6 +19,8 @@ export interface StoredAgentSettings {
   requiresModel: boolean
   modelConfigurationAgentType: string | null
   executionModes: string[]
+  qualityAttributes: string[]
+  workflowIds: string[]
   availability: string
   parentAgentTypes: string[]
   childAgentTypes: string[]
@@ -52,7 +54,8 @@ export class AgentSettingsRepository implements AgentSettingsStore {
       for (const agent of catalog.agents) {
         const metadata = { catalogDeclared: true, catalogName: agent.name, catalogRole: agent.role,
           requiresModel: agent.requires_model, modelConfigurationAgentType: agent.model_configuration_id,
-          executionModes: JSON.stringify(agent.execution_modes), availability: agent.availability }
+          executionModes: JSON.stringify(agent.execution_modes), availability: agent.availability,
+          qualityAttributes: JSON.stringify(agent.quality_attributes), workflowIds: JSON.stringify(agent.workflow_ids) }
         await tx.agentSettings.upsert({ where: { agentType: agent.agent_id },
           create: { agentType: agent.agent_id, ...metadata }, update: metadata })
       }
@@ -97,6 +100,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
         agentType: true,
         catalogName: true, catalogRole: true, requiresModel: true, modelConfigurationAgentType: true,
         executionModes: true, availability: true,
+        qualityAttributes: true, workflowIds: true,
         parentLinks: { select: { parentAgentType: true }, orderBy: { parentAgentType: "asc" } },
         childLinks: { select: { childAgentType: true }, orderBy: { childAgentType: "asc" } },
         temperature: true,
@@ -119,6 +123,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
         name: row.catalogName ?? row.agentType, role: row.catalogRole ?? "unknown",
         requiresModel: row.requiresModel, modelConfigurationAgentType: row.modelConfigurationAgentType,
         executionModes: JSON.parse(row.executionModes) as string[], availability: row.availability,
+        qualityAttributes: JSON.parse(row.qualityAttributes) as string[], workflowIds: JSON.parse(row.workflowIds) as string[],
         parentAgentTypes: row.parentLinks.map((link) => link.parentAgentType),
         childAgentTypes: row.childLinks.map((link) => link.childAgentType),
         verification: {

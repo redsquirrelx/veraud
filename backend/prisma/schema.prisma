@@ -128,6 +128,8 @@ model AgentSettings {
   requiresModel Boolean @default(false) @map("requires_model")
   modelConfigurationAgentType String? @map("model_configuration_agent_type")
   executionModes String @default("[]") @map("execution_modes")
+  qualityAttributes String @default("[]") @map("quality_attributes")
+  workflowIds String @default("[]") @map("workflow_ids")
   availability String @default("not_executed")
   aiModelId      Int?   @map("ai_model_id")
   aiCredentialId Int?   @map("ai_credential_id")

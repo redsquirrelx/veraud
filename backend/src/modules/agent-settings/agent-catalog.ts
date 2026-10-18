@@ -6,6 +6,8 @@ export interface CatalogAgent {
   requires_model: boolean
   model_configuration_id: string | null
   execution_modes: string[]
+  quality_attributes: string[]
+  workflow_ids: string[]
   parent_ids: string[]
   child_ids: string[]
   availability: "available" | "not_executed"
@@ -48,6 +50,7 @@ export function parseAgentCatalog(value: unknown): AgentCatalog {
     if (row.requires_model !== (modelId !== null)) return invalid()
     return { agent_id: text(row.agent_id), name: text(row.name), role: text(row.role),
       requires_model: row.requires_model, model_configuration_id: modelId, execution_modes: modes,
+      quality_attributes: strings(row.quality_attributes), workflow_ids: strings(row.workflow_ids),
       parent_ids: strings(row.parent_ids), child_ids: strings(row.child_ids),
       availability: row.availability as CatalogAgent["availability"] }
   })

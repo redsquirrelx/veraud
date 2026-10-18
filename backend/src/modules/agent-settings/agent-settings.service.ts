@@ -10,6 +10,8 @@ export interface AgentSettingsView {
   requiresModel: boolean
   modelConfigurationAgentType: string | null
   executionModes: string[]
+  qualityAttributes: string[]
+  workflowIds: string[]
   availability: string
   parentAgentTypes: string[]
   childAgentTypes: string[]
@@ -100,6 +102,7 @@ export class AgentSettingsService {
       return {
         agentType: row.agentType, name: row.name, role: row.role, requiresModel: row.requiresModel,
         modelConfigurationAgentType: row.modelConfigurationAgentType, executionModes: row.executionModes,
+        qualityAttributes: row.qualityAttributes, workflowIds: row.workflowIds,
         availability: row.availability, parentAgentTypes: row.parentAgentTypes, childAgentTypes: row.childAgentTypes,
         configured: configuration !== null && configuration.model.providerId === configuration.credential.providerId,
         configuration,

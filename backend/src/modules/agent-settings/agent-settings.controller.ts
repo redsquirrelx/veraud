@@ -9,12 +9,14 @@ import { AgentCatalogError } from "./agent-catalog.js"
 
 const agentSettingsSchema = {
   type: "object",
-  required: ["agentType", "name", "role", "requiresModel", "modelConfigurationAgentType", "executionModes", "availability", "parentAgentTypes", "childAgentTypes", "configured", "configuration", "verification"],
+  required: ["agentType", "name", "role", "requiresModel", "modelConfigurationAgentType", "executionModes", "qualityAttributes", "workflowIds", "availability", "parentAgentTypes", "childAgentTypes", "configured", "configuration", "verification"],
   properties: {
     agentType: { type: "string" },
     name: { type: "string" }, role: { type: "string" }, requiresModel: { type: "boolean" },
     modelConfigurationAgentType: { type: ["string", "null"] },
     executionModes: { type: "array", items: { type: "string" } }, availability: { type: "string" },
+    qualityAttributes: { type: "array", uniqueItems: true, items: { type: "string" }, description: "Quality contexts declared by agent-server; may be shared or empty." },
+    workflowIds: { type: "array", uniqueItems: true, items: { type: "string" }, description: "Workflows declared by agent-server, independent of quality attributes." },
     parentAgentTypes: { type: "array", items: { type: "string" } },
     childAgentTypes: { type: "array", items: { type: "string" } },
     configured: { type: "boolean" },

@@ -7,6 +7,7 @@ export function testAgentCatalog(): AgentCatalog {
   return { schema_version: "1.0", agents: TEST_AGENT_TYPES.map((id) => ({
     agent_id: id, name: id, role: "test_agent", requires_model: true,
     model_configuration_id: id, execution_modes: ["direct"], parent_ids: [], child_ids: [], availability: "available",
+    quality_attributes: [], workflow_ids: [],
   })) }
 }
 

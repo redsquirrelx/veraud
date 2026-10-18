@@ -12,6 +12,7 @@ import { auditResponseSerialization } from "./helpers/responseSerializationAudit
 function agent(id: string, parentIds: string[] = [], childIds: string[] = [], model = true): CatalogAgent {
   return { agent_id: id, name: `Name of ${id}`, role: "discovered_agent", requires_model: model,
     model_configuration_id: model ? id : null, execution_modes: ["internal"],
+    quality_attributes: ["maintainability"], workflow_ids: ["quality-audit"],
     parent_ids: parentIds, child_ids: childIds, availability: "available" }
 }
 
@@ -38,7 +39,8 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
 
   let payload: unknown = { schema_version: "1.0", agents: [
     agent("custom_manager", [], ["custom_worker", "custom_report"]),
-    agent("custom_worker", ["custom_manager"]), agent("custom_report", ["custom_manager"], [], false),
+    agent("custom_worker", ["custom_manager"]), { ...agent("custom_report", ["custom_manager"], [], false),
+      quality_attributes: ["maintainability", "security"] },
   ] } satisfies AgentCatalog
   let responseStatus = 200
   const paths: string[] = []
@@ -61,6 +63,9 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
     assert.deepEqual(rows.map((row: { agentType: string }) => row.agentType), ["custom_manager", "custom_report", "custom_worker"])
     const manager = rows.find((row: { agentType: string }) => row.agentType === "custom_manager")
     assert.equal(manager.name, "Name of custom_manager")
+    assert.deepEqual(manager.qualityAttributes, ["maintainability"])
+    assert.deepEqual(manager.workflowIds, ["quality-audit"])
+    assert.deepEqual(rows.find((row: { agentType: string }) => row.agentType === "custom_report").qualityAttributes, ["maintainability", "security"])
     assert.deepEqual(manager.parentAgentTypes, [])
     assert.deepEqual(manager.childAgentTypes, ["custom_report", "custom_worker"])
     assert.equal(manager.configuration.model.id, model.id)
@@ -79,8 +84,9 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
     assert.equal(await db.agentSettings.count({ where: { agentType: "invented_locally" } }), 0)
     assert.equal((await app.inject({ method: "POST", url: "/api/agent-settings/custom_worker/verify" })).statusCode, 200)
 
-    payload = { schema_version: "1.0", agents: [agent("custom_worker", [], ["custom_report"]),
-      agent("custom_report", ["custom_worker", "new_leaf"], [], false), agent("new_leaf", [], ["custom_report"])] }
+    payload = { schema_version: "1.0", agents: [{ ...agent("custom_worker", [], ["custom_report"]), quality_attributes: ["security"] },
+      { ...agent("custom_report", ["custom_worker", "new_leaf"], [], false), quality_attributes: ["maintainability", "security"] },
+      { ...agent("new_leaf", [], ["custom_report"]), quality_attributes: [], workflow_ids: ["another-workflow"] }] }
     assert.equal((await sync()).statusCode, 200)
     assert.deepEqual((await list()).map((row: { agentType: string }) => row.agentType), ["custom_report", "custom_worker", "new_leaf"])
     assert.equal((await db.agentSettings.findUniqueOrThrow({ where: { agentType: "custom_manager" } })).catalogDeclared, false)
@@ -91,6 +97,9 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
       { parentAgentType: "new_leaf", childAgentType: "custom_report" },
     ])
     assert.deepEqual((await list()).find((row: { agentType: string }) => row.agentType === "custom_report").parentAgentTypes, ["custom_worker", "new_leaf"])
+    assert.deepEqual((await list()).find((row: { agentType: string }) => row.agentType === "custom_worker").qualityAttributes, ["security"])
+    assert.deepEqual((await list()).find((row: { agentType: string }) => row.agentType === "new_leaf").qualityAttributes, [])
+    assert.deepEqual((await list()).find((row: { agentType: string }) => row.agentType === "new_leaf").workflowIds, ["another-workflow"])
     assert.equal((await save("custom_manager")).statusCode, 404)
 
     const preserved = await db.agentSettings.findMany({ orderBy: { agentType: "asc" } })
@@ -100,6 +109,8 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
       { schema_version: "1.0", agents: [agent("duplicate"), agent("duplicate")] },
       { schema_version: "1.0", agents: [agent("dangling", [], ["missing"])] },
       { schema_version: "1.0", agents: [agent("a", ["b"], ["b"]), agent("b", ["a"], ["a"])] },
+      { schema_version: "1.0", agents: [{ ...agent("bad-context"), quality_attributes: ["security", "security"] }] },
+      { schema_version: "1.0", agents: [{ ...agent("bad-context"), workflow_ids: "quality-audit" }] },
     ]) {
       payload = invalid
       assert.equal((await sync()).statusCode, 503)
@@ -116,7 +127,10 @@ test("HTTP discovery synchronizes only declared agents and optional children, pr
   }
   const restarted = await buildApp({ ...options, agentServerUrl })
   try {
-    assert.deepEqual((await restarted.app.inject({ url: "/api/agent-settings" })).json().map((row: { agentType: string }) => row.agentType), ["custom_report", "custom_worker", "new_leaf"])
+    const restored = (await restarted.app.inject({ url: "/api/agent-settings" })).json()
+    assert.deepEqual(restored.map((row: { agentType: string }) => row.agentType), ["custom_report", "custom_worker", "new_leaf"])
+    assert.deepEqual(restored.find((row: { agentType: string }) => row.agentType === "custom_report").qualityAttributes, ["maintainability", "security"])
+    assert.deepEqual(restored.find((row: { agentType: string }) => row.agentType === "new_leaf").workflowIds, ["another-workflow"])
     assert.equal(await restarted.db.agentExecution.count(), 1)
   } finally {
     await restarted.app.close()
