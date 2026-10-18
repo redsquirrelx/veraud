@@ -169,10 +169,15 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       data: { status: "Running", startedAt: new Date() },
     })
 
-    if (runId) await this.db.agentExecution.updateMany({
-      where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE] }, result: null },
-      data: { result: JSON.stringify({ run_id: runId }) },
-    })
+    if (runId) {
+      const current = await this.db.agentExecution.findUniqueOrThrow({ where: { id } })
+      if (current.status === "Running" && [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE].includes(current.agentType)) {
+        await this.db.agentExecution.updateMany({
+          where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE] } },
+          data: { result: JSON.stringify({ ...JSON.parse(current.result ?? "{}"), run_id: runId }) },
+        })
+      }
+    }
 
     return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
   }

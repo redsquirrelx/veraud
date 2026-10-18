@@ -130,24 +130,33 @@ export class AgentExecutionService {
   }
 
   async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[]) {
-    const agentType = attributes[0] === "security" ? SECURITY_AGENT_TYPE : MAINTAINABILITY_AGENT_TYPE
-    const configurations = await this.settings.prepareExecution([agentType])
-    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations, "QualityAudit")
+    const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE : SECURITY_AGENT_TYPE
+    const configurations = await this.settings.prepareExecution([
+      ...(attributes.includes("maintainability") ? [MAINTAINABILITY_AGENT_TYPE] : []),
+      ...(attributes.includes("security") ? [SECURITY_AGENT_TYPE] : []),
+    ])
+    const rootConfiguration = configurations.find((item) => item.agentType === agentType)!
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [rootConfiguration], "QualityAudit")
     const execution = result.executions[agentType]!
+    await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
+    const configs: Record<string, AgentRunConfig> = {}
+    for (const configuration of configurations) {
+      const participants = configuration.agentType === SECURITY_AGENT_TYPE ? [SECURITY_AGENT_TYPE] : MAINTAINABILITY_AUDIT_AGENTS
+      for (const participant of participants) configs[participant] = configuration.transport
+    }
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
-    void this.dispatchQualityAudit(execution, configurations[0]!.transport, commitHash, attributes)
+    void this.dispatchQualityAudit(execution, configs, commitHash, attributes)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
   }
 
-  private async dispatchQualityAudit(execution: StoredAgentExecution, config: AgentRunConfig, commitHash: string, attributes: string[]) {
+  private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[]) {
     try {
       if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
       const input = await this.targets.resolve(execution.evaluationId)
       await this.markRunning(execution.id)
       const payload = await this.agents.runPipelineByName("quality-audit", {
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
-      }, { [execution.agentType]: execution.id },
-      Object.fromEntries((execution.agentType === SECURITY_AGENT_TYPE ? [SECURITY_AGENT_TYPE] : MAINTAINABILITY_AUDIT_AGENTS).map((agentType) => [agentType, config])))
+      }, { [execution.agentType]: execution.id }, configs)
       const audit = payload["audit"]
       if (!audit || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
         throw new Error("Quality-audit pipeline returned no report")

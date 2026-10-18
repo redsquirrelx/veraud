@@ -40,8 +40,9 @@ export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService) {}
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[]) {
-    if (attributes.length !== 1 || !["maintainability", "security"].includes(attributes[0]!)) {
-      throw new InvalidGitRequestError("Select one supported quality attribute: maintainability or security")
+    if (!attributes.length || new Set(attributes).size !== attributes.length
+      || attributes.some((attribute) => !["maintainability", "security"].includes(attribute))) {
+      throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security")
     }
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)

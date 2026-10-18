@@ -38,7 +38,7 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     params,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
-      attributes: { type: "array", minItems: 1, maxItems: 1, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security"] } },
+      attributes: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security"] } },
     } },
     response: { 202: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, executionId: { type: "integer" } }),
       ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
