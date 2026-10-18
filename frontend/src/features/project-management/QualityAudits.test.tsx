@@ -66,9 +66,22 @@ describe("project quality audits", () => {
     show()
     await screen.findByText("No hay auditorías registradas.")
     await userEvent.click(screen.getByRole("checkbox", { name: "Seguridad" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "Mantenibilidad" }))
     expect(screen.getByRole("checkbox", { name: "Mantenibilidad" })).not.toBeChecked()
     await userEvent.click(screen.getByRole("button", { name: "Iniciar auditoría" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security"]))
+  })
+
+  it("starts both attributes as one audit request", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 10 })
+    show()
+    await screen.findByText("No hay auditorías registradas.")
+    await userEvent.click(screen.getByRole("checkbox", { name: "Seguridad" }))
+    expect(screen.getByRole("checkbox", { name: "Mantenibilidad" })).toBeChecked()
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar auditoría" }))
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"]))
+    expect(api.startQualityAudit).toHaveBeenCalledOnce()
   })
 
   it("shows the run id and its Blackboard link while the audit is still running", async () => {

@@ -119,7 +119,9 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
     setStarting(true)
     setError("")
     try {
-      await startQualityAudit(projectId, branch, commitHash, [securitySelected ? "security" : "maintainability"])
+      await startQualityAudit(projectId, branch, commitHash, [
+        ...(selected ? ["maintainability"] : []), ...(securitySelected ? ["security"] : []),
+      ])
       setRefresh((value) => value + 1)
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not start audit") }
     finally { setStarting(false) }
@@ -145,8 +147,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
     <Card>
       <h2>Auditoría de calidad</h2>
       <p>Selecciona los atributos de calidad para la versión {commitHash?.slice(0, 7) ?? "pendiente"}.</p>
-      <label className="quality-attribute"><input type="checkbox" checked={selected} onChange={(event) => { setSelected(event.target.checked); if (event.target.checked) setSecuritySelected(false) }} /> Mantenibilidad</label>
-      <label className="quality-attribute"><input type="checkbox" checked={securitySelected} onChange={(event) => { setSecuritySelected(event.target.checked); if (event.target.checked) setSelected(false) }} /> Seguridad</label>
+      <label className="quality-attribute"><input type="checkbox" checked={selected} onChange={(event) => setSelected(event.target.checked)} /> Mantenibilidad</label>
+      <label className="quality-attribute"><input type="checkbox" checked={securitySelected} onChange={(event) => setSecuritySelected(event.target.checked)} /> Seguridad</label>
       <div className="audit-button-row">
         <Button disabled={!canRun || (!selected && !securitySelected) || starting || running} onClick={() => void start()}>{starting ? "Iniciando…" : "Iniciar auditoría"}</Button>
         <Button onClick={() => setRefresh((value) => value + 1)}>Actualizar</Button>
@@ -159,7 +161,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
       <h3>Auditorías del proyecto</h3>
       {audits.length === 0 && <p>No hay auditorías registradas.</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
-        <h4>{audit.attributes?.includes("security") ? "Seguridad" : "Mantenibilidad"} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
+        <h4>{audit.attributes?.map((attribute) => attribute === "security" ? "Seguridad" : "Mantenibilidad").join(" + ") || "Mantenibilidad"} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
         <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
           {audit.auditStatus === "partial" ? "Evaluación parcial" : audit.auditStatus === "completed" ? "Evaluación completada" : audit.auditStatus === "failed" ? "Evaluación fallida" : audit.executionStatus}
