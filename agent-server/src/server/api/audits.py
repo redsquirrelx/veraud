@@ -11,6 +11,7 @@ from ..agents.audit_report import SoftwareAuditReport
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.schemes.report import ReportGenerationSummary
 from ..agents.security.audit import SecurityAuditRequest
+from ..app.audit_attributes import QualityAttributes
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.execution_service import InvalidConfigError
 from ..services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
@@ -25,11 +26,12 @@ class StartAuditRequest(BaseModel):
 
     repository_path: str = Field(min_length=1, pattern=r"\S")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
+    attributes: QualityAttributes | None = None
     security_request: SecurityAuditRequest | None = Field(default=None,
-        description="Select security independently; when supplied, uses the existing security scanners and overrides request.")
+        description="Security scope. With attributes, participates only when security is selected; without attributes, selects security for compatibility.")
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
     agent_configs: dict[str, ExecutionConfig] | None = Field(default=None,
-        description="Explicit model and API key for every maintainability manager, coordinator and investigator. When supplied, all nine agent IDs are required. Keys are never included in audit results.")
+        description="Explicit model and API key for all selected participants: nine maintainability agent IDs, security, or all ten for a joint audit. Keys are never included in audit results.")
     agent_config: str = Field(default="dummy", min_length=1, description="Server YAML entry supplying model defaults.")
     agent_defaults: AuditAgentDefaults | None = Field(default=None,
         description="Developer defaults: context and personal token allowance at all levels; max_model_calls and max_tool_calls apply only to investigators. Aggregate manager/coordinator call budgets retain their defaults unless call_limits overrides them. Omitted fields retain existing defaults.",
@@ -73,14 +75,17 @@ async def build_snapshot_report_docx(body: BlackboardSnapshot, service: ServiceD
 
 
 @router.post("", status_code=202, response_model=AuditState,
-    summary="Start a maintainability audit",
+    summary="Start a quality audit with one or both supported attributes",
     description="Schedules the manager in this server process and returns its run_id immediately. Model defaults come from agent_config; the audit shares the application's in-memory Blackboard. The audit timeout measures active time: quota and provider recovery waits pause execution and resume automatically without consuming that timeout.",
     responses={202: {"description": "Audit accepted for asynchronous execution."},
                422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid repository, configuration or request."}})
 async def start_audit(body: StartAuditRequest, response: Response, service: ServiceDep) -> AuditState:
     try:
-        state = service.start(body.repository_path, body.security_request or body.request, body.config, body.agent_config,
-            body.agent_defaults, body.audit_budget, body.call_limits, agent_configs=body.agent_configs)
+        security_only = body.attributes == ["security"] or body.attributes is None and body.security_request is not None
+        state = service.start(body.repository_path,
+            (body.security_request or SecurityAuditRequest()) if security_only else body.request, body.config, body.agent_config,
+            body.agent_defaults, body.audit_budget, body.call_limits, agent_configs=body.agent_configs,
+            attributes=body.attributes, security_request=body.security_request)
     except (InvalidConfigError, FileNotFoundError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     response.headers["Location"] = f"/api/audits/{state.run_id}"

@@ -3,13 +3,17 @@
 import asyncio
 import io
 import zipfile
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from config.agents.budgets import TokenBudgetConfig
+from server.agents.maintainability.manager import MaintainabilityRequest
 from server.agents.security.audit import SecurityAuditRequest
 from server.api.schemas import ExecutionConfig
+from server.app import audit_service
 from server.app.audit_service import AuditService
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.main import app
@@ -107,13 +111,54 @@ def test_token_budget_falls_back_without_losing_detection(audit_environment):
     asyncio.run(execute())
 
 
-def test_http_selects_security_and_reconstructs_its_export_without_the_repository(audit_environment):
+def test_joint_cancellation_stops_both_attributes_and_retains_the_shared_analysis(audit_environment, monkeypatch):
+    (audit_environment.root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+
+    async def execute():
+        manager_entered, security_entered = asyncio.Event(), asyncio.Event()
+        stopped = set()
+
+        async def block(attribute, entered):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.add(attribute)
+
+        manager = SimpleNamespace(run=lambda *args: block("maintainability", manager_entered))
+        monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Mock(return_value=manager))
+        model.ainvoke = lambda prompt: block("security", security_entered)
+        service = AuditService(MemoryBlackboard())
+        state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(), "offline",
+            attributes=["maintainability", "security"])
+        await asyncio.wait_for(asyncio.gather(manager_entered.wait(), security_entered.wait()), 5)
+        await service.cancel(state.run_id)
+        snapshot = service.snapshot(state.run_id)
+        assert snapshot.status == "cancelled"
+        assert stopped == {"maintainability", "security"}
+        assert snapshot.findings
+        context = next(item.details["audit_context"] for item in snapshot.evidence if "audit_context" in item.details)
+        assert context["requested_attributes"] == ["maintainability", "security"]
+        assert {item.run_id for item in snapshot.evidence} == {state.run_id}
+        await service.aclose()
+
+    asyncio.run(execute())
+    audit_environment.async_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.parametrize("attributes", [None, ["maintainability", "security"]])
+def test_http_selects_security_and_reconstructs_its_export_without_the_repository(audit_environment, monkeypatch, attributes):
     model = audit_environment.model
     model.bind = lambda **kwargs: model
     model.ainvoke = AsyncMock()
+    manager = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(status="complete")))
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Mock(return_value=manager))
     with TestClient(app) as client:
         started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
-            "security_request": {"objective": "Inspeccionar seguridad"}, "agent_config": "security"})
+            "security_request": {"objective": "Inspeccionar seguridad"}, "agent_config": "security",
+            **({"attributes": attributes} if attributes else {})})
         assert started.status_code == 202
         run_id = started.json()["run_id"]
         client.portal.call(app.state.audit_service.wait, run_id)
@@ -127,3 +172,4 @@ def test_http_selects_security_and_reconstructs_its_export_without_the_repositor
         word = client.post("/api/audits/reports/from-snapshot.docx", json=exported.json())
         assert word.status_code == 200, word.text
         assert word.content.startswith(b"PK")
+        assert manager.run.await_count == (1 if attributes else 0)

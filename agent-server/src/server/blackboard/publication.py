@@ -209,13 +209,15 @@ def publication_for(agent) -> Publication | None:
     return Publication(agent.blackboard, agent.agent_type, identity=getattr(agent, "audit_identity", None))
 
 
-def publish_audit_context(blackboard: Blackboard, identity: AuditIdentity, snapshot, request, *, started_at: datetime) -> str:
+def publish_audit_context(blackboard: Blackboard, identity: AuditIdentity, snapshot, request, *, started_at: datetime,
+                          attributes=None) -> str:
     """Retain repository-analysis facts for blackboard-only report consumers.
 
     This is metadata, not source proof or an inferred architectural conclusion.
     No credentials, retained file contents or model configuration are published.
     """
     context = {
+        **({"requested_attributes": list(attributes)} if attributes is not None else {}),
         "repository_id": snapshot.repository.name, "repository_location": snapshot.repository.root_path,
         "objective": request.objective, "targets": request.targets,
         "execution_started_at": started_at.isoformat(), "manager_invocation_id": identity.invocation_id,

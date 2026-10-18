@@ -17,7 +17,9 @@ MAINTAINABILITY_AGENT_TYPES = (
 def validate_model_configs(configs, attribute="maintainability"):
     if configs is None:
         return
-    required = ("security",) if attribute == "security" else MAINTAINABILITY_AGENT_TYPES
+    attributes = [attribute] if isinstance(attribute, str) else attribute
+    required = (*MAINTAINABILITY_AGENT_TYPES, "security") if len(attributes) == 2 else (
+        ("security",) if attributes == ["security"] else MAINTAINABILITY_AGENT_TYPES)
     if set(configs) != set(required):
         raise InvalidConfigError(f"agent_configs must configure every {attribute} agent exactly once: "
             + ", ".join(required))

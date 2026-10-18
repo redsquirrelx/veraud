@@ -1,12 +1,33 @@
 # Seguridad en el flujo de auditoría
 
 El pipeline `quality-audit` acepta `attributes: ["security"]` y una configuración
-de modelo/credencial con la clave `security`. Cada ejecución selecciona un atributo;
+de modelo/credencial con la clave `security`. También acepta
+`attributes: ["maintainability", "security"]`: una única ejecución comparte
+instantánea, `run_id`, Blackboard y presupuesto global de tokens y produce un solo
+análisis exportable y un informe JSON/Word con ambos atributos. Cada análisis tiene
+su propia identidad de invocación y sus límites de ejecución. Un fallo de uno deja
+su recibo explícito y conserva los resultados del otro; la cancelación detiene ambos.
 `["maintainability"]` conserva la jerarquía existente. El frontend permite elegir
 el atributo y configurar su acceso al modelo en **Configuración → Auditoría**.
 
-La API directa `POST /api/audits` selecciona seguridad mediante
-`security_request: {}`. Admite objetivo y rutas objetivo en ese contrato. El
+La API directa `POST /api/audits` admite la misma lista `attributes`. Para ambos:
+
+```json
+{
+  "repository_path": "C:/workspace/repositorio",
+  "attributes": ["maintainability", "security"],
+  "request": {"objective": "Evaluar mantenibilidad", "targets": []},
+  "security_request": {"objective": "Evaluar seguridad", "targets": []}
+}
+```
+
+Se puede proporcionar un `config` de modelo común o `agent_configs` con los nueve
+IDs de mantenibilidad y `security` con su propia selección. El backend prepara
+ambas selecciones antes de crear la única ejecución; la lista seleccionada se
+conserva también durante el seguimiento previo al informe.
+
+Por compatibilidad, omitir `attributes` y enviar `security_request: {}` selecciona
+solo seguridad. Admite objetivo y rutas objetivo en ese contrato. El
 pipeline admite el mismo contrato mediante `security_request`.
 
 `audit.py` adapta los componentes de `SecuritySupervisorAgent`: SAST, secretos,

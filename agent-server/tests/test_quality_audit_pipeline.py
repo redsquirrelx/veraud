@@ -19,6 +19,10 @@ from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.blackboard.models import Assessment
 from server.infrastructure.callback.schemas import CallbackResult
+from server.services.audit_report_snapshot import (
+    BlackboardSnapshot,
+    report_from_snapshot,
+)
 
 pytest_plugins = ["test_audits"]
 
@@ -121,6 +125,91 @@ def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts
     assert sink.running == [(42, None), (42, payload["run_id"])]
     assert payload["docx_base64"]
     assert "security-key" not in str(payload)
+
+
+@pytest.mark.parametrize("failed_attribute", [None, "maintainability", "security", "security_timeout", "shared_token_limit"])
+def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_environment, monkeypatch, failed_attribute):
+    root = audit_environment.root
+    (root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
+    commit = _committed_checkout(root)
+    monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
+    captured = {}
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock(return_value='{"patch_code": "safe()", "explanation": "Revisar contexto"}')
+    if failed_attribute == "security_timeout":
+        policy = audit_service.SecurityAuditConfig(timeout_seconds=0.05)
+        monkeypatch.setattr(audit_service, "SecurityAuditConfig", lambda: policy)
+        async def blocked(prompt):
+            await asyncio.Event().wait()
+
+        model.ainvoke = blocked
+    original_security = audit_service.run_security_audit
+
+    async def security(tools, request, limits, selected_model, board, identity):
+        captured["security"] = (tools.context.snapshot, tools.token_budget.root, identity)
+        if failed_attribute == "security":
+            raise RuntimeError("private-provider-payload")
+        return await original_security(tools, request, limits, selected_model, board, identity)
+
+    class Manager:
+        def __init__(self, selected_model, limits, *, blackboard, audit_identity, tracing_backend):
+            self.board, self.identity = blackboard, audit_identity
+
+        async def run(self, tools, request):
+            captured["maintainability"] = (tools.context.snapshot, tools.token_budget.root, self.identity)
+            assert set(self.agent_models) == set(MAINTAINABILITY_AGENT_TYPES)
+            if failed_attribute == "maintainability":
+                raise RuntimeError("private-provider-payload")
+            if failed_attribute == "shared_token_limit":
+                assert tools.token_budget.reserve(tools.token_budget.remaining) is not None
+            self.board.publish_assessment(Assessment(agent_id="maintainability_manager", run_id=self.identity.run_id,
+                invocation_id=self.identity.invocation_id, quality_attribute="maintainability",
+                repository_id=tools.context.snapshot.repository.name, snapshot_hash=tools.context.input.snapshot_hash,
+                objective=request.objective, status="complete", termination_reason="sufficient_coverage"))
+            return SimpleNamespace(status="complete")
+
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
+    monkeypatch.setattr(audit_service, "run_security_audit", security)
+    analysis = audit_service.RepositoryAnalysisService()
+    analyze = AsyncMock(wraps=analysis.analyze)
+    monkeypatch.setattr(audit_service, "RepositoryAnalysisService", lambda: SimpleNamespace(analyze=analyze))
+    sink = _RecordingSink()
+
+    async def execute():
+        service = GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
+        payload = (await service.run("quality-audit", {
+            "root_path": str(root), "commit_hash": commit, "attributes": ["security", "maintainability"],
+        }, ExecutionConfig(), stage_configs={name: ExecutionConfig(
+            model={"provider": "openai", "name": name}, api_key=name + "-key")
+            for name in [*MAINTAINABILITY_AGENT_TYPES, "security"]}, execution_ids={"maintainability_manager": 42}))["audit"]
+        restored = await report_from_snapshot(BlackboardSnapshot.model_validate(payload["blackboard"]))
+        return payload, restored
+
+    payload, restored = asyncio.run(execute())
+    assert payload["status"] == "partial"
+    assert {item["quality_attribute"] for item in payload["blackboard"]["assessments"]} == {"maintainability", "security"}
+    assert {item["run_id"] for item in payload["blackboard"]["assessments"]} == {payload["run_id"]}
+    assert captured["maintainability"][0] is captured["security"][0]
+    assert captured["maintainability"][1] is captured["security"][1]
+    assert captured["maintainability"][2].invocation_id != captured["security"][2].invocation_id
+    analyze.assert_awaited_once()
+    assert sink.running == [(42, None), (42, payload["run_id"])]
+    assert {item.id for item in restored.quality_results.attributes if item.status != "not_evaluated"} >= {"maintainability", "security"}
+    assert restored.identification.audit_id == payload["run_id"]
+    assert "La ejecución principal aún no ha publicado una evaluación final." not in str(restored)
+    assert "private-provider-payload" not in str(payload)
+    if failed_attribute == "shared_token_limit":
+        model.ainvoke.assert_not_awaited()
+        assert payload["blackboard"]["findings"]
+    if failed_attribute == "security_timeout":
+        assert any(item["quality_attribute"] == "security" and item["status"] == "failed"
+            for item in payload["blackboard"]["assessments"])
+        assert any(item["quality_attribute"] == "maintainability" and item["status"] == "complete"
+            for item in payload["blackboard"]["assessments"])
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(payload["docx_base64"]))) as document:
+        xml = document.read("word/document.xml").decode()
+        assert "Mantenibilidad" in xml and "Seguridad" in xml
 
 
 def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment, monkeypatch):
@@ -249,7 +338,7 @@ def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_envi
         model.client.close.assert_called_once()
 
 
-@pytest.mark.parametrize("attributes", [[], ["unsupported"], ["maintainability", "security"], ["maintainability", "maintainability"]])
+@pytest.mark.parametrize("attributes", [[], ["unsupported"], ["maintainability", "security", "security"], ["maintainability", "maintainability"]])
 def test_unimplemented_or_duplicate_attributes_are_rejected(attributes):
     with pytest.raises(InvalidConfigError):
         quality_audit_definition.parse_input({"root_path": "checkout", "commit_hash": "a" * 40, "attributes": attributes})

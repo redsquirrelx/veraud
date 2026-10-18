@@ -4,7 +4,6 @@ import asyncio
 import base64
 import subprocess
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -13,6 +12,7 @@ from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
 from ..services.audit_report_docx import render_audit_report_docx
+from .audit_attributes import QualityAttributes
 from .audit_models import validate_model_configs
 from .audit_service import AuditService
 from .execution_service import InvalidConfigError
@@ -22,7 +22,7 @@ class QualityAuditInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     root_path: str
-    attributes: list[Literal["maintainability", "security"]] = Field(min_length=1, max_length=1)
+    attributes: QualityAttributes
     commit_hash: str = Field(pattern=r"^[a-fA-F0-9]{40}$")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
     security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
@@ -69,7 +69,7 @@ class QualityAuditRunner:
         state = None
         try:
             state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
-                agent_configs=self.agent_configs)
+                agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request)
             if hooks:
                 await hooks.on_audit_start(stage, state.run_id)
             await service.wait(state.run_id)
@@ -95,7 +95,7 @@ class QualityAuditRunner:
 
 async def build_agents(exec_service, config, stage_configs, parsed, timeout_seconds):
     security = parsed.attributes == ["security"]
-    validate_model_configs(stage_configs, "security" if security else "maintainability")
+    validate_model_configs(stage_configs, parsed.attributes)
     selected = (stage_configs or {}).get("security" if security else "maintainability_manager", config)
     return {"maintainability_manager": QualityAuditRunner(selected, stage_configs)}, {}
 

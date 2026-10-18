@@ -8,7 +8,7 @@ from time import monotonic
 from types import SimpleNamespace
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from config.agents.audit import (
     AuditAgentDefaults,
@@ -57,6 +57,7 @@ from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
 )
+from .audit_attributes import QualityAttributes
 from .audit_models import validate_model_configs
 from .execution_service import InvalidConfigError, get_execution_service
 from .tracing_port import LangSmithTracingBackend
@@ -180,12 +181,23 @@ class AuditService:
               agent_defaults: AuditAgentDefaults | None = None,
               audit_budget: TokenBudgetConfig | None = None,
               call_limits: AuditCallLimits | None = None, *,
-              agent_configs: dict[str, ExecutionConfig] | None = None) -> AuditState:
+              agent_configs: dict[str, ExecutionConfig] | None = None,
+              attributes: list[str] | None = None, security_request: SecurityAuditRequest | None = None) -> AuditState:
         """Validate before acceptance and retain a task until its owned resources are closed."""
         if self._closing:
             raise RuntimeError("Audit service is shutting down.")
-        security = isinstance(request, SecurityAuditRequest)
-        validate_model_configs(agent_configs, "security" if security else "maintainability")
+        try:
+            attributes = TypeAdapter(QualityAttributes).validate_python(attributes if attributes is not None else [
+                "security" if isinstance(request, SecurityAuditRequest) else "maintainability"])
+        except ValidationError:
+            raise InvalidConfigError("Select distinct supported quality attributes.") from None
+        security = attributes == ["security"]
+        combined = len(attributes) == 2
+        if not security and isinstance(request, SecurityAuditRequest):
+            raise InvalidConfigError("Audits selecting maintainability require its request plus an optional security_request.")
+        if security:
+            request = security_request or (request if isinstance(request, SecurityAuditRequest) else SecurityAuditRequest())
+        validate_model_configs(agent_configs, attributes)
         root = Path(repository_path).expanduser().resolve()
         workspace = resolve_workspace_root()
         if root.parent != workspace:
@@ -232,7 +244,8 @@ class AuditService:
             view_url=f"/blackboard?run_id={identity.run_id}", created_at=datetime.now(UTC))
         self._states[identity.run_id] = state
         task = asyncio.create_task(
-            self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections), name=f"audit-{identity.run_id}",
+            self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections,
+                security_request=(security_request or SecurityAuditRequest()) if combined else None), name=f"audit-{identity.run_id}",
         )
         self._tasks[identity.run_id] = task
         task.add_done_callback(lambda _: self._tasks.pop(identity.run_id, None))
@@ -246,21 +259,30 @@ class AuditService:
 
     async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest | SecurityAuditRequest,
                        limits: MaintainabilityConfig | SecurityAuditConfig, settings: ModelSettings, credentials: ModelCredentials,
-                       total_tokens: int, model_selections=None) -> None:
+                       total_tokens: int, model_selections=None, *, security_request=None) -> None:
         model = None
         clients = {}
         self._update(identity.run_id, "running")
         timing = ActiveDeadline(limits.timeout_seconds, wall_deadline=monotonic() + limits.max_wall_time_seconds,
             cancellation_grace_seconds=limits.cancellation_grace_seconds,
-            label="security" if isinstance(request, SecurityAuditRequest) else "maintainability_manager", invocation_id=identity.invocation_id)
+            label="quality_audit" if security_request is not None else (
+                "security" if isinstance(request, SecurityAuditRequest) else "maintainability_manager"), invocation_id=identity.invocation_id)
         self._timings[identity.run_id] = timing
 
         async def run():
             nonlocal model
             with timing.stage("repository_snapshot"):
                 snapshot = await RepositoryAnalysisService().analyze(RepositoryAnalysisInput(root_path=str(root)))
-            publish_audit_context(self.blackboard, identity, snapshot, request,
-                started_at=self._states[identity.run_id].created_at)
+            context_request = request if security_request is None else SimpleNamespace(
+                objective=request.objective + "\n" + security_request.objective,
+                targets=list(dict.fromkeys([*request.targets, *security_request.targets])))
+            publish_audit_context(self.blackboard, identity, snapshot, context_request,
+                started_at=self._states[identity.run_id].created_at,
+                attributes=["maintainability", "security"] if security_request is not None else [
+                    "security" if isinstance(request, SecurityAuditRequest) else "maintainability"])
+            if security_request is not None:
+                return await self._run_combined(identity, root, snapshot, request, security_request, limits,
+                    settings, credentials, total_tokens, model_selections, timing, clients)
             budget = ExecutionBudget(
                 max_model_calls=limits.max_model_calls, max_tool_calls=limits.max_tool_calls,
                 max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
@@ -310,7 +332,7 @@ class AuditService:
             self._update(identity.run_id, "failed", f"Audit failed ({type(error).__name__}).")
         finally:
             try:
-                if model is not None:
+                if clients:
                     cleanup = ActiveDeadline(max(0.001, limits.cancellation_grace_seconds), cancellation_grace_seconds=0)
                     with timing.stage("close_provider_clients"):
                         try:
@@ -321,6 +343,72 @@ class AuditService:
                             logger.warning("Audit %s provider_cleanup_timeout", identity.run_id)
             finally:
                 self._timings.pop(identity.run_id, None)
+
+    async def _run_combined(self, identity, root, snapshot, request, security_request, limits,
+                            settings, credentials, total_tokens, model_selections, timing, clients):
+        """One snapshot and token ledger; attribute failures do not cancel their sibling."""
+        shared_tokens = SharedTokenBudget(total_tokens)
+        tracing = LangSmithTracingBackend()
+
+        def client(selected, access):
+            key = (selected.model_dump_json(), access.api_key)
+            if key not in clients:
+                clients[key] = build_chat_model(selected, access)
+            return clients[key]
+
+        async def evaluate(attribute, selected_request, policy):
+            # Keep the manager's established root identity for report authority
+            # and continuation lineage; security owns a distinct invocation.
+            child = identity if attribute == "maintainability" else AuditIdentity(run_id=identity.run_id)
+            agent_id = "security" if attribute == "security" else "maintainability_manager"
+            deadline = timing.fork(policy.timeout_seconds, label=agent_id, invocation_id=child.invocation_id,
+                max_wall_time_seconds=policy.max_wall_time_seconds,
+                cancellation_grace_seconds=policy.cancellation_grace_seconds)
+
+            async def execute():
+                budget = ExecutionBudget(max_model_calls=policy.max_model_calls, max_tool_calls=policy.max_tool_calls,
+                    max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
+                    max_input_tokens_per_call=max(500, policy.max_context_characters // 2),
+                    max_output_tokens_per_call=policy.max_output_tokens, max_elapsed_seconds=policy.timeout_seconds)
+                tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
+                    snapshot_hash=snapshot.repository.snapshot_hash, budget=budget)), workspace_root=root.parent,
+                    limits=ToolLimits(compact=True), token_budget=shared_tokens.fork(), timing=deadline)
+                selected, access = (model_selections or {}).get(agent_id, (settings, credentials))
+                model = client(selected, access)
+                if attribute == "security":
+                    operation = run_security_audit(tools, selected_request,
+                        policy.model_copy(update={"max_total_tokens": total_tokens}),
+                        model.bind(max_tokens=policy.max_output_tokens), self.blackboard, child)
+                else:
+                    manager = MaintainabilityManagerAgent(model, policy, blackboard=self.blackboard,
+                        audit_identity=child, tracing_backend=tracing)
+                    manager.agent_models = {name: client(*selection) for name, selection in (model_selections or {}).items()
+                        if name != "security"}
+                    operation = manager.run(tools, selected_request)
+                with deadline.stage(attribute + "_audit"):
+                    return await tracing.wrap_stage(operation, name=attribute + "-audit", audit_id=identity.run_id,
+                        invocation_id=child.invocation_id, repository_id=snapshot.repository.name,
+                        snapshot_hash=snapshot.repository.snapshot_hash)
+
+            try:
+                return (await within_deadline(execute(), deadline)).status
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - retain the sibling result and safe failure provenance
+                self.blackboard.publish_assessment(Assessment(agent_id=agent_id, run_id=identity.run_id,
+                    invocation_id=child.invocation_id, repository_id=snapshot.repository.name,
+                    snapshot_hash=snapshot.repository.snapshot_hash, commit=snapshot.repository.commit,
+                    objective=selected_request.objective, targets=tuple(selected_request.targets),
+                    quality_attribute=attribute, status="failed", termination_reason="attribute_execution_failed",
+                    limitations=(f"El análisis de {attribute} terminó con {type(error).__name__}.",),
+                    details={"quality_attribute": attribute, "execution_error_type": type(error).__name__}))
+                return "failed"
+
+        statuses = await asyncio.gather(evaluate("maintainability", request, limits),
+            evaluate("security", security_request, SecurityAuditConfig()))
+        status = "completed" if all(value in {"complete", "completed"} for value in statuses) else (
+            "failed" if all(value == "failed" for value in statuses) else "partial")
+        return SimpleNamespace(status=status)
 
     async def cancel(self, run_id: str) -> None:
         """Cancel one pipeline audit without affecting other active audits."""
