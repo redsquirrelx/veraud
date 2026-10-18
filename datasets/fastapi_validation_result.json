@@ -1,0 +1,39 @@
+{
+  "evaluated_attribute": "functional_adequacy",
+  "score": 0.0,
+  "total_requirements": 1,
+  "fulfilled_requirements": 0,
+  "results": [
+    {
+      "requirement_id": "REQ-FA-001",
+      "description": "FastAPI debe permitir registrar rutas HTTP GET mediante decoradores o add_api_route() y devolver la respuesta JSON definida por la función asociada.",
+      "status": "evidencia_insuficiente",
+      "justification": "No fue posible verificar el requisito con el LLM.",
+      "evidence": [
+        {
+          "fragment_id": "FA-001-APP",
+          "file_path": "fastapi/applications.py",
+          "similarity": 0.36632663011550903
+        },
+        {
+          "fragment_id": "FA-001-TEST-APP",
+          "file_path": "tests/main.py",
+          "similarity": 0.36026817560195923
+        },
+        {
+          "fragment_id": "FA-001-ROUTER",
+          "file_path": "fastapi/routing.py",
+          "similarity": 0.35988348722457886
+        },
+        {
+          "fragment_id": "FA-001-TEST-GET",
+          "file_path": "tests/test_application.py",
+          "similarity": 0.20225876569747925
+        }
+      ]
+    }
+  ],
+  "recommendations": [
+    "Revisar REQ-FA-001: No fue posible verificar el requisito con el LLM."
+  ]
+}
