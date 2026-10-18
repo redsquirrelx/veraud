@@ -66,8 +66,8 @@
   },
   "analyze": {
     "audit": {
-      "label": "Mantenibilidad",
-      "description": "Auditoría de calidad e informe Word"
+      "label": "Auditoría de calidad",
+      "description": "Mantenibilidad o seguridad, con informe Word"
     },
     "label": "Analizar",
     "loading": "Analizando",

@@ -8,8 +8,9 @@
     "label": "Settings sections"
   },
   "audit": {
-    "modelsTitle": "Maintainability audit models",
-    "modelsDescription": "One model and credential for all nine maintainability agents: the manager, both coordinators and all investigators. Each agent receives an explicit configuration when the audit starts.",
+    "modelsTitle": "Quality audit models",
+    "modelsDescription": "Choose a model and credential for each attribute. Maintainability shares its selection across all nine agents; security uses its own selection for remediation proposals.",
+    "security": "Security",
     "allAgents": "Maintainability · all agents",
     "saved": "Maintainability audit configuration saved"
   },

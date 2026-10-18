@@ -17,13 +17,13 @@ function show() {
 }
 
 describe("project quality audits", () => {
-  it("offers maintainability separately from Project Architecture in the Analyze menu", async () => {
+  it("offers quality audits separately from Project Architecture in the Analyze menu", async () => {
     const onAnalyze = vi.fn()
     const onAudit = vi.fn()
     render(<AnalyzeMenu canAnalyze analyzing={false} onAnalyze={onAnalyze} onAudit={onAudit} />)
     await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
     expect(screen.getByText("Project architecture")).toBeInTheDocument()
-    await userEvent.click(screen.getByText("Maintainability"))
+    await userEvent.click(screen.getByText("Quality audit"))
     expect(onAudit).toHaveBeenCalledOnce()
     expect(onAnalyze).not.toHaveBeenCalled()
   })
@@ -58,6 +58,17 @@ describe("project quality audits", () => {
     await userEvent.click(screen.getByRole("button", { name: "Descargar informe Word" }))
     expect(api.downloadQualityAuditReport).toHaveBeenCalledWith(5, 8)
     expect(screen.getAllByText(/^\d+\. /)).toHaveLength(10)
+  })
+
+  it("starts security independently with the selected revision", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 9 })
+    show()
+    await screen.findByText("No hay auditorías registradas.")
+    await userEvent.click(screen.getByRole("checkbox", { name: "Seguridad" }))
+    expect(screen.getByRole("checkbox", { name: "Mantenibilidad" })).not.toBeChecked()
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar auditoría" }))
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security"]))
   })
 
   it("shows the run id and its Blackboard link while the audit is still running", async () => {

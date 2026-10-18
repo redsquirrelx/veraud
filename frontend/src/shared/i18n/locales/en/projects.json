@@ -66,8 +66,8 @@
   },
   "analyze": {
     "audit": {
-      "label": "Maintainability",
-      "description": "Quality audit and Word report"
+      "label": "Quality audit",
+      "description": "Maintainability or security, with a Word report"
     },
     "label": "Analyze",
     "loading": "Analyzing",

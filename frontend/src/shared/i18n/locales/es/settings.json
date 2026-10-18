@@ -8,8 +8,9 @@
     "label": "Secciones de configuración"
   },
   "audit": {
-    "modelsTitle": "Modelos de auditoría de mantenibilidad",
-    "modelsDescription": "Un modelo y una credencial para los nueve agentes de mantenibilidad: el manager, ambos coordinadores y todos los investigadores. Cada agente recibe una configuración explícita al iniciar la auditoría.",
+    "modelsTitle": "Modelos de auditoría de calidad",
+    "modelsDescription": "Selecciona modelo y credencial por atributo. Mantenibilidad comparte su selección entre los nueve agentes; seguridad utiliza su propia selección para propuestas de remediación.",
+    "security": "Seguridad",
     "allAgents": "Mantenibilidad · todos los agentes",
     "saved": "Configuración de auditoría de mantenibilidad guardada"
   },
