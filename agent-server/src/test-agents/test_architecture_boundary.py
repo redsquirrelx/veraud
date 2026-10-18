@@ -129,18 +129,33 @@ def evaluation(messages, sufficient=True, candidate=True):
 class BoundaryReviewResponse(dict):
     def __call__(self, messages):
         value = json.loads(json.dumps(self))
-        evaluation = json.loads(messages[1].content)["evaluation"]
+        context = json.loads(messages[1].content)
+        evaluation = context["evaluation"]
         for finding in value["findings"]:
             checks = [item for item in evaluation.get("claim_checks", [])
                 if item["subject_type"] == "candidate" and item["subject_id"] == finding["finding_id"]]
             finding.update(scope_supported=True, checked_evidence_ids=list(dict.fromkeys(
                 support["evidence_id"] for check in checks for support in check["support"])))
+        if "hypotheses" not in value:
+            requirements = context.get("boundary_hypothesis_review_requirements", [{
+                "hypothesis_id": subject["id"], "expected_checked_evidence_ids": subject["evidence_ids"],
+            } for subject in evaluation.get("hypotheses", []) if subject["status"] in {"confirmed", "discarded"}])
+            value["hypotheses"] = [{"hypothesis_id": item["hypothesis_id"], "status": "supported",
+                "rationale": "The inspected source answers the stated bounded question.",
+                "scope_supported": True, "checked_evidence_ids": item["expected_checked_evidence_ids"],
+                "unverified_claims": []} for item in requirements]
         return value
 
 
 def review(status="accepted"):
     return BoundaryReviewResponse({"findings": [{"finding_id": "f1", "status": status, "rationale": "Rule and inspected import agree.",
-                          "severity": "medium", "confidence": 0.8}], "limitations": []})
+                           "severity": "medium", "confidence": 0.8}], "limitations": []})
+
+
+def hypothesis_review():
+    response = review()
+    response["findings"] = []
+    return response
 
 
 def audit(repo, responses, **config):
@@ -393,7 +408,7 @@ def test_wrong_hypothesis_citations_reuse_existing_source_without_another_read(r
     result, model, _ = audit(repo, [PLAN, call("list_files", {"limit": 2}), call(),
         AIMessage(content="Ready"), lambda messages: hypothesis_only(messages, "metadata"),
         AIMessage(content="Ready"), lambda messages: hypothesis_only(messages, "source"),
-        {"findings": [], "limitations": []}])
+        hypothesis_review()])
     assert result.termination_reason == "sufficient_evidence"
     assert result.hypotheses[0].status == "confirmed"
     assert result.iterations == 2 and result.tool_calls == 2
@@ -475,7 +490,7 @@ def test_discarded_hypothesis_is_preserved(repo):
         value["hypotheses"][0].update(status="discarded", rationale="An intentional adapter was found.")
         return value
     result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), dismissed,
-                               {"findings": [], "limitations": []}])
+                               hypothesis_review()])
     assert not result.findings
     assert result.hypotheses[0].status == "discarded"
 

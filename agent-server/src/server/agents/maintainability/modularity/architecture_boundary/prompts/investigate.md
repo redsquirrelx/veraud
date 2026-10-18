@@ -37,3 +37,30 @@ missing snapshot source. A missing definition is an unresolved limitation, not a
 boundary violation. For an incompletely traversed service, target list_files to
 that directory and paginate before selecting bounded implementation/composition
 reads. Do not repeat a repository-wide inventory or already delivered excerpts.
+
+Search hits are often just the LAST line of a multiline import. Read the complete
+import declaration (including its imported names and module path) before citing a
+dependency. Follow that module and the imported function's implementation: a module
+named services may be a frontend HTTP client, a formatter or shared types, not a
+database adapter. Determine whether it uses fetch/getJson/postJson to call an API,
+contains actual business rules, or accesses persistence. Importing a client facade
+does not bypass the API and is not a violation by itself. Inspect the caller and
+target before describing architectural harm. Do not invent an API-only constraint.
+
+For recovery, prioritize replacement_support and next_source_reads that carry
+replaces_evidence_id. Use the newly delivered COMPLETE import's evidence ID in BOTH
+the subject evidence_ids and its claim_check support; reading a function body or
+adding an unrelated citation does not repair a rejected import-line citation.
+
+Use scope_support to repair each declared FILE, not just one example in a multi-file
+claim. available_source_support lists existing citations and their syntax-observed
+roles: reuse them in BOTH the subject and claim_check, or narrow the actual conclusion
+and scope together. A usage-only support does not meet a dependency claim's required
+role. If a named file has no support, inspect that file rather than a nearby utility.
+These role hints do not establish architectural semantics or complete coverage.
+For behavior conclusions, inspect the actual named function/method bodies, not just
+module headers, constants or utility functions. Evaluation requires symbol_id on each
+implementation support and delivered coverage of that symbol's body; split large bodies
+into bounded get_source_excerpt calls. Symbol navigation is not inspected source.
+For scope-unrelated feedback, read the original question's named component; changing
+claim_kind or reading more of the substituted component does not repair the gap.

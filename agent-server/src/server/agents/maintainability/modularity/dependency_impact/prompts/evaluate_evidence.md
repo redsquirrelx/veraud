@@ -27,3 +27,19 @@ inferred conventions permit only design_observation, never automatic ISO noncomp
 Return all current candidates, hypotheses and retained assessments, not only new ones.
 Missing relevant evidence means sufficient=false with precise missing_information for
 another tool investigation. Empty findings and legitimate dependencies are valid results.
+Every confirmed/discarded hypothesis must cite relevant source and link to an assessment
+for that exact question. Discarding requires impact_kind=none backed by verified relations
+and inspected contracts/usages at both endpoints, not absence of discovered edges.
+Directory names, manifests, imports, schema metadata and evaluation gold datasets cannot
+prove HTTP-only communication, replacement independence or absence of change propagation.
+Search-hit single lines are navigation: retrieve the relevant implementation bodies and
+contracts before making causal claims. An HTTP boundary may still carry schema, protocol,
+configuration or shared-data coupling. Do not infer isolation from separate runtimes.
+Endpoint IDs must be actual file/symbol IDs, never package/directory paths. If host feedback
+reports invalid IDs, repair them from delivered tool records before more broad searching.
+Keep unsupported global questions inconclusive and state the specific missing reads.
+Never invent dependency_type="none" or a manifest-to-server edge to represent absence.
+If no actual relation was established, leave dependency_assessments empty for that question
+and its hypothesis inconclusive; the nonempty dependencies contract applies only to an
+assessment you actually produce. Positive packaging/isolation claims are not harm findings.
+When closure is due to token budget, evaluate only delivered evidence and retain gaps.

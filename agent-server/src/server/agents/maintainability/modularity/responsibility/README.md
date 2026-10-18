@@ -65,6 +65,18 @@ independencia de responsabilidades: interpretación y revisión siguen siendo de
 estado de validación. `findings` conserva aceptados, rechazados e insuficientes: filtrar
 `validation_status == "accepted"` para reportar problemas confirmados. Se conservan
 hipótesis descartadas, investigaciones inconclusas, limitaciones y consumo disponible.
+Una ruta exacta de archivo puede normalizarse a su ID canónico; los directorios y
+alias ambiguos no se resuelven por inferencia. Las evaluaciones sin identidad válida
+se conservan en `unresolved_component_assessments` con cohesión inconclusa y trabajo
+pendiente en `missing_information`.
+
+`critical_review` conserva la revisión especializada. Cada hipótesis confirmada o
+descartada requiere un juicio independiente sobre su alcance, citas comprobadas y
+evaluaciones de componentes válidas; sin ese respaldo queda inconclusa. Esto también
+se aplica cuando no hay candidatos. Una revisión bloqueada se registra como trabajo
+pendiente, conservando las observaciones locales como interpretaciones no verificadas.
+`source_backed` verifica soporte mínimo de código y procedencia de una evaluación;
+no certifica cohesión global ni ausencia de ciclos en implementaciones no inspeccionadas.
 Las conclusiones sin criterio explícito son observaciones de diseño, no incumplimientos.
 Una clase grande/coordinadora puede ser coherente; no hay cuotas ni umbrales de SRP.
 

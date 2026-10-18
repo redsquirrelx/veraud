@@ -9,6 +9,7 @@ from .schemas import (
     ResponsibilityEvaluation,
     ResponsibilityFinding,
     ResponsibilityResult,
+    ResponsibilityReview,
 )
 
 
@@ -19,6 +20,7 @@ class ResponsibilityExecution(InvestigationExecution):
     evaluation_schema = ResponsibilityEvaluation
     finding_schema = ResponsibilityFinding
     result_schema = ResponsibilityResult
+    review_schema = ResponsibilityReview
 
     async def evaluate_evidence(self, state):
         update = await super().evaluate_evidence(state)
@@ -44,6 +46,8 @@ class ResponsibilityExecution(InvestigationExecution):
         references = {r.id: r for r in self.references()}
         components = []
         limitations = list(result.limitations)
+        missing = list(result.missing_information)
+        unresolved = []
         omitted = []
         seen = set()
         for assessment in evaluation.component_assessments:
@@ -55,11 +59,25 @@ class ResponsibilityExecution(InvestigationExecution):
                               if c.id == assessment.id else c for c in components]
                 continue
             seen.add(assessment.id)
-            symbol = symbols.get(assessment.component_id)
-            file_id = symbol.file_id if symbol else assessment.component_id
+            # Recover only exact, unambiguous file paths. Never guess a file from a
+            # directory name, assessment label, or one of its citations.
+            path_matches = [f.id for f in snapshot.files if f.path == assessment.component_id]
+            component_id = path_matches[0] if len(path_matches) == 1 else assessment.component_id
+            symbol = symbols.get(component_id)
+            file_id = symbol.file_id if symbol else component_id
             source = files.get(file_id)
             if source is None:
-                limitations.append(f"Assessment {assessment.id} omitted: unknown component ID.")
+                reason = f"Assessment {assessment.id}: unknown component ID; provide an exact file/symbol ID and inspect its behavior."
+                limitations.append(reason)
+                missing.append(reason)
+                unresolved.append(assessment.model_copy(update={
+                    "cohesion": "inconclusive",
+                    "evidence_ids": [i for i in assessment.evidence_ids if i in references],
+                    "responsibilities": [r.model_copy(update={
+                        "supporting_evidence_ids": [i for i in r.supporting_evidence_ids if i in references],
+                        "contradicting_evidence_ids": [i for i in r.contradicting_evidence_ids if i in references],
+                    }) for r in assessment.responsibilities],
+                }))
                 omitted.append(assessment.id)
                 continue
             ids = list(assessment.evidence_ids)
@@ -105,7 +123,8 @@ class ResponsibilityExecution(InvestigationExecution):
                 "contradicting_evidence_ids": [i for i in r.contradicting_evidence_ids if i in references],
             }) for r in assessment.responsibilities]
             components.append(InvestigatedComponent(
-                **assessment.model_dump(exclude={"responsibilities", "cohesion", "evidence_ids"}),
+                **assessment.model_dump(exclude={"component_id", "responsibilities", "cohesion", "evidence_ids"}),
+                component_id=component_id,
                 responsibilities=responsibilities, cohesion="inconclusive" if issues else assessment.cohesion,
                 evidence_ids=[r.id for r in evidence], path=source.path, file_id=file_id,
                 symbol_name=symbol.qualified_name if symbol else None, evidence=evidence,
@@ -113,6 +132,9 @@ class ResponsibilityExecution(InvestigationExecution):
                 validation_issues=list(dict.fromkeys(issues)),
             ))
         by_id = {c.id: c for c in components}
+        for component in components:
+            if component.cohesion == "inconclusive":
+                missing.append(f"Assessment {component.id}: complete behavioral validation ({', '.join(component.validation_issues) or 'cohesion unresolved'}).")
         findings = []
         for finding in result.findings:
             linked = [by_id[i] for i in finding.assessment_ids if i in by_id]
@@ -128,14 +150,45 @@ class ResponsibilityExecution(InvestigationExecution):
                     "review_rationale": "Responsibility host validation failed: require behavioral evidence, verified component assessments, explained independent responsibilities and linked source citations; metrics/names alone are not proof.",
                 })
             findings.append(finding)
+        review = state["review"]
+        judgments = review.hypotheses if isinstance(review, ResponsibilityReview) else []
+        hypotheses = []
+        for hypothesis in result.hypotheses:
+            if hypothesis.status in {"confirmed", "discarded"}:
+                matches = [j for j in judgments if j.hypothesis_id == hypothesis.id]
+                judgment = matches[0] if len(matches) == 1 else None
+                linked = [by_id[i] for i in judgment.assessment_ids if i in by_id] if judgment else []
+                required = set(hypothesis.evidence_ids)
+                valid = (judgment and judgment.status == "supported" and judgment.scope_supported
+                         and not judgment.unverified_claims and required
+                         and required <= set(judgment.checked_evidence_ids)
+                         and set(judgment.checked_evidence_ids) <= references.keys()
+                         and linked and len(linked) == len(set(judgment.assessment_ids))
+                         and all(c.validation_status == "source_backed" and c.cohesion != "inconclusive" for c in linked)
+                         and required <= {i for c in linked for i in c.evidence_ids})
+                if not valid:
+                    reason = "Responsibility hypothesis scope was not independently verified against valid component assessments; retain local observations only."
+                    hypothesis = hypothesis.model_copy(update={
+                        "status": "inconclusive",
+                        "rationale": f"Unverified model interpretation: {hypothesis.rationale}\nHost validation: {reason}",
+                    })
+                    missing.append(f"Hypothesis {hypothesis.id}: {reason}")
+            hypotheses.append(hypothesis)
+        if review is None:
+            missing.append("Complete critical review of responsibility conclusions; execution ended before review was available.")
         inconclusive = [c.id for c in components if c.cohesion == "inconclusive"]
         inconclusive.extend(omitted)
-        inconclusive.extend(h.id for h in result.hypotheses if h.status == "inconclusive")
+        inconclusive.extend(h.id for h in hypotheses if h.status == "inconclusive")
         if any(c.validation_issues for c in components):
             limitations.append("Some inferred responsibilities failed source/identity/commit validation; these component assessments remain inconclusive.")
         return {"result": ResponsibilityResult.model_validate({
             **result.model_dump(), "findings": findings, "components_investigated": components,
-            "discarded_hypotheses": [h for h in result.hypotheses if h.status == "discarded"],
+            "hypotheses": hypotheses,
+            "discarded_hypotheses": [h for h in hypotheses if h.status == "discarded"],
+            "unresolved_component_assessments": unresolved,
+            "critical_review": review,
+            "missing_information": list(dict.fromkeys(missing)),
+            "termination_reason": "evidence_validation_failed" if missing and result.termination_reason == "sufficient_evidence" else result.termination_reason,
             "inconclusive_investigations": list(dict.fromkeys(inconclusive)),
             "limitations": limitations,
         })}

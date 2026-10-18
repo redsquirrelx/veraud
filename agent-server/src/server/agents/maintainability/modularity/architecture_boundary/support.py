@@ -12,6 +12,39 @@ import yaml
 from tree_sitter import Language, Parser
 
 
+def dependency_span(source, reference):
+    """Navigation to the complete import/export intersecting a delivered excerpt.
+
+    This reads the retained snapshot only; the caller must still retrieve the
+    returned range through the normal budgeted tools before citing its bytes.
+    """
+    if reference.kind != "source" or not source.content or reference.start_line is None:
+        return None
+    suffix = PurePosixPath(source.path).suffix.lower()
+    if suffix == ".py":
+        try:
+            tree = ast.parse(source.content)
+        except (SyntaxError, ValueError):
+            return None
+        spans = [(node.lineno, node.end_lineno) for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))]
+    elif suffix in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"}:
+        grammar = (tree_sitter_javascript.language() if suffix in {".js", ".jsx", ".mjs", ".cjs"} else
+            tree_sitter_typescript.language_tsx() if suffix == ".tsx" else tree_sitter_typescript.language_typescript())
+        tree = Parser(Language(grammar)).parse(source.content.encode("utf-8"))
+        spans = []
+        # Imports/exports live at module scope; do not treat calls inside a
+        # function exported over hundreds of lines as an import declaration.
+        for node in tree.root_node.children:
+            if node.type == "import_statement" or (node.type == "export_statement"
+                    and any(child.type == "string" for child in node.children)):
+                spans.append((node.start_point[0] + 1, node.end_point[0] + 1))
+    else:
+        return None
+    return next(((start, end) for start, end in spans
+        if start <= reference.end_line and end >= reference.start_line), None)
+
+
 def supports_role(source, reference, role):
     if reference.kind != "source" or source.content is None or reference.start_line is None:
         return False

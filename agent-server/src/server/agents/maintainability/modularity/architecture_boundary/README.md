@@ -17,8 +17,10 @@ can both be satisfied by evidence from an unrelated subsystem: reading
 `ai_service/http/routes.py` satisfies `behavior`/`implementation` and is internally
 consistent, yet it cannot answer a question about `app/api`. When the hypothesis names
 snapshot directories, a declared scope disjoint from all of them is reported as
-`boundary_scope_unrelated_to_subject`, and the subject returns to investigation or the
-conclusion is narrowed. Hypotheses naming no inspectable scope are not judged on this.
+`boundary_scope_unrelated_to_subject`, and the subject returns to its original question's
+scope or stays inconclusive. Recovery does not suggest changing claim kind to repair
+unrelated scope; observations about another component are reported separately.
+Hypotheses naming no inspectable scope are not judged on this.
 Candidates are excluded: their title, description and components derive from evidence
 already observed, so scope drift there is much weaker evidence of substitution.
 
@@ -27,9 +29,37 @@ or the reference's `source` label. Comment/docstring-only excerpts cannot establ
 an implementation. Python and JS/TS role checks and TOML declaration checks are
 supported; these are necessary syntactic checks, not proofs of runtime semantics.
 
+Behavior implementation support additionally names a function/method `symbol_id`.
+The host requires its complete body in cited implementation excerpts, allowing the
+union of multiple bounded reads. Missing/invalid symbols and unread bodies produce
+`boundary_behavior_symbol_missing_or_invalid` and `boundary_behavior_body_not_inspected`.
+`behavior_symbol_navigation` supplies up to 80 indexed function/method identifiers in
+files with delivered source; it is navigation, never evidence of their behavior.
+The evaluator and reviewer must still explain how the actual body supports the claim:
+a rounding helper cannot establish substantive journal-posting rules, even when its
+body is fully delivered. Module-level or unindexed behavior remains unresolved under
+this check rather than acquiring an invented function anchor.
+
+Negative architectural assessments must distinguish an observed dependency from a
+contract/responsibility conflict and its supported consequence. Direct ORM access in
+an API route alone does not demonstrate leakage. Prompts require a labelled basis and
+consistency with hypothesis rationales; syntax checks do not establish architectural harm.
+
 `BoundaryReview` requires explicit scope support and the checked support IDs before
 acceptance. Missing checks trigger bounded correction; substantive unverified claims
 are returned to investigation when iterations, calls, tools and active time remain.
+Required support IDs must be included, rather than equal the entire checked set:
+additional delivered IDs are allowed, while invented IDs invalidate acceptance.
+Resolved hypotheses also have separate semantic judgments in `BoundaryReview.hypotheses`:
+the reviewer checks the full question and proposed rationale against delivered evidence,
+not just the syntax-compatible `claim_kind`. A valid import check cannot alone confirm
+a service-layer bypass, and schema metadata does not establish shared runtime DB access.
+Missing, incomplete, conflicting or inconclusive semantic judgments leave a resolved
+hypothesis inconclusive at finalization. Review metadata repair does not leave stale
+missing-information messages after a successful correction.
+Judgments are bound to the evaluated candidates, hypotheses and checks. A later
+evaluation changing a question, rationale, scope or citation set invalidates earlier
+judgments; provider failure cannot reuse an older semantic acceptance for new wording.
 Finalization independently rechecks support, retains insufficient findings, and turns
 unsupported resolved hypotheses into explained inconclusive results. `BoundaryResult`
 retains claim checks, per-finding validation issues and the structured critical review
@@ -40,6 +70,16 @@ use the existing bounded evaluation corrections, with exact subject IDs and deli
 file references as correction data. This is distinct from acquiring missing evidence.
 Parsed candidates are retained as insufficient partial work if structural repair
 cannot complete within the available budget.
+
+When delivered alternatives already cover a malformed citation/scope/role check,
+evaluation can make one bounded repair invocation without returning to investigation.
+It uses the existing schema/provider retry settings and all hard resource admission
+limits, and is disabled when `max_schema_retries=0`. The model must correct the subject
+and check together; the host never silently attaches citations or upgrades conclusions.
+Replacement source payloads are pinned during repair. Initial evaluations and later
+reevaluations can use this path. Failed repair preserves the latest structurally valid
+evaluation (including a valid evaluation from the same node), not an older iteration;
+a parsed malformed repair remains in `failed_evaluation_attempt`.
 
 Review normalization retains known valid judgments, collapses identical duplicates,
 and marks missing/conflicting/unsupported judgments insufficient. Unknown IDs do not
@@ -184,6 +224,31 @@ support from parsed TOML/JSON/YAML excerpts. Other languages remain searchable/r
 but do not acquire syntax-validated roles. Narrative architecture rules still come from
 caller context/criteria under the existing access policy.
 
+### Multiline imports and architectural meaning
+
+A search hit containing only the last line of a multiline import is not sufficient
+dependency support. Recovery locates the complete import/re-export in the retained
+snapshot and supplies a bounded `get_source_excerpt` suggestion before unrelated
+function reads. These ranges are navigation only: the normal tools must deliver the
+bytes and charge their retrieval. If the complete declaration was already delivered,
+`replacement_support` names its evidence IDs so the model can update both the subject
+and its claim check without another read. Syntax checks still reject the original
+tail-only citation, and over-limit declarations are not automatically retrieved.
+
+Planning, investigation, evaluation and review distinguish frontend HTTP clients,
+formatting helpers, types, business logic and persistence by their implementation,
+not a `services` directory name. A dependency does not establish API bypass or a
+layering violation. Those claims need inspected target behavior and an applicable
+criterion; syntax validation does not supply semantic proof. Unverified candidates
+and host-downgraded judgments retain the model's proposal explicitly labeled as
+unverified rather than presenting it as an accepted audit conclusion.
+
+Recovery also includes `scope_support` per declared file: whether its selected
+citations support an observed role, and up to three delivered alternatives with
+syntax-observed roles. These hints never add citations, change claim kinds or
+silently narrow a conclusion. A usage-only check still cannot establish a dependency,
+and reading one endpoint does not cover a multi-file scope.
+
 ## Token-efficient prompts and closing headroom
 
 Native repository tool messages use the existing compact model projection, while the
@@ -197,13 +262,35 @@ Planning asks bounded questions about concrete paths instead of exhaustive UI or
 whole-service claims. Scoped observations can coexist with unresolved broader scope;
 no uninspected region becomes compliant merely because the budget runs out.
 
-Investigation admission leaves token headroom for evaluation/review, and evaluation
-leaves headroom for review. When this ends exploration, an already-current evaluation
-goes directly to closing review; new evidence gets a bounded evaluation attempt first.
+Investigation admission leaves token headroom for evaluation/review, and initial
+evaluation leaves headroom for review. Reevaluation with newly delivered evidence
+prioritizes updating the evaluation: it does not withhold a second review reservation,
+including during bounded provider retries. If that consumes the remaining allowance,
+candidate review stays unavailable and candidates remain unaccepted. When headroom
+ends exploration, an already-current evaluation goes directly to closing review;
+new evidence gets a bounded evaluation attempt first.
 Hard local/shared token, call, time and provider limits remain authoritative. Reservations
 are estimates, not guarantees against unexpectedly large reported provider usage.
 Logs expose the node, accounted tokens, next request reserve, closing headroom and
 effective local token limit. Native schema overhead uses the actual provider schema.
+
+`evaluation_evidence_status` is `not_evaluated`, `current` or `stale` relative to the
+last structurally valid evaluation. `evaluated_evidence_ids` identifies the evidence
+available then (not necessarily cited or accepted); `pending_evaluation_evidence_ids`
+identifies later retained evidence. New reads survive a failed/blocked evaluation,
+but do not update old conclusions. Finalization names those pending IDs explicitly.
+An empty candidate list with no syntax-supported resolved hypotheses skips the review
+model call, leaves `critical_review=null` and records that no review was requested.
+If resolved hypotheses need semantic validation, the same review stage runs with
+`findings=[]` and separate hypothesis judgments. This prevents candidate-free output
+from implicitly confirming an architectural inference. No successful review is synthesized.
+
+After a transient provider failure, retry denial names the blocking resource:
+`provider_retry_token_limit`, `provider_retry_call_limit` or
+`provider_retry_wall_time_limit`. `provider_recovery_exhausted` remains the reason
+when the permitted retries themselves run out; recovery-sleep exhaustion is still
+`provider_recovery_budget`. Token accounting remains conservative when the provider
+does not report usage, and is distinct from measured provider consumption.
 
 ## Offline test execution
 

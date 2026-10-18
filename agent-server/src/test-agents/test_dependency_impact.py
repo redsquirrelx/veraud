@@ -35,6 +35,7 @@ from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactResult,
 )
 from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
+from server.agents.schemes.base import Hypothesis
 from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
 from server.runtimes.investigation.agent import InvestigationExecution
@@ -129,22 +130,28 @@ def evaluate(messages, *, sufficient=True, candidate=True, legitimate=False, imp
         "assessment_ids": ["a1"], "basis": basis,
     }
     return {"sufficient": sufficient, "hypotheses": [dict(PLAN["hypotheses"][0],
-                status="discarded" if legitimate else "confirmed" if sufficient else "inconclusive")],
+                 status="discarded" if legitimate else "confirmed" if sufficient else "inconclusive", evidence_ids=source_ids)],
             "candidates": [finding] if candidate else [], "dependency_assessments": [assessment],
             "missing_information": [] if sufficient else ["Inspect the gateway contract and its consumers"]}
 
 
 def review(status="accepted", candidate=True):
-    return {"findings": [{"finding_id": "f1", "status": status,
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        return {"findings": [{"finding_id": "f1", "status": status,
                           "rationale": "Compared declaration, endpoint contracts, scenario and architectural alternatives.",
-                          "severity": "medium", "confidence": 0.8}] if candidate else [], "limitations": []}
+                          "severity": "medium", "confidence": 0.8}] if candidate else [], "limitations": [],
+                "hypotheses": [{"hypothesis_id": h["id"], "status": "supported", "rationale": "Checked local endpoint usage and contract.",
+                    "assessment_ids": ["a1"], "checked_evidence_ids": h["evidence_ids"], "scope_supported": True}
+                    for h in context["hypotheses"] if h["status"] in {"confirmed", "discarded"}]}
+    return respond
 
 
 def run_audit(repo, *, evaluator=evaluate, reviewer=None, model_type=ScriptedModel, config=None,
               paths=("orders.py", "gateway.py"), graph_all=False):
     tools = toolset(repo)
     model = model_type([PLAN, *queries(tools, paths, graph_all), AIMessage(content="Ready"), evaluator, reviewer or review()])
-    result = asyncio.run(DependencyImpactAgent(model, config or DependencyImpactConfig(max_total_tokens=300_000)).run(tools))
+    result = asyncio.run(DependencyImpactAgent(model, config or DependencyImpactConfig(max_total_tokens=300_000, max_iterations=1)).run(tools))
     return result, model, tools
 
 
@@ -174,7 +181,7 @@ def test_all_auditors_share_the_same_graph(repo):
     assert (DependencyImpactAgent.execution_type._build_graph is ResponsibilityAgent.execution_type._build_graph
             is ArchitectureBoundaryAgent.execution_type._build_graph)
     result, model, _ = run_audit(repo, model_type=NativeStructuredModel)
-    assert [name for name, _, _ in model.schemas] == ["InvestigationPlan", "DependencyImpactEvaluation", "Review"]
+    assert [name for name, _, _ in model.schemas] == ["InvestigationPlan", "DependencyImpactEvaluation", "DependencyImpactReview"]
     assert result.findings[0].validation_status == "accepted"
 
 
@@ -222,6 +229,157 @@ def test_legitimate_dependency_is_not_reported_as_harm(repo):
     assert result.dependency_assessments[0].impact_kind == "none"
     assert result.discarded_hypotheses[0].id == "h1"
     assert not result.findings
+
+
+@pytest.mark.parametrize("problem", ["directory_ids", "missing_assessment", "unrelated_source", "no_endpoint_support"])
+def test_discarded_hypotheses_cannot_outlive_invalid_or_unrelated_assessments(repo, problem):
+    def invalid(messages):
+        value = evaluate(messages, legitimate=True, candidate=False)
+        assessment = value["dependency_assessments"][0]
+        if problem == "directory_ids":
+            assessment["dependencies"][0]["source_id"] = "app/accounting"
+        elif problem == "missing_assessment":
+            value["dependency_assessments"] = []
+        elif problem == "unrelated_source":
+            envelopes = [json.loads(m.content) for m in messages if isinstance(m, ToolMessage)]
+            unrelated = next(r["id"] for e in envelopes for r in e.get("evidence", [])
+                             if r["kind"] == "source" and r["path"] == "client.py")
+            value["hypotheses"][0]["evidence_ids"] = [unrelated]
+            for link in assessment["dependencies"]:
+                link["evidence_ids"] = [i for i in link["evidence_ids"] if i != unrelated]
+            assessment["supporting_evidence_ids"] = [i for i in assessment["supporting_evidence_ids"] if i != unrelated]
+        else:
+            assessment["supporting_evidence_ids"] = []
+        return value
+
+    result, _, _ = run_audit(repo, evaluator=invalid, reviewer=review(candidate=False),
+                             paths=("orders.py", "gateway.py", "client.py"))
+    assert result.hypotheses[0].status == "inconclusive"
+    assert not result.discarded_hypotheses
+    assert "h1" in result.inconclusive_investigations
+    assert result.missing_information
+    assert result.termination_reason != "sufficient_evidence"
+    if problem in {"directory_ids", "no_endpoint_support"}:
+        assessment = result.dependency_assessments[0]
+        assert assessment.impact_kind == "inconclusive"
+        assert assessment.consequence.startswith("Unverified model interpretation:")
+
+
+@pytest.mark.parametrize("problem", ["absent", "scope", "invented_citation", "duplicate", "wrong_hypothesis"])
+def test_hypothesis_review_requires_exact_scope_and_binding(repo, problem):
+    def reviewer(messages):
+        value = review(candidate=False)(messages)
+        judgment = value["hypotheses"][0]
+        if problem == "absent":
+            value["hypotheses"] = []
+        elif problem == "scope":
+            judgment["scope_supported"] = False
+        elif problem == "invented_citation":
+            judgment["checked_evidence_ids"].append("not-delivered")
+        elif problem == "duplicate":
+            value["hypotheses"].append(dict(judgment))
+        else:
+            judgment["hypothesis_id"] = "other-question"
+        return value
+
+    result, _, _ = run_audit(repo, evaluator=lambda m: evaluate(m, legitimate=True, candidate=False), reviewer=reviewer)
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.termination_reason == "evidence_validation_failed"
+    assert result.critical_review is not None
+
+
+def test_host_feedback_repairs_component_identity_with_delivered_evidence(repo):
+    tools = toolset(repo)
+
+    def wrong_identity(messages):
+        value = evaluate(messages, legitimate=True, candidate=False)
+        value["dependency_assessments"][0]["dependencies"][0]["source_id"] = "app/accounting"
+        return value
+
+    model = ScriptedModel([PLAN, *queries(tools), AIMessage(content="Ready"), wrong_identity,
+        AIMessage(content="Correct IDs from delivered source; no new tool needed"),
+        lambda m: evaluate(m, legitimate=True, candidate=False), review(candidate=False)])
+    result = asyncio.run(DependencyImpactAgent(model, DependencyImpactConfig(max_total_tokens=300_000)).run(tools))
+    assert result.iterations == 2
+    assert "unknown_component_id" in model.history[6][1].content
+    assert result.tool_calls == 3
+    assert result.dependency_assessments[0].validation_status == "source_backed"
+    assert result.hypotheses[0].status == "discarded"
+    assert result.termination_reason == "sufficient_evidence"
+    assert not result.missing_information
+
+
+def test_repeated_invalid_relation_stops_for_review_without_spending_more_iterations(repo):
+    tools = toolset(repo)
+
+    def unresolved(messages):
+        value = evaluate(messages, legitimate=True, candidate=False)
+        link = value["dependency_assessments"][0]["dependencies"][0]
+        link.update(relationship_id=None, dependency_type="none")
+        return value
+
+    model = ScriptedModel([PLAN, *queries(tools), AIMessage(content="Ready"), unresolved,
+        AIMessage(content="Still unresolved"), unresolved, review(candidate=False)])
+    result = asyncio.run(DependencyImpactAgent(model, DependencyImpactConfig(
+        max_total_tokens=300_000, max_iterations=5)).run(tools))
+    assert result.termination_reason == "no_investigation_progress"
+    assert result.iterations == 2
+    assert result.critical_review is not None
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.tool_calls == 3
+
+
+def test_closing_reservation_allows_evaluation_and_review_under_hard_budget(repo, monkeypatch):
+    tools = toolset(repo)
+    execution = DependencyImpactAgent.execution_type
+    original = execution.closing_token_reserve
+
+    def simulate_prior_consumption(self, node, reserve):
+        if node == "investigate" and self.calls == 4:
+            self.tokens = self.token_limit - int(2.9 * reserve)
+        return original(self, node, reserve)
+
+    monkeypatch.setattr(execution, "closing_token_reserve", simulate_prior_consumption)
+    # The next exploration request is withheld, so evaluation is the next response.
+    model = ScriptedModel([PLAN, *queries(tools), evaluate, review()])
+    result = asyncio.run(DependencyImpactAgent(model, DependencyImpactConfig(max_total_tokens=300_000)).run(tools))
+    assert result.termination_reason == "token_limit"
+    assert result.dependency_assessments
+    assert result.critical_review is not None
+    assert result.findings[0].validation_status == "accepted"
+    assert result.accounted_tokens <= 300_000
+    assert any("token_budget_reserved_for_closing" in item for item in result.limitations)
+
+
+def test_navigation_and_targeted_endpoint_reads_do_not_claim_inspection(repo):
+    tools = toolset(repo)
+    execution = DependencyImpactAgent.execution_type(ScriptedModel([]), DependencyImpactConfig(), tools,
+                                                    DependencyImpactRequest())
+    state = execution.initial_state()
+    context = execution.model_context("investigate", state)
+    edge = next(r for r in context["dependency_navigation"] if r["source_path"] == "orders.py")
+    assert edge["navigation_only"]
+    assert edge["target_path"] == "gateway.py"
+    assert not execution.references()
+    assert "dependency_navigation" not in execution.model_context("evaluate_evidence", state)
+
+
+def test_provider_compaction_preserves_cited_source_and_authoritative_history(repo):
+    tools = toolset(repo)
+    execution = DependencyImpactAgent.execution_type(ScriptedModel([]), DependencyImpactConfig(), tools,
+                                                    DependencyImpactRequest())
+    state = execution.initial_state()
+    # Compact an old, uncited search payload, retaining a cited excerpt and recent turns.
+    payload = lambda identifier: json.dumps({"evidence": [{"id": identifier, "kind": "source"}], "data": "x" * 20_000})
+    messages = [ToolMessage(content=payload(identifier), tool_call_id=identifier, name="get_source_excerpt")
+                for identifier in ("old", "pinned", "recent1", "recent2")]
+    state["messages"] = messages
+    state["hypotheses"] = [Hypothesis(id="h", question="Local contract?", evidence_ids=["pinned"])]
+    before = [m.model_dump() for m in messages]
+    compacted = execution.provider_history(state, [], overhead_characters=100_000, node="review_findings")
+    assert json.loads(compacted[0].content)["history_compacted"]
+    assert compacted[1].content == messages[1].content
+    assert [m.model_dump() for m in messages] == before
 
 
 @pytest.mark.parametrize("basis", ["metrics_only", "cycle_only", "transitivity_only", "interface_shape_only", "dependency_existence_only"])

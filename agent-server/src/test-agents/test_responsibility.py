@@ -106,15 +106,24 @@ def evaluate(messages, *, sufficient=True, coherent=False, candidate=True, basis
                "recommendation": "Separate report formatting if the independent change paths justify its cost.",
                "assessment_ids": ["a1"], "basis": basis}
     return {"sufficient": sufficient, "hypotheses": [dict(PLAN["hypotheses"][0],
-             status="discarded" if coherent else "confirmed" if sufficient else "inconclusive")],
+             status="discarded" if coherent else "confirmed" if sufficient else "inconclusive",
+             evidence_ids=identifiers)],
             "candidates": [finding] if candidate else [], "component_assessments": [assessment],
             "missing_information": [] if sufficient else ["Inspect report implementation and callers"]}
 
 
 def review(status="accepted", candidate=True):
-    return {"findings": [{"finding_id": "f1", "status": status,
+    def respond(messages):
+        context = json.loads(messages[1].content)
+        return {"findings": [{"finding_id": "f1", "status": status,
                           "rationale": "Compared concrete behavior, independent change reasons and grouping alternatives.",
-                          "severity": "medium", "confidence": 0.8}] if candidate else [], "limitations": []}
+                          "severity": "medium", "confidence": 0.8}] if candidate else [], "limitations": [],
+                "hypotheses": [{"hypothesis_id": h["id"], "status": "supported",
+                    "rationale": "The local question is supported by both observed behaviors.",
+                    "assessment_ids": ["a1"], "checked_evidence_ids": h["evidence_ids"],
+                    "scope_supported": True} for h in context["hypotheses"]
+                    if h["status"] in {"confirmed", "discarded"}]}
+    return respond
 
 
 def run_audit(repo, *, evaluator=evaluate, reviewer=None, model_type=ScriptedModel, config=None):
@@ -149,7 +158,7 @@ def test_graph_plan_tools_review_finalization_and_read_only(repo):
 
 def test_native_structured_output_and_specialized_evaluation_schema(repo):
     result, model, _ = run_audit(repo, model_type=NativeStructuredModel)
-    assert [name for name, _, _ in model.schemas] == ["InvestigationPlan", "ResponsibilityEvaluation", "Review"]
+    assert [name for name, _, _ in model.schemas] == ["InvestigationPlan", "ResponsibilityEvaluation", "ResponsibilityReview"]
     assert result.components_investigated[0].responsibilities[0].behaviors
     assert result.findings[0].validation_status == "accepted"
 
@@ -172,6 +181,73 @@ def test_metrics_or_names_alone_never_establish_a_finding(repo, basis):
 def test_review_can_reject_false_positive_despite_valid_citations(repo):
     result, _, _ = run_audit(repo, reviewer=review("rejected"))
     assert result.findings[0].validation_status == "rejected"
+
+
+@pytest.mark.parametrize("identity", ["orders.py", "app/accounting"])
+def test_component_paths_resolve_exactly_and_unresolved_assessments_are_retained(repo, identity):
+    def assess(messages):
+        value = evaluate(messages, candidate=False)
+        value["component_assessments"][0]["component_id"] = identity
+        return value
+
+    result, _, _ = run_audit(repo, evaluator=assess, reviewer=review(candidate=False))
+    if identity == "orders.py":
+        assert result.components_investigated[0].component_id.startswith("file:")
+        assert result.hypotheses[0].status == "confirmed"
+        assert not result.unresolved_component_assessments
+    else:
+        assert not result.components_investigated
+        retained = result.unresolved_component_assessments[0]
+        assert retained.id == "a1" and retained.cohesion == "inconclusive"
+        assert retained.responsibilities and retained.evidence_ids
+        assert result.hypotheses[0].status == "inconclusive"
+        assert "a1" in result.inconclusive_investigations
+        assert any("unknown component ID" in item for item in result.missing_information)
+        assert result.termination_reason == "evidence_validation_failed"
+
+
+@pytest.mark.parametrize("problem", ["absent", "scope", "citation", "assessment", "duplicate"])
+def test_candidate_free_hypotheses_require_independent_scope_review(repo, problem):
+    def reviewer(messages):
+        value = review(candidate=False)(messages)
+        judgment = value["hypotheses"][0]
+        if problem == "absent":
+            value["hypotheses"] = []
+        elif problem == "scope":
+            judgment["scope_supported"] = False
+        elif problem == "citation":
+            judgment["checked_evidence_ids"] = ["invented"]
+        elif problem == "assessment":
+            judgment["assessment_ids"] = ["unknown"]
+        else:
+            value["hypotheses"].append(dict(judgment))
+        return value
+
+    result, _, _ = run_audit(repo, evaluator=lambda m: evaluate(m, coherent=True, candidate=False),
+                             reviewer=reviewer)
+    assert result.hypotheses[0].status == "inconclusive"
+    assert not result.discarded_hypotheses
+    assert "Unverified model interpretation" in result.hypotheses[0].rationale
+    assert result.missing_information
+
+
+def test_unavailable_review_retains_assessments_and_records_pending_work(repo, monkeypatch):
+    execution = ResponsibilityAgent.execution_type
+    original = execution.call
+
+    async def bounded_call(self, node, state, schema=None, guidance=""):
+        if node == "review_findings":
+            self.stop = "token_limit"
+            return None
+        return await original(self, node, state, schema, guidance)
+
+    monkeypatch.setattr(execution, "call", bounded_call)
+    result, _, _ = run_audit(repo)
+    assert result.critical_review is None
+    assert result.components_investigated
+    assert result.hypotheses[0].status == "inconclusive"
+    assert any("Complete critical review" in item for item in result.missing_information)
+    assert not any(f.validation_status == "accepted" for f in result.findings)
 
 
 def test_reinvestigation_when_behavior_evidence_is_missing(repo):

@@ -11,3 +11,12 @@ expected benefit of each recommendation. Reject metric-only false positives, bro
 slogans and demands for separation without demonstrated benefit. A violation requires
 an explicit project rule, never an inferred convention or ISO label. Downgrade incomplete
 support. Do not add findings/evidence or accept every candidate. Record limitations.
+Independently review every confirmed/discarded hypothesis, even with no candidates.
+Return hypotheses with hypothesis_id, status=supported/inconclusive, rationale,
+assessment_ids, checked_evidence_ids, scope_supported and unverified_claims.
+Use supported only if the exact question and rationale are supported by the linked
+component assessments and inspected behavior. checked_evidence_ids must include all
+hypothesis citations and must be real delivered IDs. scope_supported must be false
+if conclusions exceed the inspected files or behaviors. Wiring/settings do not prove
+separation inside implementations or absence of cycles. A partial UI body does not
+prove cohesion of the accounting module. Report these missing inspections explicitly.

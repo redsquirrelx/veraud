@@ -8,9 +8,17 @@ from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage
-from test_architecture_boundary import PLAN, audit, call, evaluation, review
+from test_architecture_boundary import (
+    PLAN,
+    audit,
+    call,
+    evaluation,
+    hypothesis_review,
+    review,
+)
 
 from server.agents.maintainability.modularity.architecture_boundary.support import (
+    dependency_span,
     supports_role,
 )
 
@@ -73,6 +81,67 @@ def test_exact_cited_lines_must_contain_the_declared_role(path, content, start, 
     assert supports_role(source, ref, role) is expected
 
 
+@pytest.mark.parametrize(("path", "content", "last"), [
+    ("client.tsx", 'import {\n  registerAccount,\n  type Account,\n} from "./services/accounts";\n', 4),
+    ("client.py", 'from services.accounts import (\n    register_account,\n)\n', 3),
+    ("exports.ts", 'export {\n  registerAccount,\n} from "./accounts";\n', 3),
+])
+def test_multiline_import_tail_needs_a_complete_budgeted_read(path, content, last):
+    source = SimpleNamespace(path=path, content=content)
+    tail = SimpleNamespace(kind="source", start_line=last, end_line=last)
+    assert not supports_role(source, tail, "dependency")
+    assert dependency_span(source, tail) == (1, last)
+    full = SimpleNamespace(kind="source", start_line=1, end_line=last)
+    assert supports_role(source, full, "dependency")
+
+
+def test_import_navigation_does_not_expand_a_function_export():
+    source = SimpleNamespace(path="service.ts", content='export function load() {\n  return fetch("/api/accounts");\n}\n')
+    ref = SimpleNamespace(kind="source", start_line=2, end_line=2)
+    assert dependency_span(source, ref) is None
+
+
+@pytest.mark.parametrize("already_read", [False, True])
+def test_recovery_replaces_a_multiline_tail_citation_without_weakening_validation(repo, already_read):
+    (repo / "domain" / "service.py").write_text(
+        "from storage.db import (\n    save,\n)\n\ndef execute():\n    save()\n")
+
+    def cite(messages, start):
+        value = evaluation(messages)
+        context = json.loads(messages[1].content)
+        identifier = next(item["id"] for item in context["evidence"]
+            if item["path"] == "domain/service.py" and item["start_line"] == start)
+        value["hypotheses"][0]["evidence_ids"] = [identifier]
+        value["candidates"][0]["evidence_ids"] = [identifier]
+        for check in value["claim_checks"]:
+            check["support"] = [{"evidence_id": identifier, "role": "dependency", "observation": "Import of storage.db"}]
+        return value
+
+    def repair(messages):
+        context = json.loads(messages[1].content)
+        task = next(item for item in context["evidence_recovery_tasks"] if item["subject_type"] == "candidate")
+        if already_read:
+            assert task["replacement_support"][0]["available_evidence_ids"]
+            return AIMessage(content="Replace the old citation with the complete delivered import.")
+        suggestion = task["next_source_reads"][0]
+        assert suggestion["arguments"] == {"path": "domain/service.py", "start_line": 1, "end_line": 3}
+        assert suggestion["navigation_only"] is True
+        return call(arguments=suggestion["arguments"], identifier="repair-import")
+
+    responses = [PLAN, call(arguments={"path": "domain/service.py", "start_line": 3, "end_line": 3})]
+    if already_read:
+        responses.append(call(arguments={"path": "domain/service.py", "start_line": 1, "end_line": 3}, identifier="complete-import"))
+    responses.extend([AIMessage(content="Ready"), lambda messages: cite(messages, 3), repair])
+    if not already_read:
+        responses.append(AIMessage(content="Ready"))
+    responses.extend([lambda messages: cite(messages, 1), review()])
+    result, _, _ = audit(repo, responses)
+    assert result.findings[0].validation_status == "accepted"
+    assert result.findings[0].evidence[0].start_line == 1
+    assert result.findings[0].evidence[0].end_line == 3
+    assert result.tool_calls == 2  # Hints do not bypass retrieval or charge extra tool calls.
+
+
 def test_comments_and_protocols_cannot_establish_system_isolation(repo):
     (repo / "ports.py").write_text("from typing import Protocol\nclass Port(Protocol):\n    def run(self): ...\n")
 
@@ -93,6 +162,8 @@ def test_comments_and_protocols_cannot_establish_system_isolation(repo):
     assert "boundary_missing_role:composition" in result.findings[0].validation_issues
     assert "boundary_endpoints_not_inspected" in result.findings[0].validation_issues
     assert result.claim_checks[0].scope_paths == ["ports.py"]
+    assert result.findings[0].description.startswith("Unverified candidate")
+    assert result.critical_review.findings[0].rationale.startswith("Unverified model judgment")
 
 
 def test_review_missing_verification_returns_to_investigation(repo):
@@ -324,8 +395,8 @@ def test_unresolvable_citation_still_receives_readable_navigation(repo):
         value["claim_checks"] = []
         return value
 
-    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), invented, review()],
-        max_iterations=1)
+    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), invented,
+        AIMessage(content="Missing storage inspection"), invented], max_iterations=2)
     context = json.loads(model.history[4][1].content)
     task = next(item for item in context["evidence_recovery_tasks"] if item["id"] == "h1")
     assert task["cited_paths"] == [] and task["available_source_evidence_ids"] == []
@@ -405,11 +476,12 @@ def test_unsatisfiable_claim_is_not_presented_as_a_choice(repo):
                 "observation": "Imports the storage module"}]}]
         return value
 
-    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), impossible, review()],
-        max_iterations=1)
+    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), impossible,
+        AIMessage(content="Missing storage inspection"), impossible], max_iterations=2)
     context = json.loads(model.history[4][1].content)
     task = next(item for item in context["evidence_recovery_tasks"] if item["id"] == "h1")
-    assert task["issues"] == ["boundary_support_outside_declared_scope", "boundary_scope_not_inspected"]
+    assert task["issues"] == ["boundary_support_outside_declared_scope", "boundary_missing_role:dependency",
+        "boundary_scope_not_inspected"]
     assert "satisfiable_claim_kinds" not in task
     assert not any("The inspected support carries" in gap for gap in result.missing_information)
     assert result.hypotheses[0].status == "inconclusive"
@@ -510,18 +582,45 @@ def test_absent_candidate_judgment_is_not_reported_as_no_review_supplied(repo):
     assert result.findings[0].validation_status == "insufficient_evidence"
 
 
-def test_review_of_a_candidate_free_evaluation_does_not_claim_unknown_candidates(repo):
-    def invented_judgment(messages):
-        value = review()(messages)
-        value["findings"].append(dict(value["findings"][0], finding_id="not-a-candidate"))
-        return value
-
-    result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"),
-        lambda messages: evaluation(messages, candidate=False), invented_judgment])
+def test_candidate_free_evaluation_does_not_spend_a_review_call(repo):
+    result, model, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"),
+        lambda messages: evaluation(messages, sufficient=False, candidate=False)], max_iterations=1)
     assert result.findings == []
     assert result.claim_checks[0].subject_type == "hypothesis"
-    assert "review_unknown_candidates" not in result.critical_review.validation_issues
-    assert "review_judgments_without_candidates" in result.critical_review.validation_issues
+    assert result.critical_review is None
+    assert len(model.history) == result.model_calls == 4
+    assert any("Candidate review was not requested" in item for item in result.limitations)
+
+
+def test_scope_recovery_identifies_each_files_missing_roles_and_existing_citations(repo):
+    def incomplete(messages):
+        value = evaluation(messages)
+        # Both endpoints were delivered, but the check only uses a call site in
+        # domain/service.py and leaves storage/db.py wholly unsupported.
+        refs = json.loads(messages[1].content)["evidence"]
+        call_id = next(item["id"] for item in refs if item["path"] == "domain/service.py" and item["start_line"] == 4)
+        value["hypotheses"][0]["evidence_ids"] = [item["id"] for item in refs]
+        value["candidates"][0]["evidence_ids"] = [item["id"] for item in refs]
+        for check in value["claim_checks"]:
+            check.update(scope_paths=["domain/service.py", "storage/db.py"],
+                support=[{"evidence_id": call_id, "role": "usage", "observation": "Calls save"}])
+        return value
+
+    result, model, _ = audit(repo, [PLAN, call(arguments={"path": "domain/service.py", "start_line": 4, "end_line": 4}),
+        call(arguments={"path": "domain/service.py", "start_line": 1, "end_line": 1}, identifier="import"),
+        call(arguments={"path": "storage/db.py", "start_line": 1, "end_line": 2}, identifier="target"),
+        AIMessage(content="Ready"), incomplete, review()], max_iterations=1)
+    context = json.loads(model.history[-1][1].content)
+    task = next(item for item in context["evidence_recovery_tasks"] if item["subject_type"] == "candidate")
+    source, target = task["scope_support"]
+    assert source["supported_by_declared_citations"] is True
+    assert source["available_source_support"][0]["start_line"] == 1
+    assert "dependency" in source["available_source_support"][0]["observed_roles"]
+    assert target["supported_by_declared_citations"] is False
+    assert target["available_source_support"][0]["observed_roles"]
+    assert target["action"] == "correct_subject_and_check_citations_or_narrow_conclusion"
+    assert "boundary_missing_role:dependency" in task["issues"]
+    assert result.findings[0].validation_status == "insufficient_evidence"
 
 
 def test_role_recovery_suggests_unread_implementation_ranges_not_more_headers(repo):
@@ -542,3 +641,141 @@ def test_role_recovery_suggests_unread_implementation_ranges_not_more_headers(re
     assert reads and reads[0]["arguments"]["start_line"] == 3
     assert all(read["navigation_only"] for read in reads)
     assert result.tool_calls == 1  # suggestions are not fabricated tool executions/evidence
+
+
+@pytest.mark.parametrize("mode", ["missing_symbol", "wrong_symbol", "unread_body", "complete", "chunks"])
+def test_behavior_claim_requires_the_named_implementation_not_an_incidental_helper(repo, mode):
+    (repo / "domain" / "service.py").write_text(
+        "# Posts balanced journal entries.\nRATE = 0.4\n\n"
+        "def round2(value):\n    return round(value, 2)\n\n"
+        "def post_journal(amount):\n    debit = round2(amount)\n    return save(debit)\n")
+
+    def behavior(messages):
+        value = evaluation(messages, candidate=False)
+        context = json.loads(messages[1].content)
+        symbols = context["behavior_symbol_navigation"]
+        symbol = next(item for item in symbols if item["name"] == "post_journal")
+        if mode == "wrong_symbol":
+            symbol = {"symbol_id": "symbol:not-delivered"}
+        value["hypotheses"][0].update(question="Does domain/service.py implement journal posting?",
+            rationale="The inspected post_journal body rounds the debit and passes it to save.")
+        for check in value["claim_checks"]:
+            check.update(claim_kind="behavior", support=[{
+                "evidence_id": item["id"], "role": "implementation", "observation": "Rounds debit then saves",
+                **({"symbol_id": symbol["symbol_id"]} if mode != "missing_symbol" else {}),
+            } for item in context["evidence"] if item["kind"] == "source"])
+        return value
+
+    end = 5 if mode in {"missing_symbol", "wrong_symbol", "unread_body"} else 9
+    responses = [PLAN, call(arguments={"path": "domain/service.py", "start_line": 1,
+        "end_line": 8 if mode == "chunks" else end})]
+    if mode == "chunks":
+        responses.append(call(arguments={"path": "domain/service.py", "start_line": 9,
+            "end_line": 9}, identifier="rest-of-body"))
+    responses.extend([AIMessage(content="Ready"), behavior])
+    if mode in {"complete", "chunks"}:
+        responses.append(hypothesis_review())
+    result, _, _ = audit(repo, responses, max_iterations=1, max_schema_retries=0)
+    hypothesis = result.hypotheses[0]
+    if mode in {"complete", "chunks"}:
+        assert hypothesis.status == "confirmed"
+        assert result.termination_reason == "sufficient_evidence"
+    else:
+        assert hypothesis.status == "inconclusive"
+        assert ("boundary_behavior_body_not_inspected" if mode == "unread_body"
+            else "boundary_behavior_symbol_missing_or_invalid") in hypothesis.rationale
+        assert result.termination_reason != "sufficient_evidence"
+    assert (result.critical_review is None) == (mode not in {"complete", "chunks"})
+
+
+def test_unrelated_scope_recovery_does_not_offer_a_claim_kind_change(layered_repo):
+    def substituted(messages):
+        value = evaluation(messages)
+        value["hypotheses"][0].update(question="Does app/api preserve its responsibility boundary?",
+            evidence_needed=["Inspect app/api/route.py"])
+        return value
+
+    _, model, _ = audit(layered_repo, [PLAN, call(), AIMessage(content="Ready"), substituted, review()],
+        max_iterations=1)
+    context = json.loads(model.history[-1][1].content)
+    task = next(item for item in context["evidence_recovery_tasks"] if item["id"] == "h1")
+    assert task["action"] == "inspect_question_scope_or_keep_inconclusive"
+    assert "satisfiable_claim_kinds" not in task
+    assert task["next_source_reads"][0]["arguments"]["path"] == "app/api/route.py"
+    gaps = [item for item in context["missing_information"] if "hypothesis h1:" in item]
+    assert len(gaps) == 1
+    assert "Changing claim_kind does not repair unrelated scope" in gaps[0]
+
+
+def test_dependency_check_cannot_bypass_semantic_review_of_a_broader_hypothesis(repo):
+    def overclaim(messages):
+        value = evaluation(messages, candidate=False)
+        value["hypotheses"][0].update(question="Does domain bypass the intended service layer?",
+            rationale="Importing storage.db proves that the intended service layer is bypassed.")
+        return value
+
+    def skeptical(messages):
+        value = hypothesis_review()(messages)
+        requirement = json.loads(messages[1].content)["boundary_hypothesis_review_requirements"][0]
+        assert requirement["host_support_issues"] == []  # The import check really is valid.
+        assert "intended service layer" in requirement["proposed_rationale"]
+        value["hypotheses"][0].update(status="inconclusive", scope_supported=False,
+            rationale="An import proves dependency; no service contract or bypass was inspected.",
+            unverified_claims=["The intended service abstraction and the alleged bypass remain unverified."])
+        return value
+
+    result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), overclaim, skeptical], max_iterations=1)
+    assert result.hypotheses[0].status == "inconclusive"
+    assert "boundary_hypothesis_semantic_review_inconclusive" in result.hypotheses[0].rationale
+    assert "no service contract" in result.hypotheses[0].rationale
+    assert result.termination_reason != "sufficient_evidence"
+
+
+def test_omitted_semantic_review_cannot_confirm_a_syntax_valid_hypothesis(repo):
+    def omitted(messages):
+        value = review()(messages)
+        value["hypotheses"] = []
+        return value
+
+    result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), evaluation, omitted], max_schema_retries=0)
+    assert result.findings[0].validation_status == "accepted"
+    assert result.hypotheses[0].status == "inconclusive"
+    assert result.termination_reason == "evidence_validation_failed"
+    assert any("review_missing_hypothesis" in issue for issue in result.critical_review.validation_issues)
+
+
+@pytest.mark.parametrize("extra", ["delivered", "unknown"])
+def test_review_may_check_additional_delivered_evidence_but_not_invent_it(repo, extra):
+    def with_extra(messages):
+        value = review()(messages)
+        ref = next(item["id"] for item in json.loads(messages[1].content)["evidence"]
+            if item["path"] == "storage/db.py")
+        value["findings"][0]["checked_evidence_ids"].append(ref if extra == "delivered" else "invented")
+        return value
+
+    result, _, _ = audit(repo, [PLAN, call(),
+        call(arguments={"path": "storage/db.py", "start_line": 1, "end_line": 2}, identifier="extra"),
+        AIMessage(content="Ready"), evaluation, with_extra], max_schema_retries=0)
+    assert result.findings[0].validation_status == ("accepted" if extra == "delivered" else "insufficient_evidence")
+    issues = result.critical_review.validation_issues
+    assert not any("review_checked_evidence_incomplete" in issue for issue in issues)
+    assert any("review_checked_evidence_unknown" in issue for issue in issues) == (extra == "unknown")
+
+
+def test_uncited_behavior_support_still_reports_the_missing_symbol(repo):
+    def uncited(messages):
+        value = evaluation(messages)
+        refs = json.loads(messages[1].content)["evidence"]
+        header = next(item["id"] for item in refs if item["start_line"] == 1)
+        body = next(item["id"] for item in refs if item["start_line"] == 3)
+        value["candidates"][0]["evidence_ids"] = [header]
+        check = next(item for item in value["claim_checks"] if item["subject_type"] == "candidate")
+        check.update(claim_kind="behavior", support=[{"evidence_id": body, "role": "implementation",
+            "observation": "Calls save"}])
+        return value
+
+    result, _, _ = audit(repo, [PLAN, call(arguments={"path": "domain/service.py", "start_line": 1, "end_line": 1}),
+        call(arguments={"path": "domain/service.py", "start_line": 3, "end_line": 4}, identifier="body"),
+        AIMessage(content="Ready"), uncited, review()], max_iterations=1, max_schema_retries=0)
+    assert {"boundary_support_not_cited", "boundary_missing_role:implementation",
+        "boundary_behavior_symbol_missing_or_invalid"} <= set(result.findings[0].validation_issues)

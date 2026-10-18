@@ -12,6 +12,7 @@ from ....schemes.investigator import (
     DependencyImpactFinding,
     DependencyImpactRequest,
     DependencyImpactResult,
+    DependencyImpactReview,
     DependencyLink,
     Evaluation,
     EvidenceReference,
@@ -33,7 +34,7 @@ from .config import DependencyImpactConfig
 __all__ = [
     "AuditRequest", "AuditResult", "CandidateFinding", "ComponentReference", "Contract", "Criterion",
     "DependencyAssessment", "DependencyImpactCandidate", "DependencyImpactConfig", "DependencyImpactEvaluation",
-    "DependencyImpactFinding", "DependencyImpactRequest", "DependencyImpactResult", "DependencyLink", "Evaluation",
+    "DependencyImpactFinding", "DependencyImpactRequest", "DependencyImpactResult", "DependencyImpactReview", "DependencyLink", "Evaluation",
     "EvidenceReference", "Finding", "FindingBasis", "Hypothesis", "ImpactKind", "InvestigatedDependency",
     "InvestigatedImpact", "default_criteria",
 ]

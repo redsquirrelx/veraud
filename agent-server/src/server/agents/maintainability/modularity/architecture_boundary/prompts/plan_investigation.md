@@ -16,3 +16,10 @@ is useful even when global isolation remains unknown. Keep unexamined areas expl
 UI network calls, route database access and use of a shared client are not violations
 by themselves. Establish project intent and concrete responsibility/modularity impact;
 do not impose a service layer, forbid UI API calls, or equate a client wrapper with isolation.
+Directory names are not architectural contracts: before treating a services module as
+business logic or persistence, plan to inspect its implementation and the imported
+functions. Include HTTP-client wrappers, formatting helpers and type-only dependencies
+as possible counterevidence to a UI-to-database or API-bypass hypothesis.
+For follow_up_commitments, revisit the exact subjects and original scoped question.
+Retrieve and verify source rather than reusing prior approval. Keep an unavailable or
+unresolved commitment explicit; an unrelated completed hypothesis cannot replace it.

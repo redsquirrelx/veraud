@@ -59,6 +59,32 @@ consecuencias, riesgos, contraevidencia, incertidumbre y problemas de validació
 `components_investigated` resuelve rutas/nombres desde IDs reales. `findings` conserva
 aceptados, rechazados e insuficientes: filtrar `validation_status == "accepted"`.
 Se incluyen hipótesis descartadas, investigaciones inconclusas y consumo disponible.
+`critical_review` conserva los juicios independientes sobre hipótesis, incluso en
+corridas sin candidatos. Confirmar requiere evaluaciones válidas de riesgo/impacto;
+descartar requiere evaluaciones válidas `none`, soporte de código en ambos extremos
+y revisión del alcance exacto. Cada juicio debe enlazar evaluaciones de esa hipótesis
+y cubrir sus citas; una búsqueda sin resultados no demuestra ausencia de acoplamiento.
+
+Los errores de identidad, declaraciones, contratos o rutas se devuelven como trabajo
+pendiente al ciclo existente, que puede corregir IDs con evidencia ya entregada o
+inspeccionar los extremos faltantes dentro de los mismos límites. Al finalizar,
+evaluaciones inválidas no pueden resolver hipótesis, sus consecuencias se etiquetan
+como interpretaciones no verificadas y `missing_information` conserva los bloqueos.
+La suficiencia declarada se invalida cuando estas comprobaciones dejan trabajo pendiente.
+
+La exploración recibe hasta doce relaciones internas indexadas como navegación, repartidas
+entre los alcances del plan, y lecturas acotadas de los extremos pendientes. Estas pistas
+no constituyen evidencia inspeccionada ni resuelven preguntas entre servicios por analogía.
+No se permite representar ausencia mediante una dependencia ficticia `none`.
+
+Se reserva margen de tokens para evaluación/revisión antes de autorizar exploración;
+el cierre sigue sujeto a los límites duros de cada solicitud y del run. La reserva no
+garantiza una revisión si el contexto requerido no cabe. Dos evaluaciones con los mismos
+bloqueos y sin nueva cobertura fuente de sus extremos detienen exploración con
+`no_investigation_progress` y permiten intentar revisión. Repetir el mismo rango o buscar
+archivos ajenos al vínculo no cuenta como progreso. Las copias del contexto del proveedor
+compactan payloads antiguos no citados y omiten hashes repetidos; mensajes, evidencia
+autoritativa y fragmentos citados se conservan íntegros.
 
 Los IDs/citas se vinculan al snapshot y los bytes al commit cuando está disponible.
 Una comprobación de procedencia no demuestra por sí sola causalidad semántica: esa

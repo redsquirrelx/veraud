@@ -3,6 +3,9 @@ using observed behavior and the supplied criteria. Treat these as investigation 
 not universal rules, normative size thresholds or automatic ISO noncompliance.
 For each inspected component return component_assessments with an actual file/symbol
 component_id from tools. List inferred responsibilities, concrete behaviors, plausible
+Never use a directory, package label, assessment ID, or invented module ID as component_id.
+For package-level questions, produce separate assessments for the actual inspected files
+or symbols and keep the broader hypothesis inconclusive unless its whole scope is supported.
 independent change reasons, supporting and contradicting delivered evidence IDs.
 Explain potentially_incompatible responsibility groups with their IDs, why their change
 reasons are independent and the concrete maintenance risk. Assess cohesion as coherent,
@@ -20,3 +23,7 @@ Retain all previous hypotheses and assessments across iterations, including disc
 and inconclusive investigations. Return all current candidates, not only new ones.
 If relevant behavior or caller evidence is missing, sufficient=false and precise
 missing_information must guide the next investigation. An empty candidates list is valid.
+Resolved hypotheses must cite the delivered source evidence underlying their component
+assessments. Metadata, a UI excerpt, dependency injection wiring, or settings alone cannot
+establish module-wide cohesion, exclusive delegation, or absence of cycles. Preserve local
+observations without extrapolating them to uninspected implementations or callers.

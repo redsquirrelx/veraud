@@ -27,9 +27,42 @@ inference is unsupported, use insufficient_evidence/rejected and list exactly wh
 claim is unsupported. Do not merely repeat the evaluator's positive assessment.
 
 Use boundary_review_requirements for exact candidate IDs, expected support citations
-and host-detected blockers. Return a judgment for every candidate, not hypothesis IDs.
+and host-detected blockers. Return a findings judgment for every candidate, not hypothesis IDs.
 If host_support_issues is nonempty, acceptance is not available until that support is
 repaired; return insufficient_evidence with the concrete unverified claim instead.
 When prior_critical_review is supplied, correct its per-candidate validation_issues
 while preserving supported judgments. Never fabricate verification just to populate
 checked_evidence_ids; distinguish incomplete review metadata from missing source.
+
+Check the actual imported implementation before accepting claims of API bypass or
+direct persistence access. A frontend HTTP client in a services directory may be
+the intended API facade; importing it, using formatting helpers, or importing types
+does not prove a boundary violation. If the implementation was not delivered, mark
+the stronger claim insufficient_evidence and name that missing target inspection.
+If delivered code contradicts the claim, reject it. Never infer a project's layering
+contract from folder names. Explain unverified judgments as unverified, not as
+"confirmed violations" followed by an insufficient_evidence status.
+
+For behavior claims, inspect the named symbol bodies and the actual operations they
+perform. A symbol ID or syntactically valid implementation role is not semantic proof.
+Reject a claim of substantive domain rules supported only by constants, intent comments
+or rounding/formatting utilities. Do not generalize one implementation to a service layer.
+For negative design observations require a clearly labelled architectural basis, concrete
+responsibility conflict and supported consequence. Direct ORM access in a route alone
+does not establish leakage. Compare hypothesis rationales with candidates and reject
+unexplained contradictions about the same pattern, scope and criterion.
+
+Also return a separate hypotheses judgment for EVERY entry in
+boundary_hypothesis_review_requirements. Use hypothesis_id, status=supported or
+inconclusive, rationale, scope_supported, checked_evidence_ids and unverified_claims.
+Review the actual question AND proposed rationale, not just its chosen claim_kind.
+An import proves a dependency, not that an intended service layer is bypassed. If
+services/contract/call behavior were not inspected, the bypass hypothesis stays
+inconclusive even when its dependency check is syntactically valid. Parsing a schema
+for metadata does not establish shared runtime database access or inter-service
+communication. Distinguish those questions and name the missing inspection.
+Do not confirm or discard a broad hypothesis by silently narrowing its question.
+Use supported only when the proposed resolution and rationale, in full, are supported.
+Include all expected checked IDs; extra genuinely checked delivered IDs are allowed.
+If there are no candidates but resolved hypotheses exist, return findings=[] and review
+those hypotheses. A missing semantic judgment cannot confirm a hypothesis.
