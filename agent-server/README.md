@@ -21,6 +21,13 @@ Each entry includes:
 
 - `agent_id`: canonical transport identity, and `aliases` for existing configuration names.
 - `role`, `description`, `parent_ids`, `child_ids` and `workflow_ids`.
+- `quality_attributes`: explicit quality contexts, independent of role and hierarchy.
+  Maintainability participants declare `["maintainability"]`, security and its
+  components `["security"]`, and the shared report agent both. Functional adequacy
+  declares `["functional_adequacy"]`. Project architecture stages declare no quality
+  attribute and identify their context through `workflow_ids: ["project-architecture"]`.
+  Dummy/custom unclassified agents use an empty list. Context describes supported
+  participation, not evidence that an agent ran or that DAST was performed.
 - `execution_modes`: `direct`, `pipeline`, `audit`, `internal` or `snapshot`.
   Only `direct` entries can be sent to `POST /api/agents/run`.
 - `requires_model` and `model_configuration_id`: the execution configuration key

@@ -24,6 +24,8 @@ class AgentDescriptor(BaseModel):
     model_configuration_id: str | None = None
     execution_modes: list[Literal["direct", "pipeline", "audit", "internal", "snapshot"]]
     workflow_ids: list[str] = Field(default_factory=list)
+    quality_attributes: list[str] = Field(default_factory=list,
+        description="Quality contexts supported by this participant; shared agents may list several. Not execution status.")
     parent_ids: list[str] = Field(default_factory=list)
     child_ids: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
@@ -84,18 +86,19 @@ def _definitions(service):
     contracts = {}
 
     def add(identifier, name, role, modes, description, *, config=None, model=True, model_config=None,
-            workflows=(), parents=(), children=(), aliases=(), availability="available", request=None, result=None):
+            workflows=(), attributes=(), parents=(), children=(), aliases=(), availability="available", request=None, result=None):
         entries[identifier] = AgentDescriptor(agent_id=identifier, name=name, role=role, requires_model=model,
             configuration_id=config, model_configuration_id=(model_config or identifier) if model else None,
             execution_modes=modes, description=description, workflow_ids=list(workflows), parent_ids=list(parents),
-            child_ids=list(children), aliases=list(aliases), availability=availability,
+            quality_attributes=list(attributes), child_ids=list(children), aliases=list(aliases), availability=availability,
             detail_url=f"/api/agents/catalog/{identifier}")
         contracts[identifier] = (request, result)
 
     # Direct execution remains authoritative, including additional registered agents.
     for identifier in service.list_agents():
         add(identifier, identifier, "direct_agent", ["direct"], "Registered for POST /api/agents/run.",
-            config="functional_adequacy" if identifier == "functional_adequacy" else None)
+            config="functional_adequacy" if identifier == "functional_adequacy" else None,
+            attributes=["functional_adequacy"] if identifier == "functional_adequacy" else [])
 
     project_agents = (
         ("orientation", "project_orientation", "ProjectOrientationAgent", "OrientationResult"),
@@ -109,18 +112,18 @@ def _definitions(service):
 
     add("maintainability_manager", "MaintainabilityManagerAgent", "manager", ["audit", "pipeline"],
         "Coordinates the implemented maintainability dimensions over one audit snapshot.",
-        config="maintainability_manager", workflows=["quality-audit"], children=COORDINATORS,
+        config="maintainability_manager", workflows=["quality-audit"], attributes=["maintainability"], children=COORDINATORS,
         request=_symbol("maintainability.manager.schemas", "MaintainabilityRequest"),
         result=_symbol("maintainability.manager.schemas", "MaintainabilityReport"))
     for identifier, spec in COORDINATORS.items():
         investigators = MODULARITY if identifier == "modularity" else REUSABILITY
         add(identifier, spec.agent_class.__name__, "coordinator", ["internal"],
             "Coordinates its registered investigators; invoked by the maintainability manager.",
-            config=identifier, workflows=["quality-audit"], parents=["maintainability_manager"],
+            config=identifier, workflows=["quality-audit"], attributes=["maintainability"], parents=["maintainability_manager"],
             children=investigators, request=spec.request_class, result=spec.result_class)
         for child, investigator in investigators.items():
             add(child, investigator.agent_class.__name__, "investigator", ["internal"],
-                investigator.capability.capability, config=child, workflows=["quality-audit"], parents=[identifier],
+                investigator.capability.capability, config=child, workflows=["quality-audit"], attributes=["maintainability"], parents=[identifier],
                 request=investigator.request_class, result=investigator.result_class)
 
     # Existing supervisor components are discoverable, not new standalone routes.
@@ -136,16 +139,16 @@ def _definitions(service):
     )
     add("security", "SecuritySupervisorAgent", "security_pipeline", ["audit", "pipeline"],
         "Read-only security audit wrapping existing scanners and bounded remediation proposals.", config="security",
-        workflows=["quality-audit"], children=[item[0] for item in security_components], aliases=["security_manager"],
+        workflows=["quality-audit"], attributes=["security"], children=[item[0] for item in security_components], aliases=["security_manager"],
         request=_symbol("security.audit", "SecurityAuditRequest"), result=_symbol("security.audit", "SecurityAuditResult"))
     for identifier, name, model, description in security_components:
         add(identifier, name, "security_component", ["internal"], description, model=model, model_config="security",
-            workflows=["quality-audit"], parents=["security"],
+            workflows=["quality-audit"], attributes=["security"], parents=["security"],
             availability="not_executed" if identifier == "dast_sandbox" else "available")
 
     add("audit_report", "AuditReportAgent", "report_generator", ["internal", "snapshot"],
         "Deterministic ten-section report from Blackboard; no model or repository reads.", model=False,
-        workflows=["quality-audit"], request=_symbol("audit_report.schemas", "AuditReportRequest"),
+        workflows=["quality-audit"], attributes=["maintainability", "security"], request=_symbol("audit_report.schemas", "AuditReportRequest"),
         result=_symbol("audit_report.schemas", "SoftwareAuditReport"))
 
     pipelines = default_pipeline_registry()

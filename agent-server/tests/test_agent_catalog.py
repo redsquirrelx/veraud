@@ -80,6 +80,25 @@ def test_backend_can_resolve_all_attribute_selections_into_valid_model_maps_and_
     assert project["run_url"] == "/api/pipelines/project-architecture/run"
 
 
+def test_quality_contexts_are_explicit_for_hierarchies_shared_reports_and_non_audit_workflows(client):
+    catalog = client.get("/api/agents/catalog").json()
+    agents = {item["agent_id"]: item for item in catalog["agents"]}
+    quality = next(item for item in catalog["workflows"] if item["workflow_id"] == "quality-audit")
+    for attribute, participants in quality["model_configuration_groups"].items():
+        for identifier in participants:
+            assert agents[identifier]["quality_attributes"] == [attribute]
+    for identifier in agents["security"]["child_ids"]:
+        assert agents[identifier]["quality_attributes"] == ["security"]
+    assert agents["audit_report"]["quality_attributes"] == ["maintainability", "security"]
+    assert agents["functional_adequacy"]["quality_attributes"] == ["functional_adequacy"]
+    for identifier in ("orientation", "architecture", "semantic_validation"):
+        assert agents[identifier]["quality_attributes"] == []
+        assert agents[identifier]["workflow_ids"] == ["project-architecture"]
+    assert agents["dummy"]["quality_attributes"] == []
+    detail = client.get("/api/agents/catalog/audit_report").json()
+    assert detail["quality_attributes"] == agents["audit_report"]["quality_attributes"]
+
+
 def test_all_details_resolve_public_settings_and_contracts_without_credentials_or_internal_config(client):
     agents = client.get("/api/agents/catalog").json()["agents"]
     for agent in agents:
