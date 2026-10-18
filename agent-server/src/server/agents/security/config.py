@@ -20,6 +20,9 @@ from config.agents.tools import ToolLimits
 
 
 class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig, SourceLineConfig, SourceReadConfig, RetrievalBudgetConfig):
+    # Paginated static scans can require thousands of reads. This exclusive
+    # bound does not widen the maintainability investigators' call envelopes.
+    bounds: ClassVar = {"max_tool_calls": {"le": 10000}}
     defaults: ClassVar = {name: field.default for name, field in ToolLimits.model_fields.items()
         if name in {"max_source_lines", "max_source_characters"}}
     max_scan_files: int = Field(default=24, ge=1, le=500)

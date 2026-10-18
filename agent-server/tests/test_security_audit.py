@@ -15,8 +15,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import describe_agent_config, validate_agent_config
+from config.agents.developer import AgentDeveloperConfig
 from server.agents.maintainability.manager import MaintainabilityRequest
 from server.agents.security.audit import SecurityAuditRequest
+from server.agents.security.config import SecurityAuditConfig, SecurityAuditOverrides
 from server.api.schemas import ExecutionConfig
 from server.app import audit_service
 from server.app.audit_service import AuditService
@@ -304,7 +306,47 @@ def test_security_catalog_keeps_developer_controls_out_of_the_user_panel():
             validate_agent_config("security", {name: 8})
 
 
-@pytest.mark.parametrize("overrides", [{"max_scan_files": 501}, {"max_model_calls": 101},
+def test_security_call_ceiling_uses_its_effective_contract_without_widening_other_agents():
+    assert SecurityAuditConfig.model_json_schema()["properties"]["max_tool_calls"]["maximum"] == 10000
+    assert SecurityAuditOverrides.model_json_schema()["properties"]["max_tool_calls"]["maximum"] == 10000
+    assert describe_agent_config("security", level="developer")["config_schema"]["properties"]["max_tool_calls"]["maximum"] == 10000
+    assert AgentDeveloperConfig.model_json_schema()["properties"]["max_tool_calls"]["maximum"] == 200
+
+
+@pytest.mark.parametrize("attributes", [["security"], ["maintainability", "security"]])
+@pytest.mark.parametrize("call_limit", [200, 250])
+def test_paginated_security_scans_can_exceed_200_calls_and_publish_a_preflight_plan(audit_environment, monkeypatch, attributes, call_limit):
+    (audit_environment.root / "main.py").write_text("# safe\n" * 241, encoding="utf-8")
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Mock(return_value=SimpleNamespace(
+        run=AsyncMock(return_value=SimpleNamespace(status="complete")))))
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": attributes, "security_config": {"max_tool_calls": call_limit,
+                "max_source_lines": 1, "max_retrieved_characters": 1000000}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        complete = call_limit >= 241
+        assert snapshot["status"] == ("completed" if complete else "partial"), snapshot
+        assessment = next(item for item in snapshot["assessments"] if item["agent_id"] == "security")
+        assert assessment["consumption"]["tool_calls"] == min(call_limit, 241)
+        plan = assessment["details"]["security_analysis"]["read_plan"]
+        assert plan["scope_minimum_tool_calls"] == plan["scheduled_minimum_tool_calls"] == 241
+        assert plan["available_tool_calls"] == call_limit
+        assert plan["insufficient_for_scope"] is not complete
+        evidence = next(item for item in snapshot["evidence"] if item["source"] == "security_read_plan")
+        assert evidence["details"]["security_read_plan"] == plan
+        assert evidence["id"] in assessment["evidence_ids"]
+        coverage = assessment["coverage"]["files"]["main.py"]
+        assert coverage["complete"] is complete
+        assert coverage["pending_ranges"] == ([] if complete else [{"start_line": 201, "end_line": 241}])
+        if not complete:
+            assert assessment["termination_reason"] == "tool_call_limit"
+            assert any("mínimo previsto para el alcance 241" in item for item in snapshot["execution_issues"][0]["diagnostics"])
+
+
+@pytest.mark.parametrize("overrides", [{"max_scan_files": 501}, {"max_model_calls": 101}, {"max_tool_calls": 10001},
     {"max_source_lines": 0}, {"max_retrieved_characters": 0}, {"timeout_seconds": -1}, {"api_key": "must-not-be-a-control"},
     {"prompts": {"unused_node": "ignored"}}])
 def test_security_overrides_reject_invalid_or_ineffective_controls_before_execution(audit_environment, overrides):

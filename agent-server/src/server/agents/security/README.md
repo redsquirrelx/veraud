@@ -58,6 +58,26 @@ La API directa, el input del pipeline `quality-audit` y
 - `call_limits`: exclusivo de la jerarquía de mantenibilidad. Para seguridad se
   utilizan `agent_defaults` o `security_config`.
 
+Seguridad admite hasta **10.000 llamadas a herramientas** mediante
+`security_config.max_tool_calls`; por ejemplo, `"security_config":
+{"max_tool_calls": 2000, "max_retrieved_characters": 10000000}`. El esquema y la
+validación del catálogo derivan este techo del preset exclusivo de seguridad.
+Los límites comunes de `agent_defaults` y los de investigadores de mantenibilidad
+conservan su máximo de 200; para presupuestos mayores de seguridad debe utilizarse
+`security_config`. Un límite explícito de 200 sigue significando 200 lecturas,
+incluidos los reintentos, y no aumenta automáticamente por el tamaño del alcance.
+
+Antes de iniciar el escaneo se publica una evidencia de metadatos
+`security_read_plan`, conservada también en
+`details.security_analysis.read_plan`. Incluye el mínimo de llamadas por líneas
+para todo el alcance y para los archivos programados según `max_scan_files`, las
+llamadas disponibles y si el presupuesto es insuficiente para esos mínimos.
+Cada archivo conserva `coverage.files[path].minimum_tool_calls`. La previsión es
+una cota inferior: los límites de caracteres/respuesta y los reintentos pueden
+requerir más lecturas. La previsión no consume herramientas ni modifica el límite
+solicitado. Si se agota, el diagnóstico registra consumo, límite y mínimo previsto,
+y los rangos pendientes se conservan explícitamente.
+
 Por ejemplo, este body ya es válido para la API directa:
 
 ```json

@@ -185,6 +185,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                      "read_errors": read_errors,
                      "remediation_errors": remediation_errors,
                      "effective_output_tokens": output_limit,
+                     "read_plan": read_plan,
                     "remediation": "proposal_only", "dast": "not_evaluated"}})
         # A synchronous terminal receipt records consumed resources even after
         # the host revokes further work. Provider tasks cannot publish records.
@@ -195,6 +196,30 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     file_coverage = {source.path: {"file_id": source.id, "total_lines": source.line_count,
         "read_ranges": [], "pending_ranges": [{"start_line": 1, "end_line": source.line_count}], "complete": False}
         for source in candidates}
+    page_lines = min(limits.max_source_lines, tools.limits.max_source_lines)
+    for source in candidates:
+        file_coverage[source.path]["minimum_tool_calls"] = max(1, ((source.line_count or 0) + page_lines - 1) // page_lines)
+    remaining_calls = max(0, min(limits.max_tool_calls, tools.context.input.budget.max_tool_calls) - tools.budget_usage.tool_calls)
+    scope_minimum = sum(item["minimum_tool_calls"] for item in file_coverage.values())
+    scheduled_minimum = sum(file_coverage[source.path]["minimum_tool_calls"] for source in candidates[:limits.max_scan_files])
+    read_plan = {"estimate_kind": "lower_bound_by_line_count", "max_lines_per_read": page_lines,
+        "scope_minimum_tool_calls": scope_minimum, "scheduled_minimum_tool_calls": scheduled_minimum,
+        "available_tool_calls": remaining_calls, "insufficient_for_scope": scope_minimum > remaining_calls,
+        "insufficient_for_scheduled_files": scheduled_minimum > remaining_calls,
+        "note": "Mínimo por líneas: los límites de caracteres/respuesta y los reintentos pueden requerir más llamadas."}
+    plan_id = publication.record_id("evidence", "security-read-plan")
+    board.publish_evidence(Evidence(**publication._identity("evidence", "security-read-plan"), kind="metadata",
+        source="security_read_plan", snapshot_hash=snapshot.repository.snapshot_hash, commit=snapshot.repository.commit,
+        file_id="repository:" + snapshot.repository.snapshot_hash, content_hash=snapshot.repository.snapshot_hash,
+        tool_call_id="security-read-plan",
+        content=f"Plan de lecturas: mínimo {scope_minimum} llamadas para el alcance completo; "
+            f"mínimo {scheduled_minimum} para los archivos programados; disponibles {remaining_calls}.",
+        details={"quality_attribute": "security", "security_read_plan": read_plan}))
+    evidence_ids.append(plan_id)
+
+    def exhausted_read_budget():
+        return (f"security_source_read: Presupuesto de lecturas agotado: consumidas {tools.budget_usage.tool_calls}; "
+            f"límite efectivo {remaining_calls}; mínimo previsto para el alcance {scope_minimum}.")
 
     async def stage_source(source, temporary):
         """Reassemble consecutive tool excerpts; publish each range before continuing."""
@@ -228,7 +253,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         while start <= total:
             await asyncio.sleep(0)
             if tools.budget_usage.tool_calls >= limits.max_tool_calls:
-                read_error("tool_budget_exhausted", "Presupuesto de lecturas agotado.")
+                read_error("tool_budget_exhausted", exhausted_read_budget())
                 break
             response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": start,
                 "end_line": requested_end}, tool_call_id=f"security-read-{tools.budget_usage.tool_calls + 1}")
@@ -285,7 +310,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
             for source in candidates[:limits.max_scan_files]:
                 await asyncio.sleep(0)
                 if tools.budget_usage.tool_calls >= limits.max_tool_calls:
-                    record_incident("tool_call_limit", "Presupuesto de lecturas agotado.")
+                    record_incident("tool_call_limit", exhausted_read_budget())
                     break
                 staged, source_refs = await stage_source(source, temporary)
                 if staged is None:
