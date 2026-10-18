@@ -212,3 +212,64 @@ def test_llm_provider_failure():
     assert output.results[0].status == "evidencia_insuficiente"
     assert output.score == 0.0
     assert output.fulfilled_requirements == 0
+
+def test_explicit_route_symbol_is_retrieved():
+    """Verifica que una coincidencia explícita no se pierda por el ranking semántico."""
+    from unittest.mock import Mock
+
+    import torch
+
+    data = make_input(
+        [
+            {
+                "requirement_id": "REQ-FL-002",
+                "description": "Flask debe registrar una ruta HTTP GET mediante app.get.",
+            }
+        ],
+        [
+            {
+                "fragment_id": f"UNRELATED-{index}",
+                "file_path": f"other_{index}.py",
+                "code": f"def unrelated_{index}(): return {index}",
+            }
+            for index in range(5)
+        ]
+        + [
+            {
+                "fragment_id": "ROUTE-TEST",
+                "file_path": "tests/test_testing.py:175-186",
+                "code": '@app.get("/")\ndef index():\n    return "42"',
+            }
+        ],
+    )
+
+    fake_model = Mock()
+    fake_model.encode.side_effect = [
+        torch.zeros((1, 2)),
+        torch.zeros((6, 2)),
+    ]
+
+    scores = torch.tensor([[0.9, 0.8, 0.7, 0.6, 0.5, 0.1]])
+
+    async def run_mapping():
+        with (
+            patch(
+                "server.agents.functional_adequacy.agent._get_sbert_model",
+                return_value=fake_model,
+            ),
+            patch(
+                "server.agents.functional_adequacy.agent.util.cos_sim",
+                return_value=scores,
+            ),
+        ):
+            return await FunctionalAdequacyAgent._code_mapping(
+                None, {"input_data": data}
+            )
+
+    result = asyncio.run(run_mapping())
+    selected_ids = [
+        item.fragment_id
+        for item in result["candidates"]["REQ-FL-002"]
+    ]
+
+    assert "ROUTE-TEST" in selected_ids

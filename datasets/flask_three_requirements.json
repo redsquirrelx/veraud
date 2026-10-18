@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "requirement_id": "REQ-FL-001",
+      "description": "Flask debe permitir almacenar un valor en la sesión durante una petición POST, recuperarlo mediante una petición GET posterior y reflejar el acceso a la sesión mediante la cabecera Vary: Cookie."
+    },
+    {
+      "requirement_id": "REQ-FL-002",
+      "description": "Flask debe permitir registrar una ruta HTTP GET mediante el decorador app.get y devolver la respuesta definida por la función asociada."
+    },
+    {
+      "requirement_id": "REQ-FL-003",
+      "description": "Flask debe permitir devolver una respuesta HTTP 404 cuando se solicita una ruta que no está registrada en la aplicación."
+    }
+  ]
+}
