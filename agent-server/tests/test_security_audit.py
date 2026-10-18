@@ -215,7 +215,7 @@ def test_security_overrides_reject_invalid_or_ineffective_controls_before_execut
 
 
 @pytest.mark.parametrize("controls, status, end_line", [
-    ({"max_source_lines": 1}, "partial", 1),
+    ({"max_source_lines": 1}, "completed", 2),
     ({"max_source_lines": 10}, "completed", 2),
     ({"max_tool_calls": 0}, "partial", None),
 ])
@@ -231,14 +231,12 @@ def test_security_transport_controls_bound_the_actual_source_reads(audit_environ
         snapshot = client.get(f"/api/audits/{run_id}").json()
         assert snapshot["status"] == status
         sources = [item for item in snapshot["evidence"] if item["kind"] == "source"]
-        assert ([item["end_line"] for item in sources] if end_line is not None else sources) == (
-            [end_line] if end_line is not None else [])
+        assert (max(item["end_line"] for item in sources) if sources else None) == end_line
 
 
 @pytest.mark.parametrize("case, expected", [
     ("files", "security_file_limit"),
     ("tools", "tool_call_limit"),
-    ("truncated", "security_source_truncated"),
     ("read_failure", "security_source_read_failed"),
     ("empty_scope", "security_empty_scope"),
     ("provider_failure", "security_remediation_fallback"),
@@ -253,8 +251,6 @@ def test_real_security_incompleteness_retains_specific_reasons(audit_environment
     elif case == "tools":
         (root / "extra.py").write_text("value = 1\n", encoding="utf-8")
         overrides = {"max_tool_calls": 1}
-    elif case == "truncated":
-        (root / "main.py").write_text("value = 1\n" * 200, encoding="utf-8")
     elif case == "read_failure":
         monkeypatch.setattr(audit_service.RepositoryToolset, "execute",
             lambda *args, **kwargs: SimpleNamespace(error=True, evidence=()))
@@ -281,6 +277,74 @@ def test_real_security_incompleteness_retains_specific_reasons(audit_environment
         await service.aclose()
 
     asyncio.run(execute())
+
+
+@pytest.mark.parametrize("tool_limit, complete", [(20, True), (2, False)])
+def test_security_reassembles_ranges_and_links_late_findings(audit_environment, tool_limit, complete):
+    lines = ["value = 1", "", "value = 2", "", "pickle.loads(payload)", "value = 3", "value = 4"]
+    (audit_environment.root / "main.py").write_text("\n".join(lines), encoding="utf-8")
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock(return_value='{"patch_code": "safe()", "explanation": "Revisar"}')
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": {"max_source_lines": 2, "max_tool_calls": tool_limit}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assessment = snapshot["assessments"][0]
+        coverage = assessment["coverage"]["files"]["main.py"]
+        assert coverage["complete"] is complete
+        assert snapshot["status"] == ("completed" if complete else "partial")
+        if complete:
+            assert coverage["pending_ranges"] == []
+            finding = next(item for item in snapshot["findings"] if item["criterion_id"] == "DESER-001")
+            assert finding["details"]["security_finding"]["line_number"] == 5
+            refs = [item for item in snapshot["evidence"] if item["id"] in finding["evidence_ids"]]
+            assert [(ref["start_line"], ref["end_line"]) for ref in refs] == [(5, 6)]
+        else:
+            assert coverage["pending_ranges"] == [{"start_line": 5, "end_line": 7}]
+            assert "security_source_truncated" in assessment["details"]["security_analysis"]["incomplete_reasons"]
+            assert len(coverage["read_ranges"]) == 2
+
+
+def test_security_reconstructs_manifests_before_dependency_scanning(audit_environment):
+    (audit_environment.root / "package.json").write_text(
+        '{\n  "name": "example",\n  "dependencies": {\n    "express": "1.0"\n  }\n}\n', encoding="utf-8")
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock(return_value='{"patch_code": "safe()", "explanation": "Revisar"}')
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_request": {"targets": ["package.json"]},
+            "security_config": {"max_source_lines": 2}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "completed"
+        finding = next(item for item in snapshot["findings"] if item["criterion_id"] == "CVE-2022-24999")
+        assert len(finding["evidence_ids"]) == 3
+
+
+def test_security_retries_smaller_ranges_when_serialized_response_is_too_large(audit_environment):
+    # Source fits its character cap; JSON escaping exceeds the tool response cap.
+    audit_environment.model.bind = lambda **kwargs: audit_environment.model
+    (audit_environment.root / "main.py").write_text(('value = "' + '\\' * 2500 + '"\n') * 4, encoding="utf-8")
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"]})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "completed"
+        assessment = snapshot["assessments"][0]
+        coverage = assessment["coverage"]["files"]["main.py"]
+        assert coverage["complete"]
+        assert len(coverage["read_ranges"]) > 1
+        assert assessment["consumption"]["tool_calls"] > len(coverage["read_ranges"])
 
 
 def test_joint_cancellation_stops_both_attributes_and_retains_the_shared_analysis(audit_environment, monkeypatch):

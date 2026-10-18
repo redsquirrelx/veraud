@@ -97,7 +97,9 @@ async def run_security_audit(tools, request, limits, model, board, identity):
             limitations=("Detecciones heurísticas del módulo existente; no confirman explotabilidad.",
                 "SCA conserva su búsqueda por nombre, sin resolver versiones afectadas.",
                 "DAST no ejecutado; los parches propuestos no acreditan una corrección validada.", *incidents),
-            coverage={"scanned_files": scanned, "planned_files": [f.path for f in candidates], "dast": "not_evaluated"},
+            coverage={"scanned_files": scanned, "planned_files": [f.path for f in candidates],
+                "completed_files": [path for path, coverage in file_coverage.items() if coverage["complete"]],
+                "files": file_coverage, "dast": "not_evaluated"},
             consumption={"model_calls": calls, "tool_calls": tools.budget_usage.tool_calls,
                 "accounted_tokens": tools.token_budget.used, "estimated_tokens": tools.token_budget.estimated,
                 "model_calls_estimated": False},
@@ -113,39 +115,78 @@ async def run_security_audit(tools, request, limits, model, board, identity):
 
     candidates = sorted([f for f in snapshot.files if not request.targets or any(
         f.path == target or f.path.startswith(target.rstrip("/") + "/") for target in request.targets)], key=lambda f: f.path)
+    file_coverage = {source.path: {"file_id": source.id, "total_lines": source.line_count,
+        "read_ranges": [], "pending_ranges": [{"start_line": 1, "end_line": source.line_count}], "complete": False}
+        for source in candidates}
+
+    async def stage_source(source, temporary):
+        """Reassemble consecutive tool excerpts; publish each range before continuing."""
+        coverage = file_coverage[source.path]
+        parts, source_refs = [], []
+        start, total = 1, source.line_count or 1
+        requested_end = min(total, limits.max_source_lines)
+        while start <= total:
+            await asyncio.sleep(0)
+            if tools.budget_usage.tool_calls >= limits.max_tool_calls:
+                record_incident("tool_call_limit", f"Presupuesto de lecturas agotado al inspeccionar {source.path}.")
+                break
+            response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": start,
+                "end_line": requested_end}, tool_call_id=f"security-read-{tools.budget_usage.tool_calls + 1}")
+            if response.error or not response.evidence:
+                code = getattr(response.error, "code", None)
+                if code in {"response_limit_exceeded", "content_budget_exhausted"} and requested_end > start:
+                    requested_end = start + (requested_end - start) // 2
+                    continue
+                record_incident("security_source_read_failed", f"No se pudo leer {source.path} desde la línea {start}.")
+                break
+            ref = response.evidence[0]
+            if ref.start_line != start or ref.end_line is None or not start <= ref.end_line <= total:
+                record_incident("security_source_read_failed", f"Rango de lectura no consecutivo para {source.path}:{start}.")
+                break
+            parts.append(response.data["content"])
+            local_id = f"{source.id}/{start}-{ref.end_line}"
+            evidence_id = publication.record_id("evidence", local_id)
+            board.publish_evidence(Evidence(**publication._identity("evidence", local_id), kind="source",
+                source=source.path, content=redact(parts[-1]), snapshot_hash=ref.snapshot_hash, commit=snapshot.repository.commit,
+                file_id=ref.file_id, content_hash=ref.content_hash, start_line=ref.start_line, end_line=ref.end_line,
+                tool_call_id=ref.tool_call_id, symbol_ids=tuple(s.id for s in snapshot.symbols if s.file_id == source.id
+                    and s.start_line <= ref.end_line and (s.end_line or s.start_line) >= ref.start_line),
+                details={"quality_attribute": "security", "redacted": True}))
+            evidence_ids.append(evidence_id)
+            source_refs.append((evidence_id, start, ref.end_line))
+            coverage["read_ranges"].append({"start_line": start, "end_line": ref.end_line, "evidence_id": evidence_id})
+            start = ref.end_line + 1
+            coverage["pending_ranges"] = [{"start_line": start, "end_line": total}] if start <= total else []
+            coverage["complete"] = start > total
+            requested_end = min(total, start + limits.max_source_lines - 1)
+        if not parts:
+            return None, []
+        if not coverage["complete"]:
+            record_incident("security_source_truncated", f"Lectura parcial de {source.path}: líneas pendientes {start}–{total}.")
+        staged = Path(temporary) / source.path
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        # Excerpts omit separators at range boundaries. Restore those separators
+        # (including blank lines) so legacy scanners retain original line numbers.
+        staged.write_text("\n".join(parts) + "\n", encoding="utf-8")
+        scanned.append(source.path)
+        return staged, source_refs
+
     if not candidates:
         record_incident("security_empty_scope", "No hay archivos accesibles para inspeccionar en el alcance seleccionado.")
     if len(candidates) > limits.max_scan_files:
         record_incident("security_file_limit", "El alcance supera el límite de archivos de seguridad.")
     try:
-        # Legacy scanners read only an isolated copy of controlled excerpts.
-        # The checkout is never modified; partial files are explicitly recorded.
+        # Legacy scanners read an isolated reconstruction of controlled excerpts.
+        # The checkout is never modified; pending ranges remain explicit.
         with tempfile.TemporaryDirectory(prefix="veraud-security-") as temporary:
             for source in candidates[:limits.max_scan_files]:
                 await asyncio.sleep(0)
                 if tools.budget_usage.tool_calls >= limits.max_tool_calls:
                     record_incident("tool_call_limit", "Presupuesto de lecturas agotado.")
                     break
-                response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": 1},
-                    tool_call_id="security-read-" + str(len(scanned)))
-                if response.error or not response.evidence:
-                    record_incident("security_source_read_failed", f"No se pudo inspeccionar {source.path}.")
+                staged, source_refs = await stage_source(source, temporary)
+                if staged is None:
                     continue
-                ref = response.evidence[0]
-                content = response.data["content"]
-                staged = Path(temporary) / source.path
-                staged.parent.mkdir(parents=True, exist_ok=True)
-                staged.write_text(content, encoding="utf-8")
-                scanned.append(source.path)
-                if source.line_count and ref.end_line < source.line_count:
-                    record_incident("security_source_truncated", f"Lectura parcial de {source.path}: hasta la línea {ref.end_line}.")
-                evidence_id = publication.record_id("evidence", source.id)
-                board.publish_evidence(Evidence(**publication._identity("evidence", source.id), kind="source",
-                    source=source.path, content=redact(content), snapshot_hash=ref.snapshot_hash, commit=snapshot.repository.commit,
-                    file_id=ref.file_id, content_hash=ref.content_hash, start_line=ref.start_line, end_line=ref.end_line,
-                    tool_call_id=ref.tool_call_id, symbol_ids=tuple(s.id for s in snapshot.symbols if s.file_id == source.id),
-                    details={"quality_attribute": "security", "redacted": True}))
-                evidence_ids.append(evidence_id)
                 findings = [*supervisor.sast_agent.scan_path(str(staged)), *supervisor.secret_agent.scan_path(str(staged)),
                     *supervisor.sca_agent.scan_dependencies(str(staged.parent))] if staged.name in {"package.json", "requirements.txt"} else [
                     *supervisor.sast_agent.scan_path(str(staged)), *supervisor.secret_agent.scan_path(str(staged))]
@@ -191,7 +232,8 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                         kind="design_observation", criterion_id=criterion.id, criterion=criterion,
                         components=(source.id,), justification="Coincidencia heurística; pendiente de validación contextual.",
                         modularity_impact="Posible impacto de seguridad; no se ha demostrado explotabilidad.",
-                        severity=original.severity.lower(), evidence_ids=(evidence_id,),
+                        severity=original.severity.lower(), evidence_ids=tuple(identifier for identifier, first, last in source_refs
+                            if staged.name in {"package.json", "requirements.txt"} or first <= original.line_number <= last),
                         recommendation=redact(str(original.remediation.get("explanation", "Revisar el candidato en su contexto."))),
                         details={"quality_attribute": "security", "subcharacteristic": "static_security",
                             "validation_status": "insufficient_evidence", "review_rationale": "El filtro legacy no constituye verificación técnica.",

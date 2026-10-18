@@ -90,7 +90,15 @@ auditoría de bajo nivel se identifican como configuración de desarrollador.
 
 Los límites de contexto del modelo, archivos, herramientas y fragmentos de código
 son independientes. El toolset también conserva sus límites de respuesta y de
-recuperación acumulada; una lectura que no cabe queda documentada como pendiente.
+recuperación acumulada. Seguridad lee rangos consecutivos hasta completar cada
+archivo y reconstruye una copia temporal antes de ejecutar los escáneres, conservando
+las líneas originales. Si una respuesta no cabe, reduce el rango y reintenta dentro
+del mismo presupuesto de herramientas. `max_source_lines` y `max_source_characters`
+limitan cada fragmento, no el archivo completo. Cada lectura consume una llamada.
+`Assessment.coverage.files` registra los rangos leídos con sus evidencias, los rangos
+pendientes y si la lectura está completa; `completed_files` enumera los archivos
+completados. Solo los archivos que quedan incompletos después de alguna lectura
+generan `security_source_truncated`; sus fragmentos disponibles conservan resultados.
 El timeout de `config` acota la ejecución completa; un timeout específico menor en
 `security_config` puede acortar seguridad. En ejecución conjunta, cada atributo
 conserva su propio límite y ambos están acotados por el plazo global.
