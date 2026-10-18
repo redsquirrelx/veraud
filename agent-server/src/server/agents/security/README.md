@@ -99,6 +99,17 @@ limitan cada fragmento, no el archivo completo. Cada lectura consume una llamada
 pendientes y si la lectura está completa; `completed_files` enumera los archivos
 completados. Solo los archivos que quedan incompletos después de alguna lectura
 generan `security_source_truncated`; sus fragmentos disponibles conservan resultados.
+`details.security_analysis.read_errors` conserva archivo, rango solicitado, ID de
+llamada, código y mensaje del toolset, consumo de herramientas/contenido y presupuesto
+de recuperación restante. Los intentos que se recuperan reduciendo el rango quedan
+marcados con `retrying: true` y no convierten por sí solos la ejecución en parcial.
+Los fallos terminales distinguen una línea demasiado larga
+(`security_source_line_limit`), una respuesta mínima demasiado grande
+(`security_source_response_limit`), recuperación acumulada insuficiente
+(`security_retrieval_limit`), acceso denegado (`security_source_access_denied`) y
+rango no disponible (`security_source_range_invalid`). Los errores desconocidos
+conservan `security_source_read_failed` junto con su detalle. Estos diagnósticos
+viajan al seguimiento y al informe JSON/Word con el archivo y las líneas afectadas.
 El timeout de `config` acota la ejecución completa; un timeout específico menor en
 `security_config` puede acortar seguridad. En ejecución conjunta, cada atributo
 conserva su propio límite y ambos están acotados por el plazo global.

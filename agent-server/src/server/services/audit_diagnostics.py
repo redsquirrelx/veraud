@@ -9,6 +9,11 @@ REASONS = {
     "security_empty_scope": "No se encontraron archivos accesibles en el alcance de seguridad seleccionado.",
     "security_file_limit": "Se alcanzó el límite de archivos de seguridad; quedan archivos sin inspeccionar.",
     "security_source_read_failed": "No se pudo leer parte del código previsto para el análisis de seguridad.",
+    "security_source_line_limit": "Una línea de código supera el límite de caracteres por fragmento; no pudo leerse completa.",
+    "security_source_response_limit": "Una línea de código no cabe en el tamaño máximo de respuesta de la herramienta.",
+    "security_retrieval_limit": "El presupuesto acumulado de recuperación de contenido no permite completar otra lectura de seguridad.",
+    "security_source_access_denied": "El toolset rechazó el acceso a parte del código previsto para seguridad.",
+    "security_source_range_invalid": "No está disponible el rango de código solicitado para seguridad; consulta el archivo y las líneas del diagnóstico.",
     "security_source_truncated": "Parte del código se inspeccionó mediante fragmentos truncados; la cobertura de seguridad es parcial.",
     "security_scope_incomplete": "Quedan archivos del alcance de seguridad sin inspeccionar.",
     "security_remediation_fallback": "No se completó una propuesta de remediación con el modelo; se conservaron el candidato y la propuesta local.",
@@ -41,7 +46,7 @@ REASONS = {
     "unresolved_no_useful_follow_up": "Quedan aspectos sin resolver, sin un seguimiento útil disponible.",
 }
 INCOMPLETE = {"partial", "failed", "timeout", "skipped", "cancelled"}
-EVENT = re.compile(r"resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_(?:wait|token|call|wall_time)_limit:|"
+EVENT = re.compile(r"security_source_read:|resource_shortfall:|provider_request:|response_schema|structured_output_setup:|provider_retry_(?:wait|token|call|wall_time)_limit:|"
     r"provider_recovery_(?:budget|exhausted):|source_not_inspected|boundary_[a-z_]+|review_unknown_candidates|unknown component ID")
 
 

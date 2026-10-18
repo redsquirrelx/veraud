@@ -345,6 +345,42 @@ def test_security_retries_smaller_ranges_when_serialized_response_is_too_large(a
         assert coverage["complete"]
         assert len(coverage["read_ranges"]) > 1
         assert assessment["consumption"]["tool_calls"] > len(coverage["read_ranges"])
+        errors = assessment["details"]["security_analysis"]["read_errors"]
+        assert errors and all(error["retrying"] for error in errors)
+
+
+@pytest.mark.parametrize("content, reason, code", [
+    ("#" + "x" * 13000, "security_source_line_limit", "source_limit_exceeded"),
+    ('value = "' + '\\' * 9000 + '"', "security_source_response_limit", "response_limit_exceeded"),
+    (("#" + "x" * 8000 + "\n") * 25, "security_retrieval_limit", "content_budget_exhausted"),
+], ids=["source-line-limit", "response-limit", "retrieval-limit"])
+def test_security_read_errors_expose_real_tool_cause_and_resource_usage(audit_environment, content, reason, code):
+    audit_environment.model.bind = lambda **kwargs: audit_environment.model
+    (audit_environment.root / "main.py").write_text(content, encoding="utf-8")
+    with TestClient(app) as client:
+        started = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
+            "attributes": ["security"], "security_config": {"max_source_lines": 1, "max_tool_calls": 200}})
+        assert started.status_code == 202, started.text
+        run_id = started.json()["run_id"]
+        client.portal.call(app.state.audit_service.wait, run_id)
+        snapshot = client.get(f"/api/audits/{run_id}").json()
+        assert snapshot["status"] == "partial"
+        assessment = snapshot["assessments"][0]
+        assert assessment["termination_reason"] == reason
+        error = assessment["details"]["security_analysis"]["read_errors"][-1]
+        assert error["code"] == code
+        assert error["path"] == "main.py"
+        assert error["tool_call_id"]
+        assert not error["retrying"]
+        assert error["tool_calls"] == assessment["consumption"]["tool_calls"]
+        assert error["end_line"] == error["start_line"]
+        coverage = assessment["coverage"]["files"]["main.py"]
+        assert not coverage["complete"]
+        assert coverage["pending_ranges"][0]["start_line"] == error["start_line"]
+        issue = snapshot["execution_issues"][0]
+        assert issue["termination_reason"] == reason
+        assert any(f"code={code}" in item and "main.py:" in item for item in issue["diagnostics"])
+        assert content not in str(error)
 
 
 def test_joint_cancellation_stops_both_attributes_and_retains_the_shared_analysis(audit_environment, monkeypatch):

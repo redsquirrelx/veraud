@@ -43,6 +43,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     publication = Publication(board, "security", identity=identity)
     evidence_ids, finding_ids, incidents, scanned = [], [], [], []
     incomplete_reasons = []
+    read_errors = []
 
     def record_incident(reason, description):
         if reason not in incomplete_reasons:
@@ -107,7 +108,8 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                 "security_analysis": {"scanned_files": scanned, "incidents": incidents, "provider_calls": gateway.calls,
                     "effective_config": limits.model_dump(mode="json"),
                     "audit_token_limit": tools.token_budget.root.limit,
-                    "incomplete_reasons": list(incomplete_reasons),
+                     "incomplete_reasons": list(incomplete_reasons),
+                     "read_errors": read_errors,
                     "remediation": "proposal_only", "dast": "not_evaluated"}})
         # A synchronous terminal receipt records consumed resources even after
         # the host revokes further work. Provider tasks cannot publish records.
@@ -125,23 +127,49 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         parts, source_refs = [], []
         start, total = 1, source.line_count or 1
         requested_end = min(total, limits.max_source_lines)
+
+        def read_error(code, message, call_id=None, *, retrying=False):
+            usage = tools.budget_usage
+            remaining = min(tools.context.input.budget.max_retrieved_characters - usage.retrieved_characters,
+                tools.retrieval_budget.limit - tools.retrieval_budget.used)
+            read_errors.append({"path": source.path, "file_id": source.id, "start_line": start,
+                "end_line": requested_end, "tool_call_id": call_id, "code": code,
+                "message": redact(message), "retrying": retrying,
+                "tool_calls": usage.tool_calls, "retrieved_characters": usage.retrieved_characters,
+                "remaining_retrieved_characters": max(0, remaining)})
+            if not retrying:
+                reason = {"source_limit_exceeded": "security_source_line_limit",
+                    "response_limit_exceeded": "security_source_response_limit",
+                    "content_budget_exhausted": "security_retrieval_limit",
+                    "access_denied": "security_source_access_denied",
+                    "invalid_source_range": "security_source_range_invalid",
+                    "invalid_request": "security_source_range_invalid",
+                    "tool_budget_exhausted": "tool_call_limit",
+                    "time_budget_exhausted": "time_limit"}.get(code, "security_source_read_failed")
+                record_incident(reason, f"security_source_read: {source.path}:{start}–{requested_end}; "
+                    f"code={code}; {redact(message)}; tool_calls={usage.tool_calls}; "
+                    f"remaining_retrieved_characters={max(0, remaining)}.")
+
         while start <= total:
             await asyncio.sleep(0)
             if tools.budget_usage.tool_calls >= limits.max_tool_calls:
-                record_incident("tool_call_limit", f"Presupuesto de lecturas agotado al inspeccionar {source.path}.")
+                read_error("tool_budget_exhausted", "Presupuesto de lecturas agotado.")
                 break
             response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": start,
                 "end_line": requested_end}, tool_call_id=f"security-read-{tools.budget_usage.tool_calls + 1}")
             if response.error or not response.evidence:
-                code = getattr(response.error, "code", None)
-                if code in {"response_limit_exceeded", "content_budget_exhausted"} and requested_end > start:
+                code = getattr(response.error, "code", None) or "missing_source_evidence"
+                retrying = code in {"response_limit_exceeded", "content_budget_exhausted"} and requested_end > start
+                read_error(code, getattr(response.error, "message", "La lectura no devolvió evidencia."),
+                    getattr(response, "tool_call_id", None), retrying=retrying)
+                if retrying:
                     requested_end = start + (requested_end - start) // 2
                     continue
-                record_incident("security_source_read_failed", f"No se pudo leer {source.path} desde la línea {start}.")
                 break
             ref = response.evidence[0]
             if ref.start_line != start or ref.end_line is None or not start <= ref.end_line <= total:
-                record_incident("security_source_read_failed", f"Rango de lectura no consecutivo para {source.path}:{start}.")
+                read_error("invalid_source_range", "La evidencia devuelta no corresponde al rango consecutivo solicitado.",
+                    response.tool_call_id)
                 break
             parts.append(response.data["content"])
             local_id = f"{source.id}/{start}-{ref.end_line}"
