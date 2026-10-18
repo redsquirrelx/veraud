@@ -102,15 +102,21 @@ def test_portal_and_exact_operation_coverage(api):
     expected = {
         ("GET", "/api/status"),
         ("GET", "/api/agents"),
+        ("GET", "/api/agents/catalog"),
+        ("GET", "/api/agents/catalog/{agent_id}"),
         ("GET", "/api/agents/{agent_type}/schema"),
         ("POST", "/api/agents/run"),
         ("POST", "/api/agents/verify-access"),
         ("GET", "/api/pipelines"),
         ("POST", "/api/pipelines/{name}/run"),
         ("POST", "/api/audits"),
+        ("POST", "/api/audits/reports/from-snapshot"),
+        ("POST", "/api/audits/reports/from-snapshot.docx"),
         ("GET", "/api/audits/{run_id}"),
         ("GET", "/api/audits/{run_id}/report"),
         ("GET", "/api/audits/{run_id}/report.docx"),
+        ("GET", "/api/audits/{run_id}/report-generations"),
+        ("GET", "/api/audits/{run_id}/report-generations/{generation_id}"),
     }
 
     def application_routes(routes):
@@ -217,7 +223,7 @@ def test_status_and_list_responses(api):
     client, _, _ = api
     for path, expected in [
         ("/api/status", {"status": "ok", "service": "agent-server"}),
-        ("/api/agents", ["dummy"]),
+        ("/api/agents", ["dummy", "functional_adequacy"]),
     ]:
         response = client.get(path)
         assert response.status_code == 200

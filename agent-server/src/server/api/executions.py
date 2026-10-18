@@ -3,6 +3,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 
+from ..app.agent_catalog import (
+    AgentCatalog,
+    AgentDetail,
+    describe_catalog_agent,
+    list_agent_catalog,
+)
 from ..app.agent_registry import UnknownAgentError
 from ..app.execution_service import (
     AgentExecutionService,
@@ -99,6 +105,33 @@ def _http_error(
 )
 def list_agents(service: ServiceDep) -> list[str]:
     return service.list_agents()
+
+
+@router.get(
+    "/catalog", response_model=AgentCatalog,
+    summary="Discover all agents and workflow participants",
+    description="Versioned backend catalog of direct agents, pipeline stages and internal participants. "
+        "Includes hierarchy, execution modes and model configuration groups. Discovery does not execute agents. "
+        "GET /api/agents continues to list only directly executable agents.",
+)
+def agent_catalog(service: ServiceDep) -> AgentCatalog:
+    return list_agent_catalog(service)
+
+
+@router.get(
+    "/catalog/{agent_id}", response_model=AgentDetail,
+    summary="Inspect a catalog agent and its public configuration",
+    description="Returns typed schemas when available, plus user-level operating settings derived from the "
+        "effective configuration. No credentials or developer controls are published. Null schemas mean "
+        "the participant has no standalone Pydantic input/output contract published here. Aliases resolve "
+        "to the canonical agent_id.",
+    responses={404: {"model": DomainError, "description": "Unknown catalog agent."}},
+)
+def catalog_agent(agent_id: str, service: ServiceDep) -> AgentDetail:
+    try:
+        return describe_catalog_agent(service, agent_id)
+    except UnknownAgentError as error:
+        raise _http_error(error, NOT_FOUND, agent_id) from None
 
 
 @router.get(

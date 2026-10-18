@@ -53,6 +53,7 @@ async def build_snapshot_report(body: BlackboardSnapshot, response: Response, se
 
 @router.post("/reports/from-snapshot.docx", response_class=Response,
     summary="Build a Word report from an exported Blackboard snapshot",
+    description="Builds and retains a canonical report from an isolated snapshot, then renders Word without repository access or model calls.",
     responses={200: {"content": {DOCX_MEDIA_TYPE: {"schema": {"type": "string", "format": "binary"}}}}})
 async def build_snapshot_report_docx(body: BlackboardSnapshot, service: ServiceDep) -> Response:
     report = await report_from_snapshot(body)
@@ -127,14 +128,16 @@ async def download_audit_report_docx(run_id: str, service: ServiceDep) -> Respon
 
 
 @router.get("/{run_id}/report-generations", response_model=list[ReportGenerationSummary],
-    summary="List retained report generations for a live or imported audit")
+    summary="List retained report generations for a live or imported audit",
+    description="Returns metadata for generations retained in this server process, without building a new report.")
 async def list_report_generations(run_id: str, response: Response, service: ServiceDep) -> list[ReportGenerationSummary]:
     response.headers["Cache-Control"] = "no-store"
     return service.report_generations(run_id)
 
 
 @router.get("/{run_id}/report-generations/{generation_id}", response_model=SoftwareAuditReport,
-    summary="Retrieve an original report and its construction trace without regenerating it")
+    summary="Retrieve an original report and its construction trace without regenerating it",
+    description="Returns the exact retained canonical report and construction trace. Returns 404 when the generation is unavailable.")
 async def get_report_generation(run_id: str, generation_id: str, response: Response, service: ServiceDep) -> SoftwareAuditReport:
     report = service.saved_report(run_id, generation_id)
     if report is None:
