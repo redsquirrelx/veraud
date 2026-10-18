@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..agents.maintainability.manager import MaintainabilityRequest
+from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
 from ..services.audit_report_docx import render_audit_report_docx
@@ -21,9 +22,10 @@ class QualityAuditInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     root_path: str
-    attributes: list[Literal["maintainability"]] = Field(min_length=1, max_length=1)
+    attributes: list[Literal["maintainability", "security"]] = Field(min_length=1, max_length=1)
     commit_hash: str = Field(pattern=r"^[a-fA-F0-9]{40}$")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
+    security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
 
 
 def parse_input(raw):
@@ -60,14 +62,16 @@ class QualityAuditRunner:
         if revision.returncode or revision.stdout.strip().lower() != parsed.commit_hash.lower():
             raise InvalidConfigError("The checkout no longer matches the selected project revision.")
         service = self.audit_service or AuditService(self.blackboard)
+        security = parsed.attributes == ["security"]
+        stage = "security" if security else "maintainability_manager"
         if hooks:
-            await hooks.on_stage_start("maintainability_manager")
+            await hooks.on_stage_start(stage)
         state = None
         try:
-            state = service.start(str(root), parsed.request, self.config, "maintainability_manager",
+            state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
                 agent_configs=self.agent_configs)
             if hooks:
-                await hooks.on_audit_start("maintainability_manager", state.run_id)
+                await hooks.on_audit_start(stage, state.run_id)
             await service.wait(state.run_id)
             snapshot = service.snapshot(state.run_id)
             report = await service.report(state.run_id)
@@ -90,8 +94,9 @@ class QualityAuditRunner:
 
 
 async def build_agents(exec_service, config, stage_configs, parsed, timeout_seconds):
-    validate_model_configs(stage_configs)
-    selected = (stage_configs or {}).get("maintainability_manager", config)
+    security = parsed.attributes == ["security"]
+    validate_model_configs(stage_configs, "security" if security else "maintainability")
+    selected = (stage_configs or {}).get("security" if security else "maintainability_manager", config)
     return {"maintainability_manager": QualityAuditRunner(selected, stage_configs)}, {}
 
 
@@ -100,6 +105,7 @@ def quality_audit_definition():
 
     return PipelineDefinition(
         name="quality-audit", stages=["maintainability_manager"], parse_input=parse_input,
+        resolve_stages=lambda parsed: ["security" if parsed.attributes == ["security"] else "maintainability_manager"],
         build_agents=build_agents, adapt_hooks=lambda hooks: hooks,
         create_pipeline=lambda agents, hooks, ctx: (agents["maintainability_manager"], hooks),
         run_pipeline=lambda pipeline, parsed, ctx: pipeline[0].run(parsed, pipeline[1]),

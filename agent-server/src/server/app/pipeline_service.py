@@ -159,6 +159,7 @@ class PipelineDefinition:
     create_pipeline: Callable[[dict[str, Any], Any, dict[str, Any]], Any] = field(repr=False)
     run_pipeline: Callable[..., Any] = field(repr=False)
     agent_types: dict[str, str] | None = None
+    resolve_stages: Callable[[Any], list[str]] | None = None
 
     def agent_type_for(self, stage: str) -> str:
         return (self.agent_types or {}).get(stage, stage)
@@ -210,9 +211,10 @@ class GenericPipelineService:
             raise UnknownPipelineError(f"Unknown pipeline: {pipeline_name!r}")
 
         parsed = definition.parse_input(input_data)
+        stages = definition.resolve_stages(parsed) if definition.resolve_stages else definition.stages
 
         if execution_ids is not None:
-            missing = [stage for stage in definition.stages if stage not in execution_ids]
+            missing = [stage for stage in stages if stage not in execution_ids]
             if missing:
                 raise InvalidConfigError(
                     f"Missing execution ids for stages: {', '.join(missing)}"
@@ -240,7 +242,7 @@ class GenericPipelineService:
         hooks: GenericReportingHooks | None = None
         graph_hooks: Any = None
         if execution_ids is not None:
-            hooks = GenericReportingHooks(callbacks, execution_ids, definition.stages)
+            hooks = GenericReportingHooks(callbacks, execution_ids, stages)
             graph_hooks = definition.adapt_hooks(hooks)
 
         pipeline = definition.create_pipeline(agents, graph_hooks, ctx)

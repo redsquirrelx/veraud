@@ -44,6 +44,7 @@ from .interpretation import (
 from .knowledge import (
     AGENT_CATEGORIES,
     ATTRIBUTE_TITLES,
+    SECURITY_SUBCHARACTERISTICS,
     SUBCHARACTERISTICS,
     category,
     reference,
@@ -370,7 +371,7 @@ class ReportExecution:
                 related = [item for item in selected if category(item)[1] == dimension]
                 subclaims = [item for item in claims if item.subcharacteristic == dimension]
                 status = evaluated_status(related, subclaims)
-                title, topics = SUBCHARACTERISTICS.get(dimension, (dimension, []))
+                title, topics = (SECURITY_SUBCHARACTERISTICS if attribute == "security" else SUBCHARACTERISTICS).get(dimension, (dimension, []))
                 subs.append(SubcharacteristicResult(id=dimension, title=title, status=status, evaluation_topics=topics,
                     assessments=[statement(item.summary, item, "assessment") for item in related if item.summary],
                     finding_ids=[item.id for item in subclaims], conclusion=conclusion(title, status, subclaims),

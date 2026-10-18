@@ -14,12 +14,13 @@ MAINTAINABILITY_AGENT_TYPES = (
 )
 
 
-def validate_model_configs(configs):
+def validate_model_configs(configs, attribute="maintainability"):
     if configs is None:
         return
-    if set(configs) != set(MAINTAINABILITY_AGENT_TYPES):
-        raise InvalidConfigError("agent_configs must configure every maintainability agent exactly once: "
-            + ", ".join(MAINTAINABILITY_AGENT_TYPES))
+    required = ("security",) if attribute == "security" else MAINTAINABILITY_AGENT_TYPES
+    if set(configs) != set(required):
+        raise InvalidConfigError(f"agent_configs must configure every {attribute} agent exactly once: "
+            + ", ".join(required))
     if any(not value.model.provider or not value.model.name or not value.api_key
            or value.timeout_seconds is not None for value in configs.values()):
         raise InvalidConfigError("Each agent configuration requires model.provider, model.name and api_key; "

@@ -98,6 +98,31 @@ def _committed_checkout(root):
     return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
 
 
+def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts(audit_environment, monkeypatch):
+    commit = _committed_checkout(audit_environment.root)
+    monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: audit_environment.root.parent)
+    model = audit_environment.model
+    model.bind = lambda **kwargs: model
+    model.ainvoke = AsyncMock()
+    sink = _RecordingSink()
+
+    async def execute():
+        service = GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
+        return await service.run("quality-audit", {
+            "root_path": str(audit_environment.root), "commit_hash": commit, "attributes": ["security"],
+        }, ExecutionConfig(), stage_configs={"security": ExecutionConfig(
+            model={"provider": "openai", "name": "security-model"}, api_key="security-key")},
+            execution_ids={"security": 42})
+
+    payload = asyncio.run(execute())["audit"]
+    assert payload["attributes"] == ["security"]
+    assert payload["status"] == "partial"
+    assert payload["blackboard"]["assessments"][0]["agent_id"] == "security"
+    assert sink.running == [(42, None), (42, payload["run_id"])]
+    assert payload["docx_base64"]
+    assert "security-key" not in str(payload)
+
+
 def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment, monkeypatch):
     """The backend learns the run id while the audit still runs, so its board page can follow it."""
     commit = _committed_checkout(audit_environment.root)
@@ -224,7 +249,7 @@ def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_envi
         model.client.close.assert_called_once()
 
 
-@pytest.mark.parametrize("attributes", [[], ["security"], ["maintainability", "security"], ["maintainability", "maintainability"]])
+@pytest.mark.parametrize("attributes", [[], ["unsupported"], ["maintainability", "security"], ["maintainability", "maintainability"]])
 def test_unimplemented_or_duplicate_attributes_are_rejected(attributes):
     with pytest.raises(InvalidConfigError):
         quality_audit_definition.parse_input({"root_path": "checkout", "commit_hash": "a" * 40, "attributes": attributes})

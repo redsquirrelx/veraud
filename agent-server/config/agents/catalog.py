@@ -44,7 +44,7 @@ AGENT_CONFIGS = {
     "project_architecture": AgentConfigSpec("project_analysis.project_architecture", "ArchitectureLimits", None, "repository_agent"),
     "project_semantic_validation": AgentConfigSpec("project_analysis.project_semantic_validation", "ValidationLimits", None, "repository_agent"),
     "functional_adequacy": AgentConfigSpec("functional_adequacy", "FunctionalAdequacyConfig", None, "service_agent"),
-    "security": AgentConfigSpec("security", "SecurityConfig", None, "security_pipeline"),
+    "security": AgentConfigSpec("security", "SecurityAuditConfig", None, "security_pipeline"),
 }
 
 

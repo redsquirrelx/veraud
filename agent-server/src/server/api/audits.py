@@ -10,6 +10,7 @@ from config.agents.budgets import TokenBudgetConfig
 from ..agents.audit_report import SoftwareAuditReport
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.schemes.report import ReportGenerationSummary
+from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.execution_service import InvalidConfigError
 from ..services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
@@ -20,10 +21,12 @@ router = APIRouter(prefix="/api/audits", tags=["Audits"])
 
 
 class StartAuditRequest(BaseModel):
-    """Repository scope and model selection for a background maintainability audit."""
+    """Repository scope and model selection for a background quality audit."""
 
     repository_path: str = Field(min_length=1, pattern=r"\S")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
+    security_request: SecurityAuditRequest | None = Field(default=None,
+        description="Select security independently; when supplied, uses the existing security scanners and overrides request.")
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
     agent_configs: dict[str, ExecutionConfig] | None = Field(default=None,
         description="Explicit model and API key for every maintainability manager, coordinator and investigator. When supplied, all nine agent IDs are required. Keys are never included in audit results.")
@@ -76,7 +79,7 @@ async def build_snapshot_report_docx(body: BlackboardSnapshot, service: ServiceD
                422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid repository, configuration or request."}})
 async def start_audit(body: StartAuditRequest, response: Response, service: ServiceDep) -> AuditState:
     try:
-        state = service.start(body.repository_path, body.request, body.config, body.agent_config,
+        state = service.start(body.repository_path, body.security_request or body.request, body.config, body.agent_config,
             body.agent_defaults, body.audit_budget, body.call_limits, agent_configs=body.agent_configs)
     except (InvalidConfigError, FileNotFoundError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from None

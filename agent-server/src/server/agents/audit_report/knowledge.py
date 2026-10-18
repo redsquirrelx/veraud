@@ -15,6 +15,11 @@ AGENT_CATEGORIES = {
     "component_adaptability": ("maintainability", "reusability"),
     "reusability": ("maintainability", "reusability"),
     "maintainability_manager": ("maintainability", "unspecified"),
+    "security": ("security", "static_security"),
+}
+
+SECURITY_SUBCHARACTERISTICS = {
+    "static_security": ("Análisis estático de seguridad", ["Patrones SAST", "Credenciales", "Dependencias"]),
 }
 
 ATTRIBUTE_TITLES = {

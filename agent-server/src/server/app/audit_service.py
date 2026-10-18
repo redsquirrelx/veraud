@@ -32,6 +32,11 @@ from ..agents.maintainability.manager import (
 )
 from ..agents.maintainability.manager.validation import validate_call_capacity
 from ..agents.schemes.report import ReportGenerationSummary
+from ..agents.security.audit import (
+    SecurityAuditRequest,
+    run_security_audit,
+)
+from ..agents.security.config import SecurityAuditConfig
 from ..api.schemas import ExecutionConfig
 from ..blackboard.identity import AuditIdentity
 from ..blackboard.interface import Blackboard
@@ -170,7 +175,7 @@ class AuditService:
             active_seconds_remaining=timing.active_remaining if timing is not None else None,
             wall_seconds_remaining=timing.wall_remaining if timing is not None else None)
 
-    def start(self, repository_path: str, request: MaintainabilityRequest,
+    def start(self, repository_path: str, request: MaintainabilityRequest | SecurityAuditRequest,
               config: ExecutionConfig, agent_config: str,
               agent_defaults: AuditAgentDefaults | None = None,
               audit_budget: TokenBudgetConfig | None = None,
@@ -179,16 +184,19 @@ class AuditService:
         """Validate before acceptance and retain a task until its owned resources are closed."""
         if self._closing:
             raise RuntimeError("Audit service is shutting down.")
-        validate_model_configs(agent_configs)
+        security = isinstance(request, SecurityAuditRequest)
+        validate_model_configs(agent_configs, "security" if security else "maintainability")
         root = Path(repository_path).expanduser().resolve()
         workspace = resolve_workspace_root()
         if root.parent != workspace:
             raise InvalidConfigError("repository_path must be a checkout directly inside the shared workspace.")
         if not root.is_dir():
             raise FileNotFoundError("Repository directory not found.")
-        limits = MaintainabilityConfig()
+        limits = SecurityAuditConfig() if security else MaintainabilityConfig()
         total_tokens = audit_budget.max_total_tokens if audit_budget is not None else limits.max_total_tokens
         if agent_defaults is not None or call_limits is not None:
+            if security:
+                raise InvalidConfigError("Hierarchy defaults are exclusive to maintainability audits.")
             try:
                 if agent_defaults is not None:
                     limits = apply_audit_defaults(limits, agent_defaults)
@@ -203,10 +211,11 @@ class AuditService:
                 raise InvalidConfigError(str(error)) from None
         if config.timeout_seconds is not None:
             try:
-                limits = validate_agent_config("maintainability_manager", {"timeout_seconds": config.timeout_seconds}, base=limits)
+                limits = validate_agent_config("security" if security else "maintainability_manager",
+                    {"timeout_seconds": config.timeout_seconds}, base=limits)
             except ValidationError:
                 raise InvalidConfigError("Invalid audit timeout.") from None
-        root_config = (agent_configs or {}).get("maintainability_manager", config)
+        root_config = (agent_configs or {}).get("security" if security else "maintainability_manager", config)
         settings, credentials, _ = get_execution_service().resolve_model_settings(
             agent_config, root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
         )
@@ -235,15 +244,15 @@ class AuditService:
             publish_audit_outcome(self.blackboard,
                 AuditIdentity(run_id=run_id, invocation_id=self._states[run_id].invocation_id), status)
 
-    async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest,
-                       limits: MaintainabilityConfig, settings: ModelSettings, credentials: ModelCredentials,
+    async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest | SecurityAuditRequest,
+                       limits: MaintainabilityConfig | SecurityAuditConfig, settings: ModelSettings, credentials: ModelCredentials,
                        total_tokens: int, model_selections=None) -> None:
         model = None
         clients = {}
         self._update(identity.run_id, "running")
         timing = ActiveDeadline(limits.timeout_seconds, wall_deadline=monotonic() + limits.max_wall_time_seconds,
             cancellation_grace_seconds=limits.cancellation_grace_seconds,
-            label="maintainability_manager", invocation_id=identity.invocation_id)
+            label="security" if isinstance(request, SecurityAuditRequest) else "maintainability_manager", invocation_id=identity.invocation_id)
         self._timings[identity.run_id] = timing
 
         async def run():
@@ -269,9 +278,16 @@ class AuditService:
                 return clients[key]
 
             model = client(settings, credentials)
+            tracing = LangSmithTracingBackend()
+            if isinstance(request, SecurityAuditRequest):
+                with timing.stage("security_audit"):
+                    return await tracing.wrap_stage(run_security_audit(tools, request,
+                        limits.model_copy(update={"max_total_tokens": total_tokens}),
+                        model.bind(max_tokens=limits.max_output_tokens), self.blackboard, identity),
+                        name="security-audit", audit_id=identity.run_id, invocation_id=identity.invocation_id,
+                        repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash)
             models = {agent_type: client(selected, access)
                 for agent_type, (selected, access) in (model_selections or {}).items()}
-            tracing = LangSmithTracingBackend()
             manager = MaintainabilityManagerAgent(model, limits, blackboard=self.blackboard,
                 audit_identity=identity, tracing_backend=tracing)
             manager.agent_models = models

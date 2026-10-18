@@ -5,6 +5,12 @@ from pathlib import Path
 from pydantic import Field
 
 from config.agents import ConfigContract, ModelSettings
+from config.agents.budgets import ExecutionTimingConfig
+from config.agents.execution import AgentExecutionConfig
+
+
+class SecurityAuditConfig(AgentExecutionConfig, ExecutionTimingConfig):
+    max_scan_files: int = Field(default=24, ge=1, le=500)
 
 
 class SecurityConfig(ConfigContract):
