@@ -3,7 +3,13 @@ from __future__ import annotations
 import httpx
 
 from ...config.logs import get_logger
-from .schemas import CallbackConfig, CallbackResult, ExecutionOutcome, ExecutionProgress
+from .schemas import (
+    CallbackConfig,
+    CallbackResult,
+    ExecutionOutcome,
+    ExecutionProgress,
+    InvocationReceipt,
+)
 
 logger = get_logger("infrastructure.callback")
 
@@ -45,6 +51,9 @@ class CallbackClient:
             f"/api/agent-executions/{execution_id}/progress",
             usage.model_dump(by_alias=True),
         )
+
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json"))
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:

@@ -296,6 +296,9 @@ class ModelGateway:
             )
             if self.on_usage is not None:
                 await self.on_usage(self)
+            from ..invocation_reporting import report_invocation_usage
+
+            await report_invocation_usage(self)
 
     def usage_totals(self):
         def token_total(name):

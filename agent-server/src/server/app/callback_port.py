@@ -16,6 +16,7 @@ from ..infrastructure.callback.schemas import (
     CallbackResult,
     ExecutionOutcome,
     ExecutionProgress,
+    InvocationReceipt,
 )
 
 
@@ -33,6 +34,9 @@ class CallbackSink:
 
     async def aclose(self) -> None:
         raise NotImplementedError
+
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return CallbackResult(acknowledged=False, error="invocation reporting unavailable")
 
 
 class BackendCallbackSink(CallbackSink):
@@ -52,6 +56,9 @@ class BackendCallbackSink(CallbackSink):
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return await self._client.invocation(execution_id, receipt)
 
 
 class NoOpCallbackSink(CallbackSink):

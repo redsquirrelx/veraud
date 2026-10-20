@@ -50,6 +50,7 @@ from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
+from ..runtimes.invocation_reporting import observe_invocation
 from ..runtimes.repository.context import RepositoryContext
 from ..runtimes.repository.model_runtime import close_model_clients
 from ..runtimes.repository.schemas import ExecutionBudget, RepositoryInput
@@ -331,20 +332,22 @@ class AuditService:
             tracing = LangSmithTracingBackend()
             if isinstance(request, SecurityAuditRequest):
                 with timing.stage("security_audit"):
-                    return await tracing.wrap_stage(run_security_audit(tools, request,
+                    return await observe_invocation(tracing.wrap_stage(run_security_audit(tools, request,
                         limits,
                         model, self.blackboard, identity),
                         name="security-audit", audit_id=identity.run_id, invocation_id=identity.invocation_id,
-                        repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash)
+                        repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash),
+                        agent_id="security", invocation_id=identity.invocation_id, run_id=identity.run_id)
             models = {agent_type: client(selected, access)
                 for agent_type, (selected, access) in (model_selections or {}).items()}
             manager = MaintainabilityManagerAgent(model, limits, blackboard=self.blackboard,
                 audit_identity=identity, tracing_backend=tracing)
             manager.agent_models = models
             with timing.stage("maintainability_audit"):
-                return await tracing.wrap_stage(manager.run(tools, request), name="maintainability-manager",
+                return await observe_invocation(tracing.wrap_stage(manager.run(tools, request), name="maintainability-manager",
                     audit_id=identity.run_id, invocation_id=identity.invocation_id,
-                    repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash)
+                    repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash),
+                    agent_id="maintainability_manager", invocation_id=identity.invocation_id, run_id=identity.run_id)
 
         try:
             result = await within_deadline(run(), timing)
@@ -420,9 +423,10 @@ class AuditService:
                         if name != "security"}
                     operation = manager.run(tools, selected_request)
                 with deadline.stage(attribute + "_audit"):
-                    return await tracing.wrap_stage(operation, name=attribute + "-audit", audit_id=identity.run_id,
+                    return await observe_invocation(tracing.wrap_stage(operation, name=attribute + "-audit", audit_id=identity.run_id,
                         invocation_id=child.invocation_id, repository_id=snapshot.repository.name,
-                        snapshot_hash=snapshot.repository.snapshot_hash)
+                        snapshot_hash=snapshot.repository.snapshot_hash),
+                        agent_id=agent_id, invocation_id=child.invocation_id, run_id=identity.run_id)
 
             try:
                 return (await within_deadline(execute(), deadline)).status

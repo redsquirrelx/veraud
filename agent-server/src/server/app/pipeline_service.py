@@ -79,6 +79,12 @@ class GenericReportingHooks:
         if self._callbacks is not None:
             await self._callbacks.mark_running(self._ids[stage], run_id)
 
+    async def on_invocation(self, stage: str, receipt: dict) -> None:
+        from ..infrastructure.callback.schemas import InvocationReceipt
+
+        if self._callbacks is not None:
+            await self._callbacks.invocation(self._ids[stage], InvocationReceipt.model_validate(receipt))
+
     def retain_partial(self, stage: str, result: BaseModel) -> None:
         self.partial_results[self._ids[stage]] = result
 

@@ -14,6 +14,7 @@ from ...benchmark.pacing import RequestPacer
 from ...blackboard.publication import publication_for
 from ..investigation.agent import InvestigationExecution
 from ..investigation.provider import ProviderPacer, lean_schema
+from ..invocation_reporting import observe_invocation
 from ..repository.context import RepositoryContext
 from ..repository.schemas import ExecutionBudget
 from ..repository.timing import ActiveDeadline, within_deadline
@@ -358,9 +359,11 @@ class CoordinatorExecution(ABC):
                     context = self.request.architectural_context + "\nScoped targets: " + ", ".join(assignment.targets)
                     context += "\nPrior evidence references (navigation only; retrieve and verify): " + str([
                         index[ref].model_dump() for ref in assignment.evidence_refs[:8] if ref in index])
-                    value = await within_deadline(within_deadline(self.agent.tracing.wrap_stage(
+                    value = await observe_invocation(within_deadline(within_deadline(self.agent.tracing.wrap_stage(
                         investigator.run(child, self.investigator_request(spec, assignment, context)),
-                        **self.invocation_metadata(assignment, state)), timing), self.timing)
+                        **self.invocation_metadata(assignment, state)), timing), self.timing),
+                        agent_id=assignment.investigator_id, invocation_id=assignment.invocation_id,
+                        run_id=self.audit_identity.run_id if self.audit_identity else "unscoped")
                     return self.raw_invocation_type(assignment=assignment, status="received", value=value,
                         evidence=self.invocation_evidence(value, child),
                         duration_seconds=monotonic() - started)

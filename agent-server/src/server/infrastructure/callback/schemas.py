@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,6 +53,21 @@ class ExecutionOutcome(BaseModel):
     interruption_reason: str | None = Field(default=None, alias="interruptionReason")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class InvocationReceipt(BaseModel):
+    """Compact internal lifecycle; never contains prompts, evidence or credentials."""
+
+    invocation_id: str = Field(min_length=1, max_length=128)
+    parent_invocation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    run_id: str = Field(min_length=1, max_length=128)
+    status: Literal["running", "completed", "partial", "failed", "cancelled", "timeout"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    input_tokens: int | None = Field(default=None, ge=0, le=2147483647)
+    output_tokens: int | None = Field(default=None, ge=0, le=2147483647)
+    error: str | None = Field(default=None, max_length=2000)
 
 
 class CallbackResult(BaseModel):

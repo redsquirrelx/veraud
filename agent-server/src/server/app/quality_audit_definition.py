@@ -11,6 +11,7 @@ from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
+from ..runtimes.invocation_reporting import invocation_reporting
 from ..services.audit_report_docx import render_audit_report_docx
 from .audit_attributes import QualityAttributes
 from .audit_models import validate_model_configs
@@ -69,10 +70,15 @@ class QualityAuditRunner:
             await hooks.on_stage_start(stage)
         state = None
         try:
-            state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
-                parsed.agent_defaults, parsed.audit_budget, parsed.call_limits,
-                agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request,
-                security_config=parsed.security_config)
+            async def report_invocation(receipt):
+                if hooks:
+                    await hooks.on_invocation(stage, receipt)
+
+            with invocation_reporting(report_invocation):
+                state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
+                    parsed.agent_defaults, parsed.audit_budget, parsed.call_limits,
+                    agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request,
+                    security_config=parsed.security_config)
             if hooks:
                 await hooks.on_audit_start(stage, state.run_id)
             await service.wait(state.run_id)
@@ -80,7 +86,7 @@ class QualityAuditRunner:
             report = await service.report(state.run_id)
             document = await asyncio.to_thread(render_audit_report_docx, report)
             # The backend stores this envelope from the HTTP response. Lifecycle
-            # callbacks only mark Running: large report artifacts are sent once.
+            # callbacks carry compact invocation lifecycle: large artifacts are sent once.
             return {"audit": {
                 "attributes": parsed.attributes,
                 "status": snapshot.status,

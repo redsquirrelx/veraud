@@ -81,6 +81,11 @@ class _RecordingSink(CallbackSink):
 
     def __init__(self):
         self.running: list[tuple[int, str | None]] = []
+        self.invocations = []
+
+    async def invocation(self, execution_id, receipt):
+        self.invocations.append((execution_id, receipt.model_dump(mode="json")))
+        return CallbackResult(acknowledged=True)
 
     async def mark_running(self, execution_id, run_id=None):
         self.running.append((execution_id, run_id))
@@ -281,11 +286,24 @@ def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment
     class Manager:
         def __init__(self, model, limits, *, blackboard, audit_identity, tracing_backend):
             self.run_id = audit_identity.run_id
+            self.invocation_id = audit_identity.invocation_id
 
         async def run(self, tools, request):
             seen["run_id"] = self.run_id
             seen["state"] = service.get(self.run_id).status
             seen["snapshot"] = service.snapshot(self.run_id)
+            from server.runtimes.invocation_reporting import observe_invocation
+
+            async def child():
+                assert service.get(self.run_id).status == "running"
+                receipts = [receipt for execution_id, receipt in sink.invocations if execution_id == 21]
+                assert len(receipts) == 2
+                assert receipts[0]["invocation_id"] == self.invocation_id
+                assert receipts[1]["parent_invocation_id"] == self.invocation_id
+                assert all(receipt["status"] == "running" for receipt in receipts)
+                return SimpleNamespace(status="partial")
+
+            await observe_invocation(child(), agent_id="modularity", invocation_id="coordinator-live", run_id=self.run_id)
             return SimpleNamespace(status="complete")
 
     monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
@@ -302,6 +320,7 @@ def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment
     assert seen["state"] == "running"
     assert seen["snapshot"].findings == []
     assert service.get(payload["run_id"]).status == "completed"
+    assert [receipt["status"] for _, receipt in sink.invocations] == ["running", "running", "partial", "completed"]
 
 
 def test_failed_pipeline_cancels_its_audit_and_leaves_the_service_open(audit_environment, monkeypatch):
