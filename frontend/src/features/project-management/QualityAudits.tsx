@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { Link } from "react-router-dom"
 import { Badge, Button, Card } from "../../shared/ui-kit/index.ts"
 import { downloadQualityAuditReport, getQualityAuditReport, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
@@ -80,8 +80,9 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
 export function QualityAudits({ projectId, branch, commitHash, canRun }: {
   projectId: number, branch: string | null, commitHash: string | null, canRun: boolean,
 }) {
+  const attributeId = useId()
   const [selected, setSelected] = useState(true)
-  const [securitySelected, setSecuritySelected] = useState(false)
+   const [securitySelected, setSecuritySelected] = useState(true)
   const [audits, setAudits] = useState<QualityAuditSummary[]>([])
   const [starting, setStarting] = useState(false)
   const [refresh, setRefresh] = useState(0)
@@ -145,11 +146,16 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
 
   return <div className="quality-audits">
     <Card>
-      <h2>Auditoría de calidad</h2>
-      <p>Selecciona los atributos de calidad para la versión {commitHash?.slice(0, 7) ?? "pendiente"}.</p>
-      <label className="quality-attribute"><input type="checkbox" checked={selected} onChange={(event) => setSelected(event.target.checked)} /> Mantenibilidad</label>
-      <label className="quality-attribute"><input type="checkbox" checked={securitySelected} onChange={(event) => setSecuritySelected(event.target.checked)} /> Seguridad</label>
-      <div className="audit-button-row">
+      <div className="quality-audit-heading">
+        <div><h2>Auditoría de calidad</h2><p>Evalúa la calidad del proyecto sobre la revisión seleccionada.</p></div>
+        <span className="quality-audit-revision mono">{branch ?? "—"} @ {commitHash?.slice(0, 7) ?? "pendiente"}</span>
+      </div>
+      <fieldset className="quality-attributes">
+        <legend>Atributos a evaluar</legend>
+        <label className="quality-attribute" data-selected={selected}><input type="checkbox" aria-labelledby={`${attributeId}-maintainability`} aria-describedby={`${attributeId}-maintainability-description`} checked={selected} onChange={(event) => setSelected(event.target.checked)} /><span><strong id={`${attributeId}-maintainability`}>Mantenibilidad</strong><small id={`${attributeId}-maintainability-description`}>Estructura del código y facilidad de evolución.</small></span></label>
+        <label className="quality-attribute" data-selected={securitySelected}><input type="checkbox" aria-labelledby={`${attributeId}-security`} aria-describedby={`${attributeId}-security-description`} checked={securitySelected} onChange={(event) => setSecuritySelected(event.target.checked)} /><span><strong id={`${attributeId}-security`}>Seguridad</strong><small id={`${attributeId}-security-description`}>Riesgos y posibles vulnerabilidades del repositorio.</small></span></label>
+      </fieldset>
+      <div className="quality-audit-actions">
         <Button disabled={!canRun || (!selected && !securitySelected) || starting || running} onClick={() => void start()}>{starting ? "Iniciando…" : "Iniciar auditoría"}</Button>
         <Button onClick={() => setRefresh((value) => value + 1)}>Actualizar</Button>
         <Link to="/settings">Configurar agentes</Link>
@@ -158,8 +164,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
       {error && <p role="alert">{error}</p>}
     </Card>
     <Card>
-      <h3>Auditorías del proyecto</h3>
-      {audits.length === 0 && <p>No hay auditorías registradas.</p>}
+      <div className="quality-audit-heading"><h3>Auditorías del proyecto</h3><Badge tone="neutral">{audits.length}</Badge></div>
+      {audits.length === 0 && <p className="quality-audits-empty">No hay auditorías registradas.</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
         <h4>{audit.attributes?.map((attribute) => attribute === "security" ? "Seguridad" : "Mantenibilidad").join(" + ") || "Mantenibilidad"} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
         <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />

@@ -23,9 +23,11 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
     <div className="project-context-top-row">
       <div className="project-context-identity">
         <h1 className="mono">{project.repositoryOwner}/{project.repositoryName}</h1>
+        <div className="project-context-badges">
         <Badge tone={statusTone(project.status)}>{statusKey === null ? project.status : t(statusKey)}</Badge>
         <Badge tone="neutral">{project.cloneProtocol.toUpperCase()}</Badge>
         {analysis.analyzing && <Badge tone="info">{t("detail.analyzingBadge")}</Badge>}
+        </div>
         <VersionLocation selection={versionSelector.selection} />
       </div>
       <div className="project-context-actions" role="group" aria-label={t("detail.actionsLabel")}>
