@@ -39,6 +39,7 @@ export interface AgentSettingsStore {
   listDeclared(): Promise<StoredAgentSettings[]>
   synchronizeCatalog(catalog: AgentCatalog): Promise<void>
   saveAssignments(agentType: string, modelId: number, credentialId: number, options?: AgentExecutionOptions): Promise<void>
+  saveCategoryAssignments(attribute: string, modelId: number, credentialId: number): Promise<void>
   prepare(agentType: string, tx?: Prisma.TransactionClient): Promise<PreparedAgentConfiguration>
   recordVerification(prepared: PreparedAgentConfiguration, message: string | null): Promise<void>
 }
@@ -140,6 +141,33 @@ export class AgentSettingsRepository implements AgentSettingsStore {
           absoluteTokenLimit: row.absoluteTokenLimit,
         } : null,
       }
+    })
+  }
+
+  /** Resolve membership and model owners inside the same transaction as the write. */
+  async saveCategoryAssignments(attribute: string, modelId: number, credentialId: number): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      const model = await tx.aiModel.findUnique({ where: { id: modelId } })
+      const credential = await tx.aiCredential.findUnique({ where: { id: credentialId } })
+      if (!model || !credential || model.aiProviderId !== credential.aiProviderId) {
+        throw new InvalidAgentAssignmentError("Select an existing model and credential from the same provider")
+      }
+      const agents = await tx.agentSettings.findMany({ where: { catalogDeclared: true } })
+      const members = agents.filter((agent) => (JSON.parse(agent.qualityAttributes) as string[]).includes(attribute))
+      if (!members.length) throw new InvalidAgentAssignmentError("Quality category is not declared by the agent-server")
+      const owners = new Set(members.filter((agent) => agent.requiresModel && agent.availability === "available")
+        .map((agent) => agent.modelConfigurationAgentType).filter((id): id is string => id !== null))
+      if (!owners.size) throw new InvalidAgentAssignmentError("This quality category has no configurable model agents")
+      for (const id of owners) {
+        const owner = agents.find((agent) => agent.agentType === id)
+        if (!owner?.requiresModel || owner.modelConfigurationAgentType !== id || owner.availability !== "available") {
+          throw new InvalidAgentAssignmentError("Category contains an unavailable model configuration owner")
+        }
+      }
+      await tx.agentSettings.updateMany({ where: { agentType: { in: [...owners] } }, data: {
+        aiModelId: modelId, aiCredentialId: credentialId,
+        verificationFingerprint: null, verificationCheckedAt: null, verificationError: null,
+      } })
     })
   }
 

@@ -50,7 +50,11 @@ export class AgentSettingsService {
   }
 
   async verify(agentType: string): Promise<AgentSettingsView> {
-    await this.check(agentType)
+    const agent = (await this.settings.listDeclared()).find((row) => row.agentType === agentType)
+    if (!agent || !agent.requiresModel || !agent.modelConfigurationAgentType || agent.availability !== "available") {
+      throw new AgentConfigurationError([{ agentType, reason: "This agent has no available model access to verify" }])
+    }
+    await this.check(agent.modelConfigurationAgentType)
     return (await this.list()).find((agent) => agent.agentType === agentType)!
   }
 
@@ -98,7 +102,9 @@ export class AgentSettingsService {
   async list(): Promise<AgentSettingsView[]> {
     const stored = await this.settings.listDeclared()
     return stored.map((row) => {
-      const configuration = row.configuration
+      const owner = row.requiresModel && row.modelConfigurationAgentType
+        ? stored.find((agent) => agent.agentType === row.modelConfigurationAgentType) : null
+      const configuration = owner?.configuration ?? null
       return {
         agentType: row.agentType, name: row.name, role: row.role, requiresModel: row.requiresModel,
         modelConfigurationAgentType: row.modelConfigurationAgentType, executionModes: row.executionModes,
@@ -106,8 +112,13 @@ export class AgentSettingsService {
         availability: row.availability, parentAgentTypes: row.parentAgentTypes, childAgentTypes: row.childAgentTypes,
         configured: configuration !== null && configuration.model.providerId === configuration.credential.providerId,
         configuration,
-        verification: row.verification,
+        verification: owner?.verification ?? { status: "not_verified", checkedAt: null, message: null },
       }
     })
+  }
+
+  async saveCategory(attribute: string, modelId: number, credentialId: number): Promise<AgentSettingsView[]> {
+    await this.settings.saveCategoryAssignments(attribute, modelId, credentialId)
+    return this.list()
   }
 }

@@ -33,6 +33,21 @@ const agentSettingsSchema = {
 } as const
 
 export function registerAgentSettingsRoutes(app: FastifyInstance, service: AgentSettingsService): void {
+  app.put<{ Params: { attribute: string }, Body: { modelId: number, credentialId: number } }>("/api/agent-settings/categories/:attribute", { schema: {
+    tags: ["Agent Settings"], summary: "Assign model access to every agent in a declared quality category",
+    description: "Atomically updates model and credential for available model owners in the category, including shared model owners. Preserves each agent's generation parameters and budgets; invalidates previous access checks. Deterministic agents need no assignment.",
+    params: { type: "object", required: ["attribute"], properties: { attribute: { type: "string", minLength: 1 } } },
+    body: { type: "object", required: ["modelId", "credentialId"], additionalProperties: false, properties: {
+      modelId: { type: "integer", minimum: 1 }, credentialId: { type: "integer", minimum: 1 },
+    } },
+    response: { 200: { type: "array", items: agentSettingsSchema }, ...errorResponses([422]) },
+  } }, async (request, reply) => {
+    try { return await service.saveCategory(request.params.attribute, request.body.modelId, request.body.credentialId) }
+    catch (error) {
+      if (error instanceof InvalidAgentAssignmentError) return reply.code(422).send({ message: error.message })
+      throw error
+    }
+  })
   app.get("/api/agent-settings", { schema: {
     tags: ["Agent Settings"],
     summary: "List synchronized agent-server agents and saved configuration",

@@ -261,3 +261,30 @@ provider routing and generation parameter application without external requests.
 5. Reload the project to show the snapshot is persisted. Rename its model or edit
    its API key and return to Settings: the previous verification becomes
    **Not verified**. A name-only credential edit preserves key validity.
+## Category assignments and effective access
+
+The local backend connects to agent-server using `127.0.0.1` to match its IPv4
+listener. On Windows, `localhost` can select an IPv6 Vite listener on the same
+port and return frontend HTML instead of the agent catalog. Settings → Audit
+offers catalog synchronization and explains missing category metadata instead of
+rendering an empty card grid.
+
+`PUT /api/agent-settings/categories/:attribute` accepts `{ modelId, credentialId }`
+and returns the full public settings list. Membership comes exclusively from the
+synchronized `quality_attributes`. In a single transaction, the backend resolves
+available model participants to their unique model configuration owners and assigns
+the pair to all of them. Unknown categories, invalid owners or provider mismatch
+reject the entire write. Generation parameters and budgets remain individual.
+Access verification receipts are invalidated after a category assignment.
+
+Settings → Audit builds its category cards from this metadata, including newly
+declared categories. Mixed assignments are indicated and can be unified even if
+the selected pair matches the representative agent. Shared owners may affect more
+than one category; deterministic agents have no model assignment.
+
+Public configuration and verification for a shared agent reflect its declared
+model owner. `POST /api/agent-settings/:agentType/verify` resolves that owner and
+records the provider check there; deterministic/unavailable agents return 422.
+The frontend displays shared access as read-only and omits model access controls
+for deterministic agents. A dirty form does not display a saved verification badge
+as proof of access to its unsaved selection.
