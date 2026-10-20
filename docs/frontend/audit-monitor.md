@@ -7,6 +7,21 @@ when no runs are recorded. Opening it leaves the rest of the page usable.
 
 ## Real data
 
+Invocation rows form expandable manager → coordinator → investigator branches
+using `parent_invocation_id` from compact receipts, with the real root agent as
+the group header, rather than repeating its category
+and then rendering the same root inside. Empty or unidentified groups retain a
+generic category header. Each branch retains its own
+state and usage; the monitor shows one row per agent type within each audit.
+Repeated invocations update that row from the latest start time (receipt order
+for historical reports without timestamps), including its ID, state, usage,
+timestamps and error. Progress counts distinct agents. Branch expansion and
+first-appearance ordering survive invocation changes; retained children resolve
+historical parent IDs to the parent's current row. Missing parents or cyclic
+historical links remain visible as roots. The playground includes nested branches.
+Participant receipts arrive through lifecycle callbacks while the audit runs.
+The final report reconciles those rows by invocation ID without adding duplicates.
+
 - `AgentExecutionsProvider` remains the single WebSocket subscription and restores
   the most recent 50 execution IDs after refresh/reconnect.
 - HTTP lookups supply `monitorContext`: project identity, branch, revision,
@@ -21,8 +36,13 @@ when no runs are recorded. Opening it leaves the rest of the page usable.
 - The agent catalog supplies quality/workflow grouping. Metadata is never treated
   as proof that a participant ran. Until individual receipts are published, only
   the actual backend orchestrator row is shown. Missing attribute state displays
-  “Not reported”; a joint orchestrator is counted once under `quality-audit`.
-- Final report invocation IDs populate retrospective agent rows with their actual
+  “Not reported” when no execution or attribute outcome is available.
+  `maintainability_manager` belongs to Maintainability and `security` belongs to
+  Security, including joint audits and before catalog loading. Descendants stay
+  in their actual root's category; each invocation is counted once.
+- Live callbacks carry invocation/parent IDs, agent/run identity, timestamps,
+  cumulative provider usage and terminal outcomes. Refresh restores persisted receipts.
+- Final report invocation IDs reconcile agent rows with their actual
   statuses and reported usage. A completed backend request can still show a partial
   or failed quality evaluation. Missing tokens remain unreported rather than zero.
 

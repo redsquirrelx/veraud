@@ -6,6 +6,8 @@ export type AuditRunState = "waiting" | "running" | "completed" | "partial" | "f
 
 export interface AuditAgentRun {
   id: number | string
+  runId?: string | null
+  parentId?: number | string | null
   /** Backend identifier, rendered verbatim: it is an agent type, not UI copy. */
   agentType: string
   state: AuditRunState
@@ -60,7 +62,7 @@ export function auditStateFrom(executionStatus: string, auditStatus: string | nu
   if (executionStatus === "Completed" || executionStatus === "completed") {
     return "completed"
   }
-  if (executionStatus === "Failed" || executionStatus === "failed") {
+  if (executionStatus === "Failed" || ["failed", "cancelled", "timeout"].includes(executionStatus)) {
     return "failed"
   }
   if (executionStatus === "partial") return "partial"
@@ -135,4 +137,28 @@ export function progressText(t: TFunction<"projects">, progress: AuditProgress):
   return progress.total === 0
     ? t("auditStatus.progress.empty")
     : t("auditStatus.progress.finished", { finished: formatNumber(progress.finished), total: formatNumber(progress.total) })
+}
+
+export interface AuditAgentNode {
+  agent: AuditAgentRun
+  children: AuditAgentNode[]
+}
+
+/** Missing parents and cyclic historical links stay visible as roots. */
+export function agentTree(agents: AuditAgentRun[]): AuditAgentNode[] {
+  const nodes = new Map(agents.map((agent) => [agent.id, { agent, children: [] } as AuditAgentNode]))
+  const roots: AuditAgentNode[] = []
+  for (const node of nodes.values()) {
+    const seen = new Set([node.agent.id])
+    let parent = nodes.get(node.agent.parentId ?? "")
+    let cursor = parent
+    while (cursor) {
+      if (seen.has(cursor.agent.id)) { parent = undefined; break }
+      seen.add(cursor.agent.id)
+      cursor = nodes.get(cursor.agent.parentId ?? "")
+    }
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
 }

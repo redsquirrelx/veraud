@@ -243,6 +243,7 @@
 }
 
 .audit-agent-type {
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: #0f172a;
@@ -250,6 +251,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.audit-agent-children {
+  margin-top: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid #94a3b8;
+}
+
+.audit-agent-children[hidden] { display: none; }
+
+.audit-agent-toggle {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.audit-agent-root { padding: 0.65rem; border-color: #64748b; }
+.audit-agent-toggle .audit-agent-type { flex: 1; }
+
+.audit-agent-toggle:focus-visible { outline: 2px solid #006194; outline-offset: 2px; }
 
 .audit-agent-icon {
   display: inline-flex;

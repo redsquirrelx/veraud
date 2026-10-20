@@ -5,12 +5,13 @@ import { ArrowRightIcon, Badge, Card, CheckIcon, ChevronDownIcon, CrossIcon, Fol
 import { formatDateTime, formatNumber } from "../i18n/format.ts"
 import {
   auditProgress,
+  agentTree,
   pipelineLabelKey,
   pipelineProgress,
   progressText,
   stateLabelKey,
   stateTone,
-  type AuditAgentRun,
+  type AuditAgentNode,
   type AuditPipelineRun,
   type AuditProgress,
   type AuditRunState,
@@ -37,23 +38,35 @@ function ProgressLabel({ progress }: { progress: AuditProgress }) {
   return <span className="label audit-progress">{progressText(t, progress)}</span>
 }
 
-function AgentRow({ agent }: { agent: AuditAgentRun }) {
+function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: boolean }) {
+  const { agent, children } = node
   const { t } = useTranslation("projects")
+  const childrenId = useId()
+  const [expanded, setExpanded] = useState(true)
+  const expandable = primary || children.length > 0
+  const Header = expandable ? "button" : "div"
   const reported = agent.inputTokens != null || agent.outputTokens != null
   const input = agent.inputTokens == null ? t("auditStatus.agents.notReported") : formatNumber(agent.inputTokens)
   const output = agent.outputTokens == null ? t("auditStatus.agents.notReported") : formatNumber(agent.outputTokens)
 
   return (
-    <li className="audit-agent" data-state={agent.state}>
-      <div className="audit-agent-head">
+    <li className={`audit-agent${primary ? " audit-agent-root" : ""}`} data-state={agent.state}>
+      <Header className={`audit-agent-head${expandable ? " audit-agent-toggle" : ""}`}
+        type={expandable ? "button" : undefined}
+        aria-label={expandable ? t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id }) : undefined}
+        aria-expanded={expandable ? expanded : undefined} aria-controls={expandable ? childrenId : undefined}
+        onClick={expandable ? () => setExpanded((value) => !value) : undefined}>
         <span className={`audit-agent-icon audit-agent-icon-${agent.state}`} aria-hidden="true">
           <RunStateIcon state={agent.state} />
         </span>
         <span className="mono audit-agent-type">
           {t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id })}
         </span>
+        {expandable && <span>
+          <span className="audit-pipeline-chevron" data-expanded={expanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
+        </span>}
         <Badge tone={stateTone(agent.state)}>{t(stateLabelKey(agent.state))}</Badge>
-      </div>
+      </Header>
       <div className="audit-agent-meta">
         <span className="label">
           {reported ? t("auditStatus.agents.tokens", { input, output }) : t("auditStatus.agents.tokensUnreported")}
@@ -62,6 +75,9 @@ function AgentRow({ agent }: { agent: AuditAgentRun }) {
         {agent.finishedAt && <span className="label">{t("auditStatus.agents.finishedAt", { date: formatDateTime(agent.finishedAt) })}</span>}
       </div>
       {agent.error && <p role="alert" className="audit-agent-error">{agent.error}</p>}
+      {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
+        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} />)}
+      </ul>}
     </li>
   )
 }
@@ -75,6 +91,16 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
   const labelKey = pipelineLabelKey(pipeline.id)
   const name = labelKey === null ? pipeline.id : t(labelKey)
   const progress = pipelineProgress(pipeline)
+  const tree = agentTree(pipeline.agents)
+  const rootType = pipeline.id === "maintainability" ? "maintainability_manager" : pipeline.id === "security" ? "security" : null
+
+  // A real root already names and controls this group. Keep generic category
+  // headers for empty groups or historical rows without an identified root.
+  if (tree.length > 0 && tree.every((node) => node.agent.agentType === rootType)) {
+    return <ul className="audit-agent-list audit-root-list" data-state={pipeline.state}>
+      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} primary />)}
+    </ul>
+  }
 
   return (
     <section className="audit-pipeline" data-state={pipeline.state}>
@@ -118,8 +144,8 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
             <p className="label">{t("auditStatus.agents.empty")}</p>
           ) : (
             <ul className="audit-agent-list">
-              {pipeline.agents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
+              {tree.map((node) => (
+                <AgentRow key={node.agent.agentType} node={node} />
               ))}
             </ul>
           )}

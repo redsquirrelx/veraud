@@ -21,19 +21,29 @@ const running: AuditStatusModel = {
       state: "running",
       agents: [
         {
-          id: 118, agentType: "maintainability_manager", state: "completed",
+          id: 118, agentType: "maintainability_manager", state: "running",
           inputTokens: 41230, outputTokens: 9840,
-          startedAt: "2026-10-17T10:00:12Z", finishedAt: "2026-10-17T10:04:41Z", error: null,
+          startedAt: "2026-10-17T10:00:12Z", finishedAt: null, error: null,
         },
         {
-          id: 119, agentType: "maintainability_reviewer", state: "running",
+          id: 119, parentId: 118, agentType: "modularity", state: "running",
           inputTokens: 22100, outputTokens: 3120,
           startedAt: "2026-10-17T10:04:44Z", finishedAt: null, error: null,
         },
         {
-          id: 120, agentType: "maintainability_judge", state: "waiting",
+          id: 120, parentId: 119, agentType: "architect_boundary", state: "waiting",
           inputTokens: null, outputTokens: null,
           startedAt: null, finishedAt: null, error: null,
+        },
+        {
+          id: 123, parentId: 118, agentType: "reusability", state: "running",
+          inputTokens: 8200, outputTokens: 1200,
+          startedAt: "2026-10-17T10:04:44Z", finishedAt: null, error: null,
+        },
+        {
+          id: 124, parentId: 123, agentType: "abstraction", state: "running",
+          inputTokens: null, outputTokens: null,
+          startedAt: "2026-10-17T10:04:50Z", finishedAt: null, error: null,
         },
       ],
     },

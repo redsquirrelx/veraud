@@ -295,7 +295,7 @@ describe("AuditStatusView state accents", () => {
     })
 
     expect(region).toHaveAttribute("data-state", "partial")
-    const pipelines = region.querySelectorAll(".audit-pipeline")
+    const pipelines = region.querySelectorAll(".audit-pipeline, .audit-root-list")
     expect(pipelines[0]).toHaveAttribute("data-state", "completed")
     expect(pipelines[1]).toHaveAttribute("data-state", "failed")
     expect(region.querySelector(".audit-agent")).toHaveAttribute("data-state", "completed")
