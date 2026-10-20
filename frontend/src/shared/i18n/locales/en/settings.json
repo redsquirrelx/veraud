@@ -9,7 +9,12 @@
   },
   "audit": {
     "modelsTitle": "Quality audit models",
-    "modelsDescription": "Choose a model and credential for each attribute. Maintainability shares its selection across all nine agents; security uses its own selection for remediation proposals.",
+    "modelsDescription": "Choose a model and credential for each quality category. Saving applies that selection to all its model agents declared by the server.",
+    "categoryAssignment": "Saving applies this model and credential to every model agent in this category, preserving individual operating parameters.",
+    "categoryMixed": "Agents in this category have different assignments. Save to apply the selected configuration to all of them.",
+    "syncCatalog": "Synchronize agent catalog",
+    "synchronizingCatalog": "Synchronizing catalog…",
+    "noCategories": "The saved catalog has no configurable quality categories. Synchronize the agent catalog to load the category cards.",
     "security": "Security",
     "allAgents": "Maintainability · all agents",
     "saved": "Maintainability audit configuration saved"
@@ -72,6 +77,9 @@
     }
   },
   "agents": {
+    "noModelRequired": "This agent is deterministic and does not require model access.",
+    "unavailable": "This agent is not available for execution or model access verification.",
+    "sharedModel": "Uses the model and credential configured for {{agentType}}.",
     "title": "Agent configuration",
     "subtitle": "Agent types declared in the backend and their saved configuration.",
     "empty": "No agent types are declared in the backend.",

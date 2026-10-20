@@ -9,7 +9,12 @@
   },
   "audit": {
     "modelsTitle": "Modelos de auditoría de calidad",
-    "modelsDescription": "Selecciona modelo y credencial por atributo. Mantenibilidad comparte su selección entre los nueve agentes; seguridad utiliza su propia selección para propuestas de remediación.",
+    "modelsDescription": "Selecciona modelo y credencial por categoría de calidad. Al guardar, se aplica la selección a todos sus agentes de modelo declarados por el servidor.",
+    "categoryAssignment": "Al guardar, este modelo y credencial se aplican a todos los agentes de modelo de la categoría, conservando sus parámetros operativos individuales.",
+    "categoryMixed": "Los agentes de esta categoría tienen asignaciones diferentes. Guarda para aplicar la configuración seleccionada a todos.",
+    "syncCatalog": "Sincronizar catálogo de agentes",
+    "synchronizingCatalog": "Sincronizando catálogo…",
+    "noCategories": "El catálogo guardado no contiene categorías de calidad configurables. Sincroniza el catálogo de agentes para cargar las tarjetas de cada categoría.",
     "security": "Seguridad",
     "allAgents": "Mantenibilidad · todos los agentes",
     "saved": "Configuración de auditoría de mantenibilidad guardada"
@@ -72,6 +77,9 @@
     }
   },
   "agents": {
+    "noModelRequired": "Este agente es determinista y no requiere acceso a un modelo.",
+    "unavailable": "Este agente no está disponible para ejecución ni verificación de acceso a modelos.",
+    "sharedModel": "Utiliza el modelo y la credencial configurados para {{agentType}}.",
     "title": "Configuración de agentes",
     "subtitle": "Tipos de agentes declarados en el backend y su configuración guardada.",
     "empty": "No hay tipos de agentes declarados en el backend.",

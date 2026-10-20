@@ -9,7 +9,7 @@ export function AgentAccessVerification({ agent, disabled, onUpdated }: { agent:
   const { t } = useTranslation("settings")
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<{ key: ParseKeys<"settings">, detail?: string } | null>(null)
-  const verification = agent.verification
+  const verification = disabled ? undefined : agent.verification
   async function verify() {
     if (verifying || disabled || !agent.configured) return
     setVerifying(true)

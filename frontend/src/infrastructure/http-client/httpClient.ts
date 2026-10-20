@@ -324,7 +324,13 @@ export interface AgentConfiguration {
 }
 
 export interface AgentSettings {
+  requiresModel?: boolean
+  modelConfigurationAgentType?: string | null
+  availability?: string
+  role?: string
+  executionModes?: string[]
   agentType: string
+  name?: string
   qualityAttributes: string[]
   workflowIds: string[]
   configured: boolean
@@ -356,6 +362,22 @@ export async function verifyAgentSettings(agentType: string): Promise<AgentSetti
   const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}/verify`, { method: "POST" })
   const body = await response.json() as AgentSettings & { message?: string }
   if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not verify model access")
+  return body
+}
+
+export async function syncAgentSettings(): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/sync`, { method: "POST" })
+  const body = await response.json() as AgentSettings[] & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not synchronize agent catalog")
+  return body
+}
+
+export async function saveQualityCategory(attribute: string, modelId: number, credentialId: number): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/categories/${encodeURIComponent(attribute)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId, credentialId }),
+  })
+  const body = await response.json() as AgentSettings[] & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save category model access")
   return body
 }
 

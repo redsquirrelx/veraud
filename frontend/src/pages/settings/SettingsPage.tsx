@@ -250,11 +250,11 @@ export function SettingsPage() {
       <div role="tabpanel" id={`${tabsId}-panel-audit`} aria-labelledby={`${tabsId}-tab-audit`} hidden={activeTab !== "audit"} tabIndex={0}>
         {activeTab === "audit" && <>
           <AgentsSettings providers={providers} providersLoading={loading} providersError={providersLoadError}
-            agentTypes={["maintainability_manager", "security"]}
+            qualityCategories
             modelAccessOnly
             heading={t("audit.modelsTitle")}
             description={t("audit.modelsDescription")}
-            labels={{ maintainability_manager: t("audit.allAgents"), security: t("audit.security") }}
+            labels={{ maintainability: t("audit.allAgents"), security: t("audit.security") }}
             onAssignmentsSaved={() => { pushToast("success", t("audit.saved")); void refresh() }} />
           <AuditSettings />
         </>}

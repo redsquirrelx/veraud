@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParseKeys } from "i18next"
-import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, saveAgentSettings, saveQualityCategory, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Card, ItemSelector } from "../../shared/ui-kit/index.ts"
 import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import { DEFAULT_TOKEN_BUDGET, DEFAULT_ABSOLUTE_TOKEN_LIMIT } from "../../shared/agent-monitor/tokenBudgets.ts"
@@ -16,6 +16,9 @@ interface AgentSettingsCardProps {
   onVerified: (agent: AgentSettings) => void
   label?: string
   modelAccessOnly?: boolean
+  qualityAttribute?: string
+  categoryMixed?: boolean
+  onCategorySaved?: (agents: AgentSettings[]) => void
 }
 
 interface AgentSaveError {
@@ -23,7 +26,7 @@ interface AgentSaveError {
   detail?: string
 }
 
-export function AgentSettingsCard({ agent, providers, providersLoading, onSaved, onConfigure, onVerified, label, modelAccessOnly = false }: AgentSettingsCardProps) {
+export function AgentSettingsCard({ agent, providers, providersLoading, onSaved, onConfigure, onVerified, label, modelAccessOnly = false, qualityAttribute, categoryMixed = false, onCategorySaved }: AgentSettingsCardProps) {
   const { t } = useTranslation("settings")
   const [modelId, setModelId] = useState<number | null>(agent.configuration?.model.id ?? null)
   const [credentialId, setCredentialId] = useState<number | null>(agent.configuration?.credential.id ?? null)
@@ -42,7 +45,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
   const model = models.find((entry) => entry.id === modelId)
   const credentials = providers.find((provider) => provider.id === model?.providerId)?.credentials ?? []
   const dirty = modelId !== (agent.configuration?.model.id ?? null) || credentialId !== (agent.configuration?.credential.id ?? null)
-  const canSave = model !== undefined && credentials.some((entry) => entry.id === credentialId) && dirty && !providersLoading && !saving
+  const canSave = model !== undefined && credentials.some((entry) => entry.id === credentialId) && (dirty || categoryMixed) && !providersLoading && !saving
 
   function selectModel(id: string) {
     const next = models.find((entry) => entry.id === Number(id))
@@ -57,10 +60,12 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
     setSaving(true)
     setError(null)
     try {
-      const updated = await saveAgentSettings(agent.agentType, modelId, credentialId)
+      const category = qualityAttribute ? await saveQualityCategory(qualityAttribute, modelId, credentialId) : null
+      const updated = category ? category.find((row) => row.agentType === agent.agentType)! : await saveAgentSettings(agent.agentType, modelId, credentialId)
       setModelId(updated.configuration?.model.id ?? null)
       setCredentialId(updated.configuration?.credential.id ?? null)
       onSaved(updated)
+      if (category) onCategorySaved?.(category)
       setSaved(true)
     } catch (failure) {
       setError(failure instanceof ApiError
@@ -78,6 +83,18 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       : agent.configuration
         ? "agents.status.needsAttention"
         : "agents.status.notConfigured"
+
+  const unavailable = agent.availability !== undefined && agent.availability !== "available"
+  if (!qualityAttribute && (unavailable || agent.requiresModel === false || (agent.modelConfigurationAgentType && agent.modelConfigurationAgentType !== agent.agentType))) {
+    return <Card>
+      <div className="settings-agent-heading"><h3>{label ?? agent.name ?? agent.agentType}</h3></div>
+      <p className="settings-hint">{unavailable ? t("agents.unavailable") : agent.requiresModel === false ? t("agents.noModelRequired") : t("agents.sharedModel", { agentType: agent.modelConfigurationAgentType })}</p>
+      {!unavailable && agent.requiresModel !== false && <>
+        {agent.configuration && <p className="settings-hint">{agent.configuration.model.providerName} · {agent.configuration.model.name} · {agent.configuration.credential.name}</p>}
+        <AgentAccessVerification agent={agent} disabled={providersLoading} onUpdated={onVerified} />
+      </>}
+    </Card>
+  }
 
   return (
     <Card>
@@ -113,6 +130,8 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       {error && <p className="settings-error" role="alert">{error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail })}</p>}
       {saved && !dirty && <p className="settings-hint" role="status">{t("agents.card.saved")}</p>}
       <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading} onUpdated={onVerified} />
+      {qualityAttribute && <p className="settings-hint">{t("audit.categoryAssignment")}</p>}
+      {categoryMixed && <p className="settings-hint" role="status">{t("audit.categoryMixed")}</p>}
       {!modelAccessOnly && <p className="settings-hint">{t("agents.card.tokenSummary", { budget: formatNumber(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET), limit: formatNumber(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</p>}
       <div className="settings-agent-footer">
         {!modelAccessOnly && <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: agent.agentType })} onClick={onConfigure}>{t("agents.card.configure")}</Button>}

@@ -100,7 +100,7 @@ describe("SettingsPage", () => {
   })
 
   it("reuses the agent card in Audit to save common maintainability model access", async () => {
-    const saved = { agentType: "maintainability_manager", configured: true,
+    const saved = { agentType: "maintainability_manager", qualityAttributes: ["maintainability"], workflowIds: ["quality-audit"], configured: true,
       configuration: {
         model: { id: 10, name: "gpt-4o", providerId: 1, providerName: "OpenAI" },
         credential: { id: 20, name: "prod", providerId: 1, providerName: "OpenAI" },
@@ -108,9 +108,9 @@ describe("SettingsPage", () => {
       } }
     const calls = renderSettings([
       { status: 200, body: providers },
-      { status: 200, body: [{ agentType: "maintainability_manager", configured: false, configuration: null },
-        { agentType: "architecture", configured: false, configuration: null }] },
-      { status: 200, body: saved }, { status: 200, body: providers },
+      { status: 200, body: [{ ...saved, configured: false, configuration: null },
+        { agentType: "architecture", qualityAttributes: [], workflowIds: ["project-architecture"], configured: false, configuration: null }] },
+      { status: 200, body: [saved] }, { status: 200, body: providers },
     ])
     await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
     expect(await screen.findByRole("heading", { name: "Maintainability · all agents" })).toBeDefined()
@@ -121,9 +121,30 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("option", { name: /prod/ }))
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
     await waitFor(() => expect(calls.some((call) => call.method === "PUT"
-      && call.url.endsWith("/api/agent-settings/maintainability_manager")
+      && call.url.endsWith("/api/agent-settings/categories/maintainability")
       && call.body === JSON.stringify({ modelId: 10, credentialId: 20 }))).toBe(true))
     expect(await screen.findByText("Configuration saved.")).toBeDefined()
+  })
+
+  it("explains missing category metadata and loads both cards through catalog synchronization", async () => {
+    const rows = ["maintainability", "security"].map((attribute) => ({
+      agentType: attribute === "maintainability" ? "maintainability_manager" : "security",
+      qualityAttributes: [attribute], workflowIds: ["quality-audit"], requiresModel: true,
+      modelConfigurationAgentType: attribute === "maintainability" ? "maintainability_manager" : "security",
+      availability: "available", configured: false, configuration: null,
+    }))
+    const calls = renderSettings([
+      { status: 200, body: providers },
+      { status: 200, body: rows.map((row) => ({ ...row, qualityAttributes: [] })) },
+      { status: 200, body: rows },
+    ])
+    await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
+    expect(await screen.findByText(/The saved catalog has no configurable quality categories/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Synchronize agent catalog" }))
+    expect(await screen.findByRole("heading", { name: "Maintainability · all agents" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Security" })).toBeInTheDocument()
+    expect(calls.at(-1)).toMatchObject({ method: "POST", url: expect.stringContaining("/api/agent-settings/sync") })
+    expect(screen.queryByText(/The saved catalog has no configurable quality categories/)).toBeNull()
   })
 
   it("edits a model through its existing modal, keeping the provider fixed", async () => {
