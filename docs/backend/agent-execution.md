@@ -241,3 +241,16 @@ the model generation. Executions invoked without an execution ID do not report.
 HTTP execution responses, project history and lifecycle WebSocket events expose
 `estimatedTokens` and `interruptionReason` alongside input/output counts. This
 step reports usage; enforcement of the configured total budget follows separately.
+## Global monitor context
+
+`GET /api/agent-executions/:id` includes optional HTTP-only `monitorContext`:
+project identity (null for standalone runs), branch, commit, evaluation type,
+declared quality attributes and workflow IDs. Context is read through the
+execution's evaluation/version and synchronized agent settings; no fabricated
+project or agent execution is added. Lightweight WebSocket payloads are unchanged.
+
+The global frontend requests `?monitor=true`. For quality audits this projects the
+serialized result to selected attributes, outcome, report attribute statuses and
+actual invocation receipts with reported token counts. It excludes Blackboard
+snapshots, evidence bodies and `docx_base64`. This does not mutate the saved result.
+The default lookup and project report/Word endpoints retain original artifacts.

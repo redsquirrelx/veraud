@@ -7,6 +7,7 @@ import type {
   RealtimeGateway,
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
+import { monitorExecution } from "./agent-execution.monitor.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
 import {
   UnknownExecutionTargetError,
@@ -140,14 +141,16 @@ export function registerAgentExecutionRoutes(
   })
 
   app.get("/api/agent-executions/:id", { schema: { params: idParams,
+    querystring: { type: "object", properties: { monitor: { type: "boolean" } } },
     tags: ["Agent Executions"], summary: "Get an agent execution",
-    description: "Returns the current execution, including nullable result, error, usage and lifecycle dates.",
+    description: "Returns execution state, usage, lifecycle dates and HTTP monitor context. With monitor=true, quality-audit result is a compact state/receipt projection excluding evidence, snapshots and Word bytes. The default returns the original result.",
     response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404], "ExecutionError", false) },
   } }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
     try {
-      return toResponse(await service.findById(Number(id)))
+      const execution = await service.findById(Number(id))
+      return toResponse((request.query as { monitor?: boolean }).monitor ? monitorExecution(execution) : execution)
     } catch (error) {
       return notFoundOrRethrow(error, reply)
     }
@@ -233,7 +236,7 @@ export function registerAgentExecutionRoutes(
   )
 }
 
-function toResponse(execution: StoredAgentExecution) {
+function toResponse(execution: StoredAgentExecution, includeContext = true) {
   return {
     id: execution.id,
     evaluationId: execution.evaluationId,
@@ -249,6 +252,7 @@ function toResponse(execution: StoredAgentExecution) {
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
     configuration: execution.configuration ?? null,
+    ...(!includeContext || execution.monitorContext === undefined ? {} : { monitorContext: execution.monitorContext }),
   }
 }
 
@@ -269,5 +273,5 @@ function broadcast(
   type: AgentExecutionEvent["type"],
   execution: StoredAgentExecution,
 ): void {
-  gateway.broadcast({ type, execution: toResponse(execution) })
+  gateway.broadcast({ type, execution: toResponse(execution, false) })
 }

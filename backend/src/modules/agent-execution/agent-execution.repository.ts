@@ -46,6 +46,14 @@ export interface AgentExecutionUsage {
 }
 
 export interface StoredAgentExecution {
+  monitorContext?: {
+    project: { id: number, repositoryOwner: string, repositoryName: string } | null
+    branch: string | null
+    commitHash: string | null
+    evaluationType: string | null
+    qualityAttributes: string[]
+    workflowIds: string[]
+  }
   id: number
   evaluationId: number | null
   agentType: string
@@ -217,13 +225,24 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async findById(id: number): Promise<StoredAgentExecution | null> {
-    const execution = await this.db.agentExecution.findUnique({ where: { id } })
+    const execution = await this.db.agentExecution.findUnique({ where: { id }, include: {
+      evaluation: { include: { projectVersion: { include: { project: {
+        select: { id: true, repositoryOwner: true, repositoryName: true },
+      } } } } },
+      agentSettings: { select: { qualityAttributes: true, workflowIds: true } },
+    } })
 
     if (execution === null) {
       return null
     }
 
-    return this.toStored(execution)
+    const version = execution.evaluation?.projectVersion
+    return { ...this.toStored(execution), monitorContext: {
+      project: version?.project ?? null, branch: version?.branch ?? null, commitHash: version?.commitHash ?? null,
+      evaluationType: execution.evaluation?.type ?? null,
+      qualityAttributes: JSON.parse(execution.agentSettings.qualityAttributes) as string[],
+      workflowIds: JSON.parse(execution.agentSettings.workflowIds) as string[],
+    } }
   }
 
   private toStored(execution: {

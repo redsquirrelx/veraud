@@ -19,6 +19,17 @@ export const agentExecutionSchema = {
     startedAt: { type: ["string", "null"], format: "date-time" },
     finishedAt: { type: ["string", "null"], format: "date-time" },
     configuration: { ...configurationSchema, description: "Immutable configuration captured at execution start, without API keys. Null for historical executions." },
+    monitorContext: {
+      type: "object", description: "HTTP execution lookup context for the global monitor; absent from lightweight lifecycle events.",
+      required: ["project", "branch", "commitHash", "evaluationType", "qualityAttributes", "workflowIds"],
+      properties: {
+        project: { anyOf: [{ type: "null" }, { type: "object", required: ["id", "repositoryOwner", "repositoryName"], properties: {
+          id: { type: "integer" }, repositoryOwner: { type: "string" }, repositoryName: { type: "string" },
+        } }] },
+        branch: { type: ["string", "null"] }, commitHash: { type: ["string", "null"] }, evaluationType: { type: ["string", "null"] },
+        qualityAttributes: { type: "array", items: { type: "string" } }, workflowIds: { type: "array", items: { type: "string" } },
+      },
+    },
   },
 } as const
 
