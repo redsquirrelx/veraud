@@ -71,6 +71,22 @@ beforeEach(() => {
 })
 
 describe("AgentExecutionsProvider", () => {
+  it("keeps live children and terminal usage when a stale hydration response arrives", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    let resolveInitial!: (response: Response) => void
+    globalThis.fetch = (() => new Promise<Response>((resolve) => { resolveInitial = resolve })) as typeof fetch
+    const child = { invocation_id: "child", parent_invocation_id: "manager", agent_id: "modularity", run_id: "audit",
+      status: "running", started_at: "2026-10-20T10:00:00Z", finished_at: null, input_tokens: 2, output_tokens: null, error: null }
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: { ...opened, invocations: [child] } }))
+    await waitFor(() => expect(resolveInitial).toBeDefined())
+    const finished = { ...child, status: "completed", finished_at: "2026-10-20T10:01:00Z", input_tokens: 20 }
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Running", invocations: [finished] } }))
+    resolveInitial(new Response(JSON.stringify({ ...opened, invocations: [child] })))
+    await waitFor(() => expect(result.current[0]?.invocations).toEqual([finished]))
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Running", invocations: [child] } }))
+    expect(result.current[0]?.invocations).toEqual([finished])
+  })
   it("hydrates context and terminal audit output even when completion races the initial lookup", async () => {
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
     let resolveInitial!: (response: Response) => void

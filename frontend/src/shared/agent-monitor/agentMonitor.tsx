@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { backendWsUrl, getAgentExecution, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
-import { mergeExecution } from "./mergeExecution.ts"
+import { mergeExecution, mergeInvocations } from "./mergeExecution.ts"
 import { AgentExecutionsContext } from "./useAgentExecutions.ts"
 
 interface AgentExecutionEvent {
@@ -43,7 +43,8 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
         const next = [...current]
         next[index] = snapshotOnly ? {
            ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
-           monitorContext: execution.monitorContext ?? current[index]?.monitorContext,
+            monitorContext: execution.monitorContext ?? current[index]?.monitorContext,
+            invocations: mergeInvocations(execution.invocations, current[index]?.invocations),
         } : mergeExecution(current[index], execution)
         return next
       })

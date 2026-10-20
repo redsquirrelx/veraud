@@ -195,7 +195,21 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
   return postGit<GitTree>(id, "tree", {})
 }
 
+export interface AgentInvocation {
+  invocation_id: string
+  parent_invocation_id: string | null
+  agent_id: string
+  run_id: string
+  status: "running" | "completed" | "partial" | "failed" | "cancelled" | "timeout"
+  started_at: string
+  finished_at: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  error: string | null
+}
+
 export interface AgentExecution {
+  invocations?: AgentInvocation[]
   monitorContext?: {
     project: { id: number, repositoryOwner: string, repositoryName: string } | null
     branch: string | null
