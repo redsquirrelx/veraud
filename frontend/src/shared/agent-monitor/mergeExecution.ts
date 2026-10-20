@@ -10,6 +10,8 @@ export function mergeExecution(previous: AgentExecution | null | undefined, inco
   return {
     ...previous, ...incoming, ...lifecycle,
     configuration: incoming.configuration ?? previous.configuration ?? null,
+    monitorContext: incoming.monitorContext ?? previous.monitorContext,
+    result: lifecycle.result ?? previous.result ?? incoming.result,
     inputTokens: count(previous.inputTokens, incoming.inputTokens),
     outputTokens: count(previous.outputTokens, incoming.outputTokens),
     estimatedTokens: count(previous.estimatedTokens, incoming.estimatedTokens),

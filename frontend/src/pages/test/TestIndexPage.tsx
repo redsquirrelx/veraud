@@ -8,6 +8,7 @@ const testPageKeys = [
   { path: "/test/selector", titleKey: "testPages.index.pages.selectors.title", descriptionKey: "testPages.index.pages.selectors.description" },
   { path: "/test/dropdown", titleKey: "testPages.index.pages.dropdowns.title", descriptionKey: "testPages.index.pages.dropdowns.description" },
   { path: "/test/stage-showcase", titleKey: "testPages.index.pages.stageShowcase.title", descriptionKey: "testPages.index.pages.stageShowcase.description" },
+  { path: "/test/audit-status", titleKey: "testPages.index.pages.auditStatus.title", descriptionKey: "testPages.index.pages.auditStatus.description" },
   { path: "/test/controls", titleKey: "testPages.index.pages.controls.title", descriptionKey: "testPages.index.pages.controls.description" },
   { path: "/test/form-controls", titleKey: "testPages.index.pages.formControls.title", descriptionKey: "testPages.index.pages.formControls.description" },
   { path: "/test/directory", titleKey: "testPages.index.pages.directory.title", descriptionKey: "testPages.index.pages.directory.description" },

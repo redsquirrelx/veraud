@@ -71,6 +71,31 @@ beforeEach(() => {
 })
 
 describe("AgentExecutionsProvider", () => {
+  it("hydrates context and terminal audit output even when completion races the initial lookup", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    let resolveInitial!: (response: Response) => void
+    const initial = new Promise<Response>((resolve) => { resolveInitial = resolve })
+    let calls = 0
+    const context = { project: null, branch: null, commitHash: null, evaluationType: "QualityAudit",
+      qualityAttributes: ["maintainability"], workflowIds: ["quality-audit"] }
+    const output = JSON.stringify({ attributes: ["maintainability", "security"], status: "partial" })
+    globalThis.fetch = (async (input) => {
+      expect(String(input)).toContain("?monitor=true")
+      calls++
+      return calls === 1 ? initial : new Response(JSON.stringify({ ...opened, status: "Completed", result: output, monitorContext: context }))
+    }) as typeof fetch
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: opened }))
+    await waitFor(() => expect(calls).toBe(1))
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Completed", result: null } }))
+    resolveInitial(new Response(JSON.stringify({ ...opened, monitorContext: context })))
+    await waitFor(() => expect(result.current[0]?.result).toBe(output))
+    expect(result.current[0]?.status).toBe("Completed")
+    expect(result.current[0]?.monitorContext).toEqual(context)
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Completed", result: null } }))
+    expect(result.current[0]?.result).toBe(output)
+  })
+
   it("collects opened runs and applies later updates", async () => {
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 

@@ -190,6 +190,50 @@
     "versionApplied": "Version {{branch}} at {{shortHash}} applied",
     "reviewAgents": "Review agent configuration"
   },
+  "auditStatus": {
+    "regionLabel": "Audit status",
+    "title": "Audit #{{id}}",
+    "revision": "{{branch}} @ {{hash}}",
+    "revisionUnknown": "No revision recorded",
+    "openProject": "Open {{repository}}",
+    "toggleLabel": "{{id}} · {{state}} · {{progress}}",
+    "createdAt": "Created {{date}}",
+    "finishedAt": "Finished {{date}}",
+    "reportAvailable": "Report available",
+    "progress": {
+      "empty": "No agents yet",
+      "finished": "{{finished}} of {{total}} agents"
+    },
+    "states": {
+      "waiting": "Waiting",
+      "running": "Running",
+      "completed": "Completed",
+      "partial": "Partial",
+      "failed": "Failed"
+    },
+    "pipelines": {
+      "empty": "No pipelines recorded",
+      "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
+      "maintainability": "Maintainability",
+      "security": "Security"
+    },
+    "agents": {
+      "empty": "No agents recorded",
+      "title": "{{agentType}} run #{{id}}",
+      "tokens": "{{input}} in · {{output}} out",
+      "notReported": "Not reported",
+      "tokensUnreported": "Token usage not reported",
+      "startedAt": "Started {{date}}",
+      "finishedAt": "Finished {{date}}"
+    },
+    "drawer": {
+      "trigger_one": "{{count}} audit",
+      "trigger_other": "{{count}} audits",
+      "title": "Audits",
+      "panelLabel": "Audit statuses",
+      "empty": "No audits to show"
+    }
+  },
   "status": {
     "projectBadge": {
       "queued": "QUEUED",

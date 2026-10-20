@@ -1,0 +1,109 @@
+.audit-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* The repository sits on its own row. Beside the toggle it would win the width
+   contest — its flex basis is the full owner/name — and squeeze the toggle to
+   zero, which is what pushed the badges out of the card. */
+.audit-disclosure-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.audit-disclosure-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0.15rem 0.25rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Two rows keep the identity and the state apart. The badges never shrink —
+   they are nowrap by design — so each row wraps inside the panel instead of
+   spilling out of it when the repository name takes up the left edge. */
+.audit-disclosure-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Badges are nowrap by design: flex shrinking must not squash them. */
+.audit-disclosure-line .ui-badge {
+  flex-shrink: 0;
+}
+
+.audit-disclosure-toggle:hover {
+  background: #f1f5f9;
+}
+
+.audit-disclosure-toggle:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+.audit-disclosure-id {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-disclosure-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #475569;
+  transition: transform 220ms ease;
+}
+
+.audit-disclosure-chevron[data-expanded="true"] {
+  transform: rotate(180deg);
+}
+
+.audit-disclosure-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 220ms ease, opacity 220ms ease, visibility 220ms ease;
+}
+
+.audit-disclosure-detail[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.audit-disclosure-detail-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-disclosure-detail,
+  .audit-disclosure-chevron {
+    transition: none;
+  }
+}

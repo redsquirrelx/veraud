@@ -190,6 +190,50 @@
     "versionApplied": "Versión {{branch}} en {{shortHash}} aplicada",
     "reviewAgents": "Revisar la configuración de agentes"
   },
+  "auditStatus": {
+    "regionLabel": "Estado de la auditoría",
+    "title": "Auditoría #{{id}}",
+    "revision": "{{branch}} @ {{hash}}",
+    "revisionUnknown": "Sin revisión registrada",
+    "openProject": "Abrir {{repository}}",
+    "toggleLabel": "{{id}} · {{state}} · {{progress}}",
+    "createdAt": "Creada el {{date}}",
+    "finishedAt": "Finalizada el {{date}}",
+    "reportAvailable": "Informe disponible",
+    "progress": {
+      "empty": "Aún no hay agentes",
+      "finished": "{{finished}} de {{total}} agentes"
+    },
+    "states": {
+      "waiting": "En espera",
+      "running": "En ejecución",
+      "completed": "Completada",
+      "partial": "Parcial",
+      "failed": "Fallida"
+    },
+    "pipelines": {
+      "empty": "No hay pipelines registrados",
+      "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
+      "maintainability": "Mantenibilidad",
+      "security": "Seguridad"
+    },
+    "agents": {
+      "empty": "No hay agentes registrados",
+      "title": "Ejecución de {{agentType}} #{{id}}",
+      "tokens": "{{input}} entrada · {{output}} salida",
+      "notReported": "No reportado",
+      "tokensUnreported": "Uso de tokens no reportado",
+      "startedAt": "Inicio {{date}}",
+      "finishedAt": "Fin {{date}}"
+    },
+    "drawer": {
+      "trigger_one": "{{count}} auditoría",
+      "trigger_other": "{{count}} auditorías",
+      "title": "Auditorías",
+      "panelLabel": "Estados de auditoría",
+      "empty": "No hay auditorías que mostrar"
+    }
+  },
   "status": {
     "projectBadge": {
       "queued": "En cola",

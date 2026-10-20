@@ -137,6 +137,10 @@
           "title": "Stage showcase",
           "description": "Review the compact stage views with realistic payloads."
         },
+        "auditStatus": {
+          "title": "Audit status",
+          "description": "Review audit state across its pipelines and agent runs."
+        },
         "controls": {
           "title": "Controls",
           "description": "Review interactive controls and their states."
@@ -266,6 +270,19 @@
       "subtitle": "compact stage views with realistic multi-item payloads",
       "failedRun": "Failed run without a report",
       "architectureTitle": "Architecture"
+    },
+    "auditStatus": {
+      "title": "Audit status playground",
+      "subtitle": "audit state with its pipelines and agent runs, in four situations",
+      "runningTitle": "Running · agents in flight and one still queued",
+      "completedTitle": "Completed · every pipeline and agent finished",
+      "partialTitle": "Partial · one agent failed and the rest of the audit survived",
+      "failedTitle": "Failed · an audit-level error with an empty pipeline",
+      "drawerTitle": "Status drawer",
+      "drawerHint": "The tab is fixed to the viewport, so it floats over this text. Open it and keep scrolling: the panel does not trap focus.",
+      "drawerHintTab": "The tab sits on the left edge and counts the audits, with a dot while one is running.",
+      "drawerHintPanel": "The panel slides in from the right with every audit stacked.",
+      "drawerHintKeyboard": "Escape closes it and returns focus to the tab."
     },
     "controls": {
       "title": "Controls playground",

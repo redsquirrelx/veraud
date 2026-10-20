@@ -137,6 +137,10 @@
           "title": "Muestra de etapas",
           "description": "Revisa las vistas compactas de etapas con datos realistas."
         },
+        "auditStatus": {
+          "title": "Estado de auditoría",
+          "description": "Revisa el estado de una auditoría según sus pipelines y agentes."
+        },
         "controls": {
           "title": "Controles",
           "description": "Revisa los controles interactivos y sus estados."
@@ -266,6 +270,19 @@
       "subtitle": "vistas compactas de etapas con datos realistas de varios elementos",
       "failedRun": "Ejecución fallida sin informe",
       "architectureTitle": "Arquitectura"
+    },
+    "auditStatus": {
+      "title": "Zona de estado de auditoría",
+      "subtitle": "estado de una auditoría con sus pipelines y agentes, en cuatro situaciones",
+      "runningTitle": "En ejecución · agentes en curso y otro en cola",
+      "completedTitle": "Completada · todos los pipelines y agentes terminaron",
+      "partialTitle": "Parcial · un agente falló y el resto de la auditoría se conservó",
+      "failedTitle": "Fallida · error a nivel de auditoría con un pipeline vacío",
+      "drawerTitle": "Desplegable de estados",
+      "drawerHint": "La pestaña está fija a la ventana, así que flota sobre este texto. Ábrela y sigue desplazando: el panel no atrapa el foco.",
+      "drawerHintTab": "La pestaña se sitúa en el borde izquierdo y cuenta las auditorías, con un punto mientras alguna esté en curso.",
+      "drawerHintPanel": "El panel entra desde la derecha con todas las auditorías apiladas.",
+      "drawerHintKeyboard": "Escape lo cierra y devuelve el foco a la pestaña."
     },
     "controls": {
       "title": "Zona de controles",

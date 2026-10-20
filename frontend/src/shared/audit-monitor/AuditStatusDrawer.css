@@ -1,0 +1,168 @@
+/* Full-viewport layer that never captures events on its own, so the view
+   behind stays interactive while the tab and the panel overlay it. */
+.audit-drawer {
+  --audit-drawer-panel-width: 420px;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The tab and the panel share one sliding shell: closed, it is pushed out by
+   exactly the panel's width so only the tab stays on screen. */
+.audit-drawer-shell {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  pointer-events: auto;
+  transform: translate3d(var(--audit-drawer-panel-width), 0, 0);
+  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.audit-drawer-shell[data-open="true"] {
+  transform: translate3d(0, 0, 0);
+}
+
+.audit-drawer-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0.85rem 0.3rem;
+  background: #e0e7ff;
+  border: 1px solid #a5b4fc;
+  border-right: none;
+  border-radius: 0.5rem 0 0 0.5rem;
+  box-shadow: -4px 0 16px rgb(15 23 42 / 0.18);
+  color: #312e81;
+  font-size: 11px;
+  font-weight: 500;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.audit-drawer-trigger:hover,
+.audit-drawer-trigger[aria-expanded="true"] {
+  background: #c7d2fe;
+}
+
+.audit-drawer-trigger:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: -3px;
+}
+
+.audit-drawer-trigger-label {
+  white-space: nowrap;
+}
+
+/* Marks that at least one audit is still running or queued. */
+.audit-drawer-trigger-active {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0284c7;
+  box-shadow: 0 0 0 2px #e0e7ff;
+}
+
+.audit-drawer-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: var(--audit-drawer-panel-width);
+  background: #dde5ee;
+  border-left: 1px solid #64748b;
+  box-shadow: -16px 0 48px rgb(15 23 42 / 0.25);
+  visibility: hidden;
+  /* Visibility waits for the slide-out, so the panel does not vanish early. */
+  transition: visibility 0s linear 250ms;
+}
+
+.audit-drawer-shell[data-open="true"] .audit-drawer-panel {
+  visibility: visible;
+  transition: visibility 0s;
+}
+
+.audit-drawer-panel:focus-visible {
+  outline: none;
+}
+
+.audit-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.audit-drawer-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.audit-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+}
+
+.audit-drawer-close:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.audit-drawer-close:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+.audit-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem;
+}
+
+/* White audit cards on a slate field: the stock #e2e8f0 card border would be
+   invisible here, so each audit gets a stronger edge plus its state accent. */
+.audit-drawer-body .ui-card {
+  border-color: #94a3b8;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+}
+
+.audit-drawer-body .audit-disclosure {
+  border-left: 4px solid var(--audit-accent, #64748b);
+  padding-left: 8px;
+}
+
+@media (max-width: 600px) {
+  .audit-drawer { --audit-drawer-panel-width: 100vw; }
+  .audit-drawer-panel { border-left: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-drawer-shell,
+  .audit-drawer-panel { transition: none; }
+}

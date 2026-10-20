@@ -32,6 +32,7 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     const knownIds = new Set<number>(Array.isArray(stored) ? stored.filter((id): id is number => Number.isInteger(id) && id > 0).slice(-50) : [])
     const hydrated = new Set<number>()
     const pending = new Set<number>()
+    const refreshAgain = new Set<number>()
     const revisions = new Map<number, number>()
 
     function apply(execution: AgentExecution, snapshotOnly = false) {
@@ -41,24 +42,28 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
         if (index === -1) return [...current, execution].sort((a, b) => a.id - b.id).slice(-50)
         const next = [...current]
         next[index] = snapshotOnly ? {
-          ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
+           ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
+           monitorContext: execution.monitorContext ?? current[index]?.monitorContext,
         } : mergeExecution(current[index], execution)
         return next
       })
     }
 
     async function refresh(id: number) {
-      if (pending.has(id)) return
+      if (pending.has(id)) { refreshAgain.add(id); return }
       pending.add(id)
       const revision = revisions.get(id) ?? 0
       try {
-        const execution = await getAgentExecution(id)
+        const execution = await getAgentExecution(id, true)
         if (execution.id !== id) return
         hydrated.add(id)
         apply(execution, revision !== (revisions.get(id) ?? 0))
       } catch {
         // A later event/reconnect can retry; transient HTTP failures keep the live row.
-      } finally { pending.delete(id) }
+      } finally {
+        pending.delete(id)
+        if (alive && refreshAgain.delete(id)) void refresh(id)
+      }
     }
 
     function restore() {
@@ -83,7 +88,9 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
       localStorage.set("agents.recentExecutionIds", [...knownIds])
       revisions.set(data.execution.id, (revisions.get(data.execution.id) ?? 0) + 1)
       apply(data.execution)
-      if (data.execution.configuration === undefined && !hydrated.has(data.execution.id)) void refresh(data.execution.id)
+      if (!hydrated.has(data.execution.id) || data.execution.status === "Completed" || data.execution.status === "Failed") {
+        void refresh(data.execution.id)
+      }
     }
 
     function schedule() {

@@ -196,6 +196,14 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
 }
 
 export interface AgentExecution {
+  monitorContext?: {
+    project: { id: number, repositoryOwner: string, repositoryName: string } | null
+    branch: string | null
+    commitHash: string | null
+    evaluationType: string | null
+    qualityAttributes: string[]
+    workflowIds: string[]
+  }
   configuration?: AgentConfiguration | null
   id: number
   evaluationId: number | null
@@ -235,8 +243,8 @@ export async function requestProjectArchitecture(id: number, branch: string, com
   return body as ProjectArchitectureRequest
 }
 
-export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
-  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}`)
+export async function getAgentExecution(executionId: number, monitor = false): Promise<AgentExecution> {
+  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}${monitor ? "?monitor=true" : ""}`)
 
   if (!response.ok) {
     throw new ApiError(response.status, "Could not load the agent execution")

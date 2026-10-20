@@ -1,0 +1,274 @@
+.audit-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.audit-status-head,
+.audit-status-meta,
+.audit-pipeline-head,
+.audit-agent-head,
+.audit-agent-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.audit-status-id {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* Slate-600 on the tinted surfaces clears AA comfortably; slate-500 did not. */
+.audit-status-meta,
+.audit-agent-meta {
+  font-size: 11px;
+  color: #475569;
+}
+
+.audit-status-revision {
+  font-size: 11px;
+  color: #334155;
+}
+
+.audit-progress {
+  margin-left: auto;
+}
+
+.audit-status-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 6px;
+  background: #e0e7ff;
+  border: 1px solid #a5b4fc;
+  border-radius: 0.25rem;
+  color: #312e81;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+/* owner/repository can be long: let it give up width and ellipsize instead of
+   pushing the badges beside it out of the card. */
+.audit-status-project > .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-status-project:hover {
+  background: #c7d2fe;
+}
+
+.audit-status-project:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+.audit-status-error,
+.audit-agent-error {
+  margin: 0;
+  padding: 0.3rem 0.45rem;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 0.25rem;
+  font-size: 11px;
+  color: #9f1239;
+}
+
+/* One accent colour per state, shared by every level of this module — audit,
+   pipeline, agent and the drawer's disclosure — so nesting and consecutive
+   audits read at a glance instead of blending into the card. */
+.audit-status[data-state="completed"],
+.audit-disclosure[data-state="completed"],
+.audit-pipeline[data-state="completed"],
+.audit-agent[data-state="completed"] { --audit-accent: #047857; }
+
+.audit-status[data-state="running"],
+.audit-disclosure[data-state="running"],
+.audit-pipeline[data-state="running"],
+.audit-agent[data-state="running"] { --audit-accent: #0369a1; }
+
+.audit-status[data-state="waiting"],
+.audit-disclosure[data-state="waiting"],
+.audit-pipeline[data-state="waiting"],
+.audit-agent[data-state="waiting"] { --audit-accent: #64748b; }
+
+.audit-status[data-state="partial"],
+.audit-disclosure[data-state="partial"],
+.audit-pipeline[data-state="partial"],
+.audit-agent[data-state="partial"] { --audit-accent: #b45309; }
+
+.audit-status[data-state="failed"],
+.audit-disclosure[data-state="failed"],
+.audit-pipeline[data-state="failed"],
+.audit-agent[data-state="failed"] { --audit-accent: #be123c; }
+
+.audit-pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.audit-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  background: #e2e8f0;
+  border: 1px solid #94a3b8;
+  border-left: 4px solid var(--audit-accent, #64748b);
+  border-radius: 0.375rem;
+}
+
+.audit-pipeline-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.audit-pipeline-head:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* Identity on one line, state on the next. Nothing wraps, so the row does not
+   reflow every time an attribute name or a counter changes length. */
+.audit-pipeline-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Badges are nowrap by design: flex shrinking must not squash them. */
+.audit-pipeline-line .ui-badge {
+  flex-shrink: 0;
+}
+
+.audit-pipeline-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #334155;
+}
+
+/* The quality attribute yields width and ellipsizes rather than pushing the
+   badge and the counter off the row. */
+.audit-pipeline-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-pipeline-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #475569;
+  transition: transform 220ms ease;
+}
+
+.audit-pipeline-chevron[data-expanded="true"] {
+  transform: rotate(180deg);
+}
+
+.audit-pipeline-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 220ms ease, opacity 220ms ease, visibility 220ms ease;
+}
+
+.audit-pipeline-detail[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.audit-pipeline-detail-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-pipeline-detail,
+  .audit-pipeline-chevron {
+    transition: none;
+  }
+}
+
+.audit-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.45rem 0.55rem;
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-left: 4px solid var(--audit-accent, #64748b);
+  border-radius: 0.25rem;
+}
+
+.audit-agent-type {
+  font-size: 12px;
+  font-weight: 500;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-agent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  /* Check, cross and spinner all inherit currentColor, so one rule covers them. */
+  color: var(--audit-accent, #475569);
+}
+
+.audit-agent-head .ui-badge {
+  flex-shrink: 0;
+}
+
+.audit-run-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--audit-accent, #64748b);
+}
