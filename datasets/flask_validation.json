@@ -1,0 +1,30 @@
+{
+  "requirements": [
+    {
+      "requirement_id": "REQ-FL-001",
+      "description": "Flask debe permitir almacenar un valor en la sesión durante una petición POST, recuperarlo mediante una petición GET posterior y reflejar el acceso a la sesión mediante la cabecera Vary: Cookie."
+    }
+  ],
+  "code_fragments": [
+    {
+      "fragment_id": "FL-001-SESSION",
+      "file_path": "src/flask/sessions.py:57-80",
+      "code": "class SecureCookieSession(CallbackDict[str, t.Any], SessionMixin):\n    \"\"\"Base class for sessions based on signed cookies.\n\n    This session backend will set the :attr:`modified` and\n    :attr:`accessed` attributes. It cannot reliably track whether a\n    session is new (vs. empty), so :attr:`new` remains hard coded to\n    ``False``.\n    \"\"\"\n\n    #: When data is changed, this is set to ``True``. Only the session\n    #: dictionary itself is tracked; if the session contains mutable\n    #: data (for example a nested dict) then this must be set to\n    #: ``True`` manually when modifying that data. The session cookie\n    #: will only be written to the response if this is ``True``.\n    modified = False\n\n    def __init__(\n        self,\n        initial: c.Mapping[str, t.Any] | None = None,\n    ) -> None:\n        def on_update(self: te.Self) -> None:\n            self.modified = True\n\n        super().__init__(initial, on_update)"
+    },
+    {
+      "fragment_id": "FL-001-OPEN",
+      "file_path": "src/flask/sessions.py:323-351",
+      "code": "    def open_session(self, app: Flask, request: Request) -> SecureCookieSession | None:\n        s = self.get_signing_serializer(app)\n        if s is None:\n            return None\n        val = request.cookies.get(self.get_cookie_name(app))\n        if not val:\n            return self.session_class()\n        max_age = int(app.permanent_session_lifetime.total_seconds())\n        try:\n            data = s.loads(val, max_age=max_age)\n            return self.session_class(data)\n        except BadSignature:\n            return self.session_class()\n\n    def save_session(\n        self, app: Flask, session: SessionMixin, response: Response\n    ) -> None:\n        name = self.get_cookie_name(app)\n        domain = self.get_cookie_domain(app)\n        path = self.get_cookie_path(app)\n        secure = self.get_cookie_secure(app)\n        partitioned = self.get_cookie_partitioned(app)\n        samesite = self.get_cookie_samesite(app)\n        httponly = self.get_cookie_httponly(app)\n\n        # Add a \"Vary: Cookie\" header if the session was accessed at all.\n        if session.accessed:\n            response.vary.add(\"Cookie\")\n"
+    },
+    {
+      "fragment_id": "FL-001-SAVE",
+      "file_path": "src/flask/sessions.py:337-375",
+      "code": "    def save_session(\n        self, app: Flask, session: SessionMixin, response: Response\n    ) -> None:\n        name = self.get_cookie_name(app)\n        domain = self.get_cookie_domain(app)\n        path = self.get_cookie_path(app)\n        secure = self.get_cookie_secure(app)\n        partitioned = self.get_cookie_partitioned(app)\n        samesite = self.get_cookie_samesite(app)\n        httponly = self.get_cookie_httponly(app)\n\n        # Add a \"Vary: Cookie\" header if the session was accessed at all.\n        if session.accessed:\n            response.vary.add(\"Cookie\")\n\n        # If the session is modified to be empty, remove the cookie.\n        # If the session is empty, return without setting the cookie.\n        if not session:\n            if session.modified:\n                response.delete_cookie(\n                    name,\n                    domain=domain,\n                    path=path,\n                    secure=secure,\n                    partitioned=partitioned,\n                    samesite=samesite,\n                    httponly=httponly,\n                )\n                response.vary.add(\"Cookie\")\n\n            return\n\n        if not self.should_set_cookie(app, session):\n            return\n\n        expires = self.get_expiration_time(app, session)\n        val = self.get_signing_serializer(app).dumps(dict(session))  # type: ignore[union-attr]\n        response.set_cookie(\n            name,"
+    },
+    {
+      "fragment_id": "FL-001-TEST",
+      "file_path": "tests/test_basic.py:237-276",
+      "code": "def test_session_accessed(app: flask.Flask, client: FlaskClient) -> None:\n    @app.post(\"/\")\n    def do_set():\n        flask.session[\"value\"] = flask.request.form[\"value\"]\n        return \"value set\"\n\n    @app.get(\"/\")\n    def do_get():\n        return flask.session.get(\"value\", \"None\")\n\n    @app.get(\"/nothing\")\n    def do_nothing() -> str:\n        return \"\"\n\n    with client:\n        rv = client.get(\"/nothing\")\n        assert \"cookie\" not in rv.vary\n        assert not app_ctx._session.accessed\n        assert not app_ctx._session.modified\n\n    with client:\n        rv = client.post(data={\"value\": \"42\"})\n        assert rv.text == \"value set\"\n        assert \"cookie\" in rv.vary\n        assert app_ctx._session.accessed\n        assert app_ctx._session.modified\n\n    with client:\n        rv = client.get()\n        assert rv.text == \"42\"\n        assert \"cookie\" in rv.vary\n        assert app_ctx._session.accessed\n        assert not app_ctx._session.modified\n\n    with client:\n        rv = client.get(\"/nothing\")\n        assert rv.text == \"\"\n        assert \"cookie\" not in rv.vary\n        assert not app_ctx._session.accessed\n        assert not app_ctx._session.modified"
+    }
+  ]
+}

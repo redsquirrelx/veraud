@@ -1,0 +1,37 @@
+{
+  "evaluated_attribute": "functional_adequacy",
+  "score": 100.0,
+  "total_requirements": 1,
+  "fulfilled_requirements": 1,
+  "results": [
+    {
+      "requirement_id": "REQ-FA-001",
+      "description": "FastAPI debe permitir registrar rutas HTTP GET mediante decoradores o add_api_route() y devolver la respuesta JSON definida por la función asociada.",
+      "status": "cumple",
+      "justification": "La evidencia provista demuestra el cumplimiento del requisito. En 'fastapi/applications.py' y 'fastapi/routing.py' se implementa el método 'add_api_route()' con 'JSONResponse' como clase de respuesta predeterminada. Asimismo, en 'tests/main.py' se muestra tanto el registro mediante decorador ('@app.api_route') como mediante 'app.add_api_route()', retornando un diccionario en el endpoint. Finalmente, en 'tests/test_application.py', la prueba 'test_get_path' comprueba que las solicitudes HTTP GET ('client.get') a ambas rutas obtienen un código 200 y la carga útil JSON esperada ('assert response.json() == expected_response').",
+      "evidence": [
+        {
+          "fragment_id": "FA-001-APP",
+          "file_path": "fastapi/applications.py",
+          "similarity": 0.36632663011550903
+        },
+        {
+          "fragment_id": "FA-001-TEST-APP",
+          "file_path": "tests/main.py",
+          "similarity": 0.36026817560195923
+        },
+        {
+          "fragment_id": "FA-001-ROUTER",
+          "file_path": "fastapi/routing.py",
+          "similarity": 0.35988348722457886
+        },
+        {
+          "fragment_id": "FA-001-TEST-GET",
+          "file_path": "tests/test_application.py",
+          "similarity": 0.20225876569747925
+        }
+      ]
+    }
+  ],
+  "recommendations": []
+}

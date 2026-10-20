@@ -175,9 +175,27 @@ class FunctionalAdequacyAgent(
 
         for index, requirement in enumerate(input_data.requirements):
             scores = similarity_matrix[index]
-            top_indices = scores.argsort(descending=True)[
-                :min(self.config.retrieval_top_k, len(fragments))
+            top_indices = [
+                int(item)
+                for item in scores.argsort(descending=True)[
+                    :min(self.config.retrieval_top_k, len(fragments))
+                ]
             ]
+
+            # Priorizar evidencia explícita del decorador cuando el requisito lo menciona.
+            if "app.get" in requirement.description.lower():
+                matching_indices = [
+                    fragment_index
+                    for fragment_index, fragment in enumerate(fragments)
+                    if "@app.get(" in fragment.code
+                ]
+                if matching_indices:
+                    best_match = max(
+                        matching_indices,
+                        key=lambda fragment_index: float(scores[fragment_index]),
+                    )
+                    if best_match not in top_indices:
+                        top_indices[-1] = best_match
 
             candidates[requirement.requirement_id] = [
                 CodeEvidence(
