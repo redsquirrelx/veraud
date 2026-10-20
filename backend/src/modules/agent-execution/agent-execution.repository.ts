@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
+import type { InvocationReceipt } from "./invocationReceipt.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -46,6 +47,7 @@ export interface AgentExecutionUsage {
 }
 
 export interface StoredAgentExecution {
+  invocations?: InvocationReceipt[]
   monitorContext?: {
     project: { id: number, repositoryOwner: string, repositoryName: string } | null
     branch: string | null
@@ -71,6 +73,7 @@ export interface StoredAgentExecution {
 }
 
 export interface AgentExecutionStore {
+  recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution>
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
   markRunning(id: number, runId?: string): Promise<StoredAgentExecution>
@@ -87,6 +90,41 @@ export interface AgentExecutionStore {
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
+    return this.db.$transaction(async (tx) => {
+      const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
+      if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
+      const receipts = JSON.parse(execution.invocationReceipts) as InvocationReceipt[]
+      let runId: string | undefined
+      try { runId = (JSON.parse(execution.result ?? "{}") as { run_id?: string }).run_id } catch { /* Historical opaque result. */ }
+      if ((runId && runId !== receipt.run_id) || receipts.some((item) => item.run_id !== receipt.run_id)) {
+        throw new UnknownExecutionTargetError("Invocation does not belong to this audit run")
+      }
+      if (receipt.parent_invocation_id === receipt.invocation_id) throw new UnknownExecutionTargetError("An invocation cannot parent itself")
+      if ((receipt.status === "running") !== (receipt.finished_at === null)
+        || (receipt.finished_at && Date.parse(receipt.finished_at) < Date.parse(receipt.started_at))) {
+        throw new UnknownExecutionTargetError("Invocation lifecycle dates do not match its status")
+      }
+      const previous = receipts.find((item) => item.invocation_id === receipt.invocation_id)
+      if (previous && (previous.agent_id !== receipt.agent_id || previous.parent_invocation_id !== receipt.parent_invocation_id)) {
+        throw new UnknownExecutionTargetError("Invocation identity cannot change")
+      }
+      const visited = new Set([receipt.invocation_id])
+      let parent = receipt.parent_invocation_id
+      while (parent) {
+        if (visited.has(parent)) throw new UnknownExecutionTargetError("Invocation parents cannot form a cycle")
+        visited.add(parent)
+        parent = receipts.find((item) => item.invocation_id === parent)?.parent_invocation_id ?? null
+      }
+      if (previous?.status !== undefined && previous.status !== "running") return this.toStored(execution)
+      const count = (a: number | null | undefined, b: number | null) => a == null ? b : b == null ? a : Math.max(a, b)
+      const updated = { ...receipt, started_at: previous?.started_at ?? receipt.started_at,
+        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
+      const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
+      return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
+    })
+  }
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
     try {
@@ -260,9 +298,11 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     startedAt: Date | null
     finishedAt: Date | null
     configurationSnapshot?: string | null
+    invocationReceipts?: string
   }): StoredAgentExecution {
     return {
       id: execution.id,
+      invocations: JSON.parse(execution.invocationReceipts ?? "[]") as InvocationReceipt[],
       evaluationId: execution.evaluationId,
       agentType: execution.agentType,
       status: execution.status as AgentExecutionStatus,

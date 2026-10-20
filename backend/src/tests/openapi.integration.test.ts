@@ -48,8 +48,9 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 37)
+      assert.equal(operations.length, 38)
       const expectedOperations = [
+        "POST /api/agent-executions/{id}/invocations",
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
         "GET /api/agent-executions/{id}",

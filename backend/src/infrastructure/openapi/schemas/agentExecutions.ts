@@ -1,10 +1,12 @@
 import { configurationSchema } from "../../../modules/agent-settings/agent-settings.schemas.js"
+import { invocationReceiptSchema } from "../../../modules/agent-execution/invocationReceipt.js"
 
 export const agentExecutionSchema = {
   $id: "AgentExecution",
   type: "object",
   required: ["id", "evaluationId", "agentType", "status", "result", "error", "inputTokens", "outputTokens", "createdAt", "startedAt", "finishedAt"],
   properties: {
+    invocations: { type: "array", items: invocationReceiptSchema },
     id: { type: "integer" },
     evaluationId: { type: ["integer", "null"] },
     agentType: { type: "string" },

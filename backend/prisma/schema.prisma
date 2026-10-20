@@ -78,6 +78,7 @@ model AgentExecution {
   error        String?
   result       String?
   configurationSnapshot String? @map("configuration_snapshot")
+  invocationReceipts String @default("[]") @map("invocation_receipts")
 
   evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])

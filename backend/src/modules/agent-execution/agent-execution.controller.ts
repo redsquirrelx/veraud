@@ -8,6 +8,7 @@ import type {
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
 import { monitorExecution } from "./agent-execution.monitor.js"
+import { invocationEvents, invocationReceiptSchema, type InvocationReceipt } from "./invocationReceipt.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
 import {
   UnknownExecutionTargetError,
@@ -156,6 +157,23 @@ export function registerAgentExecutionRoutes(
     }
   })
 
+  app.post<{ Params: { id: string }, Body: InvocationReceipt }>("/api/agent-executions/:id/invocations", { schema: {
+    params: idParams, body: invocationReceiptSchema, tags: ["Agent Executions"],
+    summary: "Report an internal audit invocation",
+    description: "Persists an invocation lifecycle receipt under its root audit and publishes a compact update. Invocation identity is immutable; repeated or late callbacks cannot reopen terminal invocations.",
+    response: { 200: { $ref: "AgentExecution#" }, ...errorResponses([400, 404, 422], "ExecutionError", false) },
+  } }, async (request, reply) => {
+    try {
+      const execution = await service.recordInvocation(Number(request.params.id), request.body)
+      const compact = { ...execution, result: null }
+      broadcast(gateway, "agent-execution.updated", compact)
+      return toResponse(compact)
+    } catch (error) {
+      if (error instanceof UnknownExecutionTargetError) return reply.code(422).send({ error: error.message })
+      return notFoundOrRethrow(error, reply)
+    }
+  })
+
   /** Called by the agent-server once the run actually starts. Optional. */
   app.post("/api/agent-executions/:id/running", { schema: { params: idParams,
     body: { type: ["object", "null"], properties: { runId: { type: "string", pattern: "^[a-f0-9]{32}$" } }, additionalProperties: false },
@@ -238,6 +256,7 @@ export function registerAgentExecutionRoutes(
 
 function toResponse(execution: StoredAgentExecution, includeContext = true) {
   return {
+    invocations: execution.invocations,
     id: execution.id,
     evaluationId: execution.evaluationId,
     agentType: execution.agentType,
@@ -273,5 +292,5 @@ function broadcast(
   type: AgentExecutionEvent["type"],
   execution: StoredAgentExecution,
 ): void {
-  gateway.broadcast({ type, execution: toResponse(execution, false) })
+  gateway.broadcast({ type, execution: { ...toResponse(execution, false), invocations: invocationEvents(execution.invocations) } })
 }

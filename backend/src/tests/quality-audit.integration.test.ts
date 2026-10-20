@@ -1,4 +1,5 @@
 import { it } from "node:test"
+import { once } from "node:events"
 import assert from "node:assert/strict"
 import { execSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
@@ -96,6 +97,35 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
       payload: { runId: "b".repeat(32) } })
     assert.equal(started.statusCode, 200)
     assert.equal((await app.inject({ url })).json()[0].runId, "b".repeat(32))
+    const receipt = { invocation_id: "manager-live", parent_invocation_id: null, agent_id: agentType,
+      run_id: "b".repeat(32), status: "running", started_at: "2026-10-20T10:00:00Z", finished_at: null,
+      input_tokens: null, output_tokens: null, error: null }
+    const callbackUrl = `/api/agent-executions/${executionId}/invocations`
+    const send = (payload: object) => app.inject({ method: "POST", url: callbackUrl, payload })
+    assert.equal((await send(receipt)).statusCode, 200)
+    const child = { ...receipt, invocation_id: "child-live", parent_invocation_id: receipt.invocation_id, agent_id: "modularity" }
+    const socket = await app.injectWS("/ws")
+    try {
+      const nextEvent = once(socket, "message", { signal: AbortSignal.timeout(5000) })
+      assert.equal((await send(child)).statusCode, 200)
+      const [message] = await nextEvent
+      const event = JSON.parse(String(message))
+      assert.equal(event.type, "agent-execution.updated")
+      assert.equal(event.execution.result, null)
+      assert.equal(event.execution.invocations[1].invocation_id, "child-live")
+      assert.equal(event.execution.invocations[1].parent_invocation_id, "manager-live")
+    } finally { socket.terminate() }
+    const live = (await app.inject({ url: `/api/agent-executions/${executionId}?monitor=true` })).json()
+    assert.equal(live.status, "Running")
+    assert.equal(live.invocations.length, 2, "children arrive before the final report")
+    assert.equal(live.invocations[1].parent_invocation_id, "manager-live")
+    assert.equal((await send({ ...child, run_id: "wrong-run" })).statusCode, 422)
+    assert.equal((await send({ ...receipt, parent_invocation_id: "child-live" })).statusCode, 422)
+    assert.equal((await send({ ...child, status: "completed", finished_at: "2026-10-20T10:01:00Z", input_tokens: 32 })).statusCode, 200)
+    const late = await send(child)
+    assert.equal(late.statusCode, 200)
+    assert.equal(late.json().invocations[1].status, "completed")
+    assert.equal(late.json().invocations[1].input_tokens, 32)
     assert.deepEqual((await app.inject({ url })).json()[0].attributes, attributes)
     assert.equal((await app.inject({ method: "POST", url: `/api/agent-executions/${executionId}/running`,
       payload: { runId: "not-a-run-id" } })).statusCode, 400)

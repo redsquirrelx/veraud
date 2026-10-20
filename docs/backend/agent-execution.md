@@ -7,6 +7,29 @@ executions.
 Source of truth: `backend/src/modules/agent-execution/`
 (repository, service, controller)
 
+## Internal audit invocations
+
+`POST /api/agent-executions/:id/invocations` records compact lifecycle receipts
+under an existing `QualityAudit` execution. It does not create separate pipeline
+execution rows. The receipt contains `run_id`, `invocation_id`,
+`parent_invocation_id`, `agent_id`, `status`, `started_at`, `finished_at`,
+`input_tokens`, `output_tokens` and a safe `error` code.
+
+The shared runtime reports actual manager/coordinator/investigator executions
+as they start and finish; model-call completion reports cumulative provider
+usage for that invocation. Unknown counts stay null. Task-local reporting
+keeps concurrent audit roots and child usage isolated.
+
+Receipts are persisted in `agent_execution.invocation_receipts`, restored by
+execution GET requests, and included in `agent-execution.updated` WebSocket
+events. Callback responses/events omit report artifacts. Repeated receipts
+upsert by invocation ID; terminal receipts cannot be reopened, usage is
+monotonic, identity cannot change, and parent cycles/run mismatches are rejected.
+Final reports reconcile with live receipts using the same invocation IDs.
+
+Apply the `20261020180000_audit_invocation_receipts` migration before running
+the updated backend.
+
 ## Lifecycle
 
 Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
@@ -254,3 +277,9 @@ serialized result to selected attributes, outcome, report attribute statuses and
 actual invocation receipts with reported token counts. It excludes Blackboard
 snapshots, evidence bodies and `docx_base64`. This does not mutate the saved result.
 The default lookup and project report/Word endpoints retain original artifacts.
+
+Compact invocation receipts include nullable `parent_invocation_id`, resolved
+from actual nested assignments in the retained Blackboard assessment reports.
+Repeated invocations remain distinct; catalog agent-type relationships are not
+used to invent execution parents. Historical records lacking these assignments
+remain roots. The original stored report and Word artifact are not modified.

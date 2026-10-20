@@ -7,6 +7,7 @@ import type { AgentSettingsService } from "../agent-settings/agent-settings.serv
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { invocationEvents } from "./invocationReceipt.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -315,6 +316,11 @@ export class AgentExecutionService {
     return this.executions.complete(id, completion)
   }
 
+  async recordInvocation(id: number, receipt: import("./invocationReceipt.js").InvocationReceipt): Promise<StoredAgentExecution> {
+    await this.require(id)
+    return this.executions.recordInvocation(id, receipt)
+  }
+
   async findById(id: number): Promise<StoredAgentExecution> {
     return this.require(id)
   }
@@ -359,6 +365,7 @@ export class AgentExecutionService {
 
 function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["execution"] {
   return {
+    invocations: invocationEvents(execution.invocations),
     id: execution.id,
     evaluationId: execution.evaluationId,
     agentType: execution.agentType,
