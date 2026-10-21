@@ -6,10 +6,13 @@ from config.agents.audit import AuditAgentDefaults, AuditCallLimits
 from config.agents.budgets import TokenBudgetConfig
 
 from ..agents.security.config import SecurityAuditOverrides
+from .audit_configuration import FunctionalAuditOverrides
 
 
 class AuditExecutionOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    attribute_options: dict[str, dict] | None = None
+    functional_config: FunctionalAuditOverrides | None = None
 
     agent_defaults: AuditAgentDefaults | None = Field(default=None,
         description="Common developer overrides for context, personal tokens, model calls and tool calls. Applied directly to security; in maintainability call limits apply to investigators while aggregate hierarchy budgets retain their defaults.",

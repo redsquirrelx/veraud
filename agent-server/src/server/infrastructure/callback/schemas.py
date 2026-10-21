@@ -68,6 +68,8 @@ class InvocationReceipt(BaseModel):
     input_tokens: int | None = Field(default=None, ge=0, le=2147483647)
     output_tokens: int | None = Field(default=None, ge=0, le=2147483647)
     error: str | None = Field(default=None, max_length=2000)
+    phase: str | None = Field(default=None, min_length=1, max_length=128)
+    phase_sequence: int = Field(default=0, ge=0, le=2147483647)
 
 
 class CallbackResult(BaseModel):

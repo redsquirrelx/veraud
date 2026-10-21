@@ -12,6 +12,7 @@ from .....runtimes.coordination.execution import (
     CoordinatorSynthesisExecution,
 )
 from .....runtimes.coordination.synthesis import follow_up_key
+from .....runtimes.invocation_reporting import phase_node
 from .registry import INVESTIGATORS
 from .schemas import (
     Assignment,
@@ -124,7 +125,7 @@ class ModularityExecution(CoordinatorExecution):
         nodes = ["plan_assessment", "delegate_investigations", "collect_findings", "synthesize_findings",
                  "decide_next_step", "plan_targeted_follow_up", "finalize_assessment"]
         for name in nodes:
-            graph.add_node(name, getattr(self, name))
+            graph.add_node(name, phase_node(name, getattr(self, name)))
         graph.add_edge(START, "plan_assessment")
         for source, target in pairwise(nodes[:5]):
             graph.add_edge(source, target)

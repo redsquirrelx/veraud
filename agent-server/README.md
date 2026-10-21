@@ -88,3 +88,20 @@ agent-local prompts. Local YAML presets are retained in the checkout only.
 uv run project-architecture --help
 uv run pytest src/test-agents tests --ignore=tests/test_functional_adequacy.py -q
 ```
+## Unlimited cumulative token budgets
+
+Set `"unlimited_token_budget": true` in `agent-server/launch.json` and restart
+agent-server to disable cumulative token caps for all agents and audits in that
+process. This includes shared audit, personal agent, hierarchy and per-objective
+token admission. The default is `false`; omitting the flag also keeps finite caps.
+
+Actual usage and conservative estimates continue to be recorded. Context and
+per-response output limits, model/tool call limits, provider rate quotas and
+execution deadlines remain effective. Existing numeric token settings are retained
+and take effect again when the flag is `false`. The file is resolved relative to
+the server source location, independently of the current working directory.
+
+Standalone `src/test-agents/run_*.py` runners also accept this flag alongside agent
+limits in their `--config` JSON file. An explicit flag overrides the process launch
+default for that run and its descendants; omitting it retains the launch default.
+Other unknown agent configuration keys are still rejected before model creation.

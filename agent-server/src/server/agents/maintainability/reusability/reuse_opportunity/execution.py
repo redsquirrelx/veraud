@@ -13,6 +13,7 @@ from .....runtimes.investigation.agent import InvestigationExecution
 from .....runtimes.investigation.provider import lean_schema
 from .....runtimes.investigation.records import retain_previous
 from .....runtimes.investigation.state import InvestigationState
+from .....runtimes.invocation_reporting import report_invocation_phase
 from .discovery import discover, source_characteristics
 from .schemas import (
     ExaminedGroup,
@@ -571,6 +572,7 @@ class ReuseOpportunityExecution(InvestigationExecution):
 
         def observed(name, fn):
             async def node(state):
+                await report_invocation_phase(name)
                 self.record(name)
                 answer = fn(state)
                 if hasattr(answer, "__await__"):

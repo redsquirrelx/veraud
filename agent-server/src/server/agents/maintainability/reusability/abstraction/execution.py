@@ -6,6 +6,7 @@ from pathlib import Path
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from .....config.token_budget import token_budget_exceeded
 from .....runtimes.investigation.agent import InvestigationExecution
 from .....runtimes.investigation.messages import compact_tool_history
 from .....runtimes.investigation.provider import lean_schema
@@ -84,7 +85,7 @@ class AbstractionExecution(InvestigationExecution):
     def closing_token_reserve(self, node, request_reserve):
         reserve = (min(self.token_limit // 3, 2 * request_reserve) if node == "investigate"
                    else min(self.token_limit // 6, request_reserve) if node == "evaluate_evidence" else 0)
-        if reserve and self.tokens + request_reserve + reserve > self.token_limit:
+        if reserve and token_budget_exceeded(self.tokens + request_reserve + reserve, self.token_limit):
             self._closing_budget_reserved = True
         return reserve
 

@@ -11,6 +11,7 @@ from .api.pipelines import router as pipelines_router
 from .api.schemas import StatusResponse
 from .app.audit_service import AuditService
 from .blackboard.impls.memory import MemoryBlackboard
+from .config.token_budget import token_budget_policy
 from .web.router import router as web_router
 from .web.router import static_files
 
@@ -46,6 +47,7 @@ def get_status():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    token_budget_policy()
     app.state.blackboard = MemoryBlackboard()
     app.state.audit_service = AuditService(app.state.blackboard)
     try:

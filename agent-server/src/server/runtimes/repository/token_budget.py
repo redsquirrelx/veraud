@@ -2,6 +2,8 @@
 
 import math
 
+from ...config.token_budget import token_budget_exceeded
+
 
 class TokenBudgetExceeded(RuntimeError):
     category = "token_budget_exhausted"
@@ -42,11 +44,11 @@ def admit_request(generate, budget, prompt, objective_id, previous_attempts=0):
     reserve = estimated_input + budget.max_output_tokens_per_call
     total, _ = account_tokens(generate, budget)
     target, _ = account_tokens(generate, budget, objective_id)
-    if total + reserve * (previous_attempts + 1) > budget.max_total_tokens:
+    if token_budget_exceeded(total + reserve * (previous_attempts + 1), budget.max_total_tokens):
         raise TokenBudgetExceeded(
             "Remaining total token budget cannot fund another attempt."
         )
-    if target + reserve * (previous_attempts + 1) > budget.max_tokens_per_objective:
+    if token_budget_exceeded(target + reserve * (previous_attempts + 1), budget.max_tokens_per_objective):
         raise TokenBudgetExceeded(
             "Remaining objective token budget cannot fund another attempt."
         )

@@ -16,6 +16,7 @@ from .....runtimes.investigation.agent import InvestigationExecution
 from .....runtimes.investigation.provider import lean_schema
 from .....runtimes.investigation.records import retain_previous
 from .....runtimes.investigation.state import InvestigationState
+from .....runtimes.invocation_reporting import report_invocation_phase
 from .....runtimes.repository.tools import TOOL_SCHEMAS
 from .discovery import discover
 from .schemas import (
@@ -632,6 +633,7 @@ class ComponentAdaptabilityExecution(InvestigationExecution):
 
         def observed(name, fn):
             async def node(state):
+                await report_invocation_phase(name)
                 self.record(name)
                 started = monotonic()
                 try:

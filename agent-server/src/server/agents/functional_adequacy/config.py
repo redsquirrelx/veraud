@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from config.agents import ConfigContract
+from config.agents.execution import AgentExecutionConfig
 
 
-class FunctionalAdequacyConfig(ConfigContract):
+class FunctionalAdequacyConfig(AgentExecutionConfig):
     embedding_model: str = Field(default="all-MiniLM-L6-v2", min_length=1)
     retrieval_top_k: int = Field(default=5, ge=1)

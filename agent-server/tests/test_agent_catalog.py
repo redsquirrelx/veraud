@@ -68,13 +68,16 @@ def test_catalog_covers_existing_configuration_and_real_hierarchy_without_changi
 def test_backend_can_resolve_all_attribute_selections_into_valid_model_maps_and_callback_keys(client):
     workflows = {item["workflow_id"]: item for item in client.get("/api/agents/catalog").json()["workflows"]}
     quality = workflows["quality-audit"]
-    assert quality["supported_attributes"] == ["maintainability", "security"]
+    assert quality["supported_attributes"] == ["maintainability", "security", "functional_adequacy"]
+    assert len(quality["attribute_selections"]) == 7
     assert quality["input_schema"]["properties"]["attributes"]
     for selection in quality["attribute_selections"]:
         configs = {identifier: ExecutionConfig(model=ModelConfig(provider="gemini", name="example"), api_key="test-key")
             for identifier in selection["model_configuration_ids"]}
         validate_model_configs(configs, selection["attributes"])
-        assert selection["stages"] == (["security"] if selection["attributes"] == ["security"] else ["maintainability_manager"])
+        expected = "maintainability_manager" if "maintainability" in selection["attributes"] else (
+            "security" if "security" in selection["attributes"] else "functional_adequacy")
+        assert selection["stages"] == [expected]
     project = workflows["project-architecture"]
     assert project["stages"] == list(project["model_configuration_groups"])
     assert project["run_url"] == "/api/pipelines/project-architecture/run"
@@ -89,7 +92,7 @@ def test_quality_contexts_are_explicit_for_hierarchies_shared_reports_and_non_au
             assert agents[identifier]["quality_attributes"] == [attribute]
     for identifier in agents["security"]["child_ids"]:
         assert agents[identifier]["quality_attributes"] == ["security"]
-    assert agents["audit_report"]["quality_attributes"] == ["maintainability", "security"]
+    assert agents["audit_report"]["quality_attributes"] == ["maintainability", "security", "functional_adequacy"]
     assert agents["functional_adequacy"]["quality_attributes"] == ["functional_adequacy"]
     for identifier in ("orientation", "architecture", "semantic_validation"):
         assert agents[identifier]["quality_attributes"] == []

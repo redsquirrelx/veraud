@@ -36,8 +36,11 @@ def test_panel_descriptor_matches_actual_config_and_keeps_refs_self_contained(ag
     description = describe_developer_agent_config(agent_id)
     cls = configuration_type(agent_id)
     spec = AGENT_CONFIGS[agent_id]
-    schemas = importlib.import_module("server.agents." + spec.package + ".schemas")
-    assert getattr(schemas, spec.config_name) is cls
+    if spec.shared_config is None:
+        owning_module = importlib.import_module("server.agents." + spec.package + ".config")
+        assert getattr(owning_module, spec.config_name) is cls
+    else:
+        assert cls is spec.shared_config
     assert description["config_class"] == cls.__module__ + "." + cls.__name__
     assert validate_developer_agent_config(agent_id, description["defaults"]) == cls()
     assert json.loads(json.dumps(description)) == description
@@ -116,7 +119,7 @@ def test_unique_controls_are_not_exposed_as_universal_agent_fields():
         "responsibility": [], "architecture_boundary": [],
         "dependency_impact": ["max_dependency_depth", "max_relationships_per_assessment"],
         "abstraction": ["max_candidates", "max_participants_per_assessment"],
-        "reuse_opportunity": ["max_discovery_symbols", "max_feature_characters", "max_groups"],
+        "reuse_opportunity": ["max_discovery_symbols", "max_feature_characters", "max_groups", "max_planned_groups"],
         "component_adaptability": ["max_components", "max_constraints", "max_scan_characters_per_file", "max_scan_files", "max_signals_per_component"],
         "maintainability_manager": ["max_attempts_per_dimension"],
     }

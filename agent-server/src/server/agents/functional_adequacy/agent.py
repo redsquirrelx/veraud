@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from functools import lru_cache
@@ -106,10 +107,12 @@ class FunctionalAdequacyAgent(
     def _build_graph(self):
         graph = StateGraph(_FunctionalState)
 
-        graph.add_node("prepare", self._prepare)
-        graph.add_node("code_mapping", self._code_mapping)
-        graph.add_node("verify", self._verify)
-        graph.add_node("build_results", self._build_results)
+        from ...runtimes.invocation_reporting import phase_node
+
+        graph.add_node("prepare", phase_node("prepare", self._prepare))
+        graph.add_node("code_mapping", phase_node("code_mapping", self._code_mapping))
+        graph.add_node("verify", phase_node("verify", self._verify))
+        graph.add_node("build_results", phase_node("build_results", self._build_results))
 
         graph.set_entry_point("prepare")
         graph.add_edge("prepare", "code_mapping")
@@ -134,6 +137,11 @@ class FunctionalAdequacyAgent(
         }
 
     async def _code_mapping(self, state: _FunctionalState) -> dict:
+        # Embedding model loading/inference is CPU-bound and must not block
+        # lifecycle callbacks or sibling attributes on the server event loop.
+        return await asyncio.to_thread(self._retrieve_candidates, state)
+
+    def _retrieve_candidates(self, state: _FunctionalState) -> dict:
         """Retrieve the configured number of code candidates per requirement."""
         input_data = state["input_data"]
         fragments = input_data.code_fragments

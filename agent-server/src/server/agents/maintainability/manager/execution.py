@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from ....config.token_budget import token_budget_exceeded
 from ....runtimes.coordination.continuation import CoordinatorContinuation
 from ....runtimes.coordination.execution import (
     CoordinatorExecution,
@@ -20,6 +21,7 @@ from ....runtimes.coordination.synthesis import (
     terminal_provider_blocker,
 )
 from ....runtimes.investigation.schemas import EvidenceReference
+from ....runtimes.invocation_reporting import phase_node
 from ..modularity.coordinator.registry import INVESTIGATORS as MODULARITY_INVESTIGATORS
 from ..reusability.coordinator.registry import (
     INVESTIGATORS as REUSABILITY_INVESTIGATORS,
@@ -412,7 +414,8 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
                 ("invocations", self.config.max_invocations - len(state["investigation_results"]), 1),
                 ("seconds", self.remaining(), 0.001)]
             limitations.extend(f"resource_shortfall: {key}: disponible={max(0, available):g}; requerido={required:g}"
-                for key, available, required in requirements if available < required)
+                 for key, available, required in requirements if available < required
+                 and (key != "tokens" or token_budget_exceeded(required, available)))
         return {"result": MaintainabilityReport(assessment_id=state["assessment_id"], repository_id=state["repository_id"],
             commit=state["scope"].commit, snapshot_hash=state["snapshot_hash"], objective=self.request.objective, targets=self.request.targets,
             status=status, termination_reason=state["decision"].reason, scope=state["scope"], coverage=state["decision"],
@@ -428,7 +431,7 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         builder = StateGraph(MaintainabilityManagerState)
         for name in ("analyze_audit_scope", "plan_audit", "delegate_auditors", "collect_assessments",
                      "synthesize_assessments", "refine_audit_plan", "finalize_audit"):
-            builder.add_node(name, getattr(self, name))
+            builder.add_node(name, phase_node(name, getattr(self, name)))
         builder.add_edge(START, "analyze_audit_scope")
         builder.add_edge("analyze_audit_scope", "plan_audit")
         builder.add_edge("plan_audit", "delegate_auditors")

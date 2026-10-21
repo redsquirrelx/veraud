@@ -1,5 +1,6 @@
 """Manager-specific scope, accounting, nested provenance and coverage checks."""
 
+from ....config.token_budget import token_budget_exceeded
 from ....runtimes.coordination.synthesis import evidence_key
 from ....runtimes.investigation.schemas import EvidenceReference
 from ....services.execution_failures import ExecutionValidationError
@@ -95,7 +96,7 @@ def validate_accounting(result, budget, *, baseline=None):
     if budget is None or any(getattr(usage, k) < 0 for k in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")):
         raise ExecutionValidationError("invalid_accounting", "El consumo declarado o la reserva de recursos no es válido.")
     if (usage.model_calls > budget.max_model_calls or usage.tool_calls > budget.max_tool_calls
-            or usage.accounted_tokens > budget.max_total_tokens or usage.estimated_tokens > usage.accounted_tokens):
+            or token_budget_exceeded(usage.accounted_tokens, budget.max_total_tokens) or usage.estimated_tokens > usage.accounted_tokens):
         raise ExecutionValidationError("usage_exceeded_envelope", "El consumo declarado supera el presupuesto reservado.")
     if len({r.assignment.invocation_id for r in result.invocations}) != len(result.invocations):
         raise ExecutionValidationError("duplicate_invocations", "El resultado contiene identificadores de invocación duplicados.")

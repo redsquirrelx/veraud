@@ -7,6 +7,10 @@ from types import SimpleNamespace
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic_core import PydanticCustomError
 
+from .....config.token_budget import (
+    effective_token_budget_policy,
+    token_budget_exceeded,
+)
 from .....runtimes.investigation.agent import InvestigationExecution
 from .....runtimes.investigation.messages import compact_tool_history, empty_ai_message
 from .....runtimes.investigation.provider import lean_schema
@@ -89,7 +93,7 @@ class BoundaryExecution(InvestigationExecution):
             reserve = 0 if self._prioritize_evaluation else min(self.token_limit // 6, request_reserve)
         else:
             return 0
-        if self.tokens + request_reserve + reserve > self.token_limit:
+        if token_budget_exceeded(self.tokens + request_reserve + reserve, self.token_limit):
             self._closing_budget_reserved = True
         return reserve
 
@@ -110,7 +114,8 @@ class BoundaryExecution(InvestigationExecution):
         if node != "review_findings":
             context.pop("boundary_review_requirements", None)
             context.pop("boundary_hypothesis_review_requirements", None)
-        context["remaining_accounted_tokens"] = max(0, self.token_limit - self.tokens)
+        context["remaining_accounted_tokens"] = (None if effective_token_budget_policy().unlimited_token_budget
+            else max(0, self.token_limit - self.tokens))
         context["closing_due_to_token_budget"] = self._closing_budget_reserved
         source_ids = {ref.file_id for ref in self.references() if ref.kind == "source"}
         context["behavior_symbol_navigation"] = [{"symbol_id": symbol.id, "name": symbol.name,

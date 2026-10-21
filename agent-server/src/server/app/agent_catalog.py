@@ -5,6 +5,7 @@ Internal participants are described without registering them as HTTP agents.
 """
 
 from importlib import import_module
+from itertools import combinations
 from types import SimpleNamespace
 from typing import Any, Literal
 
@@ -96,8 +97,10 @@ def _definitions(service):
 
     # Direct execution remains authoritative, including additional registered agents.
     for identifier in service.list_agents():
-        add(identifier, identifier, "direct_agent", ["direct"], "Registered for POST /api/agents/run.",
+        add(identifier, identifier, "direct_agent", ["direct", "audit", "pipeline"] if identifier == "functional_adequacy" else ["direct"],
+            "Registered for direct execution and repository-backed quality audits." if identifier == "functional_adequacy" else "Registered for POST /api/agents/run.",
             config="functional_adequacy" if identifier == "functional_adequacy" else None,
+            workflows=["quality-audit", "functional-adequacy"] if identifier == "functional_adequacy" else [],
             attributes=["functional_adequacy"] if identifier == "functional_adequacy" else [])
 
     project_agents = (
@@ -148,16 +151,17 @@ def _definitions(service):
 
     add("audit_report", "AuditReportAgent", "report_generator", ["internal", "snapshot"],
         "Deterministic ten-section report from Blackboard; no model or repository reads.", model=False,
-        workflows=["quality-audit"], attributes=["maintainability", "security"], request=_symbol("audit_report.schemas", "AuditReportRequest"),
+        workflows=["quality-audit"], attributes=["maintainability", "security", "functional_adequacy"], request=_symbol("audit_report.schemas", "AuditReportRequest"),
         result=_symbol("audit_report.schemas", "SoftwareAuditReport"))
 
     pipelines = default_pipeline_registry()
-    groups = {"maintainability": list(MAINTAINABILITY_AGENT_TYPES), "security": ["security"]}
+    groups = {"maintainability": list(MAINTAINABILITY_AGENT_TYPES), "security": ["security"], "functional_adequacy": ["functional_adequacy"]}
     selections = [
         WorkflowSelection(attributes=attributes,
             stages=pipelines["quality-audit"].resolve_stages(SimpleNamespace(attributes=attributes)),
             model_configuration_ids=[agent for attribute in attributes for agent in groups[attribute]])
-        for attributes in (["maintainability"], ["security"], ["maintainability", "security"])
+        for size in range(1, len(groups) + 1) for selection in combinations(groups, size)
+        for attributes in [list(selection)]
     ]
     workflows = [
         WorkflowDescriptor(workflow_id="project-architecture", run_url="/api/pipelines/project-architecture/run",
@@ -169,7 +173,7 @@ def _definitions(service):
             stages=pipelines["quality-audit"].stages,
             agent_ids=sorted(key for key, item in entries.items() if "quality-audit" in item.workflow_ids),
             model_configuration_groups=groups, attribute_selections=selections,
-            supported_attributes=["maintainability", "security"], input_schema=QualityAuditInput.model_json_schema(),
+            supported_attributes=list(groups), input_schema=QualityAuditInput.model_json_schema(),
             description="Independent or joint attributes with one snapshot, Blackboard and JSON/Word report. "
                 "Select groups by attribute; stage_configs keys are the listed model participants."),
     ]

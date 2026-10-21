@@ -23,15 +23,16 @@ from server.agents.maintainability.reusability.abstraction import (
     AbstractionConfig,
     AbstractionRequest,
 )
+from server.config.runner import load_runner_config
 from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):
     request = AbstractionRequest.model_validate_json(Path(args.request).read_text(encoding="utf-8")) if args.request else AbstractionRequest()
-    config = AbstractionConfig.model_validate_json(Path(args.config).read_text(encoding="utf-8")) if args.config else AbstractionConfig()
+    config, token_policy = load_runner_config(AbstractionConfig, args.config)
     model, settings = load_test_model(args.agent_config)
     try:
-        await run_audit(args, Path(args.repository).resolve(), request, config, model, settings, agent_class=AbstractionAgent)
+        await run_audit(args, Path(args.repository).resolve(), request, config, model, settings, agent_class=AbstractionAgent, token_policy=token_policy)
     finally:
         await close_model_clients(SimpleNamespace(llm=model))
 

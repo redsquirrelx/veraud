@@ -19,15 +19,16 @@ from server.agents.maintainability.reusability.coordinator import (
     ReusabilityConfig,
     ReusabilityRequest,
 )
+from server.config.runner import load_runner_config
 from server.runtimes.repository.model_runtime import close_model_clients
 
 
 async def run(args):
     request = ReusabilityRequest.model_validate_json(Path(args.request).read_text(encoding="utf-8")) if args.request else ReusabilityRequest()
-    config = ReusabilityConfig.model_validate_json(Path(args.config).read_text(encoding="utf-8")) if args.config else ReusabilityConfig()
+    config, token_policy = load_runner_config(ReusabilityConfig, args.config)
     model, settings = load_test_model(args.agent_config)
     try:
-        await run_audit(args, Path(args.repository).resolve(), request, config, model, settings, agent_class=ReusabilityAgent)
+        await run_audit(args, Path(args.repository).resolve(), request, config, model, settings, agent_class=ReusabilityAgent, token_policy=token_policy)
     finally:
         await close_model_clients(SimpleNamespace(llm=model))
 

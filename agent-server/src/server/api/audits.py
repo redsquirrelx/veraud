@@ -2,13 +2,15 @@ import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from ..agents.audit_report import SoftwareAuditReport
+from ..agents.functional_adequacy.schemas import FunctionalRequirement
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.schemes.report import ReportGenerationSummary
 from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_attributes import QualityAttributes
+from ..app.audit_configuration import category_type, validate_category
 from ..app.audit_options import AuditExecutionOptions
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.execution_service import InvalidConfigError
@@ -19,12 +21,29 @@ from .schemas import DomainError, ExecutionConfig, RequestValidationErrorRespons
 router = APIRouter(prefix="/api/audits", tags=["Audits"])
 
 
+@router.get("/configuration/{attribute}")
+async def audit_configuration_schema(attribute: str):
+    try:
+        return {"schema": category_type(attribute).model_json_schema(), "level": "developer"}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
+
+@router.post("/configuration/{attribute}/validate")
+async def validate_audit_configuration(attribute: str, body: dict):
+    try:
+        return {"values": validate_category(attribute, body)}
+    except (ValidationError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
+
 class StartAuditRequest(AuditExecutionOptions):
     """Repository scope and model selection for a background quality audit."""
 
     repository_path: str = Field(min_length=1, pattern=r"\S")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
     attributes: QualityAttributes | None = None
+    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, min_length=1, max_length=100)
     security_request: SecurityAuditRequest | None = Field(default=None,
         description="Security scope. With attributes, participates only when security is selected; without attributes, selects security for compatibility.")
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
@@ -66,7 +85,7 @@ async def build_snapshot_report_docx(body: BlackboardSnapshot, service: ServiceD
 
 
 @router.post("", status_code=202, response_model=AuditState,
-    summary="Start a quality audit with one or both supported attributes",
+    summary="Start a quality audit with the selected quality attributes",
     description="Schedules the manager in this server process and returns its run_id immediately. Model defaults come from agent_config; the audit shares the application's in-memory Blackboard. The audit timeout measures active time: quota and provider recovery waits pause execution and resume automatically without consuming that timeout.",
     responses={202: {"description": "Audit accepted for asynchronous execution."},
                422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid repository, configuration or request."}})
@@ -76,7 +95,9 @@ async def start_audit(body: StartAuditRequest, response: Response, service: Serv
         state = service.start(body.repository_path,
             (body.security_request or SecurityAuditRequest()) if security_only else body.request, body.config, body.agent_config,
             body.agent_defaults, body.audit_budget, body.call_limits, agent_configs=body.agent_configs,
-            attributes=body.attributes, security_request=body.security_request, security_config=body.security_config)
+            attributes=body.attributes, security_request=body.security_request, security_config=body.security_config,
+            functional_requirements=body.functional_requirements, attribute_options=body.attribute_options,
+            functional_config=body.functional_config)
     except (InvalidConfigError, FileNotFoundError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
     response.headers["Location"] = f"/api/audits/{state.run_id}"

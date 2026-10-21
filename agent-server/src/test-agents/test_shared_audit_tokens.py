@@ -5,12 +5,19 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from test_architecture_boundary import toolset
 
 from server.agents.maintainability.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     BoundaryConfig,
+)
+from server.config import token_budget as policy
+from server.runtimes.coordination.execution import CoordinatorSynthesisExecution
+from server.runtimes.invocation_reporting import (
+    invocation_reporting,
+    observe_invocation,
 )
 from server.runtimes.repository.shared_tokens import SharedTokenBudget
 
@@ -111,3 +118,94 @@ def test_scopes_share_one_cap_under_concurrent_reservations():
     assert ledger.used == branch.used == 250
     assert ledger.estimated == branch.estimated == 0
     assert sum(worker.used for worker in workers) == 250
+
+
+def test_native_investigator_and_synthesis_calls_publish_separate_cumulative_tokens(tmp_path):
+    async def run():
+        ledger = SharedTokenBudget(10000)
+        receipts = []
+
+        def response(input_tokens, output_tokens):
+            return AIMessage(content="ok", usage_metadata={"input_tokens": input_tokens,
+                "output_tokens": output_tokens, "total_tokens": input_tokens + output_tokens})
+
+        child, _ = execution(tmp_path, ledger, [response(10, 2), {"raw": response(20, 3), "parsed": None}])
+        parent_base, parent_model = execution(tmp_path, ledger, [response(30, 4), response(40, 6)])
+        parent = CoordinatorSynthesisExecution(parent_model, parent_base.config, parent_base.tools, parent_base.request)
+
+        async def send(receipt):
+            receipts.append(receipt)
+
+        async def calls(runtime):
+            await runtime.provider_request(runtime.model, [HumanMessage(content="inspect")], "", "investigate", None, 0)
+            return SimpleNamespace(status="completed")
+
+        async def investigate():
+            await calls(child)
+            return await calls(child)
+
+        async def synthesize():
+            await calls(parent)
+            await observe_invocation(investigate(), agent_id="investigator", invocation_id="child", run_id="audit")
+            return await calls(parent)
+
+        with invocation_reporting(send):
+            await observe_invocation(synthesize(), agent_id="manager", invocation_id="parent", run_id="audit")
+        child_receipts = [item for item in receipts if item["invocation_id"] == "child"]
+        parent_receipts = [item for item in receipts if item["invocation_id"] == "parent"]
+        assert [(item["input_tokens"], item["output_tokens"]) for item in child_receipts] == [
+            (None, None), (10, 2), (30, 5), (30, 5)]
+        assert [(item["input_tokens"], item["output_tokens"]) for item in parent_receipts] == [
+            (None, None), (30, 4), (70, 10), (70, 10)]
+        assert ledger.used == 115 and ledger.estimated == 0
+
+    asyncio.run(run())
+
+
+def test_unlimited_launch_allows_native_attempt_past_local_and_shared_caps(tmp_path, monkeypatch):
+    path = tmp_path / "launch.json"
+    path.write_text('{"unlimited_token_budget": true}', encoding="utf-8")
+    monkeypatch.setattr(policy, "LAUNCH_PATH", path)
+    policy.token_budget_policy.cache_clear()
+    try:
+        async def run():
+            async def provider(*args, **kwargs):
+                return AIMessage(content="ok", usage_metadata={"input_tokens": 700, "output_tokens": 500, "total_tokens": 1200})
+
+            ledger = SharedTokenBudget(1000)
+            agent, model = execution(tmp_path, ledger, provider)
+            agent.tokens = 990
+            response = await agent.provider_request(agent.model, [HumanMessage(content="inspect")], "", "investigate", None, 0)
+            assert response is not None and not agent.stop
+            model.ainvoke.assert_awaited_once()
+            assert ledger.used == 1200 and agent.tokens == 2190
+            assert ledger.estimated == 0
+            agent.calls = agent.call_limit
+            assert await agent.provider_request(agent.model, [HumanMessage(content="inspect")], "", "investigate", None, 0) is None
+            assert agent.stop == "model_call_limit"
+            model.ainvoke.assert_awaited_once()
+
+        asyncio.run(run())
+    finally:
+        policy.token_budget_policy.cache_clear()
+
+
+@pytest.mark.parametrize("result", [AIMessage(content="no usage"), ValueError("provider failed")])
+def test_missing_provider_usage_does_not_report_budget_estimates_as_real_tokens(tmp_path, result):
+    async def run():
+        runtime, _ = execution(tmp_path, SharedTokenBudget(10000), [result])
+        receipts = []
+
+        async def send(receipt):
+            receipts.append(receipt)
+
+        async def call():
+            await runtime.provider_request(runtime.model, [HumanMessage(content="inspect")], "", "investigate", None, 0)
+            return SimpleNamespace(status="partial")
+
+        with invocation_reporting(send):
+            await observe_invocation(call(), agent_id="investigator", invocation_id="child", run_id="audit")
+        assert runtime.tokens > 0 and runtime.estimates == runtime.tokens
+        assert all(item["input_tokens"] is None and item["output_tokens"] is None for item in receipts)
+
+    asyncio.run(run())

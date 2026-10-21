@@ -9,15 +9,81 @@ Para todas las pruebas offline: uv run pytest src/test-agents -q
 
 import asyncio
 import importlib.util
+import json
 from contextvars import ContextVar
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from server.config import dev_agents_config
 from server.config.schemas import ModelSettings
 from server.config.settings import TracingSettings
+from server.config.token_budget import (
+    effective_token_budget_policy,
+    token_budget_exceeded,
+)
+
+
+@pytest.mark.parametrize("name", ["architecture_boundary", "responsibility", "dependency_impact", "modularity",
+    "reusability", "maintainability_manager", "component_adaptability", "reuse_opportunity", "abstraction"])
+def test_runners_load_mixed_launch_config_without_sending_policy_to_agent(name, tmp_path, monkeypatch):
+    module = importlib.import_module("run_" + name)
+    path = tmp_path / "custom-launch.json"
+    values = {"unlimited_token_budget": True, "max_context_characters": 160000,
+        "max_total_tokens": 500000, "max_model_calls": 24, "timeout_seconds": 600}
+    path.write_text(json.dumps(values), encoding="utf-8")
+    seen = []
+    monkeypatch.setattr(module, "load_test_model", lambda _: (object(), object()))
+
+    async def audit(args, root, request, config, model, settings, **kwargs):
+        assert "unlimited_token_budget" not in config.model_dump()
+        assert config.max_total_tokens == 500000 and config.max_context_characters == 160000
+        assert kwargs["token_policy"].unlimited_token_budget is True
+        seen.append(config)
+
+    async def close(model):
+        pass
+
+    monkeypatch.setattr(module, "run_audit", audit)
+    monkeypatch.setattr(module, "close_model_clients", close)
+    args = SimpleNamespace(config=str(path), repository=str(tmp_path), request=None, agent_config="dummy", max_files=10)
+    asyncio.run(module.run(args))
+    assert len(seen) == 1
+    values["unknown_setting"] = True
+    path.write_text(json.dumps(values), encoding="utf-8")
+    with pytest.raises(ValidationError, match="unknown_setting"):
+        asyncio.run(module.run(args))
+    assert len(seen) == 1
+
+
+def test_runner_policy_overrides_only_its_execution(audit_runner):
+    from config.agents.budgets import TokenBudgetPolicy
+
+    execute, calls, _, _, _ = audit_runner
+    assert token_budget_exceeded(2000, 1000)
+    asyncio.run(execute(token_policy=TokenBudgetPolicy(unlimited_token_budget=True)))
+    assert calls[0]["unlimited"] is True
+    assert token_budget_exceeded(2000, 1000)
+
+
+def test_explicit_finite_runner_policy_overrides_unlimited_launch(tmp_path, monkeypatch):
+    from server.config import token_budget
+    from server.config.runner import load_runner_config
+    from server.runtimes.investigation.schemas import InvestigationConfig
+
+    launch = tmp_path / "launch.json"
+    launch.write_text('{"unlimited_token_budget": true}', encoding="utf-8")
+    monkeypatch.setattr(token_budget, "LAUNCH_PATH", launch)
+    token_budget.token_budget_policy.cache_clear()
+    custom = tmp_path / "finite.json"
+    custom.write_text('{"unlimited_token_budget": false, "max_total_tokens": 1000}', encoding="utf-8")
+    _, policy = load_runner_config(InvestigationConfig, str(custom))
+    assert not token_budget_exceeded(2000, 1000)
+    with token_budget.using_token_budget_policy(policy):
+        assert token_budget_exceeded(2000, 1000)
+    assert not token_budget_exceeded(2000, 1000)
 
 
 @pytest.fixture
@@ -96,7 +162,8 @@ def audit_runner(runner, monkeypatch, tmp_path):
             assert config.max_output_tokens == 2048
 
         async def run(self, tools, request):
-            calls.append({"span": active_span.get(), "tools": tools, "request": request})
+            calls.append({"span": active_span.get(), "tools": tools, "request": request,
+                "unlimited": effective_token_budget_policy().unlimited_token_budget})
             return SimpleNamespace(model_dump=lambda **kwargs: {"audit": "completed"})
 
     monkeypatch.setattr(module, "ArchitectureBoundaryAgent", FakeAgent)

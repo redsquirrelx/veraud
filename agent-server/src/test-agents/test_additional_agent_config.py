@@ -57,7 +57,8 @@ def test_retrieval_and_security_controls_remain_developer_only():
     assert FunctionalAdequacyConfig().retrieval_top_k == 5
     assert FunctionalAdequacyConfig().embedding_model == "all-MiniLM-L6-v2"
     for agent_id in ("functional_adequacy", "security"):
-        assert describe_agent_config(agent_id)["config_schema"]["properties"] == {}
+        assert set(describe_agent_config(agent_id)["config_schema"]["properties"]) == {
+            "max_total_tokens", "timeout_seconds", "provider_rate_limits"}
         assert validate_agent_config(agent_id, {})
         assert describe_agent_config(agent_id, level="developer")["specific_fields"]
 

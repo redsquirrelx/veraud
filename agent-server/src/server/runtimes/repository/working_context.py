@@ -3,6 +3,8 @@
 import json
 from copy import deepcopy
 
+from ...config.token_budget import effective_token_budget_policy
+
 
 class WorkingContext:
     def __init__(self, representation, responses, *, protected_file_ids=()):
@@ -151,8 +153,9 @@ def rejection_details(generate, budget, prompt, objective_id):
         "prompt_characters": len(prompt),
         "estimated_input_tokens": ceil(len(prompt) * input_ratio(generate)),
         "max_input_tokens": budget.max_input_tokens_per_call,
-        "remaining_total_tokens": max(0, budget.max_total_tokens - accounted),
-        "remaining_objective_tokens": max(0, budget.max_tokens_per_objective - target),
+        "unlimited_token_budget": effective_token_budget_policy().unlimited_token_budget,
+        "remaining_total_tokens": None if effective_token_budget_policy().unlimited_token_budget else max(0, budget.max_total_tokens - accounted),
+        "remaining_objective_tokens": None if effective_token_budget_policy().unlimited_token_budget else max(0, budget.max_tokens_per_objective - target),
         "reserved_output_tokens": budget.max_output_tokens_per_call,
         "context_characters": {
             part.category: part.characters for part in prompt.measurement.context

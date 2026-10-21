@@ -1,8 +1,12 @@
 """Single declarations for operating budgets shared by agent execution protocols."""
 
-from pydantic import Field
+from pydantic import Field, StrictBool
 
 from .base import ConfigContract
+
+
+class TokenBudgetPolicy(ConfigContract):
+    unlimited_token_budget: StrictBool = False
 
 
 class TokenBudgetConfig(ConfigContract):

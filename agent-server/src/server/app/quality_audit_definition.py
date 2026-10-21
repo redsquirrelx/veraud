@@ -7,13 +7,14 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field, ValidationError
 
+from ..agents.functional_adequacy.schemas import FunctionalRequirement
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
 from ..runtimes.invocation_reporting import invocation_reporting
 from ..services.audit_report_docx import render_audit_report_docx
-from .audit_attributes import QualityAttributes
+from .audit_attributes import QualityAttributes, audit_root
 from .audit_models import validate_model_configs
 from .audit_options import AuditExecutionOptions
 from .audit_service import AuditService
@@ -28,11 +29,17 @@ class QualityAuditInput(AuditExecutionOptions):
     commit_hash: str = Field(pattern=r"^[a-fA-F0-9]{40}$")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
     security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
+    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, min_length=1, max_length=100)
 
 
 def parse_input(raw):
     try:
-        return QualityAuditInput.model_validate(raw)
+        parsed = QualityAuditInput.model_validate(raw)
+        if ("functional_adequacy" in parsed.attributes) != (parsed.functional_requirements is not None):
+            raise InvalidConfigError("Functional adequacy requires functional_requirements; omit them for other attributes.")
+        if parsed.functional_requirements and len({item.requirement_id for item in parsed.functional_requirements}) != len(parsed.functional_requirements):
+            raise InvalidConfigError("Functional requirement IDs must be distinct.")
+        return parsed
     except ValidationError:
         raise InvalidConfigError("Select supported quality attributes and a full commit hash.") from None
 
@@ -65,7 +72,7 @@ class QualityAuditRunner:
             raise InvalidConfigError("The checkout no longer matches the selected project revision.")
         service = self.audit_service or AuditService(self.blackboard)
         security = parsed.attributes == ["security"]
-        stage = "security" if security else "maintainability_manager"
+        stage = audit_root(parsed.attributes)
         if hooks:
             await hooks.on_stage_start(stage)
         state = None
@@ -78,7 +85,8 @@ class QualityAuditRunner:
                 state = service.start(str(root), parsed.security_request if security else parsed.request, self.config, stage,
                     parsed.agent_defaults, parsed.audit_budget, parsed.call_limits,
                     agent_configs=self.agent_configs, attributes=parsed.attributes, security_request=parsed.security_request,
-                    security_config=parsed.security_config)
+                    security_config=parsed.security_config, functional_requirements=parsed.functional_requirements,
+                    attribute_options=parsed.attribute_options, functional_config=parsed.functional_config)
             if hooks:
                 await hooks.on_audit_start(stage, state.run_id)
             await service.wait(state.run_id)
@@ -103,9 +111,8 @@ class QualityAuditRunner:
 
 
 async def build_agents(exec_service, config, stage_configs, parsed, timeout_seconds):
-    security = parsed.attributes == ["security"]
     validate_model_configs(stage_configs, parsed.attributes)
-    selected = (stage_configs or {}).get("security" if security else "maintainability_manager", config)
+    selected = (stage_configs or {}).get(audit_root(parsed.attributes), config)
     return {"maintainability_manager": QualityAuditRunner(selected, stage_configs)}, {}
 
 
@@ -114,7 +121,7 @@ def quality_audit_definition():
 
     return PipelineDefinition(
         name="quality-audit", stages=["maintainability_manager"], parse_input=parse_input,
-        resolve_stages=lambda parsed: ["security" if parsed.attributes == ["security"] else "maintainability_manager"],
+        resolve_stages=lambda parsed: [audit_root(parsed.attributes)],
         build_agents=build_agents, adapt_hooks=lambda hooks: hooks,
         create_pipeline=lambda agents, hooks, ctx: (agents["maintainability_manager"], hooks),
         run_pipeline=lambda pipeline, parsed, ctx: pipeline[0].run(parsed, pipeline[1]),

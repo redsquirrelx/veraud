@@ -12,6 +12,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from ...app.tracing_port import LangSmithTracingBackend
 from ...benchmark.pacing import RequestPacer
 from ...blackboard.publication import publication_for
+from ...config.token_budget import effective_token_budget_policy, token_budget_exceeded
 from ..investigation.agent import InvestigationExecution
 from ..investigation.provider import ProviderPacer, lean_schema
 from ..invocation_reporting import observe_invocation
@@ -197,7 +198,7 @@ class CoordinatorExecution(ABC):
         limits = self.config.invocation_limits
         return (len(records) - self.baseline_count < self.config.max_invocations and self.remaining() > 0
                 and remaining["calls"] >= limits.max_model_calls
-                and remaining["tokens"] >= (1 if self.token_budget is not None else limits.max_total_tokens)
+                and not token_budget_exceeded(1 if self.token_budget is not None else limits.max_total_tokens, remaining["tokens"])
                 and remaining["tools"] >= limits.max_tool_calls)
 
     def initial_state(self):
@@ -286,7 +287,8 @@ class CoordinatorExecution(ABC):
                 ("tokens", reserved["tokens"], 1 if self.token_budget is not None else limits.max_total_tokens),
                 ("tools", reserved["tools"], limits.max_tool_calls)]
             shortfalls = [ResourceShortfall(resource=key, available=max(0, available), required=required)
-                for key, available, required in requirements if available < required]
+                for key, available, required in requirements if available < required
+                and (key != "tokens" or token_budget_exceeded(required, available))]
             if shortfalls:
                 failures[assignment.invocation_id] = ExecutionFailure(code="execution_budget_exhausted",
                     stage="reserve_invocation", summary="No ejecutado: no se pudo reservar el presupuesto de la investigación.",
@@ -664,4 +666,5 @@ class CoordinatorExecution(ABC):
             "resolved_gap_ids": sorted(resolved), "withdrawn_finding_refs": sorted(withdrawn),
             "consolidated_findings": self.consolidate(records, draft.groups if draft else [], values, withdrawn),
             "summary": draft.summary if draft else "Synthesis unavailable; retained investigator evidence only.",
-            "budgets": {**self.resources(), "can_dispatch": self.can_dispatch(records)}}
+            "budgets": {**self.resources(), "unlimited_token_budget": effective_token_budget_policy().unlimited_token_budget,
+                "can_dispatch": self.can_dispatch(records)}}

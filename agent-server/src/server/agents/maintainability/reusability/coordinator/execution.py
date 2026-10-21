@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from .....config.token_budget import token_budget_exceeded
 from .....runtimes.coordination.execution import (
     CoordinatorExecution,
 )
@@ -17,6 +18,7 @@ from .....runtimes.coordination.synthesis import (
     stable_id,
 )
 from .....runtimes.investigation.schemas import EvidenceReference
+from .....runtimes.invocation_reporting import phase_node
 from . import synthesis
 from .registry import EVIDENCE_EXPECTATIONS, INVESTIGATORS
 from .schemas import (
@@ -124,7 +126,7 @@ class ReusabilityExecution(CoordinatorExecution):
         if budget is None or any(n < 0 for n in [result.model_calls, result.tool_calls, result.accounted_tokens, result.estimated_tokens]):
             raise ValueError("Invalid usage accounting")
         if (result.model_calls > budget.max_model_calls or result.tool_calls > budget.max_tool_calls
-                or result.accounted_tokens > budget.max_total_tokens or result.estimated_tokens > result.accounted_tokens):
+                or token_budget_exceeded(result.accounted_tokens, budget.max_total_tokens) or result.estimated_tokens > result.accounted_tokens):
             raise ValueError("Reported usage exceeded reservation")
         if raw.assignment.investigator_id == "component_adaptability" and result.target_context != self.request.target_context:
             raise ValueError("Mismatched target context")
@@ -293,7 +295,7 @@ class ReusabilityExecution(CoordinatorExecution):
     def build_graph(self):
         graph = StateGraph(ReusabilityState)
         for name in ("plan_assessment", "delegate_investigations", "collect_findings", "synthesize_findings", "finalize_assessment"):
-            graph.add_node(name, getattr(self, name))
+            graph.add_node(name, phase_node(name, getattr(self, name)))
         graph.add_edge(START, "plan_assessment")
         graph.add_edge("plan_assessment", "delegate_investigations")
         graph.add_edge("delegate_investigations", "collect_findings")

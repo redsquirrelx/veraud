@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
+from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
 from ...runtimes.investigation.provider import (
     ProviderPacer,
@@ -23,6 +24,7 @@ from ...runtimes.investigation.structured import (
     parse_structured,
     safe_diagnostic,
 )
+from ...runtimes.invocation_reporting import report_invocation_phase
 from ...runtimes.repository.model_runtime import ModelGateway
 from ...runtimes.repository.timing import within_deadline
 from ..schemes.base import AuditRequest, Criterion
@@ -57,6 +59,7 @@ def redact(value):
 
 
 async def run_security_audit(tools, request, limits, model, board, identity):
+    await report_invocation_phase("analyze_audit_scope")
     snapshot = tools.accessible_snapshot
     publication = Publication(board, "security", identity=identity)
     evidence_ids, finding_ids, incidents, scanned = [], [], [], []
@@ -109,7 +112,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         reserve = max(1, len(prompt)) + output_limit
         if calls >= limits.max_model_calls:
             raise ValueError("security_remediation_call_budget_exhausted")
-        if tools.token_budget.used + reserve > limits.max_total_tokens:
+        if token_budget_exceeded(tools.token_budget.used + reserve, limits.max_total_tokens):
             raise ValueError("security_remediation_local_budget_exhausted")
         reservation = tools.token_budget.reserve(reserve)
         if reservation is None:
@@ -120,6 +123,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     gateway.request_guard = guard
 
     async def propose(original):
+        await report_invocation_phase("security_remediation")
         nonlocal selected_model, native, messages, configured, remediation_stage, schema_text
         if not configured:
             remediation_stage = "structured_output_setup"
@@ -308,6 +312,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         # The checkout is never modified; pending ranges remain explicit.
         with tempfile.TemporaryDirectory(prefix="veraud-security-") as temporary:
             for source in candidates[:limits.max_scan_files]:
+                await report_invocation_phase("security_scan")
                 await asyncio.sleep(0)
                 if tools.budget_usage.tool_calls >= limits.max_tool_calls:
                     record_incident("tool_call_limit", exhausted_read_budget())
@@ -360,6 +365,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
                             remediation_errors.append(failure)
                         record_incident(reason, f"security_remediation: {source.path}; stage={remediation_stage}; {diagnostic}.")
                         original.remediation = {**fallback, "llm_generated": False, "validated_by_sast": False, "failure": failure}
+                    await report_invocation_phase("verify")
                     supervisor.validator_agent.validate_patches([original])
                     kept = bool(supervisor.verifier_agent.filter_false_positives([original]))
                     local_id = f"{source.id}/{original.rule_id}/{original.line_number}/{number}"
@@ -383,6 +389,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
         if len(scanned) < len(candidates):
             record_incident("security_scope_incomplete", "Quedan archivos sin inspeccionar en el alcance seleccionado.")
         status = "partial" if incomplete_reasons else "completed"
+        await report_invocation_phase("build_results")
         publish_assessment(status, incomplete_reasons[0] if incomplete_reasons else "security_scope_completed")
         return SecurityAuditResult(status=status)
     except BaseException:

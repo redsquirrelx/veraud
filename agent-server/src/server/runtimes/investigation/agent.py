@@ -17,7 +17,9 @@ from pydantic_core import PydanticCustomError
 
 from ...blackboard.publication import publication_for
 from ...config.logs import get_logger
+from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
+from ..invocation_reporting import phase_node, report_invocation_usage
 from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
 from .messages import provider_history
@@ -129,6 +131,8 @@ class InvestigationExecution:
         self.model, self.config, self.tools, self.request = model, config, tools, request
         self.started = monotonic()
         self.calls = self.tokens = self.estimates = 0
+        self.reported_input_tokens = self.reported_output_tokens = 0
+        self.usage_attempts = self.unknown_usage_attempts = 0
         self.stop = ""
         self.issues = []
         self.retryable_failure = False
@@ -454,6 +458,23 @@ class InvestigationExecution:
             return
         raise PydanticCustomError(code, Review.validation_feedback[code])
 
+    def usage_totals(self):
+        complete = self.usage_attempts > 0 and self.unknown_usage_attempts == 0
+        return {"input_tokens": self.reported_input_tokens if complete else None,
+            "output_tokens": self.reported_output_tokens if complete else None}
+
+    async def record_invocation_usage(self, response):
+        raw = response.get("raw") if isinstance(response, dict) else response
+        usage = getattr(raw, "usage_metadata", None)
+        self.usage_attempts += 1
+        if isinstance(usage, dict) and all(isinstance(usage.get(key), int)
+                and not isinstance(usage[key], bool) and usage[key] >= 0 for key in ("input_tokens", "output_tokens")):
+            self.reported_input_tokens += usage["input_tokens"]
+            self.reported_output_tokens += usage["output_tokens"]
+        else:
+            self.unknown_usage_attempts += 1
+        await report_invocation_usage(self)
+
     async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
         retry = 0
         while True:
@@ -469,7 +490,7 @@ class InvestigationExecution:
             if input_estimate > self.tools.context.input.budget.max_input_tokens_per_call:
                 self.stop = "input_token_limit"
                 return None
-            if self.tokens + reserve > self.token_limit:
+            if token_budget_exceeded(self.tokens + reserve, self.token_limit):
                 self.stop = "token_limit"
                 detail = (f"{node}: token_budget_blocked accounted={self.tokens} "
                     f"next_request_reserve={reserve} closing_reserve=0 effective_limit={self.token_limit}")
@@ -477,7 +498,7 @@ class InvestigationExecution:
                 self.issues.append(detail)
                 return None
             closing_reserve = self.closing_token_reserve(node, reserve)
-            if self.tokens + reserve + closing_reserve > self.token_limit:
+            if token_budget_exceeded(self.tokens + reserve + closing_reserve, self.token_limit):
                 self.stop = "token_limit"
                 detail = (f"{node}: token_budget_reserved_for_closing accounted={self.tokens} "
                     f"next_request_reserve={reserve} closing_reserve={closing_reserve} effective_limit={self.token_limit}")
@@ -527,11 +548,13 @@ class InvestigationExecution:
                 request_timing = self.timing.fork(request_timeout, label=self.timing.label,
                     invocation_id=self.timing.invocation_id, max_wall_time_seconds=request_timeout,
                     cancellation_grace_seconds=self.config.cancellation_grace_seconds)
+                response = None
                 try:
                     with request_timing.stage(node + ":provider_request"):
                         response = await within_deadline(model.ainvoke(messages, **self.invoke_options), request_timing)
                 finally:
                     request_timing.close()
+                    await self.record_invocation_usage(response)
             except Exception as error:  # noqa: BLE001 - provider boundary; cancellation propagates
                 detail = f"{node}: provider_request: {safe_diagnostic(error, schema)}{provider_diagnostic(error)}"
                 self.logger.warning("%s", detail)
@@ -557,11 +580,11 @@ class InvestigationExecution:
                         self.defer_provider_stage(node, "provider_recovery_exhausted", error, 0, retry + 1)
                         return None
                     if quota_recovery and (self.calls >= self.call_limit - reserved_calls
-                                           or self.tokens + reserve > self.token_limit):
+                                           or token_budget_exceeded(self.tokens + reserve, self.token_limit)):
                         # Keep 429 recovery's existing admission/termination policy.
                         continue
                     if not quota_recovery and (self.calls >= self.call_limit - reserved_calls
-                                               or self.tokens + reserve > self.token_limit):
+                                               or token_budget_exceeded(self.tokens + reserve, self.token_limit)):
                         reason = ("provider_retry_call_limit" if self.calls >= self.call_limit - reserved_calls
                             else "provider_retry_token_limit")
                         self.defer_provider_stage(node, reason, error, 0, retry + 1)
@@ -924,8 +947,8 @@ class InvestigationExecution:
     def _build_graph(self):
         graph = StateGraph(InvestigationState)
         for name in ("plan_investigation", "investigate", "evaluate_evidence", "review_findings", "finalize"):
-            graph.add_node(name, getattr(self, name))
-        graph.add_node("tools", ToolNode(self.native_tools, handle_tool_errors=True))
+            graph.add_node(name, phase_node(name, getattr(self, name)))
+        graph.add_node("tools", phase_node("tools", ToolNode(self.native_tools, handle_tool_errors=True)))
         graph.add_edge(START, "plan_investigation")
         graph.add_conditional_edges("plan_investigation", self.route_plan, ["investigate", "finalize"])
         graph.add_conditional_edges("investigate", self.route_investigation,

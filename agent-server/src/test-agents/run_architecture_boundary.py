@@ -30,7 +30,9 @@ from server.agents.maintainability.modularity.architecture_boundary import (
 )
 from server.app.tracing_port import LangSmithTracingBackend, TracingBackend
 from server.config.dev_agents_config import load_dev_agents_config
+from server.config.runner import load_runner_config
 from server.config.settings import ENV_FILE
+from server.config.token_budget import using_token_budget_policy
 from server.runtimes.repository.context import RepositoryContext
 from server.runtimes.repository.model_runtime import close_model_clients
 from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput
@@ -68,11 +70,11 @@ def load_test_model(agent_config="dummy"):
 async def run(args):
     root = Path(args.repository).resolve()
     request = AuditRequest.model_validate_json(Path(args.request).read_text(encoding="utf-8")) if args.request else AuditRequest()
-    config = BoundaryConfig.model_validate_json(Path(args.config).read_text(encoding="utf-8")) if args.config else BoundaryConfig()
+    config, token_policy = load_runner_config(BoundaryConfig, args.config)
     # Validate settings before repository analysis; credentials never enter graph state.
     model, settings = load_test_model(args.agent_config)
     try:
-        await run_audit(args, root, request, config, model, settings)
+        await run_audit(args, root, request, config, model, settings, token_policy=token_policy)
     finally:
         # Reuse existing cleanup for LangChain-backed wrappers; the caller owns clients.
         from types import SimpleNamespace
@@ -80,7 +82,7 @@ async def run(args):
 
 
 async def run_audit(args, root, request, config, model, settings, *, tracing_backend: TracingBackend | None = None,
-                    agent_class=None):
+                    agent_class=None, token_policy=None):
     # This standalone harness is also reused by the responsibility test runner.
     agent_class = agent_class if agent_class is not None else ArchitectureBoundaryAgent
     config = config.model_copy(update={"max_output_tokens": min(config.max_output_tokens, settings.max_tokens)})
@@ -97,16 +99,17 @@ async def run_audit(args, root, request, config, model, settings, *, tracing_bac
         snapshot_hash=snapshot.repository.snapshot_hash, budget=budget,
     )), workspace_root=root.parent, limits=ToolLimits(compact=True))
     tracing = tracing_backend if tracing_backend is not None else LangSmithTracingBackend()
-    result = await tracing.wrap_stage(
-        agent_class(model, config).run(tools, request),
-        name=getattr(agent_class, "trace_name", "architecture-boundary"),
-        agent_type=getattr(agent_class, "agent_type", "architecture_boundary"),
-        repository_id=snapshot.repository.name,
-        commit=snapshot.repository.commit,
-        snapshot_hash=snapshot.repository.snapshot_hash,
-        provider=settings.provider,
-        model=settings.name,
-    )
+    with using_token_budget_policy(token_policy):
+        result = await tracing.wrap_stage(
+            agent_class(model, config).run(tools, request),
+            name=getattr(agent_class, "trace_name", "architecture-boundary"),
+            agent_type=getattr(agent_class, "agent_type", "architecture_boundary"),
+            repository_id=snapshot.repository.name,
+            commit=snapshot.repository.commit,
+            snapshot_hash=snapshot.repository.snapshot_hash,
+            provider=settings.provider,
+            model=settings.name,
+        )
     print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 

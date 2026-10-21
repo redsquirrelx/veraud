@@ -1,9 +1,12 @@
 """Task-local invocation lifecycle reporting, independent of agents and transport."""
 
 import asyncio
+import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
+
+from langchain_core.runnables import Runnable, RunnableConfig
 
 from ..config.logs import get_logger
 
@@ -41,6 +44,29 @@ async def report_invocation_usage(runtime):
     await _send(receipt)
 
 
+async def report_invocation_phase(phase):
+    active = _active.get()
+    if active is None:
+        return
+    receipt, _ = active
+    if receipt["phase"] == phase:
+        return
+    receipt["phase"] = phase
+    receipt["phase_sequence"] += 1
+    await _send(receipt)
+
+
+def phase_node(name, operation):
+    """Observe an existing graph node without changing its outputs or routes."""
+    async def node(state, config: RunnableConfig):
+        await report_invocation_phase(name)
+        if isinstance(operation, Runnable):
+            return await operation.ainvoke(state, config)
+        result = operation(state)
+        return await result if inspect.isawaitable(result) else result
+    return node
+
+
 async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
     """Wrap actual execution, preserving results, exceptions and cancellation."""
     if _reporter.get() is None:
@@ -49,7 +75,7 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
     receipt = {"agent_id": agent_id, "invocation_id": invocation_id, "run_id": run_id,
         "parent_invocation_id": parent[0]["invocation_id"] if parent else None,
         "status": "running", "started_at": datetime.now(UTC).isoformat(), "finished_at": None,
-        "input_tokens": None, "output_tokens": None, "error": None}
+        "input_tokens": None, "output_tokens": None, "error": None, "phase": None, "phase_sequence": 0}
     token = _active.set((receipt, {}))
     began = False
     try:
@@ -69,6 +95,8 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         raise
     finally:
         receipt["finished_at"] = datetime.now(UTC).isoformat()
+        receipt["phase"] = None
+        receipt["phase_sequence"] += 1
         try:
             await _send(receipt)
         finally:

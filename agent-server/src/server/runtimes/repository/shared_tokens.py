@@ -2,6 +2,8 @@
 
 from threading import RLock
 
+from ...config.token_budget import token_budget_exceeded
+
 
 class SharedTokenBudget:
     """Thread-safe scopes share a cap; parent scopes include all descendant usage.
@@ -39,7 +41,7 @@ class SharedTokenBudget:
         if tokens < 1:
             raise ValueError("Token reservation must be positive.")
         with self._lock:
-            if tokens > self.remaining:
+            if token_budget_exceeded(self.root.used + tokens, self.limit):
                 return None
             self._adjust(tokens, tokens)
             return TokenReservation(self, tokens)
