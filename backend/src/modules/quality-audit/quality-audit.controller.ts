@@ -35,13 +35,21 @@ function failure(error: unknown) {
 export function registerQualityAuditRoutes(app: FastifyInstance, service: QualityAuditService) {
   app.post("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "Start a quality audit for a project revision",
-    description: "Run maintainability, security or both with one report. Configure model access for each selected attribute first. Optional operating patches are validated against agent-server's catalog; security_config overrides common agent_defaults for security. Developer controls are not exposed as user-panel settings.",
+    description: "Run maintainability, security and functional adequacy, independently or together, with one report. Functional adequacy requires explicit functional_requirements. Configure model access for each selected attribute first. Optional operating patches are validated against agent-server's catalog.",
     params,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
-      attributes: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security"] } },
+      attributes: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security", "functional_adequacy"] } },
+      functional_requirements: { type: "array", minItems: 1, maxItems: 100, items: {
+        type: "object", additionalProperties: false, required: ["requirement_id", "description"], properties: {
+          requirement_id: { type: "string", minLength: 1, maxLength: 128, pattern: "\\S" },
+          description: { type: "string", minLength: 1, maxLength: 10000, pattern: "\\S" },
+        },
+      } },
       agent_defaults: { type: "object", additionalProperties: true, description: "Developer-level common overrides; validated by agent-server." },
       security_config: { type: "object", additionalProperties: true, description: "Developer-level security overrides; validated by agent-server." },
+      functional_config: { type: "object", additionalProperties: true },
+      attribute_options: { type: "object", additionalProperties: { type: "object", additionalProperties: true } },
       audit_budget: { type: "object", additionalProperties: true },
       call_limits: { type: "object", additionalProperties: true, description: "Developer-level maintainability call envelopes; validated by agent-server." },
     } },

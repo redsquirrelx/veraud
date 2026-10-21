@@ -5,6 +5,7 @@ import { ApiError, listAgentSettings, syncAgentSettings, type AgentSettings, typ
 import { Button, Panel, Spinner } from "../../shared/ui-kit/index.ts"
 import { AgentSettingsCard } from "./AgentSettingsCard.tsx"
 import { AgentSettingsDrawer } from "./AgentSettingsDrawer.tsx"
+import { AuditSettingsDrawer } from "./AuditSettingsDrawer.tsx"
 
 interface AgentsSettingsProps {
   providers?: AiProviderDetail[]
@@ -36,6 +37,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
   const [attempt, setAttempt] = useState(0)
   const [selectedAgent, setSelectedAgent] = useState<AgentSettings | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [synchronizing, setSynchronizing] = useState(false)
   const [syncError, setSyncError] = useState<AgentsLoadError | null>(null)
 
@@ -135,7 +137,8 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
                 providersLoading={providersLoading || !!providersError || synchronizing}
                 onSaved={saved}
                 onVerified={verified}
-                onConfigure={() => {
+                 onConfigure={() => {
+                    if (attribute) { setSelectedCategory(attribute); return }
                     setSelectedAgent(agent)
                     setDrawerOpen(true)
                 }}
@@ -144,6 +147,8 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
           </div>
         )}
       </Panel>
+      {selectedCategory && <AuditSettingsDrawer key={selectedCategory} attribute={selectedCategory}
+        label={labels[selectedCategory] ?? selectedCategory} open onClose={() => setSelectedCategory(null)} />}
       {selectedAgent && <AgentSettingsDrawer
         agent={selectedAgent}
         open={drawerOpen}

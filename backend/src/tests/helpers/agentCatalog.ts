@@ -26,7 +26,7 @@ export function makeQualityAuditCatalogSource(): AgentCatalogSource {
     modularity: ["architecture_boundary", "responsibility", "dependency_impact", "server_only_investigator"],
     reusability: ["abstraction", "reuse_opportunity", "component_adaptability"],
   }
-  for (const id of TEST_MAINTAINABILITY_AGENTS) {
+  for (const id of [...TEST_MAINTAINABILITY_AGENTS, "functional_adequacy"]) {
     if (!catalog.agents.some((agent) => agent.agent_id === id)) {
       catalog.agents.push({ ...catalog.agents[0]!, agent_id: id, name: id, model_configuration_id: id })
     }

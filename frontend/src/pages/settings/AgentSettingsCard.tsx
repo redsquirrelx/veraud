@@ -134,7 +134,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       {categoryMixed && <p className="settings-hint" role="status">{t("audit.categoryMixed")}</p>}
       {!modelAccessOnly && <p className="settings-hint">{t("agents.card.tokenSummary", { budget: formatNumber(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET), limit: formatNumber(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</p>}
       <div className="settings-agent-footer">
-        {!modelAccessOnly && <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: agent.agentType })} onClick={onConfigure}>{t("agents.card.configure")}</Button>}
+        {(!modelAccessOnly || qualityAttribute) && <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: label ?? agent.agentType })} onClick={onConfigure}>{t("agents.card.configure")}</Button>}
         <Button disabled={!canSave} loading={saving} loadingText={t("agents.card.saving")} onClick={() => void save()}>{t("agents.card.saveChanges")}</Button>
       </div>
     </Card>

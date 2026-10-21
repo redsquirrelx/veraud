@@ -25,6 +25,9 @@ export interface AgentInvoker {
  *  derived server-side from previous stages. */
 /** Opaque operating patches; agent-server validates effective catalog contracts. */
 export interface AuditOperatingOptions {
+  attribute_options?: Record<string, Record<string, unknown>>
+  functional_config?: Record<string, unknown>
+  functional_requirements?: { requirement_id: string, description: string }[]
   agent_defaults?: Record<string, unknown>
   security_config?: Record<string, unknown>
   audit_budget?: Record<string, unknown>

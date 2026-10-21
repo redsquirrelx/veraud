@@ -6,7 +6,7 @@ import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import { invocationEvents } from "./invocationReceipt.js"
 import {
   INITIAL_STATUS,
@@ -131,10 +131,12 @@ export class AgentExecutionService {
   }
 
   async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
-    const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE : SECURITY_AGENT_TYPE
+    const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE
+      : attributes.includes("security") ? SECURITY_AGENT_TYPE : FUNCTIONAL_ADEQUACY_AGENT_TYPE
     const configurations = await this.settings.prepareExecution([
       ...(attributes.includes("maintainability") ? [MAINTAINABILITY_AGENT_TYPE] : []),
       ...(attributes.includes("security") ? [SECURITY_AGENT_TYPE] : []),
+      ...(attributes.includes("functional_adequacy") ? [FUNCTIONAL_ADEQUACY_AGENT_TYPE] : []),
     ])
     const rootConfiguration = configurations.find((item) => item.agentType === agentType)!
     const configs: Record<string, AgentRunConfig> = {}
@@ -372,7 +374,7 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     status: execution.status,
     // Audit artifacts are retrieved through project-scoped report endpoints;
     // avoid broadcasting source inventories and binary base64 to every client.
-    result: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE].includes(execution.agentType) ? null : execution.result,
+    result: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE].includes(execution.agentType) ? null : execution.result,
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,

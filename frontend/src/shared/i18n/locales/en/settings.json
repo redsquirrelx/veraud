@@ -8,6 +8,13 @@
     "label": "Settings sections"
   },
   "audit": {
+    "drawer": {
+      "title": "Configure audit · {{category}}", "description": "Advanced operating configuration. Changes apply to future audits.",
+      "sharedBudget": "Shared audit budget", "sharedBudgetHint": "One global token cap shared by all selected attributes. This setting is common to every audit category.",
+      "callLimits": "Hierarchy call limits", "securityOptions": "Security audit options", "functionalOptions": "Functional adequacy options",
+      "agentDefaults": "Generic agent parameters", "agentDefaultsHint": "Applied to every agent in this category. In maintainability, model/tool call defaults apply to investigators; hierarchy limits above control manager and coordinator aggregate budgets.",
+      "defaultsHint": "Leave a field empty to use server defaults. Exclusive settings of individual maintainability agents are configured separately."
+    },
     "modelsTitle": "Quality audit models",
     "modelsDescription": "Choose a model and credential for each quality category. Saving applies that selection to all its model agents declared by the server.",
     "categoryAssignment": "Saving applies this model and credential to every model agent in this category, preserving individual operating parameters.",
@@ -16,8 +23,9 @@
     "synchronizingCatalog": "Synchronizing catalog…",
     "noCategories": "The saved catalog has no configurable quality categories. Synchronize the agent catalog to load the category cards.",
     "security": "Security",
+    "functionalAdequacy": "Functional adequacy",
     "allAgents": "Maintainability · all agents",
-    "saved": "Maintainability audit configuration saved"
+    "saved": "Audit configuration saved"
   },
   "form": {
     "provider": "Provider",

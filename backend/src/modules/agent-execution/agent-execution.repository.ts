@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
-import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 import type { InvocationReceipt } from "./invocationReceipt.js"
 
@@ -120,6 +120,9 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       if (previous?.status !== undefined && previous.status !== "running") return this.toStored(execution)
       const count = (a: number | null | undefined, b: number | null) => a == null ? b : b == null ? a : Math.max(a, b)
       const updated = { ...receipt, started_at: previous?.started_at ?? receipt.started_at,
+        phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
+          ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
+        phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
         input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
       const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
       return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
@@ -217,9 +220,9 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
     if (runId) {
       const current = await this.db.agentExecution.findUniqueOrThrow({ where: { id } })
-      if (current.status === "Running" && [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE].includes(current.agentType)) {
+      if (current.status === "Running" && [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE].includes(current.agentType)) {
         await this.db.agentExecution.updateMany({
-          where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE] } },
+          where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE] } },
           data: { result: JSON.stringify({ ...JSON.parse(current.result ?? "{}"), run_id: runId }) },
         })
       }

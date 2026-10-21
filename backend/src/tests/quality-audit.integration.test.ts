@@ -7,15 +7,19 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { AuditSettingsService } from "../modules/quality-audit/audit-settings.service.js"
 import { makeQualityAuditCatalogSource, TEST_MAINTAINABILITY_AGENTS } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
 
-for (const attributes of [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"]]) {
+for (const attributes of [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
+  ["functional_adequacy"], ["maintainability", "functional_adequacy"], ["security", "functional_adequacy"],
+  ["maintainability", "security", "functional_adequacy"]]) {
 it(`runs a ${attributes.join("+")} audit and persists one partial report and Word artifact independently of architecture`, async () => {
-  const agentType = attributes.includes("maintainability") ? "maintainability_manager" : "security"
+  const agentType = attributes.includes("maintainability") ? "maintainability_manager" : attributes.includes("security") ? "security" : "functional_adequacy"
    const agents = [...(attributes.includes("maintainability") ? TEST_MAINTAINABILITY_AGENTS : []),
-    ...(attributes.includes("security") ? ["security"] : [])]
+     ...(attributes.includes("security") ? ["security"] : []),
+     ...(attributes.includes("functional_adequacy") ? ["functional_adequacy"] : [])]
   const dir = mkdtempSync(join(tmpdir(), "veraud-quality-"))
   const databaseUrl = `file:${join(dir, "test.db")}`
   execSync("pnpm prisma migrate deploy", {
@@ -48,6 +52,26 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
   let executionId: number
   let projectId: number
   try {
+    if (attributes.length === 1 && attributes[0] === "functional_adequacy") {
+      const originalFetch = globalThis.fetch
+      const saved = { audit_budget: { max_total_tokens: 300000000000 },
+        agent_defaults: { max_context_characters: 240000 }, functional_config: { retrieval_top_k: 3 } }
+      globalThis.fetch = async (_url, init) => new Response(JSON.stringify(init?.method === "POST"
+        ? { values: JSON.parse(String(init.body)) } : { schema: { type: "object" }, level: "developer" }))
+      try {
+        const service = new AuditSettingsService(db, "http://configuration.test")
+        await service.save("functional_adequacy", saved)
+        assert.deepEqual((await new AuditSettingsService(db, "http://configuration.test").get("functional_adequacy")).values, saved,
+          "saved settings survive service recreation")
+        assert.deepEqual((await service.get("security")).values, { audit_budget: saved.audit_budget },
+          "shared budget is global while category operating overrides stay scoped")
+        assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
+          audit_budget: saved.audit_budget,
+          attribute_options: { functional_adequacy: { agent_defaults: saved.agent_defaults, functional_config: saved.functional_config } },
+        })
+        await db.auditSettings.deleteMany()
+      } finally { globalThis.fetch = originalFetch }
+    }
     const project = await db.project.create({ data: { githubRepositoryId: 555n, repositoryOwner: "acme", repositoryName: "shop", status: "READY" } })
     projectId = project.id
     const version = await db.projectVersion.create({ data: { projectId, branch: "main", commitHash: hash, analysisStatus: "Completed" } })
@@ -57,8 +81,16 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
       agent_defaults: { max_context_characters: 20000000, max_total_tokens: 80000000, max_model_calls: 20, max_tool_calls: 30 },
       audit_budget: { max_total_tokens: 3000000000 },
       ...(attributes.includes("security") ? { security_config: { max_scan_files: 30, max_source_lines: 200 } } : {}),
+      ...(attributes.includes("functional_adequacy") ? { functional_requirements: [{ requirement_id: "REQ-001", description: "Export a value." }] } : {}),
     }
     const body = { branch: "main", commitHash: hash, attributes, ...options }
+    await db.auditSettings.createMany({ data: [
+      { attribute: "global", options: JSON.stringify({ audit_budget: { max_total_tokens: 300000000000 } }) },
+      ...attributes.map((attribute, index) => ({ attribute, options: JSON.stringify({
+        agent_defaults: { max_context_characters: 220000 + index, max_total_tokens: 90000000 },
+        ...(attribute === "functional_adequacy" ? { functional_config: { retrieval_top_k: 3 } } : {}),
+      }) })),
+    ] })
     assert.equal((await app.inject({ method: "POST", url, payload: { ...body, attributes: ["unsupported"] } })).statusCode, 400)
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     assert.equal(await db.evaluation.count(), 1, "invalid configurations create no audit rows")
@@ -67,7 +99,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     const credential = await db.aiCredential.create({ data: { name: "test-key", apiKey: "secret-test-key", aiProviderId: provider.id } })
     const securityCredential = await db.aiCredential.create({ data: { name: "security-key", apiKey: "security-test-key", aiProviderId: provider.id } })
     for (const selected of attributes) {
-      await db.agentSettings.update({ where: { agentType: selected === "security" ? "security" : "maintainability_manager" },
+      await db.agentSettings.update({ where: { agentType: selected === "maintainability" ? "maintainability_manager" : selected },
         data: { aiModelId: model.id, aiCredentialId: selected === "security" ? securityCredential.id : credential.id } })
     }
     const opened = await app.inject({ method: "POST", url, payload: body })
@@ -84,8 +116,22 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     assert.deepEqual(seen?.attributes, attributes)
     assert.deepEqual(seen?.agent_defaults, options.agent_defaults)
     assert.deepEqual(seen?.audit_budget, options.audit_budget)
+    for (const attribute of attributes) {
+      assert.deepEqual(seen?.attribute_options?.[attribute]?.agent_defaults, options.agent_defaults,
+        "explicit run overrides take precedence over persisted category defaults")
+    }
+    if (attributes.includes("functional_adequacy")) assert.deepEqual(seen?.attribute_options?.functional_adequacy?.functional_config,
+      { retrieval_top_k: 3 }, "saved exclusive operating settings are forwarded without being repeated by the execution form")
     assert.deepEqual(seen?.security_config, options.security_config)
     assert.equal(seen?.commit_hash, hash)
+    if (attributes.includes("functional_adequacy")) {
+      assert.deepEqual(seen?.functional_requirements, options.functional_requirements)
+      const missing = await app.inject({ method: "POST", url, payload: { ...body, functional_requirements: undefined } })
+      assert.equal(missing.statusCode, 400)
+      const duplicate = await app.inject({ method: "POST", url, payload: { ...body,
+        functional_requirements: [options.functional_requirements![0], options.functional_requirements![0]] } })
+      assert.equal(duplicate.statusCode, 400)
+    }
     const waiting = await app.inject({ url })
     assert.equal(waiting.json()[0].reportAvailable, false)
     assert.equal(waiting.json()[0].runId, null)
@@ -103,7 +149,8 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     const callbackUrl = `/api/agent-executions/${executionId}/invocations`
     const send = (payload: object) => app.inject({ method: "POST", url: callbackUrl, payload })
     assert.equal((await send(receipt)).statusCode, 200)
-    const child = { ...receipt, invocation_id: "child-live", parent_invocation_id: receipt.invocation_id, agent_id: "modularity" }
+    const child = { ...receipt, invocation_id: "child-live", parent_invocation_id: receipt.invocation_id, agent_id: "modularity",
+      phase: "plan_assessment", phase_sequence: 1 }
     const socket = await app.injectWS("/ws")
     try {
       const nextEvent = once(socket, "message", { signal: AbortSignal.timeout(5000) })
@@ -114,11 +161,15 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
       assert.equal(event.execution.result, null)
       assert.equal(event.execution.invocations[1].invocation_id, "child-live")
       assert.equal(event.execution.invocations[1].parent_invocation_id, "manager-live")
+      assert.equal(event.execution.invocations[1].phase, "plan_assessment")
     } finally { socket.terminate() }
     const live = (await app.inject({ url: `/api/agent-executions/${executionId}?monitor=true` })).json()
     assert.equal(live.status, "Running")
     assert.equal(live.invocations.length, 2, "children arrive before the final report")
     assert.equal(live.invocations[1].parent_invocation_id, "manager-live")
+    assert.equal((await send({ ...child, phase: "synthesize_findings", phase_sequence: 3 })).statusCode, 200)
+    const stalePhase = await send({ ...child, phase: "collect_findings", phase_sequence: 2 })
+    assert.equal(stalePhase.json().invocations[1].phase, "synthesize_findings")
     assert.equal((await send({ ...child, run_id: "wrong-run" })).statusCode, 422)
     assert.equal((await send({ ...receipt, parent_invocation_id: "child-live" })).statusCode, 422)
     assert.equal((await send({ ...child, status: "completed", finished_at: "2026-10-20T10:01:00Z", input_tokens: 32 })).statusCode, 200)
@@ -126,6 +177,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     assert.equal(late.statusCode, 200)
     assert.equal(late.json().invocations[1].status, "completed")
     assert.equal(late.json().invocations[1].input_tokens, 32)
+    assert.equal(late.json().invocations[1].phase, null)
     assert.deepEqual((await app.inject({ url })).json()[0].attributes, attributes)
     assert.equal((await app.inject({ method: "POST", url: `/api/agent-executions/${executionId}/running`,
       payload: { runId: "not-a-run-id" } })).statusCode, 400)

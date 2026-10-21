@@ -208,6 +208,16 @@ components:
               - output_tokens
               - error
             properties:
+              phase:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 128
+              phase_sequence:
+                type: integer
+                minimum: 0
+                maximum: 2147483647
               invocation_id:
                 type: string
                 minLength: 1

@@ -196,6 +196,8 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
 }
 
 export interface AgentInvocation {
+  phase?: string | null
+  phase_sequence?: number
   invocation_id: string
   parent_invocation_id: string | null
   agent_id: string

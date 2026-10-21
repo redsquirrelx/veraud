@@ -91,7 +91,7 @@ describe("SettingsPage", () => {
   it("opens the audit configuration tab and restores it after a reload", async () => {
     renderSettings([{ status: 200, body: providers }, { status: 200, body: [] }])
     await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
-    expect(screen.getByLabelText("Personal token allowance")).toHaveValue(500000)
+    expect(screen.getByRole("heading", { name: "Quality audit models" })).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem("settings.activeTab")!)).toBe("audit")
 
     window.localStorage.setItem("settings.activeTab", JSON.stringify("audit"))
@@ -126,11 +126,11 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("Configuration saved.")).toBeDefined()
   })
 
-  it("explains missing category metadata and loads both cards through catalog synchronization", async () => {
-    const rows = ["maintainability", "security"].map((attribute) => ({
-      agentType: attribute === "maintainability" ? "maintainability_manager" : "security",
+  it("explains missing category metadata and loads all quality cards through catalog synchronization", async () => {
+    const rows = ["maintainability", "security", "functional_adequacy"].map((attribute) => ({
+      agentType: attribute === "maintainability" ? "maintainability_manager" : attribute,
       qualityAttributes: [attribute], workflowIds: ["quality-audit"], requiresModel: true,
-      modelConfigurationAgentType: attribute === "maintainability" ? "maintainability_manager" : "security",
+      modelConfigurationAgentType: attribute === "maintainability" ? "maintainability_manager" : attribute,
       availability: "available", configured: false, configuration: null,
     }))
     const calls = renderSettings([
@@ -143,6 +143,7 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Synchronize agent catalog" }))
     expect(await screen.findByRole("heading", { name: "Maintainability · all agents" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Security" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Functional adequacy" })).toBeInTheDocument()
     expect(calls.at(-1)).toMatchObject({ method: "POST", url: expect.stringContaining("/api/agent-settings/sync") })
     expect(screen.queryByText(/The saved catalog has no configurable quality categories/)).toBeNull()
   })

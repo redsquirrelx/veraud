@@ -215,7 +215,20 @@
       "empty": "No pipelines recorded",
       "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
       "maintainability": "Maintainability",
-      "security": "Security"
+      "security": "Security",
+      "functionalAdequacy": "Functional adequacy"
+    },
+    "phases": {
+      "plan_investigation": "Planning", "investigate": "Investigation", "evaluate_evidence": "Evidence evaluation",
+      "review_findings": "Review", "finalize": "Finalizing", "tools": "Tools",
+      "limited_review": "Review", "limited_finalize": "Finalizing",
+      "plan_assessment": "Planning", "delegate_investigations": "Delegation", "collect_findings": "Collection",
+      "synthesize_findings": "Synthesis", "analyze_audit_scope": "Scope analysis", "plan_audit": "Planning",
+      "decide_next_step": "Next-step evaluation", "plan_targeted_follow_up": "Follow-up planning", "finalize_assessment": "Finalizing",
+      "delegate_auditors": "Delegation", "collect_assessments": "Collection", "synthesize_assessments": "Synthesis",
+      "refine_audit_plan": "Plan refinement", "finalize_audit": "Finalizing",
+      "prepare": "Preparation", "code_mapping": "Code retrieval", "verify": "Verification", "build_results": "Building results",
+      "security_scan": "Security scanning", "security_remediation": "Remediation"
     },
     "agents": {
       "empty": "No agents recorded",

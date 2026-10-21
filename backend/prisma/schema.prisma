@@ -162,6 +162,13 @@ model AgentHierarchy {
   @@map("agent_hierarchy")
 }
 
+model AuditSettings {
+  attribute String @id
+  options String @default("{}")
+
+  @@map("audit_settings")
+}
+
 model Task {
   id          Int    @id @default(autoincrement())
   projectId   Int    @map("project_id")

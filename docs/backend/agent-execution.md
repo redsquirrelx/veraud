@@ -9,6 +9,15 @@ Source of truth: `backend/src/modules/agent-execution/`
 
 ## Internal audit invocations
 
+Project quality audits accept any nonempty combination of `maintainability`,
+`security` and `functional_adequacy`. Functional adequacy requires
+`functional_requirements: [{ requirement_id, description }]` (1–100 entries,
+distinct nonblank IDs). Requirements are validated before creating an execution
+or contacting a model. Model access is prepared for every selected attribute.
+The root is maintainability's manager when selected, otherwise security when
+selected, otherwise `functional_adequacy`. All selected attributes share the
+same audit run and JSON/Word artifacts; their invocation receipts remain distinct.
+
 `POST /api/agent-executions/:id/invocations` records compact lifecycle receipts
 under an existing `QualityAudit` execution. It does not create separate pipeline
 execution rows. The receipt contains `run_id`, `invocation_id`,
@@ -283,3 +292,23 @@ from actual nested assignments in the retained Blackboard assessment reports.
 Repeated invocations remain distinct; catalog agent-type relationships are not
 used to invent execution parents. Historical records lacking these assignments
 remain roots. The original stored report and Word artifact are not modified.
+# Persisted quality-audit operating settings
+
+`GET /api/audit-settings/:attribute` loads the saved values and the explicit
+developer-level audit schema supplied by agent-server. Supported attributes are
+`maintainability`, `security` and `functional_adequacy`.
+`PUT /api/audit-settings/:attribute` validates the complete patch through
+agent-server before persisting it. Schemas reuse runtime-owned fields and bounds;
+they contain no model credentials.
+
+The shared `audit_budget` is stored globally. Category `agent_defaults`,
+maintainability `call_limits`, `security_config` and `functional_config` are stored
+independently. Starting a project audit loads these settings server-side and
+forwards category patches as `attribute_options`; execution-form callers do not
+need to reload settings. Explicit run patches override persisted fields recursively.
+Functional requirements remain part of the execution request.
+
+The settings drawer lists the global budget and category-specific controls before
+generic agent controls. Empty fields retain runtime defaults. Maintainability
+model/tool defaults apply to investigators; manager and coordinator aggregate call
+envelopes use the distinct hierarchy controls.

@@ -28,6 +28,7 @@ export function listQualityAudits(projectId: number) {
 
 /** Optional operating patches; schemas and numeric bounds are owned by agent-server. */
 export interface AuditOperatingOptions {
+  functional_requirements?: { requirement_id: string, description: string }[]
   agent_defaults?: Record<string, unknown>
   security_config?: Record<string, unknown>
   audit_budget?: Record<string, unknown>

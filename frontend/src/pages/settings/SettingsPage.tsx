@@ -10,7 +10,6 @@ import { ModelListItem } from "./ModelListItem.tsx"
 import { CredentialListItem } from "./CredentialListItem.tsx"
 import { LanguageSelector } from "./LanguageSelector.tsx"
 import { AgentsSettings } from "./AgentsSettings.tsx"
-import { AuditSettings } from "./AuditSettings.tsx"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./SettingsPage.css"
 
@@ -254,9 +253,8 @@ export function SettingsPage() {
             modelAccessOnly
             heading={t("audit.modelsTitle")}
             description={t("audit.modelsDescription")}
-            labels={{ maintainability: t("audit.allAgents"), security: t("audit.security") }}
+            labels={{ maintainability: t("audit.allAgents"), security: t("audit.security"), functional_adequacy: t("audit.functionalAdequacy") }}
             onAssignmentsSaved={() => { pushToast("success", t("audit.saved")); void refresh() }} />
-          <AuditSettings />
         </>}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>

@@ -1,4 +1,5 @@
 import type { AgentExecutionService } from "../agent-execution/agent-execution.service.js"
+import type { AuditSettingsService } from "./audit-settings.service.js"
 import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { InvalidGitRequestError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
@@ -27,7 +28,7 @@ function summary(row: AuditRow) {
     evaluationId: row.evaluationId,
     branch: row.evaluation!.projectVersion.branch,
     commitHash: row.evaluation!.projectVersion.commitHash,
-    attributes: result?.attributes ?? [row.agentType === "security" ? "security" : "maintainability"],
+    attributes: result?.attributes ?? [row.agentType === "maintainability_manager" ? "maintainability" : row.agentType],
     executionStatus: row.status,
     auditStatus: result?.status ?? null,
     error: row.error,
@@ -38,12 +39,23 @@ function summary(row: AuditRow) {
 }
 
 export class QualityAuditService {
-  constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService) {}
+  constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
+    private settings?: AuditSettingsService) {}
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     if (!attributes.length || new Set(attributes).size !== attributes.length
-      || attributes.some((attribute) => !["maintainability", "security"].includes(attribute))) {
-      throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security")
+      || attributes.some((attribute) => !["maintainability", "security", "functional_adequacy"].includes(attribute))) {
+      throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security, functional_adequacy")
+    }
+    const requirements = options.functional_requirements
+    if (attributes.includes("functional_adequacy")) {
+      if (!requirements?.length || requirements.length > 100
+        || requirements.some((item) => !item.requirement_id?.trim() || !item.description?.trim())
+        || new Set(requirements.map((item) => item.requirement_id.trim())).size !== requirements.length) {
+        throw new InvalidGitRequestError("Functional adequacy requires 1–100 functional requirements with distinct IDs and nonempty descriptions")
+      }
+    } else if (requirements !== undefined) {
+      throw new InvalidGitRequestError("functional_requirements requires functional_adequacy in attributes")
     }
     if (options.security_config && !attributes.includes("security")) {
       throw new InvalidGitRequestError("security_config requires security in attributes")
@@ -51,9 +63,16 @@ export class QualityAuditService {
     if (options.call_limits && !attributes.includes("maintainability")) {
       throw new InvalidGitRequestError("call_limits requires maintainability; use security_config for security")
     }
+    if (options.functional_config && !attributes.includes("functional_adequacy")) {
+      throw new InvalidGitRequestError("functional_config requires functional_adequacy in attributes")
+    }
+    if (options.attribute_options && Object.keys(options.attribute_options).some((attribute) => !attributes.includes(attribute))) {
+      throw new InvalidGitRequestError("attribute_options must belong to selected attributes")
+    }
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)
-    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, options)
+    const effective = this.settings ? await this.settings.executionOptions(attributes, options) : options
+    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, effective)
   }
 
   async list(projectId: number) {

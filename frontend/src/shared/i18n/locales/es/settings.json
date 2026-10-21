@@ -8,6 +8,13 @@
     "label": "Secciones de configuración"
   },
   "audit": {
+    "drawer": {
+      "title": "Configurar auditoría · {{category}}", "description": "Configuración operativa avanzada. Los cambios se aplican a nuevas auditorías.",
+      "sharedBudget": "Presupuesto global de auditoría", "sharedBudgetHint": "Límite global de tokens compartido por todos los atributos seleccionados. Esta configuración es común a todas las categorías.",
+      "callLimits": "Límites de llamadas por nivel", "securityOptions": "Configuración de auditoría de seguridad", "functionalOptions": "Configuración de adecuación funcional",
+      "agentDefaults": "Parámetros genéricos de los agentes", "agentDefaultsHint": "Se aplican a los agentes de esta categoría. En mantenibilidad, los límites genéricos de llamadas y herramientas se aplican a investigadores; los límites por nivel controlan los presupuestos agregados del manager y coordinadores.",
+      "defaultsHint": "Deja un campo vacío para usar los valores del servidor. Los ajustes exclusivos de agentes individuales de mantenibilidad se configuran por separado."
+    },
     "modelsTitle": "Modelos de auditoría de calidad",
     "modelsDescription": "Selecciona modelo y credencial por categoría de calidad. Al guardar, se aplica la selección a todos sus agentes de modelo declarados por el servidor.",
     "categoryAssignment": "Al guardar, este modelo y credencial se aplican a todos los agentes de modelo de la categoría, conservando sus parámetros operativos individuales.",
@@ -16,8 +23,9 @@
     "synchronizingCatalog": "Sincronizando catálogo…",
     "noCategories": "El catálogo guardado no contiene categorías de calidad configurables. Sincroniza el catálogo de agentes para cargar las tarjetas de cada categoría.",
     "security": "Seguridad",
+    "functionalAdequacy": "Adecuación funcional",
     "allAgents": "Mantenibilidad · todos los agentes",
-    "saved": "Configuración de auditoría de mantenibilidad guardada"
+    "saved": "Configuración de auditoría guardada"
   },
   "form": {
     "provider": "Proveedor",

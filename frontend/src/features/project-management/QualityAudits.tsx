@@ -82,7 +82,12 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
 }) {
   const attributeId = useId()
   const [selected, setSelected] = useState(true)
-   const [securitySelected, setSecuritySelected] = useState(true)
+  const [securitySelected, setSecuritySelected] = useState(true)
+  const [functionalSelected, setFunctionalSelected] = useState(false)
+  const [requirementsText, setRequirementsText] = useState("")
+  const requirements = requirementsText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const invalidRequirements = functionalSelected && (requirements.length === 0 || requirements.length > 100
+    || requirements.some((description) => description.length > 10000))
   const [audits, setAudits] = useState<QualityAuditSummary[]>([])
   const [starting, setStarting] = useState(false)
   const [refresh, setRefresh] = useState(0)
@@ -116,13 +121,19 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
   const running = audits.some((row) => ["Waiting", "Running"].includes(row.executionStatus))
 
   async function start() {
-    if (!branch || !commitHash || (!selected && !securitySelected) || starting) return
+    if (!branch || !commitHash || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || starting) return
     setStarting(true)
     setError("")
     try {
-      await startQualityAudit(projectId, branch, commitHash, [
+      const attributes = [
         ...(selected ? ["maintainability"] : []), ...(securitySelected ? ["security"] : []),
-      ])
+        ...(functionalSelected ? ["functional_adequacy"] : []),
+      ]
+      if (functionalSelected) {
+        await startQualityAudit(projectId, branch, commitHash, attributes, {
+          functional_requirements: requirements.map((description, index) => ({ requirement_id: `REQ-${String(index + 1).padStart(3, "0")}`, description })),
+        })
+      } else await startQualityAudit(projectId, branch, commitHash, attributes)
       setRefresh((value) => value + 1)
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not start audit") }
     finally { setStarting(false) }
@@ -154,9 +165,20 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
         <legend>Atributos a evaluar</legend>
         <label className="quality-attribute" data-selected={selected}><input type="checkbox" aria-labelledby={`${attributeId}-maintainability`} aria-describedby={`${attributeId}-maintainability-description`} checked={selected} onChange={(event) => setSelected(event.target.checked)} /><span><strong id={`${attributeId}-maintainability`}>Mantenibilidad</strong><small id={`${attributeId}-maintainability-description`}>Estructura del código y facilidad de evolución.</small></span></label>
         <label className="quality-attribute" data-selected={securitySelected}><input type="checkbox" aria-labelledby={`${attributeId}-security`} aria-describedby={`${attributeId}-security-description`} checked={securitySelected} onChange={(event) => setSecuritySelected(event.target.checked)} /><span><strong id={`${attributeId}-security`}>Seguridad</strong><small id={`${attributeId}-security-description`}>Riesgos y posibles vulnerabilidades del repositorio.</small></span></label>
+      <label className="quality-attribute" data-selected={functionalSelected}>
+        <input type="checkbox" aria-labelledby={`${attributeId}-functional`} checked={functionalSelected} onChange={(event) => setFunctionalSelected(event.target.checked)} />
+        <span><strong id={`${attributeId}-functional`}>Adecuación funcional</strong><small>Contrasta requisitos funcionales con el código del repositorio.</small></span>
+      </label>
       </fieldset>
+      {functionalSelected && <div className="quality-functional-requirements">
+        <label htmlFor={`${attributeId}-requirements`}>Requisitos funcionales</label>
+        <p id={`${attributeId}-requirements-help`} className="label">Escribe un requisito por línea (1–100). Se asignan identificadores REQ-001, REQ-002… y se conserva su resultado en el informe.</p>
+        <textarea id={`${attributeId}-requirements`} rows={6} value={requirementsText}
+          aria-describedby={`${attributeId}-requirements-help`} aria-invalid={invalidRequirements}
+          onChange={(event) => setRequirementsText(event.target.value)} />
+      </div>}
       <div className="quality-audit-actions">
-        <Button disabled={!canRun || (!selected && !securitySelected) || starting || running} onClick={() => void start()}>{starting ? "Iniciando…" : "Iniciar auditoría"}</Button>
+        <Button disabled={!canRun || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || starting || running} onClick={() => void start()}>{starting ? "Iniciando…" : "Iniciar auditoría"}</Button>
         <Button onClick={() => setRefresh((value) => value + 1)}>Actualizar</Button>
         <Link to="/settings">Configurar agentes</Link>
       </div>
@@ -167,7 +189,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
       <div className="quality-audit-heading"><h3>Auditorías del proyecto</h3><Badge tone="neutral">{audits.length}</Badge></div>
       {audits.length === 0 && <p className="quality-audits-empty">No hay auditorías registradas.</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
-        <h4>{audit.attributes?.map((attribute) => attribute === "security" ? "Seguridad" : "Mantenibilidad").join(" + ") || "Mantenibilidad"} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
+        <h4>{audit.attributes?.map((attribute) => ({ security: "Seguridad", maintainability: "Mantenibilidad", functional_adequacy: "Adecuación funcional" })[attribute] ?? attribute).join(" + ") || "Mantenibilidad"} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
         <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
           {audit.auditStatus === "partial" ? "Evaluación parcial" : audit.auditStatus === "completed" ? "Evaluación completada" : audit.auditStatus === "failed" ? "Evaluación fallida" : audit.executionStatus}

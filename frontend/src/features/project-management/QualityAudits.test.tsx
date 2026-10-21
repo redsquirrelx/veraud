@@ -17,6 +17,27 @@ function show() {
 }
 
 describe("project quality audits", () => {
+  it.each([false, true])("starts functional adequacy with explicit requirements (joint: %s)", async (joint) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 12 })
+    show()
+    await screen.findByText("No hay auditorías registradas.")
+    if (!joint) {
+      await userEvent.click(screen.getByRole("checkbox", { name: /^Mantenibilidad/ }))
+      await userEvent.click(screen.getByRole("checkbox", { name: /^Seguridad/ }))
+    }
+    await userEvent.click(screen.getByRole("checkbox", { name: "Adecuación funcional" }))
+    expect(screen.getByRole("button", { name: "Iniciar auditoría" })).toBeDisabled()
+    await userEvent.type(screen.getByRole("textbox", { name: "Requisitos funcionales" }), "Permitir iniciar sesión.\nValidar la contraseña.")
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar auditoría" }))
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40),
+      [...(joint ? ["maintainability", "security"] : []), "functional_adequacy"], {
+        functional_requirements: [
+          { requirement_id: "REQ-001", description: "Permitir iniciar sesión." },
+          { requirement_id: "REQ-002", description: "Validar la contraseña." },
+        ],
+      }))
+  })
   it("offers quality audits separately from Project Architecture in the Analyze menu", async () => {
     const onAnalyze = vi.fn()
     const onAudit = vi.fn()
