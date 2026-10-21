@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest"
-import { render, screen, within } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { act, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { AuditStatusView } from "./AuditStatusView.tsx"
@@ -60,8 +60,54 @@ function show(model: AuditStatusModel = audit) {
       <AuditStatusView audit={model} />
     </MemoryRouter>,
   )
-  return screen.getByRole("group")
+  return screen.getByRole("group", { name: /^(Audit status|Estado de la auditoría)$/ })
 }
+
+it("updates the active phase badge in place and hides it on completion", () => {
+  const model = structuredClone(audit)
+  const agent = model.pipelines[0]!.agents[0]!
+  agent.state = "running"
+  agent.phase = "plan_investigation"
+  const { rerender } = render(<MemoryRouter><AuditStatusView audit={model} /></MemoryRouter>)
+  expect(screen.getByText("Planning")).toBeInTheDocument()
+  const planningBadge = screen.getByText("Planning").closest(".audit-agent-phase")
+  expect(planningBadge).toHaveAttribute("data-highlighted", "true")
+  agent.inputTokens = 123
+  rerender(<MemoryRouter><AuditStatusView audit={structuredClone(model)} /></MemoryRouter>)
+  expect(screen.getByText("Planning").closest(".audit-agent-phase")).toBe(planningBadge)
+  agent.phase = "investigate"
+  rerender(<MemoryRouter><AuditStatusView audit={structuredClone(model)} /></MemoryRouter>)
+  expect(screen.queryByText("Planning")).not.toBeInTheDocument()
+  expect(screen.getByText("Investigation")).toBeInTheDocument()
+  expect(screen.getByText("Investigation").closest(".audit-agent-phase")).not.toBe(planningBadge)
+  agent.state = "completed"
+  rerender(<MemoryRouter><AuditStatusView audit={structuredClone(model)} /></MemoryRouter>)
+  expect(screen.queryByText("Investigation")).not.toBeInTheDocument()
+})
+
+it("holds the phase highlight, clears it, and restarts it only for a new phase", () => {
+  vi.useFakeTimers()
+  try {
+    const model = structuredClone(audit)
+    const agent = model.pipelines[0]!.agents[0]!
+    agent.state = "running"
+    agent.phase = "plan_investigation"
+    const { rerender, unmount } = render(<MemoryRouter><AuditStatusView audit={model} /></MemoryRouter>)
+    const badge = () => screen.getByText(agent.phase === "investigate" ? "Investigation" : "Planning").closest(".audit-agent-phase")
+    act(() => { vi.advanceTimersByTime(239) })
+    expect(badge()).toHaveAttribute("data-highlighted", "true")
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(badge()).toHaveAttribute("data-highlighted", "false")
+    agent.inputTokens = 40
+    rerender(<MemoryRouter><AuditStatusView audit={structuredClone(model)} /></MemoryRouter>)
+    expect(badge()).toHaveAttribute("data-highlighted", "false")
+    agent.phase = "investigate"
+    rerender(<MemoryRouter><AuditStatusView audit={structuredClone(model)} /></MemoryRouter>)
+    expect(badge()).toHaveAttribute("data-highlighted", "true")
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally { vi.useRealTimers() }
+})
 
 describe("AuditStatusView", () => {
   it("exposes a labelled region and shows the audit identity", () => {
@@ -125,7 +171,9 @@ describe("AuditStatusView", () => {
     const agent = part(show(), ".audit-agent")
 
     expect(within(agent).getByText("maintainability_manager run #118")).toBeInTheDocument()
-    expect(within(agent).getByText("41,230 in · 9,840 out")).toBeInTheDocument()
+    expect(within(agent).getByText("51,070 tokens")).toBeInTheDocument()
+    expect(within(agent).getByText("41,230")).toBeInTheDocument()
+    expect(within(agent).getByText("9,840")).toBeInTheDocument()
     expect(within(agent).getByText(/^Started /)).toBeInTheDocument()
     expect(within(agent).getByText(/^Finished /)).toBeInTheDocument()
   })
@@ -135,6 +183,21 @@ describe("AuditStatusView", () => {
 
     // Only the queued agent lacks token usage.
     expect(within(part(region, ".audit-agent-list")).getByText("Token usage not reported")).toBeInTheDocument()
+  })
+
+  it("uses the previous agent menu's budget bar and expandable token breakdown", async () => {
+    const model = structuredClone(audit)
+    model.pipelines[0]!.agents[0]!.configuration = { tokenBudget: 100000, absoluteTokenLimit: 120000 }
+    const row = part(show(model), ".audit-agent")
+    expect(within(row).getByText("51,070 / 100,000 tokens")).toBeInTheDocument()
+    expect(within(row).getByText("51.1%")).toBeInTheDocument()
+    const bar = within(row).getByRole("progressbar", { name: "Token budget usage" })
+    expect(bar).toHaveAttribute("value", "51070")
+    expect(bar).toHaveAttribute("max", "120000")
+    expect(within(row).getByText("41,230")).not.toBeVisible()
+    await userEvent.click(within(row).getByText("Token breakdown"))
+    expect(within(row).getByText("41,230")).toBeVisible()
+    expect(within(row).getByText("9,840")).toBeVisible()
   })
 
   it("surfaces audit and agent errors as alerts at their own level", () => {
@@ -349,7 +412,8 @@ describe("AuditStatusView Spanish", () => {
     expect(within(part(region, ".audit-pipeline-head")).getByText("1 de 1 agentes")).toBeInTheDocument()
     // Only the surrounding copy translates; the agent type stays verbatim.
     expect(within(region).getByText("Ejecución de security_scanner #121")).toBeInTheDocument()
-    expect(within(region).getByText("1000 entrada · 2000 salida")).toBeInTheDocument()
+    expect(within(region).getByText("3000 tokens")).toBeInTheDocument()
+    expect(within(region).getByText("Desglose de tokens")).toBeInTheDocument()
     expect(within(region).getByText("El pipeline de seguridad no pudo iniciarse.")).toBeInTheDocument()
   })
 })

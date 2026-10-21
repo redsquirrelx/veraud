@@ -19,20 +19,27 @@ describe("executionAudits", () => {
       { invocation_id: "manager", parent_invocation_id: null, agent_id: "maintainability_manager", run_id: "audit",
         status: "running", started_at: "2026-10-20T10:00:00Z", finished_at: null, input_tokens: 10, output_tokens: null, error: null },
       { invocation_id: "mod", parent_invocation_id: "manager", agent_id: "modularity", run_id: "audit",
-        status: "running", started_at: "2026-10-20T10:00:01Z", finished_at: null, input_tokens: 5, output_tokens: 2, error: null },
+        status: "running", phase: "investigate", phase_sequence: 2,
+        started_at: "2026-10-20T10:00:01Z", finished_at: null, input_tokens: 5, output_tokens: 2, error: null },
     ]
-    const live = { ...execution, invocations }
+    const live = { ...execution, invocations, configuration: {
+      model: { id: 1, name: "test", providerId: 1, providerName: "test" },
+      credential: { id: 1, name: "test", providerId: 1, providerName: "test" },
+      temperature: null, maxTokens: null, tokenBudget: 100000, absoluteTokenLimit: 120000,
+    } }
     const [audit] = executionAudits([live], [])
     const tree = agentTree(audit!.pipelines[0]!.agents)
     expect(tree).toHaveLength(1)
-    expect(tree[0]!.children[0]!.agent).toMatchObject({ id: "mod", state: "running", inputTokens: 5, startedAt: invocations[1]!.started_at })
+    expect(tree[0]!.agent.configuration).toMatchObject({ tokenBudget: 100000, absoluteTokenLimit: 120000 })
+    expect(tree[0]!.children[0]!.agent.configuration).toBeNull()
+    expect(tree[0]!.children[0]!.agent).toMatchObject({ id: "mod", state: "running", phase: "investigate", inputTokens: 5, startedAt: invocations[1]!.started_at })
     const [finished] = executionAudits([{ ...live, status: "Completed", result: JSON.stringify({
       attributes: ["maintainability"], report: { annexes_and_traceability: { executions: [
         { invocation_id: "mod", agent_id: "modularity", status: "completed", consumption: { input_tokens: 8 } },
       ] } },
     }) }], [])
     expect(finished!.pipelines[0]!.agents).toHaveLength(2)
-    expect(agentTree(finished!.pipelines[0]!.agents)[0]!.children[0]!.agent).toMatchObject({ id: "mod", state: "completed", inputTokens: 8, outputTokens: 2 })
+    expect(agentTree(finished!.pipelines[0]!.agents)[0]!.children[0]!.agent).toMatchObject({ id: "mod", state: "completed", phase: null, inputTokens: 8, outputTokens: 2 })
   })
   it("reuses one row per agent for repeated coordinator and investigator invocations", () => {
     const traces = [

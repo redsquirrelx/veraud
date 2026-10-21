@@ -1,10 +1,15 @@
 import type { ParseKeys, TFunction } from "i18next"
+import type { AgentConfiguration } from "../../infrastructure/http-client/httpClient.ts"
 import { formatNumber } from "../i18n/format.ts"
 
 /** Lifecycle of an audit, of one of its pipelines, or of a single agent run. */
 export type AuditRunState = "waiting" | "running" | "completed" | "partial" | "failed" | "unknown"
 
 export interface AuditAgentRun {
+  configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
+  estimatedTokens?: number | null
+  interruptionReason?: string | null
+  phase?: string | null
   id: number | string
   runId?: string | null
   parentId?: number | string | null
@@ -105,6 +110,7 @@ export function stateLabelKey(state: AuditRunState): ParseKeys<"projects"> {
 const pipelineLabelKeys: Record<string, ParseKeys<"projects">> = {
   maintainability: "auditStatus.pipelines.maintainability",
   security: "auditStatus.pipelines.security",
+  functional_adequacy: "auditStatus.pipelines.functionalAdequacy",
 }
 
 /** Translation key for a quality attribute, or null when the backend sends an

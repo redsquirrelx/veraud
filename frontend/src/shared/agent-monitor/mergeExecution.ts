@@ -8,6 +8,9 @@ export function mergeInvocations(previous: AgentInvocation[] = [], incoming: Age
     const count = (a: number | null | undefined, b: number | null) =>
       a == null ? b : b == null ? a : Math.max(a, b)
     merged.set(item.invocation_id, { ...lifecycle,
+      ...((item.phase !== undefined || old?.phase !== undefined) ? { phase: lifecycle.status !== "running" ? null : (old?.phase_sequence ?? 0) > (item.phase_sequence ?? 0)
+        ? old?.phase ?? null : item.phase ?? old?.phase ?? null,
+        phase_sequence: Math.max(old?.phase_sequence ?? 0, item.phase_sequence ?? 0) } : {}),
       input_tokens: count(old?.input_tokens, item.input_tokens),
       output_tokens: count(old?.output_tokens, item.output_tokens) })
   }

@@ -38,10 +38,26 @@ The final report reconciles those rows by invocation ID without adding duplicate
   the actual backend orchestrator row is shown. Missing attribute state displays
   “Not reported” when no execution or attribute outcome is available.
   `maintainability_manager` belongs to Maintainability and `security` belongs to
-  Security, including joint audits and before catalog loading. Descendants stay
-  in their actual root's category; each invocation is counted once.
+  Security, including joint audits and before catalog loading. Functional adequacy
+  uses its own `functional_adequacy` root and attribute label. Descendants stay
+  in their actual root's category; each agent type is counted once.
 - Live callbacks carry invocation/parent IDs, agent/run identity, timestamps,
   cumulative provider usage and terminal outcomes. Refresh restores persisted receipts.
+  Active agent rows also show a translated phase badge from the actual graph node
+  or security stage. `phase_sequence` orders transitions per invocation so stale
+  hydration and callbacks cannot roll the badge back. Terminal updates clear it;
+  historical receipts without phase information show only their lifecycle status.
+  Phase changes bring the blue background and glow up over 160 ms, hold the peak
+  until 240 ms, then fade over 1.2 seconds. Token updates do not restart it.
+  This phase highlight runs regardless of the system's reduced-motion preference.
+  Native investigator and coordinator/manager synthesis calls publish cumulative
+  provider input/output tokens to their own invocation after each attempt. Child
+  usage is not copied into the parent row. Missing usage stays unreported; budget
+  reservations and estimates are never displayed as provider-reported tokens.
+  Rows reuse `AgentTokenUsage` from the previous agent menu: total tokens,
+  budget bar/percentage when a captured budget is available, limits and an
+  expandable input/output/estimated breakdown. An orchestrator's captured budget
+  is not assigned to its children; missing per-agent budgets remain unrecorded.
 - Final report invocation IDs reconcile agent rows with their actual
   statuses and reported usage. A completed backend request can still show a partial
   or failed quality evaluation. Missing tokens remain unreported rather than zero.

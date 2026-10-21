@@ -1,8 +1,10 @@
-import { useId, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ArrowRightIcon, Badge, Card, CheckIcon, ChevronDownIcon, CrossIcon, FolderIcon, GridIcon, ShieldIcon, Spinner } from "../ui-kit/index.ts"
-import { formatDateTime, formatNumber } from "../i18n/format.ts"
+import { formatDateTime } from "../i18n/format.ts"
+import { AgentTokenUsage } from "../agent-monitor/AgentTokenUsage.tsx"
+import type projects from "../i18n/locales/en/projects.json"
 import {
   auditProgress,
   agentTree,
@@ -38,6 +40,21 @@ function ProgressLabel({ progress }: { progress: AuditProgress }) {
   return <span className="label audit-progress">{progressText(t, progress)}</span>
 }
 
+function PhaseBadge({ phase }: { phase: string }) {
+  const { t } = useTranslation("projects")
+  const [highlighted, setHighlighted] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setHighlighted(false), 240)
+    return () => clearTimeout(timer)
+  }, [])
+  return <span className="audit-agent-phase" data-highlighted={highlighted}>
+    <Badge tone="neutral">
+      {t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
+        { defaultValue: phase.replaceAll("_", " ") })}
+    </Badge>
+  </span>
+}
+
 function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: boolean }) {
   const { agent, children } = node
   const { t } = useTranslation("projects")
@@ -45,9 +62,6 @@ function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: b
   const [expanded, setExpanded] = useState(true)
   const expandable = primary || children.length > 0
   const Header = expandable ? "button" : "div"
-  const reported = agent.inputTokens != null || agent.outputTokens != null
-  const input = agent.inputTokens == null ? t("auditStatus.agents.notReported") : formatNumber(agent.inputTokens)
-  const output = agent.outputTokens == null ? t("auditStatus.agents.notReported") : formatNumber(agent.outputTokens)
 
   return (
     <li className={`audit-agent${primary ? " audit-agent-root" : ""}`} data-state={agent.state}>
@@ -66,14 +80,13 @@ function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: b
           <span className="audit-pipeline-chevron" data-expanded={expanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
         </span>}
         <Badge tone={stateTone(agent.state)}>{t(stateLabelKey(agent.state))}</Badge>
+        {agent.state === "running" && agent.phase && <PhaseBadge key={`${agent.id}:${agent.phase}`} phase={agent.phase} />}
       </Header>
       <div className="audit-agent-meta">
-        <span className="label">
-          {reported ? t("auditStatus.agents.tokens", { input, output }) : t("auditStatus.agents.tokensUnreported")}
-        </span>
         {agent.startedAt && <span className="label">{t("auditStatus.agents.startedAt", { date: formatDateTime(agent.startedAt) })}</span>}
         {agent.finishedAt && <span className="label">{t("auditStatus.agents.finishedAt", { date: formatDateTime(agent.finishedAt) })}</span>}
       </div>
+      <AgentTokenUsage execution={agent} />
       {agent.error && <p role="alert" className="audit-agent-error">{agent.error}</p>}
       {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
         {children.map((child) => <AgentRow key={child.agent.agentType} node={child} />)}
@@ -92,7 +105,8 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
   const name = labelKey === null ? pipeline.id : t(labelKey)
   const progress = pipelineProgress(pipeline)
   const tree = agentTree(pipeline.agents)
-  const rootType = pipeline.id === "maintainability" ? "maintainability_manager" : pipeline.id === "security" ? "security" : null
+  const rootType = pipeline.id === "maintainability" ? "maintainability_manager"
+    : ["security", "functional_adequacy"].includes(pipeline.id) ? pipeline.id : null
 
   // A real root already names and controls this group. Keep generic category
   // headers for empty groups or historical rows without an identified root.

@@ -95,6 +95,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         // or the audit selection includes both quality attributes.
         if (id === "maintainability_manager") return "maintainability"
         if (id === "security") return "security"
+        if (id === "functional_adequacy") return "functional_adequacy"
         const agent = byAgent.get(id)
         const membership = agent?.qualityAttributes ?? (id === execution.agentType ? attributes : [])
         if (membership.length === 1) return membership[0]!
@@ -133,6 +134,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         add(bucket(text(root.agent_id) ?? agentType), {
           id: invocation, agentType, state: auditStateFrom(text(trace.status) ?? "", null),
           runId: text(trace.run_id) ?? text(result.run_id),
+          phase: trace.status === "running" ? text(trace.phase) : null,
+          configuration: agentType === execution.agentType ? execution.configuration : null,
           parentId: text(trace.parent_invocation_id),
           inputTokens: count(consumption.input_tokens), outputTokens: count(consumption.output_tokens),
           startedAt: text(trace.started_at), finishedAt: text(trace.finished_at), error: text(trace.error),
@@ -143,6 +146,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         // into both attributes. No per-attribute execution state is inferred.
         const pipeline = bucket(execution.agentType)
         add(pipeline, { id: execution.id, agentType: execution.agentType,
+          configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
+          interruptionReason: execution.interruptionReason,
           state: auditStateFrom(execution.status, quality ? text(result.status) : null),
           inputTokens: execution.inputTokens, outputTokens: execution.outputTokens,
           startedAt: execution.startedAt, finishedAt: execution.finishedAt, error: execution.error })

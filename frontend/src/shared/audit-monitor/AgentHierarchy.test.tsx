@@ -36,7 +36,7 @@ it("updates a restarted agent in place while preserving collapsed branches", asy
   const nextCoordinator = screen.getByRole("button", { name: "modularity run #mod-2" })
   expect(nextCoordinator.closest("li")).toBe(originalRow)
   expect(nextCoordinator).toHaveAttribute("aria-expanded", "false")
-  expect(within(originalRow!).getByText("2 in · 10 out")).toBeVisible()
+  expect(within(originalRow!).getByText("12 tokens")).toBeVisible()
   expect(screen.getByText("architecture_boundary run #boundary-1")).not.toBeVisible()
   expect(screen.queryByText("modularity run #mod-1")).toBeNull()
   expect(screen.queryByText("maintainability_manager run #manager-1")).toBeNull()
@@ -74,7 +74,7 @@ it("uses the root as the group header before children arrive and for security", 
   expect(header).toHaveAttribute("aria-expanded", "true")
   await userEvent.click(header)
   expect(header).toHaveAttribute("aria-expanded", "false")
-  expect(screen.getByText("10 in · 2 out")).toBeVisible()
+  expect(screen.getByText("12 tokens")).toBeVisible()
   rerender(<MemoryRouter><AuditStatusView audit={{ ...model, pipelines: [{ id: "security", state: "running",
     agents: [{ ...root, agentType: "security" }] }] }} /></MemoryRouter>)
   expect(screen.queryByText("Security")).toBeNull()

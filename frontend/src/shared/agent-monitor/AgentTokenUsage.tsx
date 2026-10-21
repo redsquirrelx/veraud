@@ -1,9 +1,14 @@
 import { useTranslation } from "react-i18next"
-import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import type { AgentConfiguration, AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { formatNumber } from "../i18n/format.ts"
 import "./AgentTokenUsage.css"
 
-export function AgentTokenUsage({ execution }: { execution: AgentExecution }) {
+export type AgentTokenUsageData = Pick<AgentExecution, "agentType" | "inputTokens" | "outputTokens" | "estimatedTokens" | "interruptionReason"> & {
+  id: number | string
+  configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
+}
+
+export function AgentTokenUsage({ execution }: { execution: AgentTokenUsageData }) {
   const { t } = useTranslation("agents")
   const format = (value: number) => formatNumber(value, { maximumFractionDigits: 1 })
   const input = execution.inputTokens
