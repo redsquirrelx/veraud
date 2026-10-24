@@ -14,51 +14,31 @@ export function useAiProviders() {
     }
   }, [])
 
-  const refresh = useCallback(async () => {    setLoading(true)
+  const load = useCallback(async (isCurrent: () => boolean, showLoading = true) => {
+    if (showLoading) setLoading(true)
     try {
       const rows = await listAiProviders()
-      if (!mounted.current) {
-        return
-      }
+      if (!isCurrent()) return
       setProviders(rows)
       setLoadError("")
     } catch (failure) {
-      if (!mounted.current) {
-        return
-      }
+      if (!isCurrent()) return
       setProviders([])
       setLoadError(failure instanceof ApiError ? failure.message : "Could not load AI providers")
     } finally {
-      if (mounted.current) {
-        setLoading(false)
-      }
+      if (isCurrent()) setLoading(false)
     }
   }, [])
 
+  const refresh = useCallback(() => load(() => mounted.current), [load])
+
   useEffect(() => {
     let alive = true
-    listAiProviders().then(
-      (rows) => {
-        if (!alive) {
-          return
-        }
-        setProviders(rows)
-        setLoadError("")
-        setLoading(false)
-      },
-      (failure: unknown) => {
-        if (!alive) {
-          return
-        }
-        setProviders([])
-        setLoadError(failure instanceof ApiError ? failure.message : "Could not load AI providers")
-        setLoading(false)
-      }
-    )
+    void Promise.resolve().then(() => load(() => alive, false))
     return () => {
       alive = false
     }
-  }, [])
+  }, [load])
 
   const addModel = useCallback(async (aiProviderId: number, name: string): Promise<AiModelSummary> => {
     const created = await createAiModel(aiProviderId, name)
