@@ -188,6 +188,10 @@ def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolse
 
 @pytest.mark.parametrize("failed_attribute", [None, "maintainability", "security", "security_timeout", "shared_token_limit"])
 def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_environment, monkeypatch, failed_attribute):
+    if failed_attribute == "shared_token_limit":
+        from server.config import token_budget
+
+        monkeypatch.setattr(token_budget, "token_budget_policy", lambda: token_budget.TokenBudgetPolicy(unlimited_token_budget=False))
     root = audit_environment.root
     (root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
     commit = _committed_checkout(root)

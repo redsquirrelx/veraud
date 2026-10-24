@@ -10,6 +10,7 @@ from config.agents.audit import (
     apply_audit_call_limits,
     apply_audit_defaults,
     validate_audit_agents,
+    validate_audit_output_capacity,
 )
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import configuration_type, validate_developer_agent_config
@@ -25,6 +26,12 @@ FunctionalAuditOverrides = create_model("FunctionalAuditOverrides", __config__=C
     **{name: (field.annotation, deepcopy(field)) for name, field in FunctionalAdequacyConfig.model_fields.items()
         if name not in AgentExecutionConfig.model_fields})
 
+# The drawer has one canonical output setting in agent_defaults. The execution
+# API retains SecurityAuditOverrides for older standalone clients.
+SecurityCategoryOverrides = create_model("SecurityCategoryOverrides", __config__=ConfigDict(extra="forbid"),
+    **{name: (field.annotation, deepcopy(field)) for name, field in SecurityAuditOverrides.model_fields.items()
+        if name != "max_output_tokens"})
+
 
 def category_type(attribute):
     fields = {"audit_budget": (TokenBudgetConfig | None, None),
@@ -32,7 +39,7 @@ def category_type(attribute):
     if attribute == "maintainability":
         fields["call_limits"] = (AuditCallLimits | None, None)
     elif attribute == "security":
-        fields["security_config"] = (SecurityAuditOverrides | None, None)
+        fields["security_config"] = (SecurityCategoryOverrides | None, None)
     elif attribute == "functional_adequacy":
         fields["functional_config"] = (FunctionalAuditOverrides | None, None)
     else:
@@ -45,7 +52,9 @@ def resolve_attribute_limits(attribute, values, *, base=None):
     identifier = "maintainability_manager" if attribute == "maintainability" else attribute
     limits = base if base is not None else configuration_type(identifier)()
     if attribute == "security":
-        return resolve_security_audit_config(defaults=parsed.agent_defaults, overrides=parsed.security_config, base=limits)
+        overrides = SecurityAuditOverrides.model_validate(parsed.security_config.model_dump(exclude_unset=True)) \
+            if parsed.security_config is not None else None
+        return resolve_security_audit_config(defaults=parsed.agent_defaults, overrides=overrides, base=limits)
     if parsed.agent_defaults is not None:
         limits = apply_audit_defaults(limits, parsed.agent_defaults)
     if attribute == "maintainability":
@@ -60,5 +69,5 @@ def resolve_attribute_limits(attribute, values, *, base=None):
 
 def validate_category(attribute, values):
     parsed = category_type(attribute).model_validate(values)
-    resolve_attribute_limits(attribute, values)
+    validate_audit_output_capacity(resolve_attribute_limits(attribute, values))
     return parsed.model_dump(mode="json", exclude_none=True, exclude_unset=True)

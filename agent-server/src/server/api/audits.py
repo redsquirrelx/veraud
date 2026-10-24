@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/audits", tags=["Audits"])
 
 @router.get("/configuration/{attribute}")
 async def audit_configuration_schema(attribute: str):
+    """Describe the category's developer controls using runtime-owned configuration contracts."""
     try:
         return {"schema": category_type(attribute).model_json_schema(), "level": "developer"}
     except ValueError as error:
@@ -31,6 +32,7 @@ async def audit_configuration_schema(attribute: str):
 
 @router.post("/configuration/{attribute}/validate")
 async def validate_audit_configuration(attribute: str, body: dict):
+    """Validate category operating overrides, including output capacity, without starting an audit."""
     try:
         return {"values": validate_category(attribute, body)}
     except (ValidationError, ValueError) as error:

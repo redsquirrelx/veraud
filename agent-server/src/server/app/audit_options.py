@@ -15,7 +15,7 @@ class AuditExecutionOptions(BaseModel):
     functional_config: FunctionalAuditOverrides | None = None
 
     agent_defaults: AuditAgentDefaults | None = Field(default=None,
-        description="Common developer overrides for context, personal tokens, model calls and tool calls. Applied directly to security; in maintainability call limits apply to investigators while aggregate hierarchy budgets retain their defaults.",
+        description="Common developer overrides for context, per-response output tokens, personal tokens, model calls and tool calls. Applied directly to security and functional adequacy; in maintainability output limits apply throughout the hierarchy while call limits apply to investigators and aggregate hierarchy budgets retain their defaults.",
         json_schema_extra={"x-config-level": "developer"})
     security_config: SecurityAuditOverrides | None = Field(default=None,
         description="Security-specific operating overrides, validated using the security catalog. Explicit fields override agent_defaults; omitted fields retain resolved defaults. Requires security in attributes. Credentials belong to config/agent_configs.",

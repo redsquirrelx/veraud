@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from config.agents.execution import AgentExecutionConfig
 from server.app.audit_configuration import resolve_attribute_limits
 from server.main import app
 
@@ -13,7 +14,7 @@ def test_drawer_schema_and_validation_use_runtime_contracts(attribute, exclusive
         assert descriptor["level"] == "developer"
         schema = descriptor["schema"]
         assert set(schema["properties"]) == {"agent_defaults", "audit_budget", exclusive}
-        defaults = {"max_context_characters": 20000000, "max_total_tokens": 80000000,
+        defaults = {"max_context_characters": 20000000, "max_output_tokens": 16000, "max_total_tokens": 80000000,
             "max_model_calls": 20, "max_tool_calls": 200}
         options = {"agent_defaults": defaults, "audit_budget": {"max_total_tokens": 300000000000}}
         if attribute == "maintainability":
@@ -29,18 +30,26 @@ def test_drawer_schema_and_validation_use_runtime_contracts(attribute, exclusive
         resolved = resolve_attribute_limits(attribute, options)
         assert resolved.max_context_characters == 20000000
         assert resolved.max_total_tokens == 80000000
+        assert resolved.max_output_tokens == 16000
+        assert schema["$defs"]["AuditAgentDefaults"]["properties"]["max_output_tokens"] == (
+            AgentExecutionConfig.model_json_schema()["properties"]["max_output_tokens"])
         if attribute == "maintainability":
             assert resolved.max_tool_calls == 400
             assert resolved.invocation_limits.max_tool_calls == 180
             assert resolved.invocation_limits.invocation_limits.max_tool_calls == 60
+            assert resolved.invocation_limits.max_output_tokens == 16000
+            assert resolved.invocation_limits.invocation_limits.max_output_tokens == 16000
         elif attribute == "security":
             assert resolved.max_scan_files == 500 and resolved.max_tool_calls == 2000
+            assert "max_output_tokens" not in schema["$defs"]["SecurityCategoryOverrides"]["properties"]
         else:
             assert resolved.retrieval_top_k == 3
         assert client.post(f"/api/audits/configuration/{attribute}/validate", json={"agent_defaults": {
             "max_context_characters": 1}}).status_code == 422
         assert client.post(f"/api/audits/configuration/{attribute}/validate", json={"agent_defaults": {
             "max_candidates": 4}}).status_code == 422
+        assert client.post(f"/api/audits/configuration/{attribute}/validate", json={"agent_defaults": {
+            "max_output_tokens": 255}}).status_code == 422
 
 
 def test_category_settings_cannot_expose_another_category_or_credentials():
@@ -48,3 +57,19 @@ def test_category_settings_cannot_expose_another_category_or_credentials():
         assert client.get("/api/audits/configuration/unknown").status_code == 422
         for values in ({"security_config": {}}, {"api_key": "not-a-setting"}):
             assert client.post("/api/audits/configuration/maintainability/validate", json=values).status_code == 422
+
+
+@pytest.mark.parametrize("attribute", ["maintainability", "security", "functional_adequacy"])
+def test_drawer_rejects_output_reservations_that_cannot_fit_provider_tpm(attribute):
+    from config.agents.catalog import configuration_type
+
+    identifier = "maintainability_manager" if attribute == "maintainability" else attribute
+    quota = configuration_type(identifier)().provider_rate_limits.tokens_per_minute
+    with TestClient(app) as client:
+        for output in (quota, 1000000):
+            response = client.post(f"/api/audits/configuration/{attribute}/validate",
+                json={"agent_defaults": {"max_output_tokens": output}})
+            assert response.status_code == 422
+            assert "tokens_per_minute" in response.json()["detail"]
+        assert client.post(f"/api/audits/configuration/{attribute}/validate",
+            json={"agent_defaults": {"max_output_tokens": 16000}}).status_code == 200

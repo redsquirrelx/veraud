@@ -15,6 +15,15 @@ function merge(base: Record<string, unknown>, patch: Record<string, unknown>): R
   return result
 }
 
+/** Read legacy security output settings as the same canonical generic field. */
+function canonicalOutput(values: Record<string, unknown>): Record<string, unknown> {
+  const security = object(values.security_config)
+  if (security.max_output_tokens === undefined) return values
+  const { max_output_tokens, ...rest } = security
+  return { ...values, security_config: rest,
+    agent_defaults: { ...object(values.agent_defaults), max_output_tokens } }
+}
+
 export class AuditSettingsService {
   constructor(private db: PrismaClient, private serverUrl?: string) {}
 
@@ -36,11 +45,11 @@ export class AuditSettingsService {
   async get(attribute: string) {
     const descriptor = await this.remote(attribute)
     const rows = await this.db.auditSettings.findMany({ where: { attribute: { in: ["global", attribute] } } })
-    return { ...descriptor, values: Object.assign({}, ...rows.map((row) => JSON.parse(row.options) as object)) }
+    return { ...descriptor, values: canonicalOutput(Object.assign({}, ...rows.map((row) => JSON.parse(row.options) as object))) }
   }
 
   async save(attribute: string, values: Record<string, unknown>) {
-    const validated = object((await this.remote(attribute, values)).values)
+    const validated = canonicalOutput(object((await this.remote(attribute, canonicalOutput(values))).values))
     const { audit_budget, ...specific } = validated
     await this.db.$transaction([
       this.db.auditSettings.upsert({ where: { attribute }, create: { attribute, options: JSON.stringify(specific) }, update: { options: JSON.stringify(specific) } }),
@@ -51,11 +60,12 @@ export class AuditSettingsService {
   }
 
   async executionOptions(attributes: string[], explicit: AuditOperatingOptions): Promise<AuditOperatingOptions> {
+    explicit = canonicalOutput(explicit as Record<string, unknown>) as AuditOperatingOptions
     const rows = await this.db.auditSettings.findMany({ where: { attribute: { in: ["global", ...attributes] } } })
-    const stored = new Map(rows.map((row) => [row.attribute, object(JSON.parse(row.options))]))
+    const stored = new Map(rows.map((row) => [row.attribute, canonicalOutput(object(JSON.parse(row.options)))]))
     const selected: Record<string, Record<string, unknown>> = {}
     for (const attribute of attributes) {
-      const values = merge(stored.get(attribute) ?? {}, explicit.attribute_options?.[attribute] ?? {})
+      const values = merge(stored.get(attribute) ?? {}, canonicalOutput(explicit.attribute_options?.[attribute] ?? {}))
       for (const key of ["agent_defaults", ...(attribute === "maintainability" ? ["call_limits"]
         : attribute === "security" ? ["security_config"] : ["functional_config"])] as const) {
         const patch = explicit[key as keyof AuditOperatingOptions]

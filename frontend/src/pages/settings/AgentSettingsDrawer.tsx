@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParseKeys } from "i18next"
 import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
@@ -6,6 +6,7 @@ import { Badge, Button, Drawer, ItemSelector } from "../../shared/ui-kit/index.t
 import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import { DEFAULT_TOKEN_BUDGET, DEFAULT_ABSOLUTE_TOKEN_LIMIT } from "../../shared/agent-monitor/tokenBudgets.ts"
 import { formatNumber } from "../../shared/i18n/format.ts"
+import { configFields, getAuditSettings } from "./auditSettingsApi.ts"
 
 interface Props {
   agent: AgentSettings
@@ -28,6 +29,31 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
   const [absoluteTokenLimit, setAbsoluteTokenLimit] = useState(String(agent.configuration?.absoluteTokenLimit ?? ""))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<{ key: ParseKeys<"settings">, detail?: string } | null>(null)
+  const categoryKey = (agent.qualityAttributes ?? []).join(",")
+  const inheritanceKey = `${agent.agentType}:${categoryKey}`
+  const [inheritance, setInheritance] = useState<{ key: string, values: Array<{ attribute: string, value: number, minimum: number }>, error: boolean } | null>(null)
+  const inheritedOutputs = inheritance?.key === inheritanceKey ? inheritance.values : []
+  const inheritanceError = inheritance?.key === inheritanceKey && inheritance.error
+  const inheritanceLoading = !!categoryKey && inheritance?.key !== inheritanceKey
+  useEffect(() => {
+    if (!open || !categoryKey) return
+    const controller = new AbortController()
+    Promise.all(categoryKey.split(",").map(async (attribute) => {
+      const descriptor = await getAuditSettings(attribute, controller.signal)
+      const fields = configFields(descriptor.schema)
+      const output = fields.find((field) => field.path.join(".") === "agent_defaults.max_output_tokens")
+      const defaults = descriptor.values["agent_defaults"] as Record<string, unknown> | undefined
+      const specific = descriptor.values["security_config"] as Record<string, unknown> | undefined
+      const value = (attribute === "security" ? specific?.["max_output_tokens"] : undefined)
+        ?? defaults?.["max_output_tokens"] ?? output?.schema.default
+      return typeof value === "number" ? { attribute, value, minimum: output?.schema.minimum ?? 1 } : null
+    })).then((values) => {
+      if (!controller.signal.aborted) setInheritance({ key: inheritanceKey, values: values.filter((value) => value !== null), error: false })
+    }).catch(() => {
+      if (!controller.signal.aborted) setInheritance({ key: inheritanceKey, values: [], error: true })
+    })
+    return () => controller.abort()
+  }, [open, categoryKey, inheritanceKey])
 
   const [previous, setPrevious] = useState({ open, agent })
   if (previous.open !== open || previous.agent !== agent) {
@@ -57,7 +83,10 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
   const effectiveAbsolute = numericAbsolute ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT
   const limitsValid = effectiveAbsolute >= effectiveBudget
   const temperatureValid = numericTemperature === null || (Number.isFinite(numericTemperature) && numericTemperature >= 0 && numericTemperature <= 2)
-  const tokensValid = numericMaxTokens === null || (Number.isInteger(numericMaxTokens) && numericMaxTokens >= 1 && numericMaxTokens <= 2147483647)
+  const outputMinimum = Math.max(1, ...inheritedOutputs.map((entry) => entry.minimum))
+  const tokensValid = numericMaxTokens === null || (Number.isInteger(numericMaxTokens) && numericMaxTokens >= outputMinimum && numericMaxTokens <= 2147483647)
+  const inheritedValue = inheritedOutputs.length && inheritedOutputs.every((entry) => entry.value === inheritedOutputs[0]?.value)
+    ? inheritedOutputs[0]?.value : undefined
   const dirty = modelId !== (agent.configuration?.model.id ?? null)
     || credentialId !== (agent.configuration?.credential.id ?? null)
     || numericTemperature !== (agent.configuration?.temperature ?? null)
@@ -140,10 +169,19 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
           <div className="settings-agent-parameter">
             <label className="ui-text-input">
              <span className="ui-item-legend">{t("agents.drawer.maxTokens")}</span>
-             <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={maxTokens} placeholder={t("agents.drawer.maxTokensPlaceholder", { default: formatNumber(1000) })} disabled={saving}
+             <input className="ui-input" type="number" min={outputMinimum} max="2147483647" step="1" value={maxTokens}
+               placeholder={inheritedValue === undefined ? t("agents.drawer.defaultPlaceholder") : String(inheritedValue)} disabled={saving}
               aria-invalid={!tokensValid} onChange={(event) => { setMaxTokens(event.target.value); setError(null) }} />
             </label>
-             <span className="settings-hint">{t("agents.drawer.maxTokensHint", { default: formatNumber(1000) })}</span>
+             <span className="settings-hint">{t("agents.drawer.maxTokensHint")}</span>
+             {inheritanceLoading && <span className="settings-hint">{t("agents.drawer.outputInheritanceLoading")}</span>}
+             {inheritanceError && <span className="settings-error" role="alert">{t("agents.drawer.outputInheritanceError")}</span>}
+             {!inheritanceLoading && !inheritanceError && inheritedOutputs.map(({ attribute, value }) => <span className="settings-hint" key={attribute}>
+               {t(numericMaxTokens === null ? "agents.drawer.outputInherited" : "agents.drawer.outputOverridden", {
+                 category: attribute === "maintainability" ? t("audit.allAgents") : attribute === "security" ? t("audit.security") : t("audit.functionalAdequacy"),
+                 value: formatNumber(numericMaxTokens ?? value), inherited: formatNumber(value),
+               })}
+             </span>)}
           </div>
         </div>
         {!temperatureValid && <p className="settings-error" role="alert">{t("agents.drawer.temperatureInvalid")}</p>}

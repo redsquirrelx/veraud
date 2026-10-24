@@ -202,7 +202,10 @@ def test_cancellation_keeps_the_candidate_and_closes_provider(audit_environment)
 
 
 @pytest.mark.parametrize("local, shared, reason", [(100_000, 1000, "audit_token_limit"), (1000, 100_000, "token_limit")])
-def test_token_budget_falls_back_without_losing_detection(audit_environment, local, shared, reason):
+def test_token_budget_falls_back_without_losing_detection(audit_environment, monkeypatch, local, shared, reason):
+    from server.config import token_budget
+
+    monkeypatch.setattr(token_budget, "token_budget_policy", lambda: token_budget.TokenBudgetPolicy(unlimited_token_budget=False))
     (audit_environment.root / "main.py").write_text('password = "example-secret"\n', encoding="utf-8")
     model = audit_environment.model
     model.bind = lambda **kwargs: model

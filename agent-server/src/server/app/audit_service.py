@@ -15,7 +15,9 @@ from config.agents.audit import (
     AuditCallLimits,
     apply_audit_call_limits,
     apply_audit_defaults,
+    audit_output_envelope,
     validate_audit_agents,
+    validate_audit_output_capacity,
 )
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import validate_agent_config
@@ -292,6 +294,34 @@ class AuditService:
                 raise InvalidConfigError("Invalid audit timeout.") from None
         if attributes == ["functional_adequacy"]:
             functional_limits = functional_limits.model_copy(update={"timeout_seconds": limits.timeout_seconds})
+        # model.max_tokens is the wire alias of an explicit per-agent output
+        # override, not a second cap. Resolve it once into the owning runtime field.
+        output_overrides = {name: selected.model.max_tokens for name, selected in (agent_configs or {}).items()
+            if selected.model.max_tokens is not None}
+        root_id = audit_root(attributes)
+        if root_id not in output_overrides and config.model.max_tokens is not None:
+            output_overrides[root_id] = config.model.max_tokens
+        try:
+            for value in output_overrides.values():
+                AuditAgentDefaults(max_output_tokens=value)
+            if root_id in output_overrides:
+                limits = type(limits).model_validate({**limits.model_dump(), "max_output_tokens": output_overrides[root_id]})
+            if "security" in output_overrides and security_limits is not None:
+                security_limits = type(security_limits).model_validate({**security_limits.model_dump(),
+                    "max_output_tokens": output_overrides["security"]})
+            if "functional_adequacy" in output_overrides:
+                functional_limits = type(functional_limits).model_validate({**functional_limits.model_dump(),
+                    "max_output_tokens": output_overrides["functional_adequacy"]})
+        except ValidationError:
+            raise InvalidConfigError("Invalid per-agent output token override; use the runtime max_output_tokens constraints.") from None
+        try:
+            validate_audit_output_capacity(limits)
+            if "security" in attributes:
+                validate_audit_output_capacity(security_limits)
+            if "functional_adequacy" in attributes:
+                validate_audit_output_capacity(functional_limits)
+        except ValueError as error:
+            raise InvalidConfigError(str(error)) from None
         root_config = (agent_configs or {}).get(audit_root(attributes), config)
         settings, credentials, _ = get_execution_service().resolve_model_settings(
             agent_config, root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
@@ -312,7 +342,8 @@ class AuditService:
             self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections,
                 security_request=(security_request or SecurityAuditRequest()) if combined and "security" in attributes else None,
                 security_limits=security_limits, attributes=attributes,
-                functional_requirements=functional_requirements, functional_limits=functional_limits), name=f"audit-{identity.run_id}",
+                functional_requirements=functional_requirements, functional_limits=functional_limits,
+                output_overrides=output_overrides), name=f"audit-{identity.run_id}",
         )
         self._tasks[identity.run_id] = task
         task.add_done_callback(lambda _: self._tasks.pop(identity.run_id, None))
@@ -327,7 +358,7 @@ class AuditService:
     async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest | SecurityAuditRequest,
                        limits: MaintainabilityConfig | SecurityAuditConfig | FunctionalAdequacyConfig, settings: ModelSettings, credentials: ModelCredentials,
                        total_tokens: int, model_selections=None, *, security_request=None, security_limits=None,
-                       attributes=None, functional_requirements=None, functional_limits=None) -> None:
+                       attributes=None, functional_requirements=None, functional_limits=None, output_overrides=None) -> None:
         model = None
         clients = {}
         self._update(identity.run_id, "running")
@@ -356,12 +387,13 @@ class AuditService:
             if security_request is not None or functional_requirements is not None:
                 return await self._run_combined(identity, root, snapshot, request, security_request, limits,
                     settings, credentials, total_tokens, model_selections, timing, clients, security_limits,
-                    attributes, functional_requirements, functional_limits)
+                    attributes, functional_requirements, functional_limits, output_overrides)
             budget = ExecutionBudget(
                 max_model_calls=limits.max_model_calls, max_tool_calls=max(1, limits.max_tool_calls),
                 max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
                 max_input_tokens_per_call=max(500, limits.max_context_characters // 2),
-                max_output_tokens_per_call=limits.max_output_tokens, max_elapsed_seconds=limits.timeout_seconds,
+                max_output_tokens_per_call=audit_output_envelope(limits, output_overrides),
+                max_elapsed_seconds=limits.timeout_seconds,
             )
             tool_limits = ToolLimits(compact=True)
             if isinstance(request, SecurityAuditRequest):
@@ -394,6 +426,7 @@ class AuditService:
             manager = MaintainabilityManagerAgent(model, limits, blackboard=self.blackboard,
                 audit_identity=identity, tracing_backend=tracing)
             manager.agent_models = models
+            manager.agent_output_limits = output_overrides or {}
             with timing.stage("maintainability_audit"):
                 return await observe_invocation(tracing.wrap_stage(manager.run(tools, request), name="maintainability-manager",
                     audit_id=identity.run_id, invocation_id=identity.invocation_id,
@@ -428,7 +461,7 @@ class AuditService:
 
     async def _run_combined(self, identity, root, snapshot, request, security_request, limits,
                             settings, credentials, total_tokens, model_selections, timing, clients, security_limits,
-                            attributes, functional_requirements, functional_limits):
+                            attributes, functional_requirements, functional_limits, output_overrides=None):
         """One snapshot and token ledger; attribute failures do not cancel their sibling."""
         shared_tokens = SharedTokenBudget(total_tokens)
         tracing = LangSmithTracingBackend()
@@ -452,7 +485,8 @@ class AuditService:
                 budget = ExecutionBudget(max_model_calls=policy.max_model_calls, max_tool_calls=max(1, policy.max_tool_calls),
                     max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
                     max_input_tokens_per_call=max(500, policy.max_context_characters // 2),
-                    max_output_tokens_per_call=policy.max_output_tokens, max_elapsed_seconds=policy.timeout_seconds)
+                    max_output_tokens_per_call=audit_output_envelope(policy, output_overrides),
+                    max_elapsed_seconds=policy.timeout_seconds)
                 tool_limits = ToolLimits(compact=True)
                 if attribute == "security":
                     budget = ExecutionBudget.model_validate(budget.model_dump() | {
@@ -476,6 +510,7 @@ class AuditService:
                         audit_identity=child, tracing_backend=tracing)
                     manager.agent_models = {name: client(*selection) for name, selection in (model_selections or {}).items()
                         if name not in {"security", "functional_adequacy"}}
+                    manager.agent_output_limits = output_overrides or {}
                     operation = manager.run(tools, selected_request)
                 with deadline.stage(attribute + "_audit"):
                     return await observe_invocation(tracing.wrap_stage(operation, name=attribute + "-audit", audit_id=identity.run_id,

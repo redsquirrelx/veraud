@@ -45,6 +45,9 @@ export function configFields(root: ConfigSchema): ConfigField[] {
     const resolved = resolveSchema(schema, root)
     if (resolved.properties) {
       for (const [name, child] of Object.entries(resolved.properties)) {
+        // Legacy security-specific output values are normalized into agent_defaults.
+        // Offer exactly one output control in the category drawer.
+        if (name === "max_output_tokens" && path[0] === "security_config") continue
         visit(child, [...path, name])
       }
     } else if (["integer", "number", "string"].includes(resolved.type ?? "")) fields.push({ path, schema: resolved })

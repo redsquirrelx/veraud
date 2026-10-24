@@ -39,6 +39,31 @@ Final reports reconcile with live receipts using the same invocation IDs.
 Apply the `20261020180000_audit_invocation_receipts` migration before running
 the updated backend.
 
+### Long-running HTTP requests and audit recovery
+
+Execution POSTs use Node's HTTP/HTTPS transport with an explicit end-to-end
+deadline (including the response body). They do not use native `fetch`, whose
+independent 300-second headers timeout otherwise interrupts a healthy audit
+before its first response headers arrive. Catalog and access-check requests
+remain short, separately bounded requests. Quality-audit transport waits up to
+32 minutes; this does not change agent budgets or provider quotas.
+
+A refused connection/DNS failure can confirm that dispatch did not start. A
+socket loss or timeout cannot confirm agent failure. For an uncertain quality-audit
+dispatch, the backend retains `Running`, reads the run ID already recorded by the
+running callback/receipts, and checks `/api/audits/{run_id}` every five seconds.
+It never replays the execution POST. Once terminal, it retrieves the JSON report
+and Word document from that run's report endpoints and stores the normal envelope.
+A partial audit report is still a successfully delivered (`Completed`) execution.
+
+Recovery is bounded by the original 32-minute dispatch/recovery window, with at
+least one final status lookup and bounded status/artifact requests. If the server
+has lost the run (404), or its outcome cannot be confirmed before that deadline,
+the row closes with `interruptionReason: "audit_outcome_unconfirmed"` and an explicit
+communication/recovery error. The known run identity, receipts and usage are retained;
+this does not assert that the agents themselves failed. Existing terminal rows
+are not reopened or overwritten by reconciliation.
+
 ## Lifecycle
 
 Current HTTP contracts: backend `/docs` ([documentation index](README.md)).
@@ -293,6 +318,13 @@ Repeated invocations remain distinct; catalog agent-type relationships are not
 used to invent execution parents. Historical records lacking these assignments
 remain roots. The original stored report and Word artifact are not modified.
 # Persisted quality-audit operating settings
+
+The category drawer's generic `agent_defaults` includes `max_output_tokens`,
+derived from the owning runtime field (default 4000, minimum 256). It sets the
+per-response output ceiling for that category, including maintainability managers,
+coordinators and investigators, and is persisted/merged with the other generic
+parameters. An omitted value retains each agent's default. Model-level ceilings
+and explicit category-specific overrides keep their existing precedence.
 
 `GET /api/audit-settings/:attribute` loads the saved values and the explicit
 developer-level audit schema supplied by agent-server. Supported attributes are

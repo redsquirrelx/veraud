@@ -12,7 +12,7 @@
       "title": "Configurar auditoría · {{category}}", "description": "Configuración operativa avanzada. Los cambios se aplican a nuevas auditorías.",
       "sharedBudget": "Presupuesto global de auditoría", "sharedBudgetHint": "Límite global de tokens compartido por todos los atributos seleccionados. Esta configuración es común a todas las categorías.",
       "callLimits": "Límites de llamadas por nivel", "securityOptions": "Configuración de auditoría de seguridad", "functionalOptions": "Configuración de adecuación funcional",
-      "agentDefaults": "Parámetros genéricos de los agentes", "agentDefaultsHint": "Se aplican a los agentes de esta categoría. En mantenibilidad, los límites genéricos de llamadas y herramientas se aplican a investigadores; los límites por nivel controlan los presupuestos agregados del manager y coordinadores.",
+      "agentDefaults": "Parámetros genéricos de los agentes", "agentDefaultsHint": "Se aplican a los agentes de esta categoría. max_output_tokens es el máximo de tokens de salida por respuesta, también para managers y coordinadores. Un valor individual explícito sustituye al heredado; no se aplica un segundo tope del modelo. En mantenibilidad, los límites genéricos de llamadas y herramientas se aplican a investigadores; los límites por nivel controlan los presupuestos agregados del manager y coordinadores.",
       "defaultsHint": "Deja un campo vacío para usar los valores del servidor. Los ajustes exclusivos de agentes individuales de mantenibilidad se configuran por separado."
     },
     "modelsTitle": "Modelos de auditoría de calidad",
@@ -134,7 +134,11 @@
       "temperatureHint": "0–2 · Los valores bajos producen resultados más consistentes.",
       "temperatureInvalid": "La temperatura debe estar entre 0 y 2.",
       "maxTokens": "Máximo de tokens de salida por llamada",
-      "maxTokensHint": "Limita la salida de cada llamada al modelo. El valor predeterminado del backend es {{default}} tokens.",
+      "maxTokensHint": "Máximo de tokens de salida por respuesta. Déjalo vacío para heredar la configuración de auditoría o del servidor. Un valor explícito sustituye al heredado; no añade otro límite.",
+      "outputInheritanceLoading": "Cargando el límite heredado de la auditoría…",
+      "outputInheritanceError": "No se pudo consultar el límite heredado. No se muestra un valor predeterminado estimado.",
+      "outputInherited": "{{category}}: {{value}} tokens por respuesta, heredados de la auditoría.",
+      "outputOverridden": "{{category}}: {{value}} tokens por respuesta, sobrescritura individual (heredado: {{inherited}}).",
       "maxTokensPlaceholder": "Predeterminado: {{default}}",
       "maxTokensInvalid": "El máximo de tokens debe ser un entero positivo, hasta 2147483647.",
       "defaultPlaceholder": "Predeterminado",
@@ -156,6 +160,16 @@
       "agentOptionsHint": "Las opciones adicionales específicas de este agente aparecerán aquí cuando estén disponibles."
     },
     "verification": {
+      "errors": {
+        "accessDenied": "El proveedor rechazó la credencial o sus permisos. Comprueba la clave y el acceso al modelo.",
+        "invalidConfiguration": "La configuración de verificación no es válida. Comprueba el proveedor, el modelo y la credencial.",
+        "modelNotFound": "El modelo no se encontró o no está disponible para esta credencial.",
+        "rateLimited": "Se alcanzó un límite de solicitudes o una cuota del proveedor. No se pudo confirmar el acceso.",
+        "providerUnavailable": "El proveedor no está disponible temporalmente. No se pudo confirmar el acceso; vuelve a intentarlo más tarde.",
+        "timeout": "Se agotó el tiempo de la comprobación. No se pudo confirmar el acceso; esto no demuestra que la clave sea incorrecta.",
+        "verificationFailed": "No se pudo completar la comprobación del modelo. El acceso no quedó confirmado.",
+        "agentServerUnavailable": "No se pudo contactar con el servidor de agentes a tiempo. El acceso al modelo no quedó confirmado."
+      },
       "verified": "Verificado",
       "needsAttention": "Requiere atención",
       "notVerified": "Sin verificar",

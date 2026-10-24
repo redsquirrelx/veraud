@@ -16,7 +16,7 @@ AuditAgentDefaults = create_model(
     __config__=ConfigDict(extra="forbid"),
     **{name: (AgentExecutionConfig.model_fields[name].annotation,
               deepcopy(AgentExecutionConfig.model_fields[name]))
-       for name in ("max_context_characters", "max_total_tokens", "max_model_calls", "max_tool_calls")},
+       for name in ("max_context_characters", "max_output_tokens", "max_total_tokens", "max_model_calls", "max_tool_calls")},
 )
 
 AuditCallLimit = create_model("AuditCallLimit", __config__=ConfigDict(extra="forbid"),
@@ -28,6 +28,25 @@ class AuditCallLimits(ConfigContract):
     manager: AuditCallLimit | None = None
     coordinator: AuditCallLimit | None = None
     investigator: AuditCallLimit | None = None
+
+
+def audit_output_envelope(limits, overrides=None):
+    """Repository transport headroom, not an additional agent output setting."""
+    values = list((overrides or {}).values())
+    while limits is not None:
+        values.append(limits.max_output_tokens)
+        limits = getattr(limits, "invocation_limits", None)
+    return max(values)
+
+
+def validate_audit_output_capacity(limits):
+    """Reject impossible output reservations before accepting an audit."""
+    while limits is not None:
+        quota = limits.provider_rate_limits.tokens_per_minute
+        if quota is not None and limits.max_output_tokens >= quota:
+            raise ValueError(f"max_output_tokens ({limits.max_output_tokens}) must be lower than "
+                f"provider_rate_limits.tokens_per_minute ({quota}); each request also reserves input tokens.")
+        limits = getattr(limits, "invocation_limits", None)
 
 
 def apply_audit_defaults[T: InvestigationConfig](limits: T, defaults: AuditAgentDefaults) -> T:

@@ -15,16 +15,31 @@ from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES
 from server.app.execution_service import InvalidConfigError
 from server.app.pipeline_service import GenericPipelineService
 from server.app.tracing_port import NoOpTracingBackend
+from server.blackboard.impls.memory import MemoryBlackboard
 from server.blackboard.models import Assessment
 
 pytest_plugins = ["test_audits"]
 
 
+@pytest.mark.parametrize("source", ["category", "individual"])
+def test_impossible_output_is_rejected_before_accepting_an_audit(audit_environment, source):
+    from config.agents.audit import AuditAgentDefaults
+
+    service = audit_service.AuditService(MemoryBlackboard())
+    with pytest.raises(InvalidConfigError, match="tokens_per_minute"):
+        service.start(str(audit_environment.root), audit_service.MaintainabilityRequest(),
+            ExecutionConfig(model={"max_tokens": 1000000} if source == "individual" else {}), "dummy",
+            attributes=["functional_adequacy"],
+            functional_requirements=[{"requirement_id": "REQ-001", "description": "Devolver el número solicitado."}],
+            agent_defaults=AuditAgentDefaults(max_output_tokens=1000000) if source == "category" else None)
+
+
 @pytest.mark.parametrize("attributes", [["functional_adequacy"], ["maintainability", "functional_adequacy"],
     ["security", "functional_adequacy"], ["maintainability", "security", "functional_adequacy"]])
 @pytest.mark.parametrize("provider_failure", [False, True])
+@pytest.mark.parametrize("output_override", [None, 24000])
 def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts_and_portable_reports(
-        audit_environment, monkeypatch, attributes, provider_failure):
+        audit_environment, monkeypatch, attributes, provider_failure, output_override):
     root = audit_environment.root
     commit = _committed_checkout(root)
     monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
@@ -38,6 +53,7 @@ def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts
     def retrieve(self, state):
         assert self.config.retrieval_top_k == 2
         assert self.config.max_context_characters == 220000
+        assert self.config.max_output_tokens == (output_override or 16000)
         fragment = next(item for item in state["input_data"].code_fragments if item.file_path.startswith("main.py:"))
         return {"candidates": {requirement.requirement_id: [CodeEvidence(fragment_id=fragment.fragment_id,
             file_path=fragment.file_path, similarity=0.9)] for requirement in state["input_data"].requirements}}
@@ -68,13 +84,15 @@ def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts
             "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": attributes,
                 "attribute_options": {attribute: ({"agent_defaults": {"max_context_characters": 330000}} if attribute == "maintainability"
                     else {"security_config": {"max_scan_files": 1}} if attribute == "security"
-                    else {"agent_defaults": {"max_context_characters": 220000}, "functional_config": {"retrieval_top_k": 2}})
+                    else {"agent_defaults": {"max_context_characters": 220000, "max_output_tokens": 16000}, "functional_config": {"retrieval_top_k": 2}})
                     for attribute in attributes},
                 "functional_requirements": [{"requirement_id": "REQ-001", "description": "Devolver el número solicitado."}]},
-            ExecutionConfig(), stage_configs={name: ExecutionConfig(model={"provider": "openai", "name": name}, api_key="private-key")
+             ExecutionConfig(), stage_configs={name: ExecutionConfig(model={"provider": "openai", "name": name,
+                 "max_tokens": output_override if name == "functional_adequacy" else None}, api_key="private-key")
                 for name in participants}, execution_ids={stage: 42}))["audit"]
 
     payload = asyncio.run(run())
+    assert any(call.kwargs.get("max_tokens") == (output_override or 16000) for call in model.ainvoke.await_args_list)
     assert payload["status"] == ("partial" if provider_failure else "completed")
     functional = next(item for item in payload["blackboard"]["assessments"] if item["agent_id"] == "functional_adequacy")
     assert functional["run_id"] == payload["run_id"]

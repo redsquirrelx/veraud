@@ -11,11 +11,14 @@ import { AuditSettingsService } from "../modules/quality-audit/audit-settings.se
 import { makeQualityAuditCatalogSource, TEST_MAINTAINABILITY_AGENTS } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
+import { AgentTransportError } from "../infrastructure/agent-server-client/agent-server.client.js"
 
-for (const attributes of [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
+const selections = [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
   ["functional_adequacy"], ["maintainability", "functional_adequacy"], ["security", "functional_adequacy"],
-  ["maintainability", "security", "functional_adequacy"]]) {
-it(`runs a ${attributes.join("+")} audit and persists one partial report and Word artifact independently of architecture`, async () => {
+  ["maintainability", "security", "functional_adequacy"]]
+for (const { attributes, disconnect } of [...selections.map((attributes) => ({ attributes, disconnect: false })),
+  { attributes: ["maintainability"], disconnect: true }]) {
+it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP connection" : ""} and persists one partial report and Word artifact independently of architecture`, async () => {
   const agentType = attributes.includes("maintainability") ? "maintainability_manager" : attributes.includes("security") ? "security" : "functional_adequacy"
    const agents = [...(attributes.includes("maintainability") ? TEST_MAINTAINABILITY_AGENTS : []),
      ...(attributes.includes("security") ? ["security"] : []),
@@ -30,20 +33,37 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
   writeFileSync(join(workspaceDir, "555-acme-shop", "main.ts"), "export const value = 1")
   let finish!: (result: Record<string, AgentInput>) => void
   const pending = new Promise<Record<string, AgentInput>>((resolve) => { finish = resolve })
+  let loseConnection!: () => void
+  const connectionLost = new Promise<void>((resolve) => { loseConnection = resolve })
+  let reconciled!: () => void
+  const recovering = new Promise<void>((resolve) => { reconciled = resolve })
+  let dispatches = 0
   let seen: PipelineInput | undefined
   const options = { databaseUrl, workspaceDir, silent: true, makeAgentCatalogSource: makeQualityAuditCatalogSource, makeModelAccessVerifier: () => ({ verify: async () => {} }) }
   const { app, db } = await buildApp({ ...options, makeAgentInvoker: () => ({
-    run: async () => ({}), runPipelineByName: async (name, input, ids, configs) => {
+     run: async () => ({}), runPipelineByName: async (name, input, ids, configs) => {
+      dispatches++
       assert.equal(name, "quality-audit")
        assert.ok(ids[agentType])
         assert.equal(Object.keys(ids).length, 1)
        assert.deepEqual(Object.keys(configs).sort(), agents.sort())
        for (const participant of agents) {
           assert.equal(configs[participant]?.api_key, participant === "security" ? "security-test-key" : "secret-test-key")
+          assert.equal(configs[participant]?.model.max_tokens, null, "unset agent output inherits instead of imposing a hidden cap")
       }
-      seen = input
-      return pending
-    },
+       seen = input
+       if (disconnect) {
+         await connectionLost
+         throw new AgentTransportError("ECONNRESET", true)
+       }
+       return pending
+     },
+     getAuditResult: async (runId, selected) => {
+       assert.equal(runId, "b".repeat(32))
+       assert.deepEqual(selected, attributes)
+       reconciled()
+       return (await pending)["audit"] ?? null
+     },
   }) })
   auditResponseSerialization(app)
   const hash = "a".repeat(40)
@@ -55,7 +75,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     if (attributes.length === 1 && attributes[0] === "functional_adequacy") {
       const originalFetch = globalThis.fetch
       const saved = { audit_budget: { max_total_tokens: 300000000000 },
-        agent_defaults: { max_context_characters: 240000 }, functional_config: { retrieval_top_k: 3 } }
+        agent_defaults: { max_context_characters: 240000, max_output_tokens: 12000 }, functional_config: { retrieval_top_k: 3 } }
       globalThis.fetch = async (_url, init) => new Response(JSON.stringify(init?.method === "POST"
         ? { values: JSON.parse(String(init.body)) } : { schema: { type: "object" }, level: "developer" }))
       try {
@@ -65,10 +85,21 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
           "saved settings survive service recreation")
         assert.deepEqual((await service.get("security")).values, { audit_budget: saved.audit_budget },
           "shared budget is global while category operating overrides stay scoped")
-        assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
+         assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
           audit_budget: saved.audit_budget,
           attribute_options: { functional_adequacy: { agent_defaults: saved.agent_defaults, functional_config: saved.functional_config } },
-        })
+         })
+         await db.auditSettings.create({ data: { attribute: "security", options: JSON.stringify({
+           security_config: { max_scan_files: 30, max_output_tokens: 6000 },
+         }) } })
+         const legacy = await service.get("security")
+         assert.deepEqual(legacy.values, { audit_budget: saved.audit_budget,
+           security_config: { max_scan_files: 30 }, agent_defaults: { max_output_tokens: 6000 } })
+         await service.save("security", { ...legacy.values, agent_defaults: { max_output_tokens: 16000 } })
+         const effective = await service.executionOptions(["security"], {})
+         assert.deepEqual(effective.attribute_options?.security, {
+           security_config: { max_scan_files: 30 }, agent_defaults: { max_output_tokens: 16000 },
+         }, "editing the canonical output control must replace the legacy security value")
         await db.auditSettings.deleteMany()
       } finally { globalThis.fetch = originalFetch }
     }
@@ -78,7 +109,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     const architecture = await db.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
     const url = `/api/projects/${projectId}/audits`
     const options = {
-      agent_defaults: { max_context_characters: 20000000, max_total_tokens: 80000000, max_model_calls: 20, max_tool_calls: 30 },
+      agent_defaults: { max_context_characters: 20000000, max_output_tokens: 16000, max_total_tokens: 80000000, max_model_calls: 20, max_tool_calls: 30 },
       audit_budget: { max_total_tokens: 3000000000 },
       ...(attributes.includes("security") ? { security_config: { max_scan_files: 30, max_source_lines: 200 } } : {}),
       ...(attributes.includes("functional_adequacy") ? { functional_requirements: [{ requirement_id: "REQ-001", description: "Export a value." }] } : {}),
@@ -87,7 +118,7 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     await db.auditSettings.createMany({ data: [
       { attribute: "global", options: JSON.stringify({ audit_budget: { max_total_tokens: 300000000000 } }) },
       ...attributes.map((attribute, index) => ({ attribute, options: JSON.stringify({
-        agent_defaults: { max_context_characters: 220000 + index, max_total_tokens: 90000000 },
+        agent_defaults: { max_context_characters: 220000 + index, max_output_tokens: 12000, max_total_tokens: 90000000 },
         ...(attribute === "functional_adequacy" ? { functional_config: { retrieval_top_k: 3 } } : {}),
       }) })),
     ] })
@@ -142,7 +173,16 @@ it(`runs a ${attributes.join("+")} audit and persists one partial report and Wor
     const started = await app.inject({ method: "POST", url: `/api/agent-executions/${executionId}/running`,
       payload: { runId: "b".repeat(32) } })
     assert.equal(started.statusCode, 200)
-    assert.equal((await app.inject({ url })).json()[0].runId, "b".repeat(32))
+     assert.equal((await app.inject({ url })).json()[0].runId, "b".repeat(32))
+     if (disconnect) {
+       loseConnection()
+       await recovering
+       const stillRunning = await app.inject({ url: `/api/agent-executions/${executionId}?monitor=true` })
+       assert.equal(stillRunning.json().status, "Running", "socket loss is not a confirmed audit failure")
+       assert.equal(stillRunning.json().error, null)
+       assert.equal(stillRunning.json().finishedAt, null)
+       assert.equal(dispatches, 1, "recovery must not start a duplicate audit")
+     }
     const receipt = { invocation_id: "manager-live", parent_invocation_id: null, agent_id: agentType,
       run_id: "b".repeat(32), status: "running", started_at: "2026-10-20T10:00:00Z", finished_at: null,
       input_tokens: null, output_tokens: null, error: null }
