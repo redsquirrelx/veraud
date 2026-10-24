@@ -68,7 +68,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       if (category) onCategorySaved?.(category)
       setSaved(true)
     } catch (failure) {
-      setError(failure instanceof ApiError
+      setError(failure instanceof ApiError && failure.messageSource !== "client"
         ? { key: "agents.saveFailedWithDetail", detail: failure.message }
         : { key: "agents.saveFailed" })
     } finally {

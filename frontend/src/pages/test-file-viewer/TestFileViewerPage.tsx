@@ -98,16 +98,16 @@ export function TestFileViewerPage() {
           language="ts"
           highlight
           marks={[
-            { id: "A", from: 8, to: 9, tone: "danger", note: "unvalidated amount reaches settle" },
-            { id: "B", from: 12, to: 12, tone: "warning", note: "currency normalization" },
-            { id: "C", from: 1, to: 5, tone: "info", note: "plain data shape" },
+            { id: "A", from: 8, to: 9, tone: "danger", note: t("testPages.fileViewer.findings.A.note") },
+            { id: "B", from: 12, to: 12, tone: "warning", note: t("testPages.fileViewer.findings.B.note") },
+            { id: "C", from: 1, to: 5, tone: "info", note: t("testPages.fileViewer.findings.C.note") },
           ]}
         />
         <CodeExplanations
           items={[
-            { id: "A", tone: "danger", title: "Unvalidated amount", body: "Lines 8 to 9 throw a generic error instead of a domain one." },
-            { id: "B", tone: "warning", title: "Currency normalization", body: "Line 12 uppercases in place; consider a value object." },
-            { id: "C", tone: "info", title: "Plain data shape", body: "Lines 1 to 5 carry no behaviour, safe to extend." },
+            { id: "A", tone: "danger", title: t("testPages.fileViewer.findings.A.title"), body: t("testPages.fileViewer.findings.A.body") },
+            { id: "B", tone: "warning", title: t("testPages.fileViewer.findings.B.title"), body: t("testPages.fileViewer.findings.B.body") },
+            { id: "C", tone: "info", title: t("testPages.fileViewer.findings.C.title"), body: t("testPages.fileViewer.findings.C.body") },
           ]}
         />
       </Card>
@@ -118,13 +118,13 @@ export function TestFileViewerPage() {
           language="ts"
           highlight
           marks={[
-            { id: "D", from: 2, to: 4, tone: "warning", note: "untyped shape" },
-            { id: "D", from: 7, to: 9, tone: "warning", note: "untyped shape" },
+            { id: "D", from: 2, to: 4, tone: "warning", note: t("testPages.fileViewer.findings.D.note") },
+            { id: "D", from: 7, to: 9, tone: "warning", note: t("testPages.fileViewer.findings.D.note") },
           ]}
         />
         <CodeExplanations
           items={[
-            { id: "D", tone: "warning", title: "Missing domain types", body: "Lines 2 to 4 and 7 to 9 repeat the same structural smell in two places." },
+            { id: "D", tone: "warning", title: t("testPages.fileViewer.findings.D.title"), body: t("testPages.fileViewer.findings.D.body") },
           ]}
         />
       </Card>

@@ -299,7 +299,7 @@ export function parseProjectArchitectureResult(result: string | null): ProjectAr
     if (chart === "") continue
     const structure = isRecord(artifact["structure"]) ? artifact["structure"] : {}
     diagramViews.push({
-      title: readString(structure, "title").trim() || (diagram === null ? "Architecture diagram" : readString(diagram, "title")) || "Architecture diagram",
+      title: readString(structure, "title").trim() || (diagram === null ? "" : readString(diagram, "title").trim()),
       scope: readString(structure, "scope").trim(),
       mermaid: chart,
       colorLegend: Array.isArray(artifact["legend"]) && artifact["legend"].length > 0,

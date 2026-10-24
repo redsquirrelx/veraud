@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import {
   OrientationResultView,
@@ -14,6 +14,9 @@ import {
   parseStageStatus,
 } from "./pipelineResult.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { changeLanguage } from "../../shared/i18n/index.ts"
+
+afterEach(async () => { await changeLanguage("en") })
 
 function execution(overrides: Record<string, unknown> = {}): AgentExecution {
   return {
@@ -204,6 +207,20 @@ describe("OrientationResultView", () => {
 })
 
 describe("ProjectArchitectureResultView", () => {
+  it("localizes only the fallback diagram title", async () => {
+    const report = JSON.parse(projectArchitectureWithDiagram)
+    report.architecture.diagram.title = ""
+    report.architecture_diagram.structure = {}
+    const summary = parseProjectArchitectureResult(JSON.stringify(report))!
+    expect(summary.diagramViews[0]?.title).toBe("")
+    render(<ProjectArchitectureResultView summary={summary} />)
+    expect(screen.getByRole("region", { name: "Architecture diagram" })).toBeInTheDocument()
+
+    await changeLanguage("es")
+
+    expect(screen.getByRole("region", { name: "Diagrama de arquitectura" })).toBeInTheDocument()
+  })
+
   it("renders independent diagram views with external color legends and deviation details", () => {
     const report = JSON.parse(projectArchitectureWithDiagram)
     const legend = [{ layer: "architect", status: "supported", color: "#dbeafe" }]

@@ -118,7 +118,7 @@ export function ProjectDetailPage() {
       refreshFiles()
 
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError && error.messageSource !== "client") {
         pushToast("error", error.message)
       } else {
         pushToast("error", t("detail.sync.errorFallback"))

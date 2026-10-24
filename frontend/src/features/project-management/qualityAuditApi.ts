@@ -41,7 +41,7 @@ export function getQualityAuditReport(projectId: number, id: number) {
 
 export async function downloadQualityAuditReport(projectId: number, id: number) {
   const response = await fetch(`${backendHttpUrl()}/api/projects/${projectId}/audits/${id}/report.docx`)
-  if (!response.ok) throw new ApiError(response.status, "Could not download the audit report")
+  if (!response.ok) throw new ApiError(response.status, "Could not download the audit report", "client")
   const url = URL.createObjectURL(await response.blob())
   const anchor = document.createElement("a")
   anchor.href = url

@@ -27,6 +27,12 @@ interface AgentsLoadError {
   detail?: string
 }
 
+function agentsLoadError(failure: unknown): AgentsLoadError {
+  return failure instanceof ApiError && failure.messageSource !== "client"
+    ? { key: "agents.loadFailedWithDetail", detail: failure.message }
+    : { key: "agents.loadFailed" }
+}
+
 export function AgentsSettings({ providers = [], providersLoading = false, providersError = "", onAssignmentsSaved,
   agentTypes, heading, description, labels = {}, modelAccessOnly = false, qualityCategories = false,
 }: AgentsSettingsProps) {
@@ -51,9 +57,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
       },
       (failure: unknown) => {
         if (controller.signal.aborted) return
-        setError(failure instanceof ApiError
-          ? { key: "agents.loadFailedWithDetail", detail: failure.message }
-          : { key: "agents.loadFailed" })
+        setError(agentsLoadError(failure))
         setLoading(false)
       },
     )
@@ -86,8 +90,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
       setAgents(await syncAgentSettings())
       setError(null)
     } catch (failure) {
-      setSyncError(failure instanceof ApiError
-        ? { key: "agents.loadFailedWithDetail", detail: failure.message } : { key: "agents.loadFailed" })
+      setSyncError(agentsLoadError(failure))
     } finally { setSynchronizing(false) }
   }
 

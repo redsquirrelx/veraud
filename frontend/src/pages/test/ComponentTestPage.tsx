@@ -164,9 +164,9 @@ export function ComponentTestPage() {
 
       <h2>{t("testPages.components.typography")}</h2>      <div className="playground-column">
         <span className="label">{t("testPages.components.headlineLabel")}</span>
-        <span className="playground-headline">Projects and Repositories</span>
+        <span className="playground-headline">{t("testPages.components.typographyTitle")}</span>
         <span className="label">{t("testPages.components.bodyLabel")}</span>
-        <span>Continuous autonomous supervision of quality attributes under ISO/IEC 25010.</span>
+        <span>{t("testPages.components.typographyBody")}</span>
         <span className="label">{t("testPages.components.repoNameLabel")}</span>
         <span className="mono">fintech-core/payment-gateway-v2</span>
         <span className="label">{t("testPages.components.commitLabel")}</span>

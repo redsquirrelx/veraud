@@ -108,7 +108,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
       onSaved(updated)
       onClose()
     } catch (failure) {
-      setError(failure instanceof ApiError
+      setError(failure instanceof ApiError && failure.messageSource !== "client"
         ? { key: "agents.saveFailedWithDetail", detail: failure.message }
         : { key: "agents.saveFailed" })
     } finally {

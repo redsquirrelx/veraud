@@ -78,6 +78,86 @@
       }
     }
   },
+  "qualityAudits": {
+    "title": "Auditoría de calidad",
+    "description": "Evalúa la calidad del proyecto sobre la revisión seleccionada.",
+    "attributesLegend": "Atributos a evaluar",
+    "attributes": {
+      "maintainability": { "description": "Estructura del código y facilidad de evolución." },
+      "security": { "description": "Riesgos y posibles vulnerabilidades del repositorio." },
+      "functionalAdequacy": { "description": "Contrasta requisitos funcionales con el código del repositorio." }
+    },
+    "requirements": {
+      "label": "Requisitos funcionales",
+      "help": "Escribe un requisito por línea ({{minimum}}–{{maximum}}). Se asignan identificadores como REQ-001 y se conserva cada resultado en el informe."
+    },
+    "start": "Iniciar auditoría",
+    "starting": "Iniciando…",
+    "configureAgents": "Configurar agentes",
+    "runningNotice": "Auditoría en curso. Los resultados se conservarán aunque la evaluación sea parcial.",
+    "historyTitle": "Auditorías del proyecto",
+    "empty": "No hay auditorías registradas.",
+    "revisionPending": "pendiente",
+    "errors": {
+      "load": "No se pudieron cargar las auditorías",
+      "start": "No se pudo iniciar la auditoría",
+      "report": "No se pudo cargar el informe",
+      "download": "No se pudo descargar el informe"
+    },
+    "runId": {
+      "label": "ID de ejecución",
+      "initializing": "Inicializando…",
+      "unavailable": "No disponible",
+      "openBlackboard": "Ver Blackboard"
+    },
+    "evaluation": {
+      "partial": "Evaluación parcial",
+      "completed": "Evaluación completada",
+      "failed": "Evaluación fallida"
+    },
+    "viewReport": "Ver informe",
+    "downloadWord": "Descargar informe Word",
+    "downloading": "Descargando…",
+    "report": {
+      "title": "Informe de auditoría · #{{id}}",
+      "originalNotice": "Informe original generado a partir del Blackboard de esta ejecución.",
+      "notRecorded": "No registrado",
+      "empty": "Sin registros",
+      "sourceReferences_one": "Referencia de origen ({{formattedCount}})",
+      "sourceReferences_other": "Referencias de origen ({{formattedCount}})",
+      "sections": {
+        "identification": "1. Identificación",
+        "executive_summary": "2. Resumen ejecutivo",
+        "objectives_and_scope": "3. Objetivos y alcance",
+        "methodology_and_criteria": "4. Metodología y criterios",
+        "software_description": "5. Descripción del software",
+        "quality_results": "6. Resultados de calidad",
+        "consolidated_risks": "7. Riesgos consolidados",
+        "general_conclusions": "8. Conclusiones generales",
+        "recommendations_and_improvement_plan": "9. Recomendaciones y plan de mejora",
+        "annexes_and_traceability": "10. Anexos y trazabilidad"
+      },
+      "fields": {
+        "objective": "Objetivo",
+        "evaluated_attributes": "Atributos evaluados",
+        "principal_results": "Resultados principales",
+        "conclusion": "Conclusión",
+        "findings": "Hallazgos",
+        "total": "Total",
+        "by_verification": "Por verificación",
+        "verified": "Verificados",
+        "inconclusive": "Inconclusos",
+        "discarded": "Descartados",
+        "status": "Estado",
+        "limitations": "Limitaciones",
+        "source_refs": "Referencias de origen",
+        "title": "Título",
+        "project_name": "Proyecto",
+        "revisions": "Revisiones",
+        "executed_at": "Fecha de ejecución"
+      }
+    }
+  },
   "analysis": {
     "errors": {
       "startFailed": "No se pudo analizar el proyecto"
@@ -91,6 +171,7 @@
     "partialResults": "Resultados parciales disponibles — incompletos",
     "orientationTitle": "Orientación",
     "architectureTitle": "Arquitectura",
+    "architectureDiagram": "Diagrama de arquitectura",
     "semanticTitle": "Validación semántica",
     "components": "Componentes ({{count}})",
     "startingPoints": "Puntos de partida ({{count}})",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, checkoutBranch, checkoutCommit, listBranches, listCommits, type GitCommitEntry } from "../../infrastructure/http-client/httpClient.ts"
 
 export interface AppliedVersion {
@@ -20,11 +21,10 @@ function defaultBranch(branches: string[]): string {
   return branches[0] as string
 }
 
-function describeFailure(failure: unknown, fallback: string): string {
-  if (failure instanceof ApiError) {
-    return failure.message
-  }
-  return fallback
+type VersionFailure = { key: ParseKeys<"projects"> } | { detail: string }
+
+function describeFailure(failure: unknown, key: ParseKeys<"projects">): VersionFailure {
+  return failure instanceof ApiError && failure.messageSource !== "client" ? { detail: failure.message } : { key }
 }
 
 export function useVersionSelector(projectId: number | null, options?: { onApplied?: (version: AppliedVersion) => void }) {
@@ -38,7 +38,8 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
   const [loadingBranches, setLoadingBranches] = useState(false)
   const [loadingCommits, setLoadingCommits] = useState(false)
   const [applying, setApplying] = useState(false)
-  const [error, setError] = useState("")
+  const [failure, setFailure] = useState<VersionFailure | null>(null)
+  const error = failure === null ? "" : "detail" in failure ? failure.detail : t(failure.key)
   const mounted = useRef(true)
   const generation = useRef(0)
   const appliedCallback = useRef(options?.onApplied)
@@ -77,18 +78,18 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (markApplied) {
         setApplied(null)
       }
-      setError(describeFailure(failure, t("version.errors.loadCommits")))
+      setFailure(describeFailure(failure, "version.errors.loadCommits"))
     } finally {
       if (alive()) {
         setLoadingCommits(false)
       }
     }
-  }, [t])
+  }, [])
 
   const loadInitial = useCallback(async (id: number, token: number) => {
     const alive = () => mounted.current && generation.current === token
     setLoadingBranches(true)
-    setError("")
+    setFailure(null)
     try {
       const result = await listBranches(id)
       if (!alive()) {
@@ -96,7 +97,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       }
       if (result.branches.length === 0) {
         setBranches([])
-        setError(t("version.errors.noBranches"))
+        setFailure({ key: "version.errors.noBranches" })
         return
       }
       const hash = result.detachedHash ?? null
@@ -117,13 +118,13 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
         return
       }
       setBranches([])
-      setError(describeFailure(failure, t("version.errors.loadBranches")))
+      setFailure(describeFailure(failure, "version.errors.loadBranches"))
     } finally {
       if (alive()) {
         setLoadingBranches(false)
       }
     }
-  }, [loadCommits, t])
+  }, [loadCommits])
 
   useEffect(() => {
     if (projectId === null) {
@@ -143,7 +144,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
     setBranch(name)
     setApplied(null)
     setDetached(null)
-    setError("")
+    setFailure(null)
     setLoadingCommits(true)
     try {
       await checkoutBranch(projectId, name)
@@ -157,7 +158,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       }
       setCommits([])
       setCommitHash("")
-      setError(describeFailure(failure, t("version.errors.checkoutBranch")))
+      setFailure(describeFailure(failure, "version.errors.checkoutBranch"))
       setLoadingCommits(false)
     }
   }
@@ -190,7 +191,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (!mounted.current || generation.current !== token) {
         return
       }
-      setError(describeFailure(failure, t("version.errors.loadBranches")))
+      setFailure(describeFailure(failure, "version.errors.loadBranches"))
     }
   }
 
@@ -209,7 +210,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
     const wanted = hash.trim()
     if (HASH_PATTERN.test(wanted) === false) {
       setCommitHash(wanted)
-      setError(t("version.errors.invalidHash"))
+      setFailure({ key: "version.errors.invalidHash" })
       return false
     }
     if (applied !== null && applied.branch === branch && applied.commitHash.toLowerCase() === wanted.toLowerCase()) {
@@ -220,7 +221,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
     const isTip = tip !== "" && (wanted.toLowerCase() === tip || tip.startsWith(wanted.toLowerCase()))
     setCommitHash(wanted)
     setApplying(true)
-    setError("")
+    setFailure(null)
     try {
       if (isTip) {
         await checkoutBranch(projectId, branch)
@@ -248,7 +249,7 @@ export function useVersionSelector(projectId: number | null, options?: { onAppli
       if (!mounted.current) {
         return false
       }
-      setError(describeFailure(failure, isTip ? t("version.errors.checkoutBranch") : t("version.errors.checkoutCommit")))
+      setFailure(describeFailure(failure, isTip ? "version.errors.checkoutBranch" : "version.errors.checkoutCommit"))
       return false
     } finally {
       if (mounted.current) {

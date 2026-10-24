@@ -4,12 +4,6 @@ import { Badge, Button, Card, DropdownLinks, ExternalIcon, ItemList, ItemSearche
 import "./TestControlsPage.css"
 import { DrawerExamples } from "./DrawerExamples.tsx"
 
-const sampleItems: ItemSelectorItem[] = [
-  { id: "openai", label: "OpenAI", detail: "3 models" },
-  { id: "anthropic", label: "Anthropic", detail: "2 models" },
-  { id: "google", label: "Google", detail: "1 model" },
-]
-
 const sampleEntries: ItemListEntry[] = [
   { id: "gpt-4o", name: "gpt-4o", description: "OpenAI flagship" },
   { id: "claude-3", name: "claude-3", description: "Anthropic model" },
@@ -27,10 +21,15 @@ const navigationLinkKeys = [
 
 export function TestControlsPage() {
   const { t } = useTranslation("common")
+  const sampleItems: ItemSelectorItem[] = [
+    { id: "openai", label: "OpenAI", detail: t("testPages.controls.modelCount", { count: 3 }) },
+    { id: "anthropic", label: "Anthropic", detail: t("testPages.controls.modelCount", { count: 2 }) },
+    { id: "google", label: "Google", detail: t("testPages.controls.modelCount", { count: 1 }) },
+  ]
   const documentationLinks: DropdownLinkItem[] = [
-    { label: t("navigation.docs.backend"), href: `${backendUrl}/docs`, description: "HTTP API · Swagger", external: true },
-    { label: t("navigation.docs.websocket"), href: `${backendUrl}/docs/ws`, description: "Realtime events · AsyncAPI", external: true },
-    { label: t("navigation.docs.agentServer"), href: `${agentServerUrl}/docs`, description: "Agent HTTP API · Swagger", external: true },
+    { label: t("navigation.docs.backend"), href: `${backendUrl}/docs`, description: t("testPages.controls.docs.backend"), external: true },
+    { label: t("navigation.docs.websocket"), href: `${backendUrl}/docs/ws`, description: t("testPages.controls.docs.websocket"), external: true },
+    { label: t("navigation.docs.agentServer"), href: `${agentServerUrl}/docs`, description: t("testPages.controls.docs.agentServer"), external: true },
   ]
   const navigationLinks: DropdownLinkItem[] = navigationLinkKeys.map((link) => ({ label: t(link.labelKey), href: link.href }))
   const [plain, setPlain] = useState("")

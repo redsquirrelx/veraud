@@ -39,7 +39,7 @@ describe("listAiProviders", () => {
   it("uses the fixed GET error without parsing a failed response body", async () => {
     globalThis.fetch = (async () => new Response("not JSON", { status: 503 })) as typeof fetch
 
-    await expect(listAiProviders()).rejects.toMatchObject({ status: 503, message: "Could not load AI providers" })
+    await expect(listAiProviders()).rejects.toMatchObject({ status: 503, message: "Could not load AI providers", messageSource: "client" })
   })
 })
 
@@ -61,13 +61,13 @@ describe("createAiModel", () => {
   it("reports duplicates with the backend message", async () => {
     stubFetch(409, { message: "Model gpt-4o is already registered" })
 
-    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 409, message: "Model gpt-4o is already registered" } as Partial<ApiError>)
+    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 409, message: "Model gpt-4o is already registered", messageSource: "server" } as Partial<ApiError>)
   })
 
   it("uses the endpoint fallback when an error response has no message", async () => {
     stubFetch(400, {})
 
-    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 400, message: "AI provider request failed" })
+    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 400, message: "AI provider request failed", messageSource: "client" })
   })
 
   it("preserves JSON parsing errors for malformed mutation responses", async () => {

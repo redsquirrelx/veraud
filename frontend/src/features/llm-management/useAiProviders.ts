@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, listAiProviders, updateAiCredential, updateAiModel, type AiCredentialSummary, type AiModelSummary, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 
+type ProviderLoadFailure = { key: ParseKeys<"settings"> } | { detail: string }
+
 export function useAiProviders() {
+  const { t } = useTranslation("settings")
   const [providers, setProviders] = useState<AiProviderDetail[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState("")
+  const [loadFailure, setLoadFailure] = useState<ProviderLoadFailure | null>(null)
   const mounted = useRef(true)
+  const loadError = loadFailure === null ? "" : "detail" in loadFailure ? loadFailure.detail : t(loadFailure.key)
 
   useEffect(() => {
     mounted.current = true
@@ -20,11 +26,12 @@ export function useAiProviders() {
       const rows = await listAiProviders()
       if (!isCurrent()) return
       setProviders(rows)
-      setLoadError("")
+      setLoadFailure(null)
     } catch (failure) {
       if (!isCurrent()) return
       setProviders([])
-      setLoadError(failure instanceof ApiError ? failure.message : "Could not load AI providers")
+      setLoadFailure(failure instanceof ApiError && failure.messageSource !== "client"
+        ? { detail: failure.message } : { key: "models.loadFailed" })
     } finally {
       if (isCurrent()) setLoading(false)
     }

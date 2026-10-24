@@ -252,10 +252,12 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
           <span className="stage-section-label">
             {summary.diagramOrigin !== "" ? t("pipeline.diagramWithOrigin", { origin: summary.diagramOrigin }) : t("pipeline.diagram")}
           </span>
-          {summary.diagramViews.map((view, index) => <section className="architecture-diagram-view" key={index} aria-label={view.title}>
-            <h5>{view.title}</h5>
+          {summary.diagramViews.map((view, index) => {
+            const title = view.title || t("pipeline.architectureDiagram")
+            return <section className="architecture-diagram-view" key={index} aria-label={title}>
+            <h5>{title}</h5>
             {view.scope !== "" && <p className="stage-row-sub">{t("pipeline.scopeLabel", { scope: view.scope })}</p>}
-            <MermaidDiagram chart={view.mermaid} label={view.title} />
+            <MermaidDiagram chart={view.mermaid} label={title} />
             {view.colorLegend && <DiagramColorLegend />}
             {view.deviations.length > 0 && <div className="stage-rows">
               {view.deviations.map((note) => <div className="stage-row" key={note.id}>
@@ -266,7 +268,8 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
               </div>)}
             </div>}
             {view.limitations.map((item, limitation) => <p className="stage-footnote" key={limitation}>{item}</p>)}
-          </section>)}
+          </section>
+          })}
         </>
       ) : (
         summary.diagramTitle !== "" && (

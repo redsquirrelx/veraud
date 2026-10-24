@@ -73,16 +73,6 @@ export function SettingsPage() {
   const [credentialId, setCredentialId] = useState<string[]>([])
   const [editor, setEditor] = useState<SettingsEditor | null>(null)
 
-  // useAiProviders reports the backend message verbatim. That hook always
-  // throws the fixed "Could not load AI providers" string, so any loadError
-  // matching the translated generic is shown as-is; anything else is kept as
-  // technical detail alongside the translated generic message.
-  const providersLoadError = loadError === ""
-    ? ""
-    : loadError === t("models.loadFailed")
-      ? t("models.loadFailed")
-      : `${t("models.loadFailed")}: ${loadError}`
-
   const models = providers.flatMap((provider) => provider.models.map((model) => ({ ...model,
     id: String(model.id), resourceId: model.id, providerId: provider.id, provider: provider.name })))
   const credentials = providers.flatMap((provider) => provider.credentials.map((credential) => ({ ...credential,
@@ -127,13 +117,14 @@ export function SettingsPage() {
       setEditor(null)
     } catch (failure) {
       const editing = current.id !== null
+      const hasBackendDetail = failure instanceof ApiError && failure.messageSource !== "client"
       const keys: Record<"create" | "createDetail" | "update" | "updateDetail", ParseKeys<"settings">> = current.kind === "model"
         ? { create: "models.registerFailed", createDetail: "models.registerFailedWithDetail", update: "models.updateFailed", updateDetail: "models.updateFailedWithDetail" }
         : { create: "credentials.registerFailed", createDetail: "credentials.registerFailedWithDetail", update: "credentials.updateFailed", updateDetail: "credentials.updateFailedWithDetail" }
-      const key: ParseKeys<"settings"> = failure instanceof ApiError
+      const key: ParseKeys<"settings"> = hasBackendDetail
         ? editing ? keys.updateDetail : keys.createDetail
         : editing ? keys.update : keys.create
-      const detail = failure instanceof ApiError ? failure.message : undefined
+      const detail = hasBackendDetail ? failure.message : undefined
       const formError: SettingsFormError = detail === undefined ? { key } : { key, detail }
       setEditor((latest) => latest?.kind === current.kind && latest.id === current.id ? { ...latest, error: formError } : latest)
       pushToast("error", detail === undefined ? t(key) : t(key, { detail }))
@@ -146,7 +137,8 @@ export function SettingsPage() {
       setModelId((current) => current.filter((entry) => entry !== String(id)))
       pushToast("success", t("models.deleted", { name }))
     } catch (failure) {
-      pushToast("error", failure instanceof ApiError ? t("models.deleteFailedWithDetail", { detail: failure.message }) : t("models.deleteFailed"))
+      const detail = failure instanceof ApiError && failure.messageSource !== "client" ? failure.message : undefined
+      pushToast("error", detail === undefined ? t("models.deleteFailed") : t("models.deleteFailedWithDetail", { detail }))
     }
   }
 
@@ -156,7 +148,8 @@ export function SettingsPage() {
       setCredentialId((current) => current.filter((entry) => entry !== String(id)))
       pushToast("success", t("credentials.deleted", { name }))
     } catch (failure) {
-      pushToast("error", failure instanceof ApiError ? t("credentials.deleteFailedWithDetail", { detail: failure.message }) : t("credentials.deleteFailed"))
+      const detail = failure instanceof ApiError && failure.messageSource !== "client" ? failure.message : undefined
+      pushToast("error", detail === undefined ? t("credentials.deleteFailed") : t("credentials.deleteFailedWithDetail", { detail }))
     }
   }
 
@@ -207,14 +200,14 @@ export function SettingsPage() {
         ))}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-agents`} aria-labelledby={`${tabsId}-tab-agents`} hidden={activeTab !== "agents"} tabIndex={0}>
-        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={providersLoadError} onAssignmentsSaved={(agent) => {
+        {activeTab === "agents" && <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError} onAssignmentsSaved={(agent) => {
           pushToast("success", t("agents.assignmentsSaved", { agentType: agent.agentType }))
           void refresh()
         }} />}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-audit`} aria-labelledby={`${tabsId}-tab-audit`} hidden={activeTab !== "audit"} tabIndex={0}>
         {activeTab === "audit" && <>
-          <AgentsSettings providers={providers} providersLoading={loading} providersError={providersLoadError}
+          <AgentsSettings providers={providers} providersLoading={loading} providersError={loadError}
             qualityCategories
             modelAccessOnly
             heading={t("audit.modelsTitle")}
@@ -227,8 +220,8 @@ export function SettingsPage() {
       <Card>
         <span className="label">{t("models.sectionTitle")}</span>
         <p className="settings-hint">{t("credentials.editHint")}</p>
-        {providersLoadError !== "" ? (
-          <p className="settings-error">{providersLoadError}</p>
+        {loadError !== "" ? (
+          <p className="settings-error">{loadError}</p>
         ) : (
           <>
             <div className="settings-llm-row">

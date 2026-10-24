@@ -1,9 +1,11 @@
 export class ApiError extends Error {
   status: number
+  messageSource?: "server" | "client"
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, messageSource?: "server" | "client") {
     super(message)
     this.status = status
+    this.messageSource = messageSource
   }
 }
 
@@ -28,13 +30,13 @@ export function backendWsUrl(): string {
 export async function requestJson<T>(path: string, fallback: string, init?: RequestInit, useBackendMessage = true): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, init)
   if (!response.ok && !useBackendMessage) {
-    throw new ApiError(response.status, fallback)
+    throw new ApiError(response.status, fallback, "client")
   }
   const body: unknown = await response.json()
   if (!response.ok) {
-    const message = typeof body === "object" && body !== null && "message" in body
-      && typeof body.message === "string" ? body.message : fallback
-    throw new ApiError(response.status, message)
+    const serverMessage = typeof body === "object" && body !== null && "message" in body
+      && typeof body.message === "string" ? body.message : undefined
+    throw new ApiError(response.status, serverMessage ?? fallback, serverMessage === undefined ? "client" : "server")
   }
   return body as T
 }
@@ -345,7 +347,7 @@ async function deleteAi(aiProviderId: number, resource: string, id: number): Pro
 
   const payload = (await response.json()) as { message?: string }
 
-  throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+  throw new ApiError(response.status, payload.message ?? "AI provider request failed", payload.message == null ? "client" : "server")
 }
 
 export async function createAiModel(aiProviderId: number, name: string): Promise<AiModelSummary> {

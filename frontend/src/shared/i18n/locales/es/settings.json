@@ -13,7 +13,20 @@
       "sharedBudget": "Presupuesto global de auditoría", "sharedBudgetHint": "Límite global de tokens compartido por todos los atributos seleccionados. Esta configuración es común a todas las categorías.",
       "callLimits": "Límites de llamadas por nivel", "securityOptions": "Configuración de auditoría de seguridad", "functionalOptions": "Configuración de adecuación funcional",
       "agentDefaults": "Parámetros genéricos de los agentes", "agentDefaultsHint": "Se aplican a los agentes de esta categoría. max_output_tokens es el máximo de tokens de salida por respuesta, también para managers y coordinadores. Un valor individual explícito sustituye al heredado; no se aplica un segundo tope del modelo. En mantenibilidad, los límites genéricos de llamadas y herramientas se aplican a investigadores; los límites por nivel controlan los presupuestos agregados del manager y coordinadores.",
-      "defaultsHint": "Deja un campo vacío para usar los valores del servidor. Los ajustes exclusivos de agentes individuales de mantenibilidad se configuran por separado."
+      "defaultsHint": "Deja un campo vacío para usar los valores del servidor. Los ajustes exclusivos de agentes individuales de mantenibilidad se configuran por separado.",
+      "fields": {
+        "sharedTotalTokens": "Presupuesto total compartido de tokens",
+        "contextCharacters": "Caracteres de contexto por llamada",
+        "personalTokenBudget": "Presupuesto de tokens por agente",
+        "maxModelCalls": "Máximo de llamadas al modelo por agente",
+        "maxToolCalls": "Máximo de llamadas a herramientas por agente",
+        "maxScanFiles": "Máximo de archivos que analizar",
+        "retrievalTopK": "Máximo de resultados recuperados"
+      },
+      "loadFailed": "No se pudo cargar la configuración de auditoría.",
+      "loadFailedWithDetail": "No se pudo cargar la configuración de auditoría: {{detail}}",
+      "saveFailed": "No se pudo guardar la configuración de auditoría.",
+      "saveFailedWithDetail": "No se pudo guardar la configuración de auditoría: {{detail}}"
     },
     "modelsTitle": "Modelos de auditoría de calidad",
     "modelsDescription": "Selecciona modelo y credencial por categoría de calidad. Al guardar, se aplica la selección a todos sus agentes de modelo declarados por el servidor.",

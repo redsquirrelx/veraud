@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Sidebar } from "./Sidebar.tsx"
 import { FolderIcon } from "./icons.tsx"
+import { changeLanguage } from "../i18n/index.ts"
+
+afterEach(async () => { await changeLanguage("en") })
 
 const items = [
   { id: "home", label: "Home", icon: <FolderIcon /> },
@@ -78,5 +81,14 @@ describe("Sidebar", () => {
     expect(screen.queryByText("Home")).toBeNull()
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeDefined()
     window.localStorage.clear()
+  })
+
+  it("translates the accessible toggle names and section label", async () => {
+    await changeLanguage("es")
+    render(<Sidebar title="Menu" items={items} />)
+
+    expect(screen.getByRole("navigation", { name: "Secciones de Menu" })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Contraer barra lateral" }))
+    expect(screen.getByRole("button", { name: "Expandir barra lateral" })).toBeInTheDocument()
   })
 })
