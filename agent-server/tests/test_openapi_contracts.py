@@ -107,6 +107,8 @@ def test_portal_and_exact_operation_coverage(api):
         ("GET", "/api/agents/{agent_type}/schema"),
         ("POST", "/api/agents/run"),
         ("POST", "/api/agents/verify-access"),
+        ("GET", "/api/audits/configuration/{attribute}"),
+        ("POST", "/api/audits/configuration/{attribute}/validate"),
         ("GET", "/api/pipelines"),
         ("POST", "/api/pipelines/{name}/run"),
         ("POST", "/api/audits"),
