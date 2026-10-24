@@ -24,8 +24,7 @@
   overflow: hidden;
 }
 
-.project-title-row .project-github,
-.project-title-row .ui-badge {
+.project-title-row .project-github {
   flex-shrink: 0;
 }
 

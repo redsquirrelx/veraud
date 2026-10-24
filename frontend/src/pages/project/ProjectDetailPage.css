@@ -70,6 +70,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-dates-row {
@@ -127,6 +129,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .audit-block {
@@ -150,6 +154,8 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .audit-head-right .audit-status-row {

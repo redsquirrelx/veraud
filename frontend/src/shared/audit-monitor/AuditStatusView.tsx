@@ -48,7 +48,7 @@ function PhaseBadge({ phase }: { phase: string }) {
     return () => clearTimeout(timer)
   }, [])
   return <span className="audit-agent-phase" data-highlighted={highlighted}>
-    <Badge tone="neutral">
+    <Badge tone="neutral" highlighted={highlighted}>
       {t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
         { defaultValue: phase.replaceAll("_", " ") })}
     </Badge>

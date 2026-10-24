@@ -2,6 +2,9 @@
   display: inline-flex;
   align-items: center;
   height: 20px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0 6px;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
@@ -9,6 +12,57 @@
   border-radius: 0.25rem;
   border: 1px solid;
   white-space: nowrap;
+  overflow: hidden;
+}
+
+.ui-badge-content {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-badge-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ui-badge-with-dot { gap: 0.4rem; padding-inline: 8px; }
+.ui-badge-compact { width: 20px; min-width: 20px; padding: 0; justify-content: center; }
+.ui-badge-compact .ui-badge-content {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ui-badge-success .ui-badge-dot { background: #10b981; }
+.ui-badge-danger .ui-badge-dot { background: #e11d48; }
+.ui-badge-unknown .ui-badge-dot { background: #707881; }
+
+.ui-badge-danger { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+.ui-badge-unknown { background: #f2f3ff; border-color: #bfc7d2; color: #3f4850; }
+
+.ui-badge-highlightable { transition: background-color 1200ms ease-out, color 1200ms ease-out, box-shadow 1200ms ease-out; }
+.ui-badge-highlighted {
+  animation: ui-badge-ignite 160ms ease-out;
+  background-color: #bfdbfe;
+  color: #1e3a8a;
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
+}
+
+@keyframes ui-badge-ignite {
+  from { background-color: #f1f5f9; color: #475569; box-shadow: 0 0 0 0 rgb(59 130 246 / 0%), 0 0 0 rgb(37 99 235 / 0%); }
+  to { background-color: #bfdbfe; color: #1e3a8a; box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%); }
 }
 
 .ui-badge-success {

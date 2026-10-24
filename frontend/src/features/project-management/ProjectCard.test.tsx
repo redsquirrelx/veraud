@@ -32,7 +32,7 @@ describe("ProjectCard", () => {
   ])("shows the $label protocol badge", ({ protocol, label }) => {
     renderCard({ ...base, cloneProtocol: protocol })
 
-    expect(screen.getByText(label).classList.contains("ui-badge")).toBe(true)
+    expect(screen.getByText(label).closest(".ui-badge")).not.toBeNull()
   })
 
   it.each([

@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
+import { Badge, DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
 import type { ServiceStatus } from "../useBackendStatus.ts"
 import "./AppNavigation.css"
 
@@ -52,13 +52,8 @@ function StatusBadge({ service, status, compact }: { service: keyof typeof servi
     label: t(serviceLabelKeys[service]),
     status: t(online ? "navigation.status.online" : unknown ? "navigation.status.unknown" : "navigation.status.offline"),
   })
-  return <span title={text} aria-label={text} className={online ? "app-status" : unknown ? "app-status app-status-unknown" : "app-status app-status-offline"}>
-    <span
-      className={online ? "app-status-dot" : unknown ? "app-status-dot app-status-dot-unknown" : "app-status-dot app-status-dot-offline"}
-      aria-hidden="true"
-    />
-    {!compact && text}
-  </span>
+  return <Badge tone={online ? "success" : unknown ? "unknown" : "danger"}
+    dot compact={compact} title={text} aria-label={text}>{text}</Badge>
 }
 
 /** Presentational only: the containing layout owns the single status poll. */

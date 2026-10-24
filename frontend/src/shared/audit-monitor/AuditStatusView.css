@@ -4,30 +4,6 @@
   gap: 0.75rem;
 }
 
-.audit-agent-phase .ui-badge {
-  transition: background-color 1200ms ease-out, color 1200ms ease-out, box-shadow 1200ms ease-out;
-}
-
-.audit-agent-phase[data-highlighted="true"] .ui-badge {
-  animation: audit-phase-ignite 160ms ease-out;
-  background-color: #bfdbfe;
-  color: #1e3a8a;
-  box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
-}
-
-@keyframes audit-phase-ignite {
-  from {
-    background-color: #f1f5f9;
-    color: #475569;
-    box-shadow: 0 0 0 0 rgb(59 130 246 / 0%), 0 0 0 rgb(37 99 235 / 0%);
-  }
-  to {
-    background-color: #bfdbfe;
-    color: #1e3a8a;
-    box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
-  }
-}
-
 .audit-status-head,
 .audit-status-meta,
 .audit-pipeline-head,
@@ -183,11 +159,6 @@
   min-width: 0;
 }
 
-/* Badges are nowrap by design: flex shrinking must not squash them. */
-.audit-pipeline-line .ui-badge {
-  flex-shrink: 0;
-}
-
 .audit-pipeline-icon {
   display: inline-flex;
   flex-shrink: 0;
@@ -308,10 +279,6 @@
   width: 16px;
   /* Check, cross and spinner all inherit currentColor, so one rule covers them. */
   color: var(--audit-accent, #475569);
-}
-
-.audit-agent-head .ui-badge {
-  flex-shrink: 0;
 }
 
 .audit-run-dot {

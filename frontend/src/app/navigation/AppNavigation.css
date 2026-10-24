@@ -14,43 +14,6 @@
   opacity: 0.85;
 }
 
-.app-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  color: #065f46;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  border-radius: 0.25rem;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
-.app-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: #10b981;
-}
-
-.app-status-offline {
-  color: #9f1239;
-  background: #fff1f2;
-  border-color: #fecdd3;
-}
-
-.app-status-dot-offline { background: #e11d48; }
-
-.app-status-unknown {
-  color: #3f4850;
-  background: #f2f3ff;
-  border-color: #bfc7d2;
-}
-
-.app-status-dot-unknown { background: #707881; }
-
 .app-nav {
   display: flex;
   gap: 0.25rem;

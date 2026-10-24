@@ -32,9 +32,7 @@
   cursor: pointer;
 }
 
-/* Two rows keep the identity and the state apart. The badges never shrink —
-   they are nowrap by design — so each row wraps inside the panel instead of
-   spilling out of it when the repository name takes up the left edge. */
+/* Two rows keep the identity and the state apart while allowing badge text to truncate. */
 .audit-disclosure-line {
   display: flex;
   align-items: center;
@@ -42,11 +40,6 @@
   gap: 0.35rem 0.5rem;
   width: 100%;
   min-width: 0;
-}
-
-/* Badges are nowrap by design: flex shrinking must not squash them. */
-.audit-disclosure-line .ui-badge {
-  flex-shrink: 0;
 }
 
 .audit-disclosure-toggle:hover {

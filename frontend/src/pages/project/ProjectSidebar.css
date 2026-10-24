@@ -5,6 +5,8 @@
   flex-direction: column;
   gap: 0.5rem;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-sidebar-navigation .app-nav {
@@ -50,7 +52,6 @@
 .project-page .ui-sidebar-collapsed .app-brand { padding: 5px; }
 .project-page .ui-sidebar-collapsed .app-nav a { justify-content: center; padding: 4px; }
 .project-page .ui-sidebar-collapsed .project-sidebar-services { align-items: center; }
-.project-page .ui-sidebar-collapsed .app-status { padding: 6px; }
 
 @media (max-width: 760px) {
   .project-page { flex-direction: column; }
