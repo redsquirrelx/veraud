@@ -14,7 +14,7 @@ _override: ContextVar[TokenBudgetPolicy | None] = ContextVar("token_budget_polic
 
 @lru_cache(maxsize=1)
 def token_budget_policy() -> TokenBudgetPolicy:
-    """Read once per process; omitted settings retain finite-budget behavior."""
+    """Read once per process; omitted settings use unlimited cumulative tokens."""
     values = json.loads(LAUNCH_PATH.read_text(encoding="utf-8")) if LAUNCH_PATH.is_file() else {}
     return TokenBudgetPolicy.model_validate({key: value for key, value in values.items()
         if key in TokenBudgetPolicy.model_fields})
