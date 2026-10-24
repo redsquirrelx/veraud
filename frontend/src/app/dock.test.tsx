@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { act, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Dock } from "./dock.tsx"
 import { ToastProvider } from "./toasts.tsx"; import { useToasts } from "./use-toasts.ts"
@@ -45,6 +45,7 @@ afterEach(() => {
   globalThis.fetch = realFetch
   globalThis.WebSocket = realWebSocket
   PushSocket.instances = []
+  window.localStorage.removeItem("agents.recentExecutionIds")
 })
 
 function PushButton() {
@@ -96,7 +97,7 @@ describe("Dock", () => {
     expect(screen.queryByText("analyzer run #11")).toBeNull()
 
     // Dock opens one socket for tasks and one for agents; broadcast to both.
-    for (const socket of PushSocket.instances) {
+    act(() => { for (const socket of PushSocket.instances) {
       socket.push({
         type: "agent-execution.opened",
         execution: {
@@ -113,9 +114,12 @@ describe("Dock", () => {
           finishedAt: null,
         },
       })
-    }
+    } })
 
-    expect(await screen.findByText("analyzer run #11")).toBeDefined()
-    expect(screen.getByText("Agent runs (1)")).toBeDefined()
+    const trigger = await screen.findByRole("button", { name: "1 audit" })
+    expect(trigger).toHaveAttribute("aria-expanded", "false")
+    await userEvent.click(trigger)
+    const panel = screen.getByRole("region", { name: "Audit statuses" })
+    expect(within(panel).getByText("analyzer run #11")).toBeInTheDocument()
   })
 })

@@ -5,16 +5,18 @@ import json
 
 import pytest
 
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_orientation.context import representation_view
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_orientation.context import (
+    representation_view,
+)
+from server.run_project_orientation import main
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.run_project_orientation import main
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -171,6 +173,7 @@ def test_tool_and_call_limits_terminate_repetitive_requests(tools):
     assert result.completion_status == "failed"
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_token_stop_happens_before_submission_and_external_cancellation_propagates(
     tools,
 ):
@@ -229,8 +232,8 @@ def test_runner_mode_is_explicit_and_smoke_retains_uncertainty(tools, capsys):
 
 
 def test_representation_projection_is_compact_and_access_filtered(tools):
-    from server.agents.project_orientation.agent import ALLOWED_TOOLS
-    from server.agents.repository_runtime.tools import TOOL_SCHEMAS
+    from server.agents.project_analysis.project_orientation.agent import ALLOWED_TOOLS
+    from server.runtimes.repository.tools import TOOL_SCHEMAS
 
     assert ALLOWED_TOOLS <= TOOL_SCHEMAS.keys()
     view = representation_view(tools)

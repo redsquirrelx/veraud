@@ -20,19 +20,23 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from ..agents.project_architecture import ProjectArchitectureAgent
-from ..agents.project_orientation import ProjectOrientationAgent
-from ..agents.project_semantic_validation import ProjectSemanticValidationAgent
-from ..agents.project_semantic_validation.schemas import ValidationLimits
-from ..agents.repository_runtime.model_runtime import (
+from ..agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from ..agents.project_analysis.project_orientation import ProjectOrientationAgent
+from ..agents.project_analysis.project_semantic_validation import (
+    ProjectSemanticValidationAgent,
+)
+from ..agents.project_analysis.project_semantic_validation.schemas import (
+    ValidationLimits,
+)
+from ..config.logs import get_logger
+from ..config.settings import resolve_workspace_root
+from ..pipelines.project_architecture import ProjectArchitecturePipeline
+from ..runtimes.repository.model_runtime import (
     ModelGateway,
     close_model_clients,
     create_project_model,
 )
-from ..agents.repository_runtime.schemas import ExecutionBudget
-from ..config.logs import get_logger
-from ..config.settings import resolve_workspace_root
-from ..pipelines.project_architecture import ProjectArchitecturePipeline
+from ..runtimes.repository.schemas import ExecutionBudget
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -122,8 +126,10 @@ async def build_project_agents(
     if os.environ.get("AGENT_SERVER_SMOKE_MODELS") == "1":
         # Test-only offline protocol check (mirrors the CLI --smoke models):
         # no provider credentials or network, same graphs and snapshots.
-        from ..agents.project_architecture.smoke import ArchitectureSmokeModel
-        from ..agents.project_semantic_validation.smoke import (
+        from ..agents.project_analysis.project_architecture.smoke import (
+            ArchitectureSmokeModel,
+        )
+        from ..agents.project_analysis.project_semantic_validation.smoke import (
             SemanticValidationSmokeModel,
         )
 

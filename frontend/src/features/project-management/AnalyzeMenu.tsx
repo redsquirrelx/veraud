@@ -8,6 +8,7 @@ export interface AnalyzeMenuProps {
   canAnalyze: boolean
   analyzing: boolean
   onAnalyze: (pipelineId: string) => void
+  onAudit?: () => void
 }
 
 const pipelineTextKeys: Record<string, { labelKey: ParseKeys<"projects">, descriptionKey: ParseKeys<"projects"> }> = {
@@ -18,21 +19,21 @@ const pipelineTextKeys: Record<string, { labelKey: ParseKeys<"projects">, descri
 }
 
 /** Pipeline picker: the same menu wherever an analysis can start. */
-export function AnalyzeMenu({ canAnalyze, analyzing, onAnalyze }: AnalyzeMenuProps) {
+export function AnalyzeMenu({ canAnalyze, analyzing, onAnalyze, onAudit }: AnalyzeMenuProps) {
   const { t } = useTranslation("projects")
   return (
     <span className="version-analyze">
       <DropdownMenu
         label={t("analyze.label")}
-        items={PIPELINES.map((option) => {
+        items={[...PIPELINES.map((option) => {
           const keys = pipelineTextKeys[option.id]
           return {
             id: option.id,
             label: keys === undefined ? option.label : t(keys.labelKey),
             description: keys === undefined ? option.description : t(keys.descriptionKey),
           }
-        })}
-        onSelect={onAnalyze}
+        }), ...(onAudit ? [{ id: "quality-audit", label: t("analyze.audit.label"), description: t("analyze.audit.description") }] : [])]}
+        onSelect={(id) => id === "quality-audit" && onAudit ? onAudit() : onAnalyze(id)}
         disabled={!canAnalyze || analyzing}
         loading={analyzing}
         loadingText={t("analyze.loading")}

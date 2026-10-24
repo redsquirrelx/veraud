@@ -388,6 +388,11 @@ export class ProjectService {
    * back Waiting; the pipeline reports each stage afterwards.
    */
   async analyzeProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
+    const { project, cleanBranch, cleanHash } = await this.validateAnalysisTarget(id, branch, commitHash)
+    return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
+  }
+
+  async validateAnalysisTarget(id: number, branch: string, commitHash: string) {
     const cleanBranch = assertValidBranch(branch)
     const cleanHash = assertValidHash(commitHash).toLowerCase()
     const project = await this.projects.findById(id)
@@ -412,7 +417,7 @@ export class ProjectService {
       )
     }
 
-    return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
+    return { project, cleanBranch, cleanHash }
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {

@@ -4,20 +4,24 @@ import json
 
 import pytest
 
-from server.agents.project_architecture.context import (
+from server.agents.project_analysis.project_architecture.context import (
     normalize_source_references,
     retain_valid_sections,
     validate_report,
 )
-from server.agents.project_architecture.projection import representation_view
-from server.agents.project_architecture.schemas import ArchitectureReport
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_architecture.projection import (
+    representation_view,
+)
+from server.agents.project_analysis.project_architecture.schemas import (
+    ArchitectureReport,
+)
+from server.runtimes.repository import (
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.agents.repository_runtime.working_context import WorkingContext
+from server.runtimes.repository.working_context import WorkingContext
 from server.services.repository_analysis import RepositoryAnalysisService
 
 

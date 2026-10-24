@@ -1,12 +1,15 @@
 import { logger } from "../../config/logger.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
-import type { AgentInput, AgentInvoker } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { setTimeout as delay } from "node:timers/promises"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { invocationEvents } from "./invocationReceipt.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -129,6 +132,93 @@ export class AgentExecutionService {
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
+  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
+    const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE
+      : attributes.includes("security") ? SECURITY_AGENT_TYPE : FUNCTIONAL_ADEQUACY_AGENT_TYPE
+    const configurations = await this.settings.prepareExecution([
+      ...(attributes.includes("maintainability") ? [MAINTAINABILITY_AGENT_TYPE] : []),
+      ...(attributes.includes("security") ? [SECURITY_AGENT_TYPE] : []),
+      ...(attributes.includes("functional_adequacy") ? [FUNCTIONAL_ADEQUACY_AGENT_TYPE] : []),
+    ])
+    const rootConfiguration = configurations.find((item) => item.agentType === agentType)!
+    const configs: Record<string, AgentRunConfig> = {}
+    for (const configuration of configurations) {
+      const participants = await this.settings.modelParticipants(configuration.agentType)
+      for (const participant of participants) configs[participant] = configuration.transport
+    }
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [rootConfiguration], "QualityAudit")
+    const execution = result.executions[agentType]!
+    await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    void this.dispatchQualityAudit(execution, configs, commitHash, attributes, options)
+    return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
+  }
+
+  private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {
+    const recoveryDeadline = Date.now() + QUALITY_AUDIT_INVOKE_TIMEOUT_MS
+    try {
+      if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
+      const input = await this.targets.resolve(execution.evaluationId)
+      await this.markRunning(execution.id)
+      const payload = await this.agents.runPipelineByName("quality-audit", {
+        ...options,
+        root_path: String(input.root_path), commit_hash: commitHash, attributes,
+      }, { [execution.agentType]: execution.id }, configs)
+      await this.closeAudit(execution.id, payload["audit"])
+    } catch (error) {
+      if (error instanceof AgentTransportError && error.outcomeUncertain) {
+        try {
+          await this.reconcileAudit(execution.id, attributes, recoveryDeadline)
+        } catch (recoveryError) {
+          await this.fail(execution.id, recoveryError instanceof Error ? recoveryError.message : "Audit outcome could not be confirmed", "audit_outcome_unconfirmed")
+        }
+        return
+      }
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  private async closeAudit(id: number, audit: AgentInput | undefined) {
+    if (!audit || !audit["report"] || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
+      throw new Error("Quality-audit pipeline returned no report")
+    }
+    // Completion describes delivery, independently of the report's quality status.
+    await this.close(id, {
+      status: "Completed", result: JSON.stringify(audit), error: null,
+      inputTokens: null, outputTokens: null,
+      interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
+    })
+  }
+
+  private async reconcileAudit(id: number, attributes: string[], deadline: number) {
+    this.log.info(`Execution ${id}: connection interrupted; confirming the existing audit without restarting it`)
+    // At least one status lookup even if the HTTP deadline itself just expired.
+    do {
+      const current = await this.require(id)
+      if (current.status === "Completed" || current.status === "Failed") return
+      let runId = current.invocations?.[0]?.run_id
+      try { runId = (JSON.parse(current.result ?? "{}") as { run_id?: string }).run_id ?? runId } catch { /* Retained receipts are the fallback. */ }
+      if (runId && this.agents.getAuditResult) {
+        try {
+          const audit = await this.agents.getAuditResult(runId, attributes)
+          if (audit) {
+            await this.closeAudit(id, audit)
+            return
+          }
+        } catch (error) {
+          if (error instanceof AuditRunUnavailableError) {
+            throw new Error("Audit outcome could not be recovered: the agent-server no longer retains the run; this does not confirm agent failure", { cause: error })
+          }
+          // A transient status/report retrieval failure must not close a live run.
+          this.log.info(`Execution ${id}: audit reconciliation temporarily unavailable`)
+        }
+      }
+      if (Date.now() >= deadline) break
+      await delay(Math.min(5000, deadline - Date.now()), undefined, { ref: false })
+    } while (Date.now() <= deadline)
+    throw new Error("Audit outcome could not be confirmed before the recovery deadline; communication was interrupted, not a confirmed agent failure")
+  }
+
   /** Starts the agent and then gets out of the way. Never throws: a failure here
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
@@ -237,11 +327,11 @@ export class AgentExecutionService {
   }
 
   /** Marks an invocation as in flight. Optional: the agent-server may skip it. */
-  async markRunning(id: number): Promise<StoredAgentExecution> {
+  async markRunning(id: number, runId?: string): Promise<StoredAgentExecution> {
     const existing = await this.require(id)
     if (existing.status === "Completed" || existing.status === "Failed") return existing
 
-    return this.executions.markRunning(id)
+    return this.executions.markRunning(id, runId)
   }
 
   async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
@@ -270,6 +360,11 @@ export class AgentExecutionService {
     return this.executions.complete(id, completion)
   }
 
+  async recordInvocation(id: number, receipt: import("./invocationReceipt.js").InvocationReceipt): Promise<StoredAgentExecution> {
+    await this.require(id)
+    return this.executions.recordInvocation(id, receipt)
+  }
+
   async findById(id: number): Promise<StoredAgentExecution> {
     return this.require(id)
   }
@@ -285,16 +380,18 @@ export class AgentExecutionService {
   /** Records a failure without letting the recording itself throw: the row is
    *  the only trace of this run, so an error while writing it must not silence
    *  the one that caused it. */
-  private async fail(id: number, message: string): Promise<void> {
+  private async fail(id: number, message: string, interruptionReason?: string): Promise<void> {
     this.log.error(`Execution ${id} failed: ${message}`)
 
     try {
+      const retained = interruptionReason === "audit_outcome_unconfirmed" ? await this.require(id) : null
       await this.close(id, {
         status: "Failed",
-        result: null,
+        result: retained?.result ?? null,
         error: message.slice(0, 2000),
         inputTokens: null,
         outputTokens: null,
+        ...(interruptionReason ? { interruptionReason } : {}),
       })
     } catch (error) {
       this.log.error(`Could not record the failure of execution ${id}: ${error}`)
@@ -314,11 +411,14 @@ export class AgentExecutionService {
 
 function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["execution"] {
   return {
+    invocations: invocationEvents(execution.invocations),
     id: execution.id,
     evaluationId: execution.evaluationId,
     agentType: execution.agentType,
     status: execution.status,
-    result: execution.result,
+    // Audit artifacts are retrieved through project-scoped report endpoints;
+    // avoid broadcasting source inventories and binary base64 to every client.
+    result: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE].includes(execution.agentType) ? null : execution.result,
     error: execution.error,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,

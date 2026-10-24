@@ -1,6 +1,8 @@
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js"
 import { InvalidAgentAssignmentError } from "./agent-settings.errors.js"
 import { AgentConfigurationError, configurationFingerprint, type AgentVerification, type PreparedAgentConfiguration } from "./agent-configuration.js"
+import { parseAgentCatalog, type AgentCatalog } from "./agent-catalog.js"
+import { storedVerificationFailure } from "./model-access-error.js"
 
 export interface AgentConfiguration {
   model: { id: number, name: string, providerId: number, providerName: string }
@@ -13,6 +15,16 @@ export interface AgentConfiguration {
 
 export interface StoredAgentSettings {
   agentType: string
+  name: string
+  role: string
+  requiresModel: boolean
+  modelConfigurationAgentType: string | null
+  executionModes: string[]
+  qualityAttributes: string[]
+  workflowIds: string[]
+  availability: string
+  parentAgentTypes: string[]
+  childAgentTypes: string[]
   configuration: AgentConfiguration | null
   verification: AgentVerification
 }
@@ -25,8 +37,10 @@ export interface AgentExecutionOptions {
 }
 
 export interface AgentSettingsStore {
-  listByAgentTypes(agentTypes: string[]): Promise<StoredAgentSettings[]>
+  listDeclared(): Promise<StoredAgentSettings[]>
+  synchronizeCatalog(catalog: AgentCatalog): Promise<void>
   saveAssignments(agentType: string, modelId: number, credentialId: number, options?: AgentExecutionOptions): Promise<void>
+  saveCategoryAssignments(attribute: string, modelId: number, credentialId: number): Promise<void>
   prepare(agentType: string, tx?: Prisma.TransactionClient): Promise<PreparedAgentConfiguration>
   recordVerification(prepared: PreparedAgentConfiguration, message: string | null): Promise<void>
 }
@@ -34,13 +48,26 @@ export interface AgentSettingsStore {
 export class AgentSettingsRepository implements AgentSettingsStore {
   constructor(private db: PrismaClient) {}
 
-  /** Create only missing rows; never replace an auditor's existing selections. */
-  async ensureSeeded(agentTypes: readonly string[]): Promise<void> {
-    await this.db.$transaction(agentTypes.map((agentType) => this.db.agentSettings.upsert({
-      where: { agentType },
-      create: { agentType },
-      update: {},
-    })))
+  /** Atomic metadata refresh; selections, verification and execution history survive. */
+  async synchronizeCatalog(input: AgentCatalog): Promise<void> {
+    const catalog = parseAgentCatalog(input)
+    await this.db.$transaction(async (tx) => {
+      await tx.agentSettings.updateMany({ data: { catalogDeclared: false } })
+      for (const agent of catalog.agents) {
+        const metadata = { catalogDeclared: true, catalogName: agent.name, catalogRole: agent.role,
+          requiresModel: agent.requires_model, modelConfigurationAgentType: agent.model_configuration_id,
+          executionModes: JSON.stringify(agent.execution_modes), availability: agent.availability,
+          qualityAttributes: JSON.stringify(agent.quality_attributes), workflowIds: JSON.stringify(agent.workflow_ids) }
+        await tx.agentSettings.upsert({ where: { agentType: agent.agent_id },
+          create: { agentType: agent.agent_id, ...metadata }, update: metadata })
+      }
+      await tx.agentHierarchy.deleteMany()
+      for (const agent of catalog.agents) {
+        for (const child of agent.child_ids) {
+          await tx.agentHierarchy.create({ data: { parentAgentType: agent.agent_id, childAgentType: child } })
+        }
+      }
+    })
   }
 
   async saveAssignments(agentType: string, modelId: number, credentialId: number, options: AgentExecutionOptions = {}): Promise<void> {
@@ -53,23 +80,31 @@ export class AgentSettingsRepository implements AgentSettingsStore {
         throw new InvalidAgentAssignmentError("Model and credential must belong to the same provider")
       }
       const existing = await tx.agentSettings.findUnique({ where: { agentType } })
+      if (!existing?.catalogDeclared) throw new InvalidAgentAssignmentError("Agent is not declared by the agent-server")
+      if (!existing.requiresModel || existing.modelConfigurationAgentType !== agentType || existing.availability !== "available") {
+        throw new InvalidAgentAssignmentError("This agent does not have an independent model configuration")
+      }
       validateTokenLimits(
         options.tokenBudget === undefined ? existing?.tokenBudget ?? null : options.tokenBudget,
         options.absoluteTokenLimit === undefined ? existing?.absoluteTokenLimit ?? null : options.absoluteTokenLimit,
       )
-      await tx.agentSettings.upsert({
+      await tx.agentSettings.update({
         where: { agentType },
-        create: { agentType, aiModelId: modelId, aiCredentialId: credentialId, ...options },
-        update: { aiModelId: modelId, aiCredentialId: credentialId, ...options },
+        data: { aiModelId: modelId, aiCredentialId: credentialId, ...options },
       })
     })
   }
 
-  async listByAgentTypes(agentTypes: string[]): Promise<StoredAgentSettings[]> {
+  async listDeclared(): Promise<StoredAgentSettings[]> {
     const rows = await this.db.agentSettings.findMany({
-      where: { agentType: { in: agentTypes } },
+      where: { catalogDeclared: true }, orderBy: { agentType: "asc" },
       select: {
         agentType: true,
+        catalogName: true, catalogRole: true, requiresModel: true, modelConfigurationAgentType: true,
+        executionModes: true, availability: true,
+        qualityAttributes: true, workflowIds: true,
+        parentLinks: { select: { parentAgentType: true }, orderBy: { parentAgentType: "asc" } },
+        childLinks: { select: { childAgentType: true }, orderBy: { childAgentType: "asc" } },
         temperature: true,
         maxTokens: true,
         tokenBudget: true,
@@ -87,10 +122,16 @@ export class AgentSettingsRepository implements AgentSettingsStore {
         && row.verificationFingerprint === configurationFingerprint(row.aiModel, row.aiCredential, row.temperature === null ? null : Number(row.temperature), row.maxTokens, row.tokenBudget, row.absoluteTokenLimit)
       return {
         agentType: row.agentType,
+        name: row.catalogName ?? row.agentType, role: row.catalogRole ?? "unknown",
+        requiresModel: row.requiresModel, modelConfigurationAgentType: row.modelConfigurationAgentType,
+        executionModes: JSON.parse(row.executionModes) as string[], availability: row.availability,
+        qualityAttributes: JSON.parse(row.qualityAttributes) as string[], workflowIds: JSON.parse(row.workflowIds) as string[],
+        parentAgentTypes: row.parentLinks.map((link) => link.parentAgentType),
+        childAgentTypes: row.childLinks.map((link) => link.childAgentType),
         verification: {
           status: !current || !row.verificationCheckedAt ? "not_verified" as const : row.verificationError ? "failed" as const : "verified" as const,
           checkedAt: current ? row.verificationCheckedAt?.toISOString() ?? null : null,
-          message: current ? row.verificationError : null,
+          ...storedVerificationFailure(current ? row.verificationError : null),
         },
         configuration: row.aiModel !== null && row.aiCredential !== null ? {
           model: { id: row.aiModel.id, name: row.aiModel.name, providerId: row.aiModel.aiProvider.id, providerName: row.aiModel.aiProvider.name },
@@ -104,11 +145,42 @@ export class AgentSettingsRepository implements AgentSettingsStore {
     })
   }
 
+  /** Resolve membership and model owners inside the same transaction as the write. */
+  async saveCategoryAssignments(attribute: string, modelId: number, credentialId: number): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      const model = await tx.aiModel.findUnique({ where: { id: modelId } })
+      const credential = await tx.aiCredential.findUnique({ where: { id: credentialId } })
+      if (!model || !credential || model.aiProviderId !== credential.aiProviderId) {
+        throw new InvalidAgentAssignmentError("Select an existing model and credential from the same provider")
+      }
+      const agents = await tx.agentSettings.findMany({ where: { catalogDeclared: true } })
+      const members = agents.filter((agent) => (JSON.parse(agent.qualityAttributes) as string[]).includes(attribute))
+      if (!members.length) throw new InvalidAgentAssignmentError("Quality category is not declared by the agent-server")
+      const owners = new Set(members.filter((agent) => agent.requiresModel && agent.availability === "available")
+        .map((agent) => agent.modelConfigurationAgentType).filter((id): id is string => id !== null))
+      if (!owners.size) throw new InvalidAgentAssignmentError("This quality category has no configurable model agents")
+      for (const id of owners) {
+        const owner = agents.find((agent) => agent.agentType === id)
+        if (!owner?.requiresModel || owner.modelConfigurationAgentType !== id || owner.availability !== "available") {
+          throw new InvalidAgentAssignmentError("Category contains an unavailable model configuration owner")
+        }
+      }
+      await tx.agentSettings.updateMany({ where: { agentType: { in: [...owners] } }, data: {
+        aiModelId: modelId, aiCredentialId: credentialId,
+        verificationFingerprint: null, verificationCheckedAt: null, verificationError: null,
+      } })
+    })
+  }
+
   async prepare(agentType: string, tx: Prisma.TransactionClient = this.db): Promise<PreparedAgentConfiguration> {
     const row = await tx.agentSettings.findUnique({ where: { agentType }, include: {
       aiModel: { include: { aiProvider: true } }, aiCredential: { include: { aiProvider: true } },
     } })
     const invalid = (reason: string): never => { throw new AgentConfigurationError([{ agentType, reason }]) }
+    if (!row?.catalogDeclared) return invalid("Agent is not declared by the agent-server")
+    if (!row.requiresModel || row.modelConfigurationAgentType !== agentType || row.availability !== "available") {
+      return invalid("This agent does not have an independent model configuration")
+    }
     if (!row?.aiModel || !row.aiCredential) return invalid("Assign a model and credential before starting")
     if (row.aiModel.aiProviderId !== row.aiCredential.aiProviderId) return invalid("Model and credential must belong to the same provider")
     if (!row.aiCredential.apiKey.trim()) return invalid("The credential has no API key")
@@ -120,7 +192,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
     const snapshot: AgentConfiguration = {
       model: { id: row.aiModel.id, name: row.aiModel.name, providerId: row.aiModel.aiProviderId, providerName: row.aiModel.aiProvider.name },
       credential: { id: row.aiCredential.id, name: row.aiCredential.name, providerId: row.aiCredential.aiProviderId, providerName: row.aiCredential.aiProvider.name },
-      temperature: temperature ?? 0.2, maxTokens: row.maxTokens ?? 1000,
+      temperature: temperature ?? 0.2, maxTokens: row.maxTokens,
       tokenBudget: row.tokenBudget, absoluteTokenLimit: row.absoluteTokenLimit,
     }
     return {

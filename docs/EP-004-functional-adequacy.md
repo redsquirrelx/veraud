@@ -180,15 +180,38 @@ Test file: `agent-server/tests/test_functional_adequacy_repository_adapter.py`.
 4. The 500-fragment limit can exclude relevant code from large repositories.
 5. Semantic retrieval can select irrelevant fragments, and language-model classifications require independent validation.
 6. A language-model provider failure can result in `evidencia_insuficiente`; this must not be interpreted as functional noncompliance.
-7. The backend currently supplies `root_path` to pipeline execution, while the functional agent expects structured requirements and code fragments.
-8. End-to-end backend integration and consolidated PDF reporting have not been verified.
+7. Project quality audits now supply explicit requirements and prepare code fragments from the selected revision's shared snapshot. Requirements are entered one per line in the frontend; automatic extraction from an SRS remains unsupported.
+8. Consolidated reporting uses the existing JSON and Word formats; PDF generation is not implemented.
 9. The evaluated examples do not establish overall functional coverage or general classification accuracy.
 
 ## Integration Notes
 
 The local repository adapter is implemented within EP-004 and reuses VERAUD's shared repository analysis service.
 
-Backend integration must supply structured requirements, invoke the compatible preparation and execution workflow, and connect the resulting findings to the consolidated report.
+The project frontend offers **Adecuación funcional** alongside Maintainability and
+Security. Select it independently or combine attributes. Configure its model and
+credential under Settings → Audit, then enter 1–100 functional requirements (one
+per line) before starting the audit. The UI assigns stable request-local IDs
+`REQ-001`, `REQ-002`, etc.
+
+`POST /api/projects/:id/audits` accepts `functional_adequacy` in `attributes` and
+requires `functional_requirements: [{ requirement_id, description }]` when selected.
+The backend validates distinct IDs and model access before creating an execution.
+The existing `quality-audit` pipeline shares one repository snapshot, run ID,
+Blackboard and report across all selected attributes. Functional model calls use
+the managed provider, shared token ledger, deadlines, pacing and live invocation
+callbacks. A failure in one attribute preserves the other attributes' results.
+
+Functional classifications and original justifications are retained per requirement
+in report findings, with source fragments and the original structured output in
+the Blackboard. Semantic retrieval and LLM classifications are inconclusive
+observations, not independently verified functional tests. Provider failures and
+missing evidence remain `evidencia_insuficiente`, not `no_cumple`.
+
+Install declared dependencies with `uv sync` before running the server. The first
+functional audit loads the configured Sentence Transformers embedding model; its
+download/inference runs off the server event loop. Retrieval remains capped at 500
+fragments and 80 lines per fragment, as in the original repository adapter.
 
 The existing agent, pipeline, and output contracts should be reused rather than creating a separate execution architecture.
 

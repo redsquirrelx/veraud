@@ -2,13 +2,19 @@
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..agents.project_architecture import ProjectArchitectureAgent
-from ..agents.project_architecture.diagram_composition import DiagramCompositionResult
-from ..agents.project_architecture.schemas import ArchitectureResult
-from ..agents.project_semantic_validation import ProjectSemanticValidationAgent
-from ..agents.project_semantic_validation.context import review_targets
-from ..agents.project_semantic_validation.schemas import SemanticValidationResult
-from ..agents.repository_runtime.schemas import AgentContract
+from ..agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from ..agents.project_analysis.project_architecture.diagram_composition import (
+    DiagramCompositionResult,
+)
+from ..agents.project_analysis.project_architecture.schemas import ArchitectureResult
+from ..agents.project_analysis.project_semantic_validation import (
+    ProjectSemanticValidationAgent,
+)
+from ..agents.project_analysis.project_semantic_validation.context import review_targets
+from ..agents.project_analysis.project_semantic_validation.schemas import (
+    SemanticValidationResult,
+)
+from ..runtimes.repository.schemas import AgentContract
 
 
 class SemanticPipelineResult(BaseModel):

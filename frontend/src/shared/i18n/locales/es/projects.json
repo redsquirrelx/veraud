@@ -65,6 +65,10 @@
     }
   },
   "analyze": {
+    "audit": {
+      "label": "Auditoría de calidad",
+      "description": "Mantenibilidad y seguridad, con un informe Word"
+    },
     "label": "Analizar",
     "loading": "Analizando",
     "pipelines": {
@@ -185,6 +189,63 @@
     },
     "versionApplied": "Versión {{branch}} en {{shortHash}} aplicada",
     "reviewAgents": "Revisar la configuración de agentes"
+  },
+  "auditStatus": {
+    "regionLabel": "Estado de la auditoría",
+    "title": "Auditoría #{{id}}",
+    "revision": "{{branch}} @ {{hash}}",
+    "revisionUnknown": "Sin revisión registrada",
+    "openProject": "Abrir {{repository}}",
+    "toggleLabel": "{{id}} · {{state}} · {{progress}}",
+    "createdAt": "Creada el {{date}}",
+    "finishedAt": "Finalizada el {{date}}",
+    "reportAvailable": "Informe disponible",
+    "progress": {
+      "empty": "Aún no hay agentes",
+      "finished": "{{finished}} de {{total}} agentes"
+    },
+    "states": {
+      "waiting": "En espera",
+      "running": "En ejecución",
+      "completed": "Completada",
+      "partial": "Parcial",
+      "failed": "Fallida"
+    },
+    "pipelines": {
+      "empty": "No hay pipelines registrados",
+      "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
+      "maintainability": "Mantenibilidad",
+      "security": "Seguridad",
+      "functionalAdequacy": "Adecuación funcional"
+    },
+    "phases": {
+      "plan_investigation": "Planificación", "investigate": "Investigación", "evaluate_evidence": "Evaluación de evidencia",
+      "review_findings": "Revisión", "finalize": "Finalización", "tools": "Herramientas",
+      "limited_review": "Revisión", "limited_finalize": "Finalización",
+      "plan_assessment": "Planificación", "delegate_investigations": "Delegación", "collect_findings": "Recopilación",
+      "synthesize_findings": "Síntesis", "analyze_audit_scope": "Análisis del alcance", "plan_audit": "Planificación",
+      "decide_next_step": "Evaluación del siguiente paso", "plan_targeted_follow_up": "Planificación de seguimiento", "finalize_assessment": "Finalización",
+      "delegate_auditors": "Delegación", "collect_assessments": "Recopilación", "synthesize_assessments": "Síntesis",
+      "refine_audit_plan": "Refinamiento del plan", "finalize_audit": "Finalización",
+      "prepare": "Preparación", "code_mapping": "Recuperación de código", "verify": "Verificación", "build_results": "Construcción de resultados",
+      "security_scan": "Escaneo de seguridad", "security_remediation": "Remediación"
+    },
+    "agents": {
+      "empty": "No hay agentes registrados",
+      "title": "Ejecución de {{agentType}} #{{id}}",
+      "tokens": "{{input}} entrada · {{output}} salida",
+      "notReported": "No reportado",
+      "tokensUnreported": "Uso de tokens no reportado",
+      "startedAt": "Inicio {{date}}",
+      "finishedAt": "Fin {{date}}"
+    },
+    "drawer": {
+      "trigger_one": "{{count}} auditoría",
+      "trigger_other": "{{count}} auditorías",
+      "title": "Auditorías",
+      "panelLabel": "Estados de auditoría",
+      "empty": "No hay auditorías que mostrar"
+    }
   },
   "status": {
     "projectBadge": {

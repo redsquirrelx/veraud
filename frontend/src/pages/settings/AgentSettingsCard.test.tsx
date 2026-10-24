@@ -11,7 +11,7 @@ const providers: AiProviderDetail[] = [
   { id: 2, name: "Google", models: [{ id: 12, name: "model-c", inUse: false }], credentials: [{ id: 21, name: "google-key", apiKeyPreview: "****5678", inUse: false }] },
 ]
 const savedAgent: AgentSettings = {
-  agentType: "dummy", configured: true,
+  agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: true,
   configuration: {
     model: { id: 12, name: "model-c", providerId: 2, providerName: "Google" },
     credential: { id: 21, name: "google-key", providerId: 2, providerName: "Google" },
@@ -20,13 +20,41 @@ const savedAgent: AgentSettings = {
 }
 
 function EditableCard() {
-  const [agent, setAgent] = useState<AgentSettings>({ agentType: "dummy", configured: false, configuration: null })
+  const [agent, setAgent] = useState<AgentSettings>({ agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: false, configuration: null })
   return <AgentSettingsCard agent={agent} providers={providers} providersLoading={false} onSaved={setAgent} onVerified={setAgent} onConfigure={() => {}} />
 }
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe("AgentSettingsCard", () => {
+  it("allows applying unchanged root access to a mixed category through the bulk endpoint", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([savedAgent]), { status: 200 }))
+    vi.stubGlobal("fetch", fetch)
+    const onCategorySaved = vi.fn()
+    render(<AgentSettingsCard agent={savedAgent} providers={providers} providersLoading={false} qualityAttribute="server_quality"
+      categoryMixed onCategorySaved={onCategorySaved} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(onCategorySaved).toHaveBeenCalledWith([savedAgent]))
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/agent-settings/categories/server_quality"), expect.objectContaining({
+      method: "PUT", body: JSON.stringify({ modelId: 12, credentialId: 21 }),
+    }))
+  })
+
+  it("verifies shared access through its effective owner and omits controls for deterministic agents", async () => {
+    const shared = { ...savedAgent, requiresModel: true, modelConfigurationAgentType: "security" }
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(shared), { status: 200 }))
+    vi.stubGlobal("fetch", fetch)
+    const props = { providers, providersLoading: false, onSaved: () => {}, onVerified: () => {}, onConfigure: () => {} }
+    const { rerender } = render(<AgentSettingsCard {...props} agent={shared} />)
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull()
+    expect(screen.getByText(/configured for security/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Verify access" }))
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/dummy/verify"), { method: "POST" })
+    rerender(<AgentSettingsCard {...props} agent={{ ...savedAgent, requiresModel: false, modelConfigurationAgentType: null }} />)
+    expect(screen.queryByRole("button", { name: "Verify access" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull()
+  })
+
   it("filters credentials, clears them on provider changes, retains them for same-provider models and saves", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(savedAgent), { status: 200 }))
     vi.stubGlobal("fetch", fetch)
@@ -87,7 +115,7 @@ describe("AgentSettingsCard Spanish", () => {
 
   it("translates status, selectors and actions to Spanish", async () => {
     await changeLanguage("es")
-    render(<AgentSettingsCard agent={{ agentType: "dummy", configured: false, configuration: null }} providers={providers} providersLoading={false} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
+    render(<AgentSettingsCard agent={{ agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: false, configuration: null }} providers={providers} providersLoading={false} onSaved={() => {}} onVerified={() => {}} onConfigure={() => {}} />)
 
     expect(screen.getByText("Sin configurar")).toBeDefined()
     expect(screen.getByRole("button", { name: "Selecciona un modelo…" })).toBeDefined()

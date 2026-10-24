@@ -16,6 +16,10 @@ export interface RegisteredProject {
 
 const baseUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501"
 
+export function backendHttpUrl(): string {
+  return baseUrl
+}
+
 export function backendWsUrl(): string {
   return `${baseUrl.replace(/^http/, "ws")}/ws`
 }
@@ -191,7 +195,31 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
   return postGit<GitTree>(id, "tree", {})
 }
 
+export interface AgentInvocation {
+  phase?: string | null
+  phase_sequence?: number
+  invocation_id: string
+  parent_invocation_id: string | null
+  agent_id: string
+  run_id: string
+  status: "running" | "completed" | "partial" | "failed" | "cancelled" | "timeout"
+  started_at: string
+  finished_at: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  error: string | null
+}
+
 export interface AgentExecution {
+  invocations?: AgentInvocation[]
+  monitorContext?: {
+    project: { id: number, repositoryOwner: string, repositoryName: string } | null
+    branch: string | null
+    commitHash: string | null
+    evaluationType: string | null
+    qualityAttributes: string[]
+    workflowIds: string[]
+  }
   configuration?: AgentConfiguration | null
   id: number
   evaluationId: number | null
@@ -231,8 +259,8 @@ export async function requestProjectArchitecture(id: number, branch: string, com
   return body as ProjectArchitectureRequest
 }
 
-export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
-  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}`)
+export async function getAgentExecution(executionId: number, monitor = false): Promise<AgentExecution> {
+  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}${monitor ? "?monitor=true" : ""}`)
 
   if (!response.ok) {
     throw new ApiError(response.status, "Could not load the agent execution")
@@ -320,10 +348,18 @@ export interface AgentConfiguration {
 }
 
 export interface AgentSettings {
+  requiresModel?: boolean
+  modelConfigurationAgentType?: string | null
+  availability?: string
+  role?: string
+  executionModes?: string[]
   agentType: string
+  name?: string
+  qualityAttributes: string[]
+  workflowIds: string[]
   configured: boolean
   configuration: AgentConfiguration | null
-  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null }
+  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null, reason?: string }
 }
 
 export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSettings[]> {
@@ -350,6 +386,22 @@ export async function verifyAgentSettings(agentType: string): Promise<AgentSetti
   const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}/verify`, { method: "POST" })
   const body = await response.json() as AgentSettings & { message?: string }
   if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not verify model access")
+  return body
+}
+
+export async function syncAgentSettings(): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/sync`, { method: "POST" })
+  const body = await response.json() as AgentSettings[] & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not synchronize agent catalog")
+  return body
+}
+
+export async function saveQualityCategory(attribute: string, modelId: number, credentialId: number): Promise<AgentSettings[]> {
+  const response = await fetch(`${baseUrl}/api/agent-settings/categories/${encodeURIComponent(attribute)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId, credentialId }),
+  })
+  const body = await response.json() as AgentSettings[] & { message?: string }
+  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save category model access")
   return body
 }
 

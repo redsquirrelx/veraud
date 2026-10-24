@@ -255,7 +255,7 @@ remain available separately from conservative token estimates.
 
 ## Files and Library API
 
-The implementation lives under `src/server/agents/project_architecture/`:
+The implementation lives under `src/server/agents/project_analysis/project_architecture/`:
 - `agent.py`: typed LangGraph state and bounded investigation/recovery routing.
 - `prompting.py`: source-first prompt fitting and measured contracts.
 - `projection.py` and `discovery.py`: balanced candidates and connected dependency hints.
@@ -268,7 +268,7 @@ from `prompts/system.md`, `architecture_criteria.md`, `investigation.md`, and
 `correction.md`; they participate in reproducibility fingerprints.
 
 ```python
-from server.agents.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
 
 result = await ProjectArchitectureAgent(model).run(architecture_tools, orientation_result)
 ```

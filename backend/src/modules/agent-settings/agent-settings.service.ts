@@ -1,34 +1,76 @@
-import { BACKEND_AGENT_TYPES } from "./agent-types.js"
 import type { AgentConfiguration, AgentSettingsStore, AgentExecutionOptions } from "./agent-settings.repository.js"
-import { UnknownAgentTypeError } from "./agent-settings.errors.js"
+import { InvalidAgentAssignmentError, UnknownAgentTypeError } from "./agent-settings.errors.js"
 import { AgentConfigurationError, type AgentVerification, type ModelAccessVerifier, type PreparedAgentConfiguration } from "./agent-configuration.js"
+import { AgentCatalogError, type AgentCatalogSource } from "./agent-catalog.js"
+import { ModelAccessError } from "./model-access-error.js"
 
 export interface AgentSettingsView {
   agentType: string
+  name: string
+  role: string
+  requiresModel: boolean
+  modelConfigurationAgentType: string | null
+  executionModes: string[]
+  qualityAttributes: string[]
+  workflowIds: string[]
+  availability: string
+  parentAgentTypes: string[]
+  childAgentTypes: string[]
   configured: boolean
   configuration: AgentConfiguration | null
   verification: AgentVerification
 }
 
 export class AgentSettingsService {
-  constructor(private settings: AgentSettingsStore, private verifier: ModelAccessVerifier) {}
+  constructor(private settings: AgentSettingsStore, private verifier: ModelAccessVerifier, private catalog?: AgentCatalogSource) {}
+
+  async synchronize(): Promise<AgentSettingsView[]> {
+    if (!this.catalog) throw new AgentCatalogError("No agent-server catalog source is configured")
+    const catalog = await this.catalog.getAgentCatalog()
+    await this.settings.synchronizeCatalog(catalog)
+    return this.list()
+  }
+
+  /** Model transport keys come from the synchronized hierarchy, not a local agent list. */
+  async modelParticipants(rootAgentType: string): Promise<string[]> {
+    const agents = new Map((await this.settings.listDeclared()).map((agent) => [agent.agentType, agent]))
+    const root = agents.get(rootAgentType)
+    if (!root) throw new AgentConfigurationError([{ agentType: rootAgentType, reason: "Agent is not declared by the agent-server" }])
+    const visited = new Set<string>()
+    const models = new Set<string>()
+    const visit = (id: string): void => {
+      if (visited.has(id)) return
+      visited.add(id)
+      const agent = agents.get(id)
+      if (!agent || agent.availability !== "available") return
+      if (agent.requiresModel && agent.modelConfigurationAgentType) models.add(agent.modelConfigurationAgentType)
+      for (const child of agent.childAgentTypes) visit(child)
+    }
+    visit(rootAgentType)
+    return [...models]
+  }
 
   async verify(agentType: string): Promise<AgentSettingsView> {
-    await this.check(agentType)
+    const agent = (await this.settings.listDeclared()).find((row) => row.agentType === agentType)
+    if (!agent || !agent.requiresModel || !agent.modelConfigurationAgentType || agent.availability !== "available") {
+      throw new AgentConfigurationError([{ agentType, reason: "This agent has no available model access to verify" }])
+    }
+    await this.check(agent.modelConfigurationAgentType)
     return (await this.list()).find((agent) => agent.agentType === agentType)!
   }
 
   private async check(agentType: string): Promise<{ prepared: PreparedAgentConfiguration, error: string | null }> {
-    if (!BACKEND_AGENT_TYPES.some((type) => type === agentType)) throw new AgentConfigurationError([{ agentType, reason: "Agent type is not declared in the backend" }])
     const prepared = await this.settings.prepare(agentType)
     let error: string | null = null
+    let storedError: string | null = null
     try {
       await this.verifier.verify(prepared.transport)
     } catch (failure) {
       // Verifiers return controlled messages; never propagate provider response bodies.
       error = failure instanceof Error ? failure.message : "Could not verify model access"
+      storedError = failure instanceof ModelAccessError ? `model_access:${failure.code}` : error
     }
-    await this.settings.recordVerification(prepared, error)
+    await this.settings.recordVerification(prepared, storedError)
     return { prepared, error }
   }
 
@@ -51,26 +93,35 @@ export class AgentSettingsService {
   }
 
   async save(agentType: string, modelId: number, credentialId: number, options: AgentExecutionOptions = {}): Promise<AgentSettingsView> {
-    if (!BACKEND_AGENT_TYPES.some((type) => type === agentType)) {
-      throw new UnknownAgentTypeError(`Agent type ${agentType} is not declared in the backend`)
+    const agent = (await this.settings.listDeclared()).find((row) => row.agentType === agentType)
+    if (!agent) throw new UnknownAgentTypeError(`Agent type ${agentType} is not declared by the agent-server`)
+    if (!agent.requiresModel || agent.modelConfigurationAgentType !== agentType || agent.availability !== "available") {
+      throw new InvalidAgentAssignmentError("This agent does not have an independent model configuration")
     }
     await this.settings.saveAssignments(agentType, modelId, credentialId, options)
     return (await this.list()).find((agent) => agent.agentType === agentType)!
   }
 
   async list(): Promise<AgentSettingsView[]> {
-    const agentTypes = [...BACKEND_AGENT_TYPES].sort()
-    const stored = await this.settings.listByAgentTypes(agentTypes)
-    const configurations = new Map(stored.map((row) => [row.agentType, row.configuration]))
-    const verifications = new Map(stored.map((row) => [row.agentType, row.verification]))
-    return agentTypes.map((agentType) => {
-      const configuration = configurations.get(agentType) ?? null
+    const stored = await this.settings.listDeclared()
+    return stored.map((row) => {
+      const owner = row.requiresModel && row.modelConfigurationAgentType
+        ? stored.find((agent) => agent.agentType === row.modelConfigurationAgentType) : null
+      const configuration = owner?.configuration ?? null
       return {
-        agentType,
+        agentType: row.agentType, name: row.name, role: row.role, requiresModel: row.requiresModel,
+        modelConfigurationAgentType: row.modelConfigurationAgentType, executionModes: row.executionModes,
+        qualityAttributes: row.qualityAttributes, workflowIds: row.workflowIds,
+        availability: row.availability, parentAgentTypes: row.parentAgentTypes, childAgentTypes: row.childAgentTypes,
         configured: configuration !== null && configuration.model.providerId === configuration.credential.providerId,
         configuration,
-        verification: verifications.get(agentType) ?? { status: "not_verified", checkedAt: null, message: null },
+        verification: owner?.verification ?? { status: "not_verified", checkedAt: null, message: null },
       }
     })
+  }
+
+  async saveCategory(attribute: string, modelId: number, credentialId: number): Promise<AgentSettingsView[]> {
+    await this.settings.saveCategoryAssignments(attribute, modelId, credentialId)
+    return this.list()
   }
 }

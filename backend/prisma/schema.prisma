@@ -78,6 +78,7 @@ model AgentExecution {
   error        String?
   result       String?
   configurationSnapshot String? @map("configuration_snapshot")
+  invocationReceipts String @default("[]") @map("invocation_receipts")
 
   evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
@@ -122,6 +123,15 @@ model AiModel {
 
 model AgentSettings {
   agentType      String @id @map("agent_type")
+  catalogDeclared Boolean @default(false) @map("catalog_declared")
+  catalogName String? @map("catalog_name")
+  catalogRole String? @map("catalog_role")
+  requiresModel Boolean @default(false) @map("requires_model")
+  modelConfigurationAgentType String? @map("model_configuration_agent_type")
+  executionModes String @default("[]") @map("execution_modes")
+  qualityAttributes String @default("[]") @map("quality_attributes")
+  workflowIds String @default("[]") @map("workflow_ids")
+  availability String @default("not_executed")
   aiModelId      Int?   @map("ai_model_id")
   aiCredentialId Int?   @map("ai_credential_id")
   temperature    Decimal?
@@ -135,8 +145,28 @@ model AgentSettings {
   aiModel         AiModel?         @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
   aiCredential    AiCredential?    @relation(fields: [aiCredentialId], references: [id], onDelete: Restrict)
   agentExecutions AgentExecution[]
+  childLinks AgentHierarchy[] @relation("AgentParent")
+  parentLinks AgentHierarchy[] @relation("AgentChild")
 
   @@map("agent_settings")
+}
+
+model AgentHierarchy {
+  parentAgentType String @map("parent_agent_type")
+  childAgentType String @map("child_agent_type")
+  parent AgentSettings @relation("AgentParent", fields: [parentAgentType], references: [agentType], onDelete: Cascade, onUpdate: Cascade)
+  child AgentSettings @relation("AgentChild", fields: [childAgentType], references: [agentType], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([parentAgentType, childAgentType])
+  @@index([childAgentType])
+  @@map("agent_hierarchy")
+}
+
+model AuditSettings {
+  attribute String @id
+  options String @default("{}")
+
+  @@map("audit_settings")
 }
 
 model Task {

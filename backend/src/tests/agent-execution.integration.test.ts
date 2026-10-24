@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
+import { makeTestAgentCatalogSource } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, AgentInvoker } from "../infrastructure/agent-server-client/agent-server.client.js"
 
@@ -60,6 +61,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     }
 
     const { app, db } = await buildApp({
+      makeAgentCatalogSource: makeTestAgentCatalogSource,
       databaseUrl: freshDatabase(),
       workspaceDir,
       silent: true,

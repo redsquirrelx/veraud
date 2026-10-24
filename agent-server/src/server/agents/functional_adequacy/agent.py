@@ -1,17 +1,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from functools import lru_cache
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
-from sentence_transformers import SentenceTransformer, util
 
 from ...config.logs import get_logger
 from ...config.tracing import traced_generate
 from ..base import BaseAgent
+from .config import FunctionalAdequacyConfig
 from .schemas import (
     CodeEvidence,
     FunctionalAdequacyInput,
@@ -19,18 +20,20 @@ from .schemas import (
     RequirementResult,
 )
 
-logger = get_logger("functional-adequacy-agent")
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
-MODEL_NAME = "all-MiniLM-L6-v2"
-TOP_K = 5
+logger = get_logger("functional-adequacy-agent")
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-@lru_cache(maxsize=1)
-def _get_sbert_model() -> SentenceTransformer:
+@lru_cache(maxsize=4)
+def _get_sbert_model(model_name: str = FunctionalAdequacyConfig().embedding_model) -> SentenceTransformer:
     """Load SBERT once and reuse it across executions."""
-    return SentenceTransformer(MODEL_NAME)
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name)
 
 
 def _response_text(response: object) -> str:
@@ -94,18 +97,22 @@ class FunctionalAdequacyAgent(
     agent_type = "functional_adequacy"
     input_schema = FunctionalAdequacyInput
     output_schema = FunctionalAdequacyOutput
+    config_type = FunctionalAdequacyConfig
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.config = config or self.config_type()
         self._graph = self._build_graph()
 
     def _build_graph(self):
         graph = StateGraph(_FunctionalState)
 
-        graph.add_node("prepare", self._prepare)
-        graph.add_node("code_mapping", self._code_mapping)
-        graph.add_node("verify", self._verify)
-        graph.add_node("build_results", self._build_results)
+        from ...runtimes.invocation_reporting import phase_node
+
+        graph.add_node("prepare", phase_node("prepare", self._prepare))
+        graph.add_node("code_mapping", phase_node("code_mapping", self._code_mapping))
+        graph.add_node("verify", phase_node("verify", self._verify))
+        graph.add_node("build_results", phase_node("build_results", self._build_results))
 
         graph.set_entry_point("prepare")
         graph.add_edge("prepare", "code_mapping")
@@ -130,7 +137,12 @@ class FunctionalAdequacyAgent(
         }
 
     async def _code_mapping(self, state: _FunctionalState) -> dict:
-        """Retrieve up to TOP_K code candidates for each requirement."""
+        # Embedding model loading/inference is CPU-bound and must not block
+        # lifecycle callbacks or sibling attributes on the server event loop.
+        return await asyncio.to_thread(self._retrieve_candidates, state)
+
+    def _retrieve_candidates(self, state: _FunctionalState) -> dict:
+        """Retrieve the configured number of code candidates per requirement."""
         input_data = state["input_data"]
         fragments = input_data.code_fragments
 
@@ -142,7 +154,9 @@ class FunctionalAdequacyAgent(
                 }
             }
 
-        model = _get_sbert_model()
+        from sentence_transformers import util
+
+        model = _get_sbert_model(self.config.embedding_model)
 
         requirement_texts = [
             req.description for req in input_data.requirements
@@ -172,7 +186,7 @@ class FunctionalAdequacyAgent(
             top_indices = [
                 int(item)
                 for item in scores.argsort(descending=True)[
-                    :min(TOP_K, len(fragments))
+                    :min(self.config.retrieval_top_k, len(fragments))
                 ]
             ]
 

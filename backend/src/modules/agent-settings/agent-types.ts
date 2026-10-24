@@ -1,6 +1,5 @@
-/** Agent types explicitly supported by backend workflows. Dummy stays as the
- *  generic single-run agent; the project-architecture stages double as
- *  backend agent types on purpose (see below). */
+/** Transport identities used by existing workflow adapters, not a registration
+ *  allowlist. The database agent catalog is synchronized from agent-server. */
 export const DUMMY_AGENT_TYPE = "dummy"
 /** Stages of the project-architecture pipeline. These double as backend agent
  *  types on purpose: the transport keys sent to the agent-server must match
@@ -8,7 +7,9 @@ export const DUMMY_AGENT_TYPE = "dummy"
 export const ORIENTATION_AGENT_TYPE = "orientation"
 export const PROJECT_ARCHITECTURE_AGENT_TYPE = "architecture"
 export const PROJECT_SEMANTIC_VALIDATION_AGENT_TYPE = "semantic_validation"
-export const BACKEND_AGENT_TYPES = [DUMMY_AGENT_TYPE, ORIENTATION_AGENT_TYPE, PROJECT_ARCHITECTURE_AGENT_TYPE, PROJECT_SEMANTIC_VALIDATION_AGENT_TYPE] as const
+export const MAINTAINABILITY_AGENT_TYPE = "maintainability_manager"
+export const SECURITY_AGENT_TYPE = "security"
+export const FUNCTIONAL_ADEQUACY_AGENT_TYPE = "functional_adequacy"
 /** Agent-server pipeline serving the three project stages above. */
 export const PROJECT_ARCHITECTURE_PIPELINE_NAME = "project-architecture"
 export const PROJECT_ARCHITECTURE_PIPELINE_STAGES = [ORIENTATION_AGENT_TYPE, PROJECT_ARCHITECTURE_AGENT_TYPE, PROJECT_SEMANTIC_VALIDATION_AGENT_TYPE] as const

@@ -1,4 +1,5 @@
 import type { JSONSchema } from "json-schema-to-ts"
+import { invocationReceiptSchema } from "../../modules/agent-execution/invocationReceipt.js"
 
 export const taskPayloadSchema = {
   $id: "TaskEventPayload",
@@ -25,6 +26,7 @@ export const agentExecutionPayloadSchema = {
   additionalProperties: false,
   required: ["id", "evaluationId", "agentType", "status", "result", "error", "inputTokens", "outputTokens", "createdAt", "startedAt", "finishedAt"],
   properties: {
+    invocations: { type: "array", items: invocationReceiptSchema },
     id: { type: "integer", description: "Execution identifier." },
     evaluationId: { type: ["integer", "null"], description: "Evaluation identifier; null for direct executions." },
     agentType: { type: "string", description: "Agent name." },

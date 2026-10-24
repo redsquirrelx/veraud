@@ -1,10 +1,15 @@
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from config.agents.model import AgentSettings
+
 from ..config.prompts import load_prompt, render_prompt
-from ..config.schemas import AgentSettings
-from .models.base import Model
+from ..infrastructure.llm.base import Model
+
+if TYPE_CHECKING:
+    from ..blackboard.interface import Blackboard
 
 
 class BaseAgent[AgentInput: BaseModel, AgentOutput: BaseModel](ABC):
@@ -17,9 +22,10 @@ class BaseAgent[AgentInput: BaseModel, AgentOutput: BaseModel](ABC):
     input_schema: type[AgentInput]
     output_schema: type[AgentOutput]
 
-    def __init__(self, settings: AgentSettings, model: Model):
+    def __init__(self, settings: AgentSettings, model: Model, *, blackboard: "Blackboard | None" = None):
         self.settings = settings
         self.model = model
+        self.blackboard = blackboard
 
     @classmethod
     def system_prompt(cls) -> str:

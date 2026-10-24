@@ -29,6 +29,7 @@ import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-m
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
+import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
@@ -277,6 +278,7 @@ export function ProjectDetailPage() {
               analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
               syncing={syncActive}
               onSync={() => void handleSync()}
+              onAudit={() => void navigate(`/projects/${id}/audits`)}
               versionSelector={{
                 selection: gitSelection,
                 mode: versionMode,
@@ -433,8 +435,11 @@ export function ProjectDetailPage() {
               </Card>
             )}
             {activeSection === "audits" && (
+              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} />
+            )}
+            {activeSection === "audits" && (
               analysis.execution === null ? (
-                <p className="label">{t("detail.audits.empty")}</p>
+                null
               ) : (
                 <Card>
                   {runStatuses}

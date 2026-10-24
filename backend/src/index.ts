@@ -15,7 +15,7 @@ const workspaceDir = resolveWorkspaceDir(projectRoot, env.WORKSPACE_DIR)
 const { app } = await buildApp({
   databaseUrl: env.DATABASE_URL,
   workspaceDir,
-  agentServerUrl: `http://localhost:${env.PORT_AGENTSERVER}`,
+  agentServerUrl: `http://127.0.0.1:${env.PORT_AGENTSERVER}`,
 })
 
 logger.withTag("workspace").info(
@@ -25,7 +25,7 @@ logger.withTag("workspace").info(
 app.addHook('onReady', async () => {
   const log = logger.withTag('agent-server')
   const port = env.PORT_AGENTSERVER
-  const base = `http://localhost:${port}`
+  const base = `http://127.0.0.1:${port}`
 
   try {
     // The agent-server serves this under /api, like its run endpoint.

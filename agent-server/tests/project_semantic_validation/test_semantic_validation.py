@@ -5,25 +5,29 @@ import json
 
 import pytest
 
-from server.agents.project_architecture.schemas import (
+from server.agents.project_analysis.project_architecture.schemas import (
     ArchitectureReport,
     ArchitectureResult,
 )
-from server.agents.project_semantic_validation import (
+from server.agents.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
     ValidationLimits,
 )
-from server.agents.project_semantic_validation.context import review_targets
-from server.agents.project_semantic_validation.schemas import SemanticFinding
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_semantic_validation.context import (
+    review_targets,
+)
+from server.agents.project_analysis.project_semantic_validation.schemas import (
+    SemanticFinding,
+)
+from server.pipelines.semantic_validation import validate_architecture_pipeline
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
 )
-from server.agents.repository_runtime.schemas import BudgetUsage
-from server.agents.repository_runtime.telemetry import ExecutionTelemetry
-from server.pipelines.semantic_validation import validate_architecture_pipeline
+from server.runtimes.repository.schemas import BudgetUsage
+from server.runtimes.repository.telemetry import ExecutionTelemetry
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -278,6 +282,7 @@ def test_snapshot_and_ledger_rejection_happens_before_model_call(fixture):
     assert not model.prompts
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_strict_admission_and_external_cancellation(fixture):
     tools, original = fixture
     model = ReviewingModel()
@@ -522,6 +527,7 @@ def test_summary_identifies_displayed_report_and_separates_certainty(
         assert "Architect revision: not performed" in text
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_summary_explains_partial_review_and_failed_revision(fixture, capsys):
     from server.repository_runner import print_summary
 

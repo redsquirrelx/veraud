@@ -39,7 +39,7 @@ from .logs import get_logger
 from .settings import get_tracing_settings
 
 if TYPE_CHECKING:
-    from ..agents.models.base import Model
+    from ..infrastructure.llm.base import Model
 
 logger = get_logger("tracing")
 

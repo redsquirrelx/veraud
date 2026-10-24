@@ -102,7 +102,7 @@ child of the surrounding span.
 | `config/settings.py` | declares every variable the server reads |
 | `config/tracing.py` | the module itself |
 | `app/execution_service.py` | `setup()` at construction; `traced_agent_run` around the timed run |
-| `agents/repository_runtime/model_runtime.py` | `traced_generate` instead of `model.generate` |
+| `runtimes/repository/model_runtime.py` | `traced_generate` instead of `model.generate` |
 | `agents/dummy/agent.py` | same |
 
 `traced_agent_run` wraps the coroutine rather than the graph on purpose: that is

@@ -21,6 +21,7 @@ from server.app.pipeline_service import (
     get_generic_pipeline_service,
 )
 from server.app.tracing_port import NoOpTracingBackend
+from server.blackboard.impls.memory import MemoryBlackboard
 from server.main import app
 
 
@@ -122,6 +123,17 @@ def _service(first, second, sink=None):
 
 def _ids():
     return {"first": 11, "second": 12}
+
+
+def test_pipeline_injects_one_blackboard_into_all_stage_agents():
+    board = MemoryBlackboard()
+    first, second = StubAgent(_Output()), StubAgent(_Output())
+    service = _service(first, second)
+
+    asyncio.run(service.run("two-stage", {"root": "/repo"}, ExecutionConfig(), blackboard=board))
+
+    assert first.blackboard is board
+    assert second.blackboard is board
 
 
 class TestRegistry:
@@ -235,7 +247,8 @@ class TestGenericRoute:
         def _override():
             app.dependency_overrides[get_generic_pipeline_service] = lambda: service
             try:
-                yield TestClient(app, raise_server_exceptions=False)
+                with TestClient(app, raise_server_exceptions=False) as client:
+                    yield client
             finally:
                 app.dependency_overrides.pop(get_generic_pipeline_service, None)
 
@@ -260,7 +273,12 @@ class TestGenericRoute:
                 stage_configs=None,
                 execution_ids=None,
                 timeout_seconds=600,
+                *,
+                blackboard=None,
+                audit_service=None,
             ):
+                assert blackboard is app.state.blackboard
+                assert audit_service is app.state.audit_service
                 seen.append(pipeline_name)
                 return {"first": {"kind": "library"}}
 

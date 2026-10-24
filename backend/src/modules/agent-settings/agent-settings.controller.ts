@@ -5,12 +5,20 @@ import { errorResponses } from "../../infrastructure/openapi/routeSchemas.js"
 import type { AgentExecutionOptions } from "./agent-settings.repository.js"
 import { AgentConfigurationError } from "./agent-configuration.js"
 import { configurationSchema, configurationIssuesSchema } from "./agent-settings.schemas.js"
+import { AgentCatalogError } from "./agent-catalog.js"
 
 const agentSettingsSchema = {
   type: "object",
-  required: ["agentType", "configured", "configuration", "verification"],
+  required: ["agentType", "name", "role", "requiresModel", "modelConfigurationAgentType", "executionModes", "qualityAttributes", "workflowIds", "availability", "parentAgentTypes", "childAgentTypes", "configured", "configuration", "verification"],
   properties: {
     agentType: { type: "string" },
+    name: { type: "string" }, role: { type: "string" }, requiresModel: { type: "boolean" },
+    modelConfigurationAgentType: { type: ["string", "null"] },
+    executionModes: { type: "array", items: { type: "string" } }, availability: { type: "string" },
+    qualityAttributes: { type: "array", uniqueItems: true, items: { type: "string" }, description: "Quality contexts declared by agent-server; may be shared or empty." },
+    workflowIds: { type: "array", uniqueItems: true, items: { type: "string" }, description: "Workflows declared by agent-server, independent of quality attributes." },
+    parentAgentTypes: { type: "array", items: { type: "string" } },
+    childAgentTypes: { type: "array", items: { type: "string" } },
     configured: { type: "boolean" },
     configuration: configurationSchema,
     verification: {
@@ -19,16 +27,32 @@ const agentSettingsSchema = {
         status: { type: "string", enum: ["not_verified", "verified", "failed"] },
         checkedAt: { type: ["string", "null"], format: "date-time" },
         message: { type: ["string", "null"] },
+        reason: { type: "string" },
       },
     },
   },
 } as const
 
 export function registerAgentSettingsRoutes(app: FastifyInstance, service: AgentSettingsService): void {
+  app.put<{ Params: { attribute: string }, Body: { modelId: number, credentialId: number } }>("/api/agent-settings/categories/:attribute", { schema: {
+    tags: ["Agent Settings"], summary: "Assign model access to every agent in a declared quality category",
+    description: "Atomically updates model and credential for available model owners in the category, including shared model owners. Preserves each agent's generation parameters and budgets; invalidates previous access checks. Deterministic agents need no assignment.",
+    params: { type: "object", required: ["attribute"], properties: { attribute: { type: "string", minLength: 1 } } },
+    body: { type: "object", required: ["modelId", "credentialId"], additionalProperties: false, properties: {
+      modelId: { type: "integer", minimum: 1 }, credentialId: { type: "integer", minimum: 1 },
+    } },
+    response: { 200: { type: "array", items: agentSettingsSchema }, ...errorResponses([422]) },
+  } }, async (request, reply) => {
+    try { return await service.saveCategory(request.params.attribute, request.body.modelId, request.body.credentialId) }
+    catch (error) {
+      if (error instanceof InvalidAgentAssignmentError) return reply.code(422).send({ message: error.message })
+      throw error
+    }
+  })
   app.get("/api/agent-settings", { schema: {
     tags: ["Agent Settings"],
-    summary: "List backend agent types and their saved configuration",
-    description: "Lists backend-declared agent types and saved settings, including unconfigured agents with configuration null. Does not contact the agent-server. configured indicates model/credential provider consistency; verification separately reports the last access check for the current configuration. Execution starts check live access again. Credentials expose names and IDs only, never API keys.",
+    summary: "List synchronized agent-server agents and saved configuration",
+    description: "Lists agents from the last successful agent-server catalog synchronization, including optional parent/child links and agents that require no model. Does not contact the agent-server. configured indicates model/credential provider consistency; verification reports the last access check. Credentials expose names and IDs only, never API keys.",
     response: {
       200: {
         type: "array",
@@ -36,6 +60,18 @@ export function registerAgentSettingsRoutes(app: FastifyInstance, service: Agent
       },
     },
   } }, async () => service.list())
+
+  app.post("/api/agent-settings/sync", { schema: {
+    tags: ["Agent Settings"], summary: "Synchronize agents and hierarchy from agent-server",
+    description: "Fetches the versioned catalog, validates its complete graph and atomically inserts missing agents and refreshes metadata/links. Preserves assignments, verification and execution history. Undeclared historical agents become inactive. A failed fetch or invalid graph preserves the previous catalog.",
+    response: { 200: { type: "array", items: agentSettingsSchema }, ...errorResponses([503]) },
+  } }, async (_request, reply) => {
+    try { return await service.synchronize() }
+    catch (error) {
+      if (error instanceof AgentCatalogError) return reply.code(503).send({ message: error.message })
+      throw error
+    }
+  })
 
   app.post<{ Params: { agentType: string } }>("/api/agent-settings/:agentType/verify", { schema: {
     tags: ["Agent Settings"], summary: "Verify saved credential access to the selected model",
@@ -52,8 +88,8 @@ export function registerAgentSettingsRoutes(app: FastifyInstance, service: Agent
 
   app.put<{ Params: { agentType: string }, Body: { modelId: number, credentialId: number } & AgentExecutionOptions }>("/api/agent-settings/:agentType", { schema: {
     tags: ["Agent Settings"],
-    summary: "Assign a model and credential to a backend agent",
-    description: "Stores an existing model and credential belonging to the same provider. Only backend-declared agent types can be configured. Optional temperature (0ΓÇô2) and maximum tokens (positive integer) are preserved when omitted and cleared when null. Returns the saved configuration without API keys. Does not verify provider access or change an in-progress execution.",
+    summary: "Assign a model and credential to a declared agent",
+    description: "Stores an existing model and credential belonging to the same provider. Only active agent-server agents with an independent model configuration can be configured. Optional temperature (0–2) and maximum tokens are preserved when omitted and cleared when null. Returns saved configuration without API keys. Does not verify provider access or change an in-progress execution.",
     params: { type: "object", required: ["agentType"], properties: { agentType: { type: "string", minLength: 1 } } },
     body: {
       type: "object", required: ["modelId", "credentialId"], additionalProperties: false,

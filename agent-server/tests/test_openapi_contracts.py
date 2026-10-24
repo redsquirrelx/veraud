@@ -39,7 +39,8 @@ def api(monkeypatch):
         def describe_agent(self, name):
             return service.describe_agent(name)
 
-        async def run(self, agent_type, config, payload, execution_id=None):
+        async def run(self, agent_type, config, payload, execution_id=None, *, blackboard=None):
+            self.blackboard = blackboard
             self.received = (agent_type, config.model_dump(), payload, execution_id)
             if self.error is not None:
                 raise self.error
@@ -87,7 +88,7 @@ def test_portal_and_exact_operation_coverage(api):
     assert spec["openapi"] == "3.1.0"
     assert spec["info"]["title"] == "Veraud Agent Server API"
     assert spec["info"]["version"] == "0.0.0"
-    assert [tag["name"] for tag in spec["tags"]] == ["Status", "Agents", "Pipelines"]
+    assert [tag["name"] for tag in spec["tags"]] == ["Status", "Audits", "Agents", "Pipelines"]
     assert all(tag["description"] for tag in spec["tags"])
     # No hardcoded host: the document and relative operations use the portal origin.
     assert spec.get("servers", [{"url": "/"}]) == [{"url": "/"}]
@@ -101,11 +102,23 @@ def test_portal_and_exact_operation_coverage(api):
     expected = {
         ("GET", "/api/status"),
         ("GET", "/api/agents"),
+        ("GET", "/api/agents/catalog"),
+        ("GET", "/api/agents/catalog/{agent_id}"),
         ("GET", "/api/agents/{agent_type}/schema"),
         ("POST", "/api/agents/run"),
         ("POST", "/api/agents/verify-access"),
+        ("GET", "/api/audits/configuration/{attribute}"),
+        ("POST", "/api/audits/configuration/{attribute}/validate"),
         ("GET", "/api/pipelines"),
         ("POST", "/api/pipelines/{name}/run"),
+        ("POST", "/api/audits"),
+        ("POST", "/api/audits/reports/from-snapshot"),
+        ("POST", "/api/audits/reports/from-snapshot.docx"),
+        ("GET", "/api/audits/{run_id}"),
+        ("GET", "/api/audits/{run_id}/report"),
+        ("GET", "/api/audits/{run_id}/report.docx"),
+        ("GET", "/api/audits/{run_id}/report-generations"),
+        ("GET", "/api/audits/{run_id}/report-generations/{generation_id}"),
     }
 
     def application_routes(routes):
@@ -119,9 +132,9 @@ def test_portal_and_exact_operation_coverage(api):
     registered = {
         (method, route.path)
         for route in application_routes(app.routes)
+        if route.include_in_schema
         for method in route.methods
     }
-    assert len(expected) == 7
     assert operations == registered == expected
     ids = []
     for method, path in operations:
@@ -132,9 +145,12 @@ def test_portal_and_exact_operation_coverage(api):
             if path == "/api/status"
             else ["Pipelines"]
             if path.startswith("/api/pipelines")
+            else ["Audits"]
+            if path.startswith("/api/audits")
             else ["Agents"]
         )
-        assert operation["responses"]["200"]["description"]
+        success = "202" if (method, path) == ("POST", "/api/audits") else "200"
+        assert operation["responses"][success]["description"]
         ids.append(operation["operationId"])
     assert len(ids) == len(set(ids))
 
@@ -274,6 +290,7 @@ def test_execution_serialization_preserves_output(api, name, result):
         },
     )
     assert response.status_code == 200
+    assert stub.blackboard is app.state.blackboard
     assert response.json() == {
         "agent_type": name,
         "result": result.model_dump(mode="json"),

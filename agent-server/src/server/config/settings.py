@@ -49,6 +49,7 @@ class ServerSettings(_FromEnvFile):
     port_agentserver: int
     llm_api_key: str
     workspace_root: str = ""
+    provider_quota_path: str = ""
 
 
 class TracingSettings(_FromEnvFile):

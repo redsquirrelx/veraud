@@ -44,6 +44,9 @@ function stubProjects() {
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
+    if (url.endsWith("/audits")) {
+      return new Response(JSON.stringify([]), { status: 200 })
+    }
     if (url.includes("/git/branches")) {
       return new Response(JSON.stringify(gitBranches), { status: 200 })
     }
@@ -98,7 +101,7 @@ describe("ProjectDetailPage in Spanish", () => {
     expect(screen.getByRole("region", { name: "Resumen del proyecto" })).toBeDefined()
   })
 
-  it("translates the audits empty state and the not-found message", async () => {
+  it("retains the quality audit workspace under the translated audits navigation", async () => {
     await initializeI18n("es")
     stubProjects()
     renderDetail("/projects/2")
@@ -106,7 +109,9 @@ describe("ProjectDetailPage in Spanish", () => {
     await screen.findByRole("heading", { name: "acme/Demo" })
     await userEvent.click(screen.getByRole("button", { name: "Auditorías" }))
 
-    expect(await screen.findByText("Aún no hay análisis: elige una versión y pulsa Analizar")).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeDefined()
+    expect(await screen.findByText("No hay auditorías registradas.")).toBeDefined()
+    expect(screen.queryByText("Aún no hay análisis: elige una versión y pulsa Analizar")).toBeNull()
   })
 
   it("translates the not-found message for unknown projects", async () => {

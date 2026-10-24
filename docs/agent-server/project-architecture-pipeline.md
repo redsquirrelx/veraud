@@ -23,10 +23,10 @@ when using separate gateways, aggregate provider accounting belongs to the calle
 ```python
 from pathlib import Path
 
-from server.agents.project_architecture import ProjectArchitectureAgent
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_semantic_validation import ProjectSemanticValidationAgent
-from server.agents.repository_runtime import ExecutionBudget
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
+from server.runtimes.repository import ExecutionBudget
 from server.pipelines import ProjectArchitecturePipeline
 from server.services.repository_analysis import (
     RepositoryAnalysisInput,

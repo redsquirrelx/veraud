@@ -15,6 +15,7 @@ import "./SettingsPage.css"
 
 const settingsTabs = [
   { id: "agents", labelKey: "tabs.agents" },
+  { id: "audit", labelKey: "tabs.audit" },
   { id: "models", labelKey: "tabs.models" },
   { id: "preferences", labelKey: "tabs.preferences" },
 ] as const
@@ -244,6 +245,17 @@ export function SettingsPage() {
           pushToast("success", t("agents.assignmentsSaved", { agentType: agent.agentType }))
           void refresh()
         }} />}
+      </div>
+      <div role="tabpanel" id={`${tabsId}-panel-audit`} aria-labelledby={`${tabsId}-tab-audit`} hidden={activeTab !== "audit"} tabIndex={0}>
+        {activeTab === "audit" && <>
+          <AgentsSettings providers={providers} providersLoading={loading} providersError={providersLoadError}
+            qualityCategories
+            modelAccessOnly
+            heading={t("audit.modelsTitle")}
+            description={t("audit.modelsDescription")}
+            labels={{ maintainability: t("audit.allAgents"), security: t("audit.security"), functional_adequacy: t("audit.functionalAdequacy") }}
+            onAssignmentsSaved={() => { pushToast("success", t("audit.saved")); void refresh() }} />
+        </>}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
       <Card>

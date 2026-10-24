@@ -5,26 +5,30 @@ import json
 
 import pytest
 
-from server.agents.project_architecture import ProjectArchitectureAgent
-from server.agents.project_architecture.context import (
+from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.agents.project_analysis.project_architecture.context import (
     validate_report,
 )
-from server.agents.project_architecture.projection import representation_view
-from server.agents.project_architecture.schemas import (
+from server.agents.project_analysis.project_architecture.projection import (
+    representation_view,
+)
+from server.agents.project_analysis.project_architecture.schemas import (
     ArchitectureLimits,
     ArchitectureReport,
     ArchitectureTurn,
 )
-from server.agents.project_orientation import ProjectOrientationAgent
-from server.agents.project_orientation.smoke import OrientationSmokeModel
-from server.agents.repository_runtime import (
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_orientation.smoke import (
+    OrientationSmokeModel,
+)
+from server.run_project_architecture import main
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.run_project_architecture import main
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -741,8 +745,8 @@ def test_runner_relaxed_architecture_defaults_respect_explicit_token_limits(
 
 
 def test_representation_exposes_navigation_and_omissions_without_docs(tools):
-    from server.agents.project_architecture.agent import ALLOWED_TOOLS
-    from server.agents.repository_runtime.tools import TOOL_SCHEMAS
+    from server.agents.project_analysis.project_architecture.agent import ALLOWED_TOOLS
+    from server.runtimes.repository.tools import TOOL_SCHEMAS
 
     view = representation_view(tools)
     assert ALLOWED_TOOLS <= TOOL_SCHEMAS.keys()

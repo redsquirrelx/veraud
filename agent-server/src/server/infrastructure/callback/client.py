@@ -3,7 +3,13 @@ from __future__ import annotations
 import httpx
 
 from ...config.logs import get_logger
-from .schemas import CallbackConfig, CallbackResult, ExecutionOutcome, ExecutionProgress
+from .schemas import (
+    CallbackConfig,
+    CallbackResult,
+    ExecutionOutcome,
+    ExecutionProgress,
+    InvocationReceipt,
+)
 
 logger = get_logger("infrastructure.callback")
 
@@ -29,9 +35,9 @@ class CallbackClient:
         self._client = client
         self._owns_client = client is None
 
-    async def mark_running(self, execution_id: int) -> CallbackResult:
+    async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
         """Tell the backend the run started. Optional on the backend side."""
-        return await self._post(f"/api/agent-executions/{execution_id}/running", {})
+        return await self._post(f"/api/agent-executions/{execution_id}/running", {"runId": run_id} if run_id else {})
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
         """Close the run with its outcome."""
@@ -45,6 +51,9 @@ class CallbackClient:
             f"/api/agent-executions/{execution_id}/progress",
             usage.model_dump(by_alias=True),
         )
+
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json"))
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:

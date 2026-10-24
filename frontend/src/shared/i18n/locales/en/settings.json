@@ -2,9 +2,30 @@
   "title": "Settings",
   "tabs": {
     "agents": "Agents",
+    "audit": "Audit",
     "models": "Models & credentials",
     "preferences": "Preferences",
     "label": "Settings sections"
+  },
+  "audit": {
+    "drawer": {
+      "title": "Configure audit · {{category}}", "description": "Advanced operating configuration. Changes apply to future audits.",
+      "sharedBudget": "Shared audit budget", "sharedBudgetHint": "One global token cap shared by all selected attributes. This setting is common to every audit category.",
+      "callLimits": "Hierarchy call limits", "securityOptions": "Security audit options", "functionalOptions": "Functional adequacy options",
+      "agentDefaults": "Generic agent parameters", "agentDefaultsHint": "Applied to every agent in this category. max_output_tokens is the output token maximum per response, including managers and coordinators. An explicit individual value replaces the inherited value; no second model cap applies. In maintainability, model/tool call defaults apply to investigators; hierarchy limits above control manager and coordinator aggregate budgets.",
+      "defaultsHint": "Leave a field empty to use server defaults. Exclusive settings of individual maintainability agents are configured separately."
+    },
+    "modelsTitle": "Quality audit models",
+    "modelsDescription": "Choose a model and credential for each quality category. Saving applies that selection to all its model agents declared by the server.",
+    "categoryAssignment": "Saving applies this model and credential to every model agent in this category, preserving individual operating parameters.",
+    "categoryMixed": "Agents in this category have different assignments. Save to apply the selected configuration to all of them.",
+    "syncCatalog": "Synchronize agent catalog",
+    "synchronizingCatalog": "Synchronizing catalog…",
+    "noCategories": "The saved catalog has no configurable quality categories. Synchronize the agent catalog to load the category cards.",
+    "security": "Security",
+    "functionalAdequacy": "Functional adequacy",
+    "allAgents": "Maintainability · all agents",
+    "saved": "Audit configuration saved"
   },
   "form": {
     "provider": "Provider",
@@ -64,6 +85,9 @@
     }
   },
   "agents": {
+    "noModelRequired": "This agent is deterministic and does not require model access.",
+    "unavailable": "This agent is not available for execution or model access verification.",
+    "sharedModel": "Uses the model and credential configured for {{agentType}}.",
     "title": "Agent configuration",
     "subtitle": "Agent types declared in the backend and their saved configuration.",
     "empty": "No agent types are declared in the backend.",
@@ -110,7 +134,11 @@
       "temperatureHint": "0–2 · Lower values produce more consistent results.",
       "temperatureInvalid": "Temperature must be between 0 and 2.",
       "maxTokens": "Maximum output tokens per call",
-      "maxTokensHint": "Limits the output of each model call. The backend default is {{default}} tokens.",
+      "maxTokensHint": "Maximum output tokens per response. Leave empty to inherit the audit or server configuration. An explicit value replaces the inherited value; it does not add another cap.",
+      "outputInheritanceLoading": "Loading the inherited audit limit…",
+      "outputInheritanceError": "Could not load the inherited limit. No estimated default is displayed.",
+      "outputInherited": "{{category}}: {{value}} tokens per response, inherited from the audit.",
+      "outputOverridden": "{{category}}: {{value}} tokens per response, individual override (inherited: {{inherited}}).",
       "maxTokensPlaceholder": "Default: {{default}}",
       "maxTokensInvalid": "Maximum tokens must be a positive integer, up to 2147483647.",
       "defaultPlaceholder": "Default",
@@ -132,6 +160,16 @@
       "agentOptionsHint": "Additional options specific to this agent will appear here when available."
     },
     "verification": {
+      "errors": {
+        "accessDenied": "The provider rejected the credential or its permissions. Check the key and model access.",
+        "invalidConfiguration": "Invalid verification configuration. Check the provider, model and credential.",
+        "modelNotFound": "The model was not found or is unavailable for this credential.",
+        "rateLimited": "A provider rate limit or quota was reached. Access could not be confirmed.",
+        "providerUnavailable": "The provider is temporarily unavailable. Access could not be confirmed; try again later.",
+        "timeout": "The verification timed out. Access could not be confirmed; this does not mean the key is incorrect.",
+        "verificationFailed": "The model verification could not be completed. Access was not confirmed.",
+        "agentServerUnavailable": "The agent-server could not be reached in time. Model access was not confirmed."
+      },
       "verified": "Verified",
       "needsAttention": "Needs attention",
       "notVerified": "Not verified",

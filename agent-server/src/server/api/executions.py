@@ -3,6 +3,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 
+from ..app.agent_catalog import (
+    AgentCatalog,
+    AgentDetail,
+    describe_catalog_agent,
+    list_agent_catalog,
+)
 from ..app.agent_registry import UnknownAgentError
 from ..app.execution_service import (
     AgentExecutionService,
@@ -11,8 +17,10 @@ from ..app.execution_service import (
     build_model,
     get_execution_service,
 )
+from ..app.model_access import access_failure
 from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
+from .dependencies import BlackboardDep
 from .schemas import (
     AgentSchemaResponse,
     DomainError,
@@ -35,7 +43,15 @@ ServiceDep = Annotated[AgentExecutionService, Depends(get_execution_service)]
     "/verify-access", response_model=VerifyAccessResponse,
     summary="Verify credential access to a model",
     description="Performs a minimal generation request against the explicit provider and model. May incur provider usage. No agent, callbacks or server credential fallback. Timeout: 25 seconds. Provider error bodies and API keys are never returned.",
-    responses={422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid request, missing/unsupported model or denied model access."}, 504: {"model": DomainError, "description": "Provider verification timed out."}},
+    responses={
+        422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid verification configuration."},
+        403: {"model": DomainError, "description": "Credential or permissions rejected."},
+        404: {"model": DomainError, "description": "Model not found or unavailable for the credential."},
+        429: {"model": DomainError, "description": "Provider rate limit or quota exceeded."},
+        502: {"model": DomainError, "description": "Verification could not be completed."},
+        503: {"model": DomainError, "description": "Provider temporarily unavailable."},
+        504: {"model": DomainError, "description": "Provider verification timed out."},
+    },
 )
 async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
     if not body.model.provider or not body.model.name or not body.api_key.strip():
@@ -45,11 +61,17 @@ async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
             provider=body.model.provider, name=body.model.name,
             temperature=body.model.temperature if body.model.temperature is not None else 0.2, max_tokens=64,
         ), ModelCredentials(api_key=body.api_key))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid provider or model configuration") from None
+    except Exception as error:  # noqa: BLE001 - classify SDK initialization failures without exposing payloads
+        status, detail = access_failure(error)
+        raise HTTPException(status_code=status, detail=detail) from None
+    try:
         await asyncio.wait_for(model.generate("Reply with OK."), timeout=25)
-    except TimeoutError:
-        raise HTTPException(status_code=504, detail="Model access verification timed out") from None
-    except Exception:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
-        raise HTTPException(status_code=422, detail="Model access denied; check provider, model, credential and permissions") from None
+    except Exception as error:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
+        status, detail = access_failure(error)
+        logger.warning("Model access verification failed status=%d exception_type=%s", status, type(error).__name__)
+        raise HTTPException(status_code=status, detail=detail) from None
     return VerifyAccessResponse(verified=True)
 
 # Domain error -> HTTP status. Every clause of the except chains below picks a
@@ -98,6 +120,33 @@ def _http_error(
 )
 def list_agents(service: ServiceDep) -> list[str]:
     return service.list_agents()
+
+
+@router.get(
+    "/catalog", response_model=AgentCatalog,
+    summary="Discover all agents and workflow participants",
+    description="Versioned backend catalog of direct agents, pipeline stages and internal participants. "
+        "Includes hierarchy, execution modes and model configuration groups. Discovery does not execute agents. "
+        "GET /api/agents continues to list only directly executable agents.",
+)
+def agent_catalog(service: ServiceDep) -> AgentCatalog:
+    return list_agent_catalog(service)
+
+
+@router.get(
+    "/catalog/{agent_id}", response_model=AgentDetail,
+    summary="Inspect a catalog agent and its public configuration",
+    description="Returns typed schemas when available, plus user-level operating settings derived from the "
+        "effective configuration. No credentials or developer controls are published. Null schemas mean "
+        "the participant has no standalone Pydantic input/output contract published here. Aliases resolve "
+        "to the canonical agent_id.",
+    responses={404: {"model": DomainError, "description": "Unknown catalog agent."}},
+)
+def catalog_agent(agent_id: str, service: ServiceDep) -> AgentDetail:
+    try:
+        return describe_catalog_agent(service, agent_id)
+    except UnknownAgentError as error:
+        raise _http_error(error, NOT_FOUND, agent_id) from None
 
 
 @router.get(
@@ -230,6 +279,7 @@ async def run_agent(
         },
     })],
     service: ServiceDep,
+    blackboard: BlackboardDep,
 ) -> ExecutionResponse:
     """Run one agent and return its output.
 
@@ -248,6 +298,7 @@ async def run_agent(
             body.config,
             body.input,
             execution_id=body.execution_id,
+            blackboard=blackboard,
         )
 
     except UnknownAgentError as error:

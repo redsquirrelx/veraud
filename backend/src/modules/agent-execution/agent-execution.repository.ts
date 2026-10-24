@@ -1,6 +1,8 @@
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import type { AgentSettingsRepository, AgentConfiguration } from "../agent-settings/agent-settings.repository.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
+import type { InvocationReceipt } from "./invocationReceipt.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -45,6 +47,15 @@ export interface AgentExecutionUsage {
 }
 
 export interface StoredAgentExecution {
+  invocations?: InvocationReceipt[]
+  monitorContext?: {
+    project: { id: number, repositoryOwner: string, repositoryName: string } | null
+    branch: string | null
+    commitHash: string | null
+    evaluationType: string | null
+    qualityAttributes: string[]
+    workflowIds: string[]
+  }
   id: number
   evaluationId: number | null
   agentType: string
@@ -62,9 +73,10 @@ export interface StoredAgentExecution {
 }
 
 export interface AgentExecutionStore {
+  recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution>
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
-  markRunning(id: number): Promise<StoredAgentExecution>
+  markRunning(id: number, runId?: string): Promise<StoredAgentExecution>
   updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution>
   findById(id: number): Promise<StoredAgentExecution | null>
   /** Overwrites the stored result of a finished row without touching its
@@ -73,11 +85,49 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
+  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
+    return this.db.$transaction(async (tx) => {
+      const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
+      if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
+      const receipts = JSON.parse(execution.invocationReceipts) as InvocationReceipt[]
+      let runId: string | undefined
+      try { runId = (JSON.parse(execution.result ?? "{}") as { run_id?: string }).run_id } catch { /* Historical opaque result. */ }
+      if ((runId && runId !== receipt.run_id) || receipts.some((item) => item.run_id !== receipt.run_id)) {
+        throw new UnknownExecutionTargetError("Invocation does not belong to this audit run")
+      }
+      if (receipt.parent_invocation_id === receipt.invocation_id) throw new UnknownExecutionTargetError("An invocation cannot parent itself")
+      if ((receipt.status === "running") !== (receipt.finished_at === null)
+        || (receipt.finished_at && Date.parse(receipt.finished_at) < Date.parse(receipt.started_at))) {
+        throw new UnknownExecutionTargetError("Invocation lifecycle dates do not match its status")
+      }
+      const previous = receipts.find((item) => item.invocation_id === receipt.invocation_id)
+      if (previous && (previous.agent_id !== receipt.agent_id || previous.parent_invocation_id !== receipt.parent_invocation_id)) {
+        throw new UnknownExecutionTargetError("Invocation identity cannot change")
+      }
+      const visited = new Set([receipt.invocation_id])
+      let parent = receipt.parent_invocation_id
+      while (parent) {
+        if (visited.has(parent)) throw new UnknownExecutionTargetError("Invocation parents cannot form a cycle")
+        visited.add(parent)
+        parent = receipts.find((item) => item.invocation_id === parent)?.parent_invocation_id ?? null
+      }
+      if (previous?.status !== undefined && previous.status !== "running") return this.toStored(execution)
+      const count = (a: number | null | undefined, b: number | null) => a == null ? b : b == null ? a : Math.max(a, b)
+      const updated = { ...receipt, started_at: previous?.started_at ?? receipt.started_at,
+        phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
+          ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
+        phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
+        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
+      const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
+      return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
+    })
+  }
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
     try {
@@ -137,7 +187,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   /** Generic row creation shared by every pipeline: version row is saved (or
    *  reused), it becomes the selected one, a fresh evaluation is created, and
    *  one Waiting execution per configuration is stored with its snapshot. */
-  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]) {
+  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
     if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
       const running = await tx.agentExecution.findFirst({ where: {
@@ -150,7 +200,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
       })
       await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
-      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
+      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: evaluationType } })
       const executions: Record<string, StoredAgentExecution> = {}
       for (const configuration of configurations) {
         executions[configuration.agentType] = this.toStored(await tx.agentExecution.create({ data: {
@@ -162,11 +212,21 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     })
   }
 
-  async markRunning(id: number): Promise<StoredAgentExecution> {
+  async markRunning(id: number, runId?: string): Promise<StoredAgentExecution> {
     await this.db.agentExecution.updateMany({
       where: { id, status: "Waiting" },
       data: { status: "Running", startedAt: new Date() },
     })
+
+    if (runId) {
+      const current = await this.db.agentExecution.findUniqueOrThrow({ where: { id } })
+      if (current.status === "Running" && [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE].includes(current.agentType)) {
+        await this.db.agentExecution.updateMany({
+          where: { id, status: "Running", agentType: { in: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE] } },
+          data: { result: JSON.stringify({ ...JSON.parse(current.result ?? "{}"), run_id: runId }) },
+        })
+      }
+    }
 
     return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
   }
@@ -206,13 +266,24 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async findById(id: number): Promise<StoredAgentExecution | null> {
-    const execution = await this.db.agentExecution.findUnique({ where: { id } })
+    const execution = await this.db.agentExecution.findUnique({ where: { id }, include: {
+      evaluation: { include: { projectVersion: { include: { project: {
+        select: { id: true, repositoryOwner: true, repositoryName: true },
+      } } } } },
+      agentSettings: { select: { qualityAttributes: true, workflowIds: true } },
+    } })
 
     if (execution === null) {
       return null
     }
 
-    return this.toStored(execution)
+    const version = execution.evaluation?.projectVersion
+    return { ...this.toStored(execution), monitorContext: {
+      project: version?.project ?? null, branch: version?.branch ?? null, commitHash: version?.commitHash ?? null,
+      evaluationType: execution.evaluation?.type ?? null,
+      qualityAttributes: JSON.parse(execution.agentSettings.qualityAttributes) as string[],
+      workflowIds: JSON.parse(execution.agentSettings.workflowIds) as string[],
+    } }
   }
 
   private toStored(execution: {
@@ -230,9 +301,11 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     startedAt: Date | null
     finishedAt: Date | null
     configurationSnapshot?: string | null
+    invocationReceipts?: string
   }): StoredAgentExecution {
     return {
       id: execution.id,
+      invocations: JSON.parse(execution.invocationReceipts ?? "[]") as InvocationReceipt[],
       evaluationId: execution.evaluationId,
       agentType: execution.agentType,
       status: execution.status as AgentExecutionStatus,

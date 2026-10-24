@@ -7,7 +7,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { buildApp } from "../app.js"
-import { BACKEND_AGENT_TYPES } from "../modules/agent-settings/agent-types.js"
 
 describe("OpenAPI portal", () => {
   it("serves Swagger UI, its assets, and the discovered backend specification", async () => {
@@ -49,8 +48,9 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 31)
+      assert.equal(operations.length, 38)
       const expectedOperations = [
+        "POST /api/agent-executions/{id}/invocations",
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
         "GET /api/agent-executions/{id}",
@@ -58,6 +58,9 @@ describe("OpenAPI portal", () => {
         "GET /api/ai-providers",
         "GET /api/ai-providers/{id}",
         "GET /api/projects",
+        "GET /api/projects/{id}/audits",
+        "GET /api/projects/{id}/audits/{auditId}/report",
+        "GET /api/projects/{id}/audits/{auditId}/report.docx",
         "GET /api/projects/{id}/versions",
         "GET /api/tasks/active",
         "GET /status",
@@ -69,10 +72,12 @@ describe("OpenAPI portal", () => {
         "POST /api/agent-executions/{id}/progress",
         "POST /api/agent-executions/{id}/running",
         "POST /api/agent-settings/{agentType}/verify",
+        "POST /api/agent-settings/sync",
         "POST /api/ai-providers/{id}/credentials",
         "POST /api/ai-providers/{id}/models",
         "POST /api/projects",
         "POST /api/projects/{id}/architecture",
+        "POST /api/projects/{id}/audits",
         "POST /api/projects/{id}/file",
         "POST /api/projects/{id}/git/branches",
         "POST /api/projects/{id}/git/checkout",
@@ -82,6 +87,7 @@ describe("OpenAPI portal", () => {
         "POST /api/projects/{id}/git/tree",
         "POST /api/projects/{id}/sync",
         "PUT /api/agent-settings/{agentType}",
+        "PUT /api/agent-settings/categories/{attribute}",
       ].sort()
       const documentedOperations = Object.entries(specification.paths).flatMap(([path, item]) =>
         Object.keys(item as Record<string, unknown>).filter((method) => ["get", "post", "patch", "delete", "put"].includes(method)).map((method) => `${method.toUpperCase()} ${path}`),
@@ -110,9 +116,7 @@ describe("OpenAPI portal", () => {
       assert.deepEqual(missingExecution.json(), { error: "Agent execution 0 not found" })
       const agentSettings = await app.inject({ method: "GET", url: "/api/agent-settings" })
       assert.equal(agentSettings.statusCode, 200)
-      assert.deepEqual(agentSettings.json(), [...BACKEND_AGENT_TYPES].sort().map((agentType) => ({
-        agentType, configured: false, configuration: null, verification: { status: "not_verified", checkedAt: null, message: null },
-      })))
+      assert.deepEqual(agentSettings.json(), [], "No local agents are seeded without discovery")
       const architectureResponse = specification.paths["/api/projects/{id}/architecture"].post.responses["201"].content["application/json"].schema
       assert.ok(architectureResponse.properties.executions.properties.orientation)
       assert.ok(architectureResponse.properties.executions.properties.architecture)

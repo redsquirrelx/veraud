@@ -1,0 +1,38 @@
+:root {
+    font-family: system-ui, sans-serif;
+    color: #1e293b;
+    background: #f1f5f9;
+    line-height: 1.6;
+}
+
+body {
+    margin: 0;
+    padding: 2rem;
+}
+
+main {
+    max-width: 48rem;
+    margin: 3rem auto;
+    padding: 2rem;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+}
+
+h1 {
+    line-height: 1.2;
+}
+
+form { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+input { flex: 1; min-width: 12rem; }
+input, button { font: inherit; padding: 0.4rem 0.6rem; }
+details { border-top: 1px solid #cbd5e1; padding: 0.75rem 0; }
+summary { cursor: pointer; overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f1f5f9; padding: 1rem; }
+#audit-meta, details p { overflow-wrap: anywhere; }
+#audit-error { color: #991b1b; white-space: pre-wrap; overflow-wrap: anywhere; }
+#audit-waits { white-space: pre-wrap; overflow-wrap: anywhere; }
+.report-actions { margin: 1.25rem 0; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; }
+.report-actions button { cursor: pointer; }
+.report-actions button:disabled { cursor: default; opacity: 0.6; }
+.report-actions p { margin: 0.5rem 0 0; font-size: 0.9rem; }
