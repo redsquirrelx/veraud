@@ -21,6 +21,8 @@ describe("FilterTabs", () => {
     render(<StatefulTabs />)
     const all = screen.getByRole("tab", { name: "All (18)" })
     const running = screen.getByRole("tab", { name: "Running (2)" })
+    expect(all).toHaveAttribute("aria-selected", "true")
+    expect(running).toHaveAttribute("aria-selected", "false")
     all.focus()
     await user.keyboard("{ArrowRight}")
     expect(running).toHaveFocus()
@@ -31,13 +33,6 @@ describe("FilterTabs", () => {
     await user.keyboard("{End}{ArrowRight}")
     expect(all).toHaveFocus()
     expect(all).toHaveAttribute("aria-selected", "true")
-  })
-
-  it("marks the active tab", () => {
-    render(<StatefulTabs />)
-
-    expect(screen.getByRole("tab", { name: "All (18)" }).getAttribute("aria-selected")).toBe("true")
-    expect(screen.getByRole("tab", { name: "Running (2)" }).getAttribute("aria-selected")).toBe("false")
   })
 
   it("switches tabs on click", async () => {
