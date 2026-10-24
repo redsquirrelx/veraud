@@ -4,6 +4,7 @@ from google.genai import types
 from ...config.logs import get_logger
 from ...config.schemas import ModelCredentials, ModelSettings
 from .base import Model
+from .quota import quota_generate
 
 logger = get_logger("model.gemini")
 
@@ -11,7 +12,8 @@ class GeminiModel(Model):
     def __init__(self, settings: ModelSettings, credentials: ModelCredentials):
         super().__init__(settings, credentials)
 
-        self.client = genai.Client(api_key=self.credentials.api_key)
+        self.client = genai.Client(api_key=self.credentials.api_key,
+            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)))
 
     async def generate(self, message: str) -> str:
         logger.info(
@@ -21,6 +23,6 @@ class GeminiModel(Model):
             temperature=self.settings.temperature,
             max_output_tokens=self.settings.max_tokens,
         ))
-        response = await chat.send_message(message)
+        response = await quota_generate(self, message, lambda: chat.send_message(message))
         logger.info("generate done: response_chars=%d", len(response.text or ""))
         return response.text

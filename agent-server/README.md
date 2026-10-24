@@ -90,10 +90,11 @@ uv run pytest src/test-agents tests --ignore=tests/test_functional_adequacy.py -
 ```
 ## Unlimited cumulative token budgets
 
-Set `"unlimited_token_budget": true` in `agent-server/launch.json` and restart
-agent-server to disable cumulative token caps for all agents and audits in that
-process. This includes shared audit, personal agent, hierarchy and per-objective
-token admission. The default is `false`; omitting the flag also keeps finite caps.
+Cumulative token budgets are unlimited by default for all agents and audits.
+This includes shared audit, personal agent, hierarchy and per-objective token
+admission. Omitting `unlimited_token_budget`, or having no `launch.json`, retains
+this default. Set `"unlimited_token_budget": false` in `agent-server/launch.json`
+and restart agent-server to enable cumulative token caps for that process.
 
 Actual usage and conservative estimates continue to be recorded. Context and
 per-response output limits, model/tool call limits, provider rate quotas and

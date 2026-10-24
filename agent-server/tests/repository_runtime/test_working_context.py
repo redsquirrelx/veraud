@@ -280,6 +280,7 @@ def test_initial_navigation_is_kept_until_source_is_available():
 @pytest.mark.parametrize(
     "agent_type", [ProjectOrientationAgent, ProjectArchitectureAgent]
 )
+@pytest.mark.usefixtures("finite_token_budget")
 def test_rejected_request_reports_sizes_and_budget_without_submitting(
     tools, agent_type
 ):

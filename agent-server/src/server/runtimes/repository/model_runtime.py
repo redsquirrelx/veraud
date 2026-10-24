@@ -388,14 +388,17 @@ def create_project_model(settings, credentials):
         async def generate_with_output_limit(self, message, *, max_output_tokens):
             from google.genai import types
 
-            return await self.client.aio.models.generate_content(
+            from ...infrastructure.llm.quota import quota_generate
+
+            output_limit = min(self.settings.max_tokens, max_output_tokens)
+            return await quota_generate(self, message, lambda: self.client.aio.models.generate_content(
                 model=self.settings.name,
                 contents=str(message),
                 config=types.GenerateContentConfig(
                     temperature=self.settings.temperature,
-                    max_output_tokens=min(self.settings.max_tokens, max_output_tokens),
+                    max_output_tokens=output_limit,
                     response_mime_type="application/json",
                 ),
-            )
+            ), max_output_tokens=output_limit)
 
     return ConfiguredGeminiModel(settings, credentials)

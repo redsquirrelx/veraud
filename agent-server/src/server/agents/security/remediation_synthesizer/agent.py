@@ -1,6 +1,14 @@
 import json
 import os
 
+from config.agents.user import ProviderRateLimits
+
+from ....infrastructure.llm.quota import (
+    acquire_global_sync,
+    global_quota_store,
+    quota_scope,
+    reported_tokens,
+)
 from ..config import SecurityConfig
 from ..schemas import Finding
 
@@ -24,7 +32,9 @@ class RemediationSynthesizerAgent:
         if self.api_key:
             try:
                 from openai import OpenAI
-                client = OpenAI(api_key=self.api_key)
+                client = OpenAI(api_key=self.api_key, max_retries=0)
+                reservation = acquire_global_sync(quota_scope("openai", self.model), ProviderRateLimits(),
+                    len(self.config.remediation_system_prompt + user_prompt) + self.config.remediation_model.max_tokens)
                 response = client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -35,6 +45,9 @@ class RemediationSynthesizerAgent:
                     temperature=self.config.remediation_model.temperature,
                     max_tokens=self.config.remediation_model.max_tokens,
                 )
+                actual = reported_tokens(response)
+                if actual is not None:
+                    global_quota_store().settle(reservation, actual)
                 return json.loads(response.choices[0].message.content)
             except Exception:  # noqa: BLE001 - Preserve local fallback for provider failures.
                 return self._fallback_patch(finding)

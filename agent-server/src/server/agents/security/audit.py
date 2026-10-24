@@ -15,8 +15,8 @@ from ...blackboard.publication import Publication
 from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
 from ...runtimes.investigation.provider import (
-    ProviderPacer,
     lean_schema,
+    model_pacer,
     provider_diagnostic,
 )
 from ...runtimes.investigation.structured import (
@@ -87,14 +87,15 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     remediation_stage = "structured_output_setup"
     schema_text = json.dumps(SecurityRemediationProposal.model_json_schema())
     configured = False
-    pacer = ProviderPacer(rate_limits=limits.provider_rate_limits, provider_config=limits)
+    pacer = model_pacer(model, rate_limits=limits.provider_rate_limits, provider_config=limits)
 
     async def generate(prompt):
         nonlocal last_response
         with tools.timing.quota_wait() as waiting:
             quota = await within_deadline(pacer.acquire(max(1, len(prompt)) + output_limit,
                 on_wait=lambda seconds, reasons: waiting.update(reason="+".join(reasons),
-                    until=tools.timing.clock() + seconds, source="local_rolling_window")), tools.timing)
+                    until=tools.timing.clock() + seconds,
+                    source="global_rolling_window" if pacer.scope is not None else "local_rolling_window")), tools.timing)
         last_response = await selected_model.ainvoke(messages, **invoke_options)
         response = last_response.get("raw") if native else last_response
         usage = getattr(response, "usage_metadata", None)

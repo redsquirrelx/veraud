@@ -8,13 +8,13 @@ from .budgets import TimeoutConfig, TokenBudgetConfig
 
 class ProviderRateLimits(ConfigContract):
     requests_per_minute: int | None = Field(default=14, ge=1,
-        description="Local rolling request admission per minute. Null disables this bound.")
+        description="Rolling request admission per minute, shared globally by provider/model. Null disables this caller's bound.")
     tokens_per_minute: int | None = Field(default=250_000, ge=1,
-        description="Local rolling token reservation/accounting per minute. Null disables this bound.")
+        description="Rolling token reservation/accounting per minute, shared globally by provider/model. Null disables this caller's bound.")
 
 
 class AgentUserConfig(TokenBudgetConfig, TimeoutConfig):
     """Cost, duration and provider quota; independent of investigation implementation."""
 
     provider_rate_limits: ProviderRateLimits = Field(default_factory=ProviderRateLimits,
-        description="Local provider admission limits; an injected parent pacer remains authoritative.")
+        description="Provider/model admission limits. Concurrent callers share the strictest active non-null bounds.")

@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 
 from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
-from ..investigation.provider import ProviderPacer
+from ..investigation.provider import model_pacer
 from .model_runtime import ModelGateway
 from .timing import within_deadline
 
@@ -14,7 +14,7 @@ class BudgetedModel:
         self.model, self.options, self.output_limit = prepare_chat_model(model,
             max_output_tokens=limits.max_output_tokens, request_timeout_seconds=limits.provider_request_timeout_seconds)
         self.limits, self.tokens, self.timing = limits, tokens, timing
-        self.pacer = ProviderPacer(rate_limits=limits.provider_rate_limits, provider_config=limits)
+        self.pacer = model_pacer(model, rate_limits=limits.provider_rate_limits, provider_config=limits)
         self.reservation = None
         self.attempts = 0
         self.gateway = ModelGateway(self, provider_config=limits, remaining_seconds=lambda: timing.active_remaining)
@@ -38,7 +38,8 @@ class BudgetedModel:
         with self.timing.quota_wait() as waiting:
             quota = await within_deadline(self.pacer.acquire(max(1, len(prompt)) + self.output_limit,
                 on_wait=lambda seconds, reasons: waiting.update(reason="+".join(reasons),
-                    until=self.timing.clock() + seconds, source="local_rolling_window")), self.timing)
+                    until=self.timing.clock() + seconds,
+                    source="global_rolling_window" if self.pacer.scope is not None else "local_rolling_window")), self.timing)
         response = await self.model.ainvoke([HumanMessage(content=prompt)], **self.options)
         usage = getattr(response, "usage_metadata", None)
         if isinstance(usage, dict) and isinstance(usage.get("input_tokens"), int) and isinstance(usage.get("output_tokens"), int):

@@ -9,10 +9,13 @@ from time import monotonic
 from config.agents.provider import ProviderRetryConfig
 
 from ...benchmark.pacing import RequestPacer, http_status, retry_hints, retryable
-
-
-class RequestTokenQuotaExceeded(ValueError):
-    """A single request cannot fit the configured rolling-minute token quota."""
+from ...infrastructure.llm.quota import (
+    GlobalReservation,
+    RequestTokenQuotaExceeded,
+    acquire_global,
+    global_quota_store,
+    model_quota_scope,
+)
 
 
 @dataclass
@@ -25,13 +28,13 @@ class ProviderPacer(RequestPacer):
     """Shared rolling-60-second admission and local request pacing.
 
     Ledger timestamps belong to request starts, not calendar-minute boundaries.
-    Failed/unknown attempts retain their token estimates. The caller owns scope:
-    one instance per assessment by default; inject the same instance across runs
-    to enforce a shared in-process project/model quota. No cross-process persistence.
+    Failed/unknown attempts retain their token estimates. Provider-backed models
+    use a persistent provider/model scope shared across runs and OS processes.
+    Anonymous offline models can still inject an in-memory pacer/virtual clock.
     """
 
     def __init__(self, *, rate_limits, interval=None, max_retries=None, backoff=None,
-                 provider_config=None, clock=monotonic, sleep=asyncio.sleep):
+                 provider_config=None, clock=monotonic, sleep=asyncio.sleep, scope=None):
         policy = provider_config or ProviderRetryConfig()
         interval = policy.provider_request_interval_seconds if interval is None else interval
         max_retries = policy.max_provider_retries if max_retries is None else max_retries
@@ -42,6 +45,7 @@ class ProviderPacer(RequestPacer):
         self.clock = clock
         self.sleep = sleep
         self.changed = asyncio.Event()
+        self.scope = scope
 
     def quota_delay(self, tokens, now):
         limits = self.rate_limits
@@ -64,6 +68,16 @@ class ProviderPacer(RequestPacer):
         return delays
 
     async def acquire(self, tokens, *, on_wait=None):
+        if self.scope is not None:
+            # Global admission replaces local RPM/TPM counters; the existing
+            # invocation pacer still owns its independent minimum spacing.
+            if self.interval == 0:
+                return await acquire_global(self.scope, self.rate_limits, tokens, on_wait=on_wait)
+            async with self.lock:
+                await self.wait()
+                reservation = await acquire_global(self.scope, self.rate_limits, tokens, on_wait=on_wait)
+                self.completed_attempt()
+                return reservation
         while True:
             # Only checking/reserving capacity is serialized. A sleeping request
             # must not hold up smaller requests that fit the available TPM.
@@ -94,6 +108,9 @@ class ProviderPacer(RequestPacer):
                 await asyncio.gather(sleeper, changed, return_exceptions=True)
 
     def settle(self, reservation, actual_tokens):
+        if isinstance(reservation, GlobalReservation):
+            global_quota_store().settle(reservation, actual_tokens)
+            return
         # No await: atomic within the event loop, also while another caller waits.
         # An expired reservation no longer affects the current rolling window.
         reservation.tokens = actual_tokens
@@ -103,6 +120,13 @@ class ProviderPacer(RequestPacer):
         # Broadcast without clearing an event another waiter still needs to see.
         notification, self.changed = self.changed, asyncio.Event()
         notification.set()
+
+
+def model_pacer(model, *, injected=None, **options):
+    scope = model_quota_scope(model)
+    if scope is None and injected is not None:
+        return injected
+    return ProviderPacer(scope=scope, **options)
 
 
 def causes(error):

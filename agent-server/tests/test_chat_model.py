@@ -5,6 +5,7 @@ import pytest
 
 from server.config.schemas import ModelCredentials, ModelSettings
 from server.infrastructure.llm import chat
+from server.infrastructure.llm.quota import model_quota_scope
 from server.runtimes.repository.model_runtime import close_model_clients
 
 
@@ -47,7 +48,8 @@ def test_native_limits_use_real_provider_fields_without_call_time_max_tokens(pro
     try:
         prepared, options, output_limit = chat.prepare_chat_model(model,
             max_output_tokens=4000, request_timeout_seconds=20)
-        assert getattr(prepared, field) == output_limit == 700
+        assert getattr(prepared, field) == output_limit == 4000
+        assert model_quota_scope(prepared) == model_quota_scope(model)
         assert options == {}
         timeout_field = "timeout" if provider == "gemini" else "request_timeout"
         assert getattr(prepared, timeout_field) == 20

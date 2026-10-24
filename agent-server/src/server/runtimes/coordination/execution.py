@@ -14,7 +14,7 @@ from ...benchmark.pacing import RequestPacer
 from ...blackboard.publication import publication_for
 from ...config.token_budget import effective_token_budget_policy, token_budget_exceeded
 from ..investigation.agent import InvestigationExecution
-from ..investigation.provider import ProviderPacer, lean_schema
+from ..investigation.provider import lean_schema, model_pacer
 from ..invocation_reporting import observe_invocation
 from ..repository.context import RepositoryContext
 from ..repository.schemas import ExecutionBudget
@@ -77,6 +77,7 @@ class CoordinatorAgent:
                  blackboard: "Blackboard | None" = None, audit_identity: "AuditIdentity | None" = None):
         self.model = getattr(model, "llm", model)
         self.agent_models = {}
+        self.agent_output_limits = {}
         self.config = config or self.config_type()
         if set(self.config.prompts) - set(self.config.prompt_nodes):
             raise ValueError("Coordinator prompt overrides must name configured cognitive nodes.")
@@ -146,7 +147,8 @@ class CoordinatorExecution(ABC):
         self.synth = self.synthesis_execution_type(agent.model, self.config, tools, request)
         self.synth.blackboard = self.blackboard
         self.synth.audit_identity = self.audit_identity
-        self.provider_pacer = getattr(agent, "provider_pacer", None) or ProviderPacer(rate_limits=self.config.provider_rate_limits,
+        self.provider_pacer = model_pacer(agent.model, injected=getattr(agent, "provider_pacer", None),
+            rate_limits=self.config.provider_rate_limits,
             interval=max(self.config.provider_request_interval_seconds,
             self.config.invocation_limits.provider_request_interval_seconds),
             max_retries=self.config.max_provider_retries,
@@ -301,7 +303,9 @@ class CoordinatorExecution(ABC):
                 max_tokens_per_objective=self.token_budget.limit if self.token_budget is not None else limits.max_total_tokens,
                 max_tool_calls=max(1, limits.max_tool_calls),
                 max_input_tokens_per_call=min(self.global_budget.max_input_tokens_per_call, limits.max_context_characters // 2),
-                max_output_tokens_per_call=min(self.global_budget.max_output_tokens_per_call, limits.max_output_tokens),
+                # Carry the execution envelope through supervisors; their own
+                # output setting must not become a cap on a child's override.
+                max_output_tokens_per_call=self.global_budget.max_output_tokens_per_call,
                 max_retrieved_characters=self.global_budget.max_retrieved_characters,
                 max_elapsed_seconds=min(self.timing.wall_remaining, self.global_budget.max_elapsed_seconds),
             )
@@ -344,12 +348,17 @@ class CoordinatorExecution(ABC):
                         workspace_root=self.tools.policy.workspace_root, limits=self.tools.limits,
                         token_budget=token_scope, timing=timing, retrieval_budget=self.tools.retrieval_budget)
                     config = self.invocation_config(spec, limits)
+                    output_overrides = getattr(self.agent, "agent_output_limits", {})
+                    if assignment.investigator_id in output_overrides:
+                        config = type(config).model_validate({**config.model_dump(),
+                            "max_output_tokens": output_overrides[assignment.investigator_id]})
                     agent_models = getattr(self.agent, "agent_models", {})
                     selected_model = agent_models.get(assignment.investigator_id, self.agent.model)
                     investigator = (self.agent.factory(assignment.investigator_id, selected_model, config)
                                     if self.agent.factory else spec.agent_class(selected_model, config,
                                         provider_pacer=self.provider_pacer))
                     investigator.agent_models = agent_models
+                    investigator.agent_output_limits = output_overrides
                     # Factory-created children share the same dependency as default agents.
                     investigator.blackboard = self.blackboard
                     if self.publication is not None:

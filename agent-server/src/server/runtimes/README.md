@@ -23,6 +23,31 @@ Shared configuration belongs to `config.agents`; exclusive configuration remains
 in each agent's `config.py`. See [coordination/README.md](coordination/README.md)
 for the shared orchestration contract.
 
+## Global provider RPM/TPM
+
+`server.infrastructure.llm.quota` owns the process-independent provider/model
+admission ledger. `ProviderPacer` retains invocation pacing and quota-wait telemetry,
+but provider-backed models reserve RPM/TPM capacity in the global ledger rather than
+in per-agent counters. SDK generation adapters do the same for direct agents,
+architecture stages, access probes and legacy synchronous security remediation.
+Native chat calls are admitted by their runtime, so a generation is not charged twice.
+SDK automatic retries are disabled; each runtime retry must acquire a new slot.
+
+The default ledger is `appdata/provider-quotas.sqlite3` at the repository root.
+`PROVIDER_QUOTA_PATH` selects a shared ledger location. All agent-server workers and
+standalone processes using that ledger share atomic SQLite transactions and a rolling
+60-second window, including after a restart. Scopes contain provider/model names, never
+credentials. Different models/providers have independent windows; different API keys
+for the same provider/model share one window conservatively.
+
+TPM admission reserves estimated input plus the allowed output, then reconciles
+reported provider usage. Failed, cancelled or unknown submitted requests retain their
+reservation. A caller cancelled while waiting has no request reservation. Cross-process
+waiters recheck within one second after another caller releases unused token capacity.
+Conflicting active quota policies use the strictest non-null bounds; policy leases
+expire after 60 seconds without admission attempts. Quota waits in managed audits retain
+active/wall deadline semantics and report `global_rolling_window` as their source.
+
 ## Evidence preflight and closing consistency
 
 Investigators check candidate citations after `evaluate_evidence`, before accepting

@@ -282,6 +282,7 @@ def test_snapshot_and_ledger_rejection_happens_before_model_call(fixture):
     assert not model.prompts
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_strict_admission_and_external_cancellation(fixture):
     tools, original = fixture
     model = ReviewingModel()
@@ -526,6 +527,7 @@ def test_summary_identifies_displayed_report_and_separates_certainty(
         assert "Architect revision: not performed" in text
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_summary_explains_partial_review_and_failed_revision(fixture, capsys):
     from server.repository_runner import print_summary
 

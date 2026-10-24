@@ -4,6 +4,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from ...config.schemas import ModelCredentials, ModelSettings
+from .quota import mark_quota_scope
 
 PROVIDERS = {"gemini": "google_genai", "google": "google_genai", "openai": "openai",
              "openrouter": "openai", "groq": "openai", "anthropic": "anthropic"}
@@ -20,9 +21,9 @@ def prepare_chat_model(model, *, max_output_tokens, request_timeout_seconds):
     if isinstance(model, BaseChatModel):
         for field in ("max_output_tokens", "max_tokens"):
             if field in type(model).model_fields:
-                configured = getattr(model, field)
-                if configured is not None:
-                    output_limit = min(output_limit, configured)
+                # The execution configuration already resolved inheritance and
+                # explicit overrides. Provider fields are its projection, not a
+                # second independent ceiling (including provider SDK defaults).
                 model = model.model_copy(update={field: output_limit})
                 options = {}
                 break
@@ -46,4 +47,4 @@ def build_chat_model(settings: ModelSettings, credentials: ModelCredentials) -> 
         options["base_url"] = "https://openrouter.ai/api/v1"
     elif provider == "groq":
         options["base_url"] = "https://api.groq.com/openai/v1"
-    return init_chat_model(settings.name, model_provider=PROVIDERS[provider], **options)
+    return mark_quota_scope(init_chat_model(settings.name, model_provider=PROVIDERS[provider], **options), settings)

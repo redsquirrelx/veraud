@@ -6,7 +6,7 @@ from .base import ConfigContract
 
 
 class TokenBudgetPolicy(ConfigContract):
-    unlimited_token_budget: StrictBool = False
+    unlimited_token_budget: StrictBool = True
 
 
 class TokenBudgetConfig(ConfigContract):

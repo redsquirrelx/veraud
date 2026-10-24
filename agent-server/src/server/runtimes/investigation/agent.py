@@ -28,6 +28,7 @@ from .provider import (
     ProviderPacer,
     RequestTokenQuotaExceeded,
     lean_schema,
+    model_pacer,
     provider_diagnostic,
     provider_status,
     retry_delay,
@@ -101,7 +102,8 @@ class InvestigationAgent:
         execution = self.execution_type(self.model, self.config, tools, request)
         execution.blackboard = self.blackboard
         execution.audit_identity = publication.identity if publication is not None else self.audit_identity
-        if self.provider_pacer is not None:
+        # A parent using another model must not replace a native model's scope.
+        if self.provider_pacer is not None and execution.provider_pacer.scope is None:
             execution.provider_pacer = self.provider_pacer
         with execution.timing.stage("investigation"):
             state = await execution.graph.ainvoke(
@@ -138,7 +140,7 @@ class InvestigationExecution:
         self.retryable_failure = False
         self.recovery_wait_seconds = 0.0
         self.deferred_stages = []
-        self.provider_pacer = ProviderPacer(rate_limits=config.provider_rate_limits, interval=config.provider_request_interval_seconds,
+        self.provider_pacer = model_pacer(model, rate_limits=config.provider_rate_limits, interval=config.provider_request_interval_seconds,
             max_retries=config.max_provider_retries, backoff=config.provider_retry_backoff_seconds)
         self.logger = get_logger(self.trace_name)
         self._commit_checks = tools.commit_verifications
@@ -513,7 +515,8 @@ class InvestigationExecution:
                     if isinstance(self.provider_pacer, ProviderPacer):
                         def on_wait(wait_seconds, reasons):
                             wait.update(reason="+".join(reasons), until=self.timing.clock() + wait_seconds,
-                                source="local_rolling_window" if "rpm" in reasons or "tpm" in reasons else "local_pacing")
+                                source=("global_rolling_window" if self.provider_pacer.scope is not None else "local_rolling_window")
+                                    if "rpm" in reasons or "tpm" in reasons else "local_pacing")
                             self.logger.warning("%s: provider_rate_limit_wait seconds=%g reasons=%s", node, wait_seconds, ",".join(reasons))
                         return await self.provider_pacer.acquire(reservation_tokens, on_wait=on_wait)
                     async with self.provider_pacer.lock:

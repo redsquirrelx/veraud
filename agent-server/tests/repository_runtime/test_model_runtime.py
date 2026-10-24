@@ -73,6 +73,7 @@ def test_project_gemini_factory_uses_adapter_and_bounds_json_output(monkeypatch,
     assert all(request["config"].response_mime_type == "application/json" for request in requests)
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_retry_requires_token_admission_and_counts_only_submitted_attempts():
     from server.runtimes.repository.schemas import ExecutionBudget
     from server.runtimes.repository.telemetry import measured_prompt

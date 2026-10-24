@@ -2,6 +2,7 @@ from langchain_anthropic import ChatAnthropic
 
 from ...config.schemas import ModelCredentials, ModelSettings
 from .base import Model
+from .quota import mark_quota_scope, quota_generate
 
 
 class AnthropicModel(Model):
@@ -15,6 +16,7 @@ class AnthropicModel(Model):
             timeout=25,
             max_retries=0,
         )
+        mark_quota_scope(self.llm, settings)
 
     async def generate(self, message: str):
-        return await self.llm.ainvoke(message)
+        return await quota_generate(self, message, lambda: self.llm.ainvoke(message))

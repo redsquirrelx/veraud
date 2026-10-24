@@ -173,6 +173,7 @@ def test_tool_and_call_limits_terminate_repetitive_requests(tools):
     assert result.completion_status == "failed"
 
 
+@pytest.mark.usefixtures("finite_token_budget")
 def test_token_stop_happens_before_submission_and_external_cancellation_propagates(
     tools,
 ):

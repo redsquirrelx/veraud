@@ -47,12 +47,22 @@ def test_unlimited_admission_ignores_total_and_objective_caps_but_retains_contex
         admit_request(SimpleNamespace(measurements=[]), budget, "x" * 1000, "objective")
 
 
-@pytest.mark.parametrize("values", [{}, {"unlimited_token_budget": False}])
-def test_finite_mode_still_enforces_caps(launch_policy, values):
-    launch_policy(values)
+def test_finite_mode_still_enforces_caps(launch_policy):
+    launch_policy({"unlimited_token_budget": False})
     ledger = SharedTokenBudget(1000)
     assert ledger.reserve(1001) is None
     assert policy.token_budget_exceeded(1001, 1000)
+
+
+@pytest.mark.parametrize("launch_exists", [True, False])
+def test_default_is_unlimited_with_omitted_flag_or_missing_launch(launch_policy, launch_exists):
+    launch_policy({})
+    if not launch_exists:
+        policy.LAUNCH_PATH.unlink()
+    assert policy.token_budget_policy().unlimited_token_budget is True
+    ledger = SharedTokenBudget(1000)
+    assert ledger.reserve(2000) is not None
+    assert not policy.token_budget_exceeded(2000, 1000)
 
 
 def test_launch_rejects_ambiguous_boolean(launch_policy):

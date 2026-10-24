@@ -32,7 +32,7 @@ aplicándose a todos los niveles mediante `agent_defaults`.
 | Level | Controls | Purpose |
 | --- | --- | --- |
 | `user` | `max_total_tokens`, `timeout_seconds` | Cost and duration of the requested execution |
-| `user` | `provider_rate_limits.requests_per_minute`, `provider_rate_limits.tokens_per_minute` | Provider quota admission; null disables the selected local bound |
+| `user` | `provider_rate_limits.requests_per_minute`, `provider_rate_limits.tokens_per_minute` | Global provider/model quota admission; null disables this caller's bound |
 | `developer` | `tools`, `prompts`, permitted prompt nodes | Tool capabilities and cognitive instructions |
 | `developer` | `max_model_calls`, `max_tool_calls`, `max_iterations`, `max_context_characters`, `max_output_tokens` | Internal graph, context and per-call bounds |
 | `developer` | Schema/provider retries, retry backoff, request/start intervals | Transport and scheduling policy |
@@ -177,8 +177,13 @@ in either descriptor. This module supplies panel contracts, not a frontend or HT
 
 Existing budgets/defaults remain: 100,000 context characters and 100,000 investigator
 total tokens; 14 RPM / 250,000 TPM. Actual runtime allowance is still bounded by
-repository/objective budgets, model caps and parent reservations. Injected shared
-provider pacers remain authoritative; quotas are not shared across processes.
+repository/objective budgets, model caps and parent reservations. Provider-backed
+calls share persistent rolling RPM/TPM admission by normalized provider/model,
+including different credentials, concurrent audits, architecture stages, direct
+execution and access probes. Concurrent policies use the strictest non-null bound;
+a policy lease expires after 60 seconds without admission attempts. A caller using
+null does not disable another active caller's bound. Anonymous offline model doubles
+can still inject a local pacer and virtual clock.
 
 Child envelopes, per-child tuning and model injection remain developer orchestration
 policy. Editing a selected agent's user limits does not install a persistent override

@@ -29,6 +29,7 @@ def test_managed_calls_settle_actual_usage_and_stop_at_call_limit():
 
 
 @pytest.mark.parametrize("local,shared,expected", [(1000, 100000, "local_token"), (100000, 1000, "shared_token")])
+@pytest.mark.usefixtures("finite_token_budget")
 def test_token_limits_block_provider_calls_before_dispatch(local, shared, expected):
     async def run():
         model = SimpleNamespace(ainvoke=AsyncMock())
