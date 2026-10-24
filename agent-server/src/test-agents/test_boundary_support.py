@@ -404,7 +404,9 @@ def test_unresolvable_citation_still_receives_readable_navigation(repo):
     # storage/db.py was never read; domain/service.py already was and is not re-suggested.
     assert [read["arguments"]["path"] for read in task["next_source_reads"]] == ["storage/db.py"]
     assert all(read["navigation_only"] for read in task["next_source_reads"])
-    assert result.tool_calls == 1  # navigation hints are never executed as evidence
+    assert result.tool_calls == 2  # The pending range was delivered through a charged ToolNode call.
+    assert any(ref.path == "storage/db.py" for ref in result.evidence)
+    assert result.hypotheses[0].status == "inconclusive"  # Reading does not legitimize the invented citation.
 
 
 def test_isolation_gap_suggests_unread_endpoints_outside_the_declared_scope(repo):
@@ -457,9 +459,10 @@ def test_rejection_names_the_claim_kinds_the_same_evidence_would_pass(repo):
         max_iterations=1)
     context = json.loads(model.history[4][1].content)
     task = next(item for item in context["evidence_recovery_tasks"] if item["id"] == "h1")
-    assert task["issues"] == ["boundary_missing_role:composition", "boundary_missing_role:implementation",
+    assert set(task["issues"]) >= {"boundary_missing_role:composition", "boundary_missing_role:implementation",
         "boundary_missing_role:usage", "boundary_endpoints_not_inspected",
-        "boundary_related_endpoints_not_supported"]
+        "boundary_related_endpoints_not_supported", "boundary_verification_missing:shared_resources",
+        "boundary_verification_missing:dependency_direction", "boundary_scope_coverage_not_demonstrated"}
     assert task["satisfiable_claim_kinds"] == ["declaration", "behavior", "dependency"]
     assert task["action"] == "narrow_claim_kind_or_inspect_missing_roles"
     assert any("The inspected support carries these claim kinds: declaration, behavior, dependency"
@@ -520,7 +523,9 @@ def test_hypothesis_cannot_be_answered_with_evidence_from_another_subsystem(laye
             evidence_needed=["Read app/api/route.py"])
         return value
 
-    result, _, _ = audit(layered_repo, [PLAN, call(), AIMessage(content="Ready"),
+    plan = {**PLAN, "hypotheses": [{**PLAN["hypotheses"][0],
+        "question": "Is the 'app/api' layer acting as a thin translation proxy?"}]}
+    result, _, _ = audit(layered_repo, [plan, call(), AIMessage(content="Ready"),
         substituted, review()], max_iterations=1)
     # The cited implementation satisfies its own role and is self-consistent, which is
     # exactly why roles and scope alone cannot detect a substitution.
@@ -537,7 +542,9 @@ def test_hypothesis_scope_matching_what_it_names_is_still_accepted(layered_repo)
             evidence_needed=["Read domain/service.py"])
         return value
 
-    result, _, _ = audit(layered_repo, [PLAN, call(), AIMessage(content="Ready"),
+    plan = {**PLAN, "hypotheses": [{**PLAN["hypotheses"][0],
+        "question": "Is the 'domain' module dependent on storage?"}]}
+    result, _, _ = audit(layered_repo, [plan, call(), AIMessage(content="Ready"),
         on_scope, review()], max_iterations=1)
     assert result.hypotheses[0].status == "confirmed"
     assert "boundary_scope_unrelated_to_subject" not in result.hypotheses[0].rationale
@@ -552,7 +559,9 @@ def test_hypothesis_naming_no_inspectable_scope_is_not_judged_on_relevance(repo)
             evidence_needed=["Inspect the persistence contract"])
         return value
 
-    result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), abstract, review()],
+    plan = {**PLAN, "hypotheses": [{**PLAN["hypotheses"][0],
+        "question": "Does the persistence boundary allow independent replacement?"}]}
+    result, _, _ = audit(repo, [plan, call(), AIMessage(content="Ready"), abstract, review()],
         max_iterations=1)
     assert result.hypotheses[0].status == "confirmed"
     assert result.termination_reason == "sufficient_evidence"
@@ -667,7 +676,9 @@ def test_behavior_claim_requires_the_named_implementation_not_an_incidental_help
         return value
 
     end = 5 if mode in {"missing_symbol", "wrong_symbol", "unread_body"} else 9
-    responses = [PLAN, call(arguments={"path": "domain/service.py", "start_line": 1,
+    plan = {**PLAN, "hypotheses": [{**PLAN["hypotheses"][0],
+        "question": "Does domain/service.py implement journal posting?"}]}
+    responses = [plan, call(arguments={"path": "domain/service.py", "start_line": 1,
         "end_line": 8 if mode == "chunks" else end})]
     if mode == "chunks":
         responses.append(call(arguments={"path": "domain/service.py", "start_line": 9,
@@ -724,7 +735,9 @@ def test_dependency_check_cannot_bypass_semantic_review_of_a_broader_hypothesis(
             unverified_claims=["The intended service abstraction and the alleged bypass remain unverified."])
         return value
 
-    result, _, _ = audit(repo, [PLAN, call(), AIMessage(content="Ready"), overclaim, skeptical], max_iterations=1)
+    plan = {**PLAN, "hypotheses": [{**PLAN["hypotheses"][0],
+        "question": "Does domain bypass the intended service layer?"}]}
+    result, _, _ = audit(repo, [plan, call(), AIMessage(content="Ready"), overclaim, skeptical], max_iterations=1)
     assert result.hypotheses[0].status == "inconclusive"
     assert "boundary_hypothesis_semantic_review_inconclusive" in result.hypotheses[0].rationale
     assert "no service contract" in result.hypotheses[0].rationale

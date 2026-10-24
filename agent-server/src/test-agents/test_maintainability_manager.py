@@ -40,13 +40,17 @@ def test_explicit_models_reach_coordinators_and_their_investigators(repo):
     selected = {name: NativeStructuredModel([{"summary": f"Synthesis by {name}"}])
         for name in MAINTAINABILITY_AGENT_TYPES}
     received = {}
+    received_limits = {}
+    overrides = {"modularity": 2000, "responsibility": 16000, "reusability": 12000}
 
     def coordinator(key, model, limits):
         received[key] = model
+        received_limits[key] = limits.max_output_tokens
         make = modularity_factory([]) if key == "modularity" else reusability_factory([])
 
         def investigator(name, child_model, child_limits):
             received[name] = child_model
+            received_limits[name] = child_limits.max_output_tokens
             return make(name, child_model, child_limits)
 
         return COORDINATORS[key].agent_class(model, limits, investigator_factory=investigator,
@@ -55,10 +59,14 @@ def test_explicit_models_reach_coordinators_and_their_investigators(repo):
     agent = MaintainabilityManagerAgent(selected["maintainability_manager"], config(),
         coordinator_factory=coordinator, tracing_backend=NoOpTracingBackend())
     agent.agent_models = selected
-    result = asyncio.run(agent.run(tools(repo), MaintainabilityRequest(targets=["main.py"])))
+    agent.agent_output_limits = overrides
+    result = asyncio.run(agent.run(toolset(repo, max_model_calls=400, max_tool_calls=500,
+        max_total_tokens=1_000_000, max_tokens_per_objective=1_000_000,
+        max_output_tokens_per_call=16000), MaintainabilityRequest(targets=["main.py"])))
     assert result.status == "complete"
     assert set(received) == set(selected) - {"maintainability_manager"}
     assert all(model is selected[name] for name, model in received.items())
+    assert all(value == overrides.get(name, 4000) for name, value in received_limits.items())
 
 
 @pytest.fixture

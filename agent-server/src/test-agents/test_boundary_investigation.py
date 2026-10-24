@@ -112,7 +112,9 @@ def test_conceptual_question_gets_actionable_module_level_configuration_read(rep
     tasks = json.loads(model.history[3][1].content)["evidence_recovery_tasks"]
     reads = next(item for item in tasks if item["id"] == "h1")["next_source_reads"]
     assert reads[0]["arguments"]["path"] == "database_config.py"
-    assert not result.evidence  # Navigation did not silently inspect the suggested code.
+    assert result.tool_calls == 2  # One bounded recovery batch uses the normal, charged ToolNode.
+    assert any(ref.path == "database_config.py" for ref in result.evidence)
+    assert result.hypotheses[0].status == "inconclusive"  # Retrieval is not a finding or a resolved hypothesis.
 
 
 def test_compaction_preserves_cited_source_and_native_tool_pairs():

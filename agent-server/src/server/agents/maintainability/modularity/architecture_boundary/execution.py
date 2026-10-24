@@ -1,10 +1,12 @@
 """Boundary-specific support requirements, distinct from citation/provenance validation."""
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, ToolMessage
 from pydantic_core import PydanticCustomError
 
 from .....config.token_budget import (
@@ -14,6 +16,7 @@ from .....config.token_budget import (
 from .....runtimes.investigation.agent import InvestigationExecution
 from .....runtimes.investigation.messages import compact_tool_history, empty_ai_message
 from .....runtimes.investigation.provider import lean_schema
+from ....schemes.base import CandidateFinding, Hypothesis, InvestigationPlan
 from ....schemes.investigator import (
     BoundaryEvaluation,
     BoundaryFinding,
@@ -22,6 +25,7 @@ from ....schemes.investigator import (
     BoundaryResult,
     BoundaryReview,
 )
+from .claims import assertion_issues
 from .discovery import BoundaryDiscovery
 from .support import dependency_span, supports_role
 
@@ -38,9 +42,10 @@ CLAIM_REQUIREMENTS = {
     "dependency": frozenset({"dependency"}),
     "isolation": frozenset({"implementation", "usage", "composition"}),
     "absence_of_cycles": frozenset({"dependency"}),
+    "deployment": frozenset({"declaration", "implementation", "usage", "composition"}),
 }
 CLAIM_KINDS = tuple(CLAIM_REQUIREMENTS)
-COVERAGE_DEMANDING = frozenset({"isolation", "absence_of_cycles"})
+COVERAGE_DEMANDING = frozenset({"isolation", "absence_of_cycles", "deployment"})
 
 UNSUPPORTED_SUBJECT = [
     ("Deliver source evidence for this subject before asserting it. A resolved hypothesis or candidate without "
@@ -78,12 +83,113 @@ class BoundaryExecution(InvestigationExecution):
         self._review_skipped_no_candidates = False
         self._prioritize_evaluation = False
         self._repair_source_ids = set()
+        self._research_tasks = []
+        self._round_progress = []
+        self._phase_consumption = {}
+        self._guided_rounds = set()
+        self._guided_pending = False
+        self._planned_hypotheses = {}
+        self._baseline = request.continuation
+        self._request_fingerprint = hashlib.sha256(json.dumps(request.model_dump(mode="json", exclude={"continuation"}),
+            sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        if self._baseline is not None:
+            snapshot = tools.accessible_snapshot
+            if (self._baseline.snapshot_hash != snapshot.repository.snapshot_hash
+                    or self._baseline.commit != snapshot.repository.commit
+                    or self._baseline.repository_id != snapshot.repository.name
+                    or self._baseline.objective != request.objective):
+                raise ValueError("Boundary continuation requires the same repository, snapshot, commit and objective.")
+            if self._baseline.request_fingerprint != self._request_fingerprint:
+                raise ValueError("Boundary continuation request context and criteria must match the prior request fingerprint.")
+            criteria = {item.id: item for item in request.criteria}
+            if any(finding.criterion_id not in criteria or finding.criterion != criteria[finding.criterion_id]
+                    for finding in self._baseline.findings):
+                raise ValueError("Boundary continuation criteria do not match the prior result.")
+            if self._baseline.plan is None:
+                raise ValueError("Boundary continuation requires a previous investigation plan.")
         super().__init__(model, config, tools, request)
+
+    async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
+        before = (self.calls, self.tokens, self.estimates, self.reported_input_tokens, self.reported_output_tokens)
+        try:
+            return await super().provider_request(model, messages, overhead, node, schema, reserved_calls)
+        finally:
+            after = (self.calls, self.tokens, self.estimates, self.reported_input_tokens, self.reported_output_tokens)
+            counters = self._phase_consumption.setdefault(node, dict.fromkeys((
+                "model_calls", "accounted_tokens", "estimated_tokens", "reported_input_tokens", "reported_output_tokens",
+                "prompt_characters"), 0))
+            for key, old, new in zip(tuple(counters)[:5], before, after, strict=True):
+                counters[key] += new - old
+            counters["prompt_characters"] += (after[0] - before[0]) * (
+                len(json.dumps([item.model_dump() for item in messages], default=str)) + len(overhead))
 
     def structured_schema(self, schema):
         # Provider generation uses a reduced schema; parse_structured still
         # validates the complete canonical contract and all local bounds.
         return lean_schema(schema) if isinstance(self.model, BaseChatModel) else schema
+
+    async def plan_investigation(self, state):
+        if self._baseline is None:
+            update = await super().plan_investigation(state)
+            self._planned_hypotheses = {item.id: item for item in update["hypotheses"]}
+            return update
+        # Re-deliver only cited source through the normal access/budget checks.
+        # A serialized result is untrusted input, not a privileged evidence ledger.
+        baseline = self._baseline
+        needed = {item for subject in [*baseline.hypotheses, *baseline.findings] for item in subject.evidence_ids}
+        needed.update(item.evidence_id for check in baseline.claim_checks for item in check.support)
+        sources = {source.id: source for source in self.tools.accessible_snapshot.files}
+        mapping, messages, delivered = {}, [], {}
+        for ref in baseline.evidence:
+            if ref.id not in needed or ref.kind != "source":
+                continue
+            source = sources.get(ref.file_id)
+            if (source is None or ref.snapshot_hash != baseline.snapshot_hash or source.path != ref.path
+                    or source.content_hash != ref.content_hash):
+                raise ValueError("Continuation evidence does not match the retained snapshot.")
+            key = (ref.path, ref.start_line, ref.end_line)
+            if key in delivered:
+                mapping[ref.id] = delivered[key]
+                continue
+            arguments = {"path": ref.path, "start_line": ref.start_line, "end_line": ref.end_line}
+            call_id = "boundary-continuation-" + str(len(messages))
+            response = self.tools.execute("get_source_excerpt", arguments, tool_call_id=call_id)
+            if response.error:
+                self.issues.append("Continuation source could not be re-delivered: " + ref.path)
+                continue
+            match = next((item for item in response.evidence if item.kind == "source"
+                and item.start_line == ref.start_line and item.end_line == ref.end_line), None)
+            if match is None:
+                self.issues.append("Continuation source range was truncated; missing source must be inspected: " + ref.path)
+                continue
+            mapping[ref.id] = delivered[key] = match.id
+            messages.extend([AIMessage(content="", tool_calls=[{
+                "name": "get_source_excerpt", "args": arguments, "id": call_id}]),
+                ToolMessage(content=json.dumps(self.tools.model_view(response), ensure_ascii=False),
+                    name="get_source_excerpt", tool_call_id=call_id)])
+
+        def remap(value):
+            if isinstance(value, str):
+                return mapping.get(value, value)
+            if isinstance(value, list):
+                return [remap(item) for item in value]
+            if isinstance(value, dict):
+                return {key: remap(item) for key, item in value.items()}
+            return value
+
+        hypotheses = [Hypothesis.model_validate(remap(item.model_dump())) for item in baseline.hypotheses]
+        candidates = [CandidateFinding.model_validate(remap({key: value for key, value in item.model_dump().items()
+            if key in CandidateFinding.model_fields})) for item in baseline.findings]
+        evaluation = BoundaryEvaluation(sufficient=False, hypotheses=hypotheses, candidates=candidates,
+            missing_information=baseline.missing_information,
+            claim_checks=remap([item.model_dump() for item in baseline.claim_checks]))
+        self.evaluation_evidence_gaps(evaluation)
+        plan = InvestigationPlan.model_validate({**baseline.plan.model_dump(),
+            "hypotheses": [item.model_dump() for item in hypotheses]})
+        self._planned_hypotheses = {item.id: item for item in baseline.plan.hypotheses}
+        return {"plan": plan, "hypotheses": hypotheses, "evaluation": evaluation,
+            "missing_information": baseline.missing_information, "messages": messages,
+            "evidence": self.references(), "tool_calls": self.tools.budget_usage.tool_calls, "model_calls": self.calls}
 
     def closing_token_reserve(self, node, request_reserve):
         if node == "investigate":
@@ -135,7 +241,8 @@ class BoundaryExecution(InvestigationExecution):
         # discovery inventories that are already represented in current state.
         allowance = max(0, int(self.config.max_context_characters * 0.4) - used)
         return compact_tool_history(state["messages"], allowance, pinned,
-            compact_metadata=node in {"evaluate_evidence", "review_findings"})
+            compact_metadata=node in {"evaluate_evidence", "review_findings"},
+            focus_search_results=node in {"evaluate_evidence", "review_findings"})
 
     def claim_check(self, evaluation, subject_type, identifier):
         checks = [item for item in evaluation.claim_checks if item.subject_type == subject_type and item.subject_id == identifier]
@@ -213,7 +320,7 @@ class BoundaryExecution(InvestigationExecution):
 
     def _context(self, state):
         context = super()._context(state)
-        coverage = self.discovery.coverage(self.references())
+        coverage = self.discovery.coverage(self.references(), self.tools.tool_measurements)
         context["boundary_coverage"] = {**coverage, "boundaries": [
             {**item, "endpoint_paths": item["endpoint_paths"][:8],
                 "uninspected_paths": item["uninspected_paths"][:8],
@@ -224,7 +331,10 @@ class BoundaryExecution(InvestigationExecution):
             "omitted_boundaries": max(0, coverage["boundary_count"] - 20)}
         texts = [self.request.objective, *[item.question for item in state["hypotheses"]
             if item.status in {"pending", "inconclusive"}]]
-        context["prioritized_source_reads"] = self.ranked_source_reads(texts, (), self.references(), limit=6)
+        targeted = [read for task in self._research_tasks for read in task.get("next_source_reads", [])]
+        context["investigation_tasks"] = self._research_tasks[:6]
+        context["prioritized_source_reads"] = (targeted[:6] if targeted else
+            self.ranked_source_reads(texts, (), self.references(), limit=6))
         context["investigation_progress"] = {"stale_turns": self._stale_turns,
             "change_strategy": self._progress_warning}
         context["support_capabilities"] = {
@@ -309,6 +419,15 @@ class BoundaryExecution(InvestigationExecution):
             update.update(evaluation=partial, hypotheses=state["hypotheses"] if self._preserved_valid_evaluation else partial.hypotheses,
                 missing_information=list(dict.fromkeys([*partial.missing_information,
                     "Boundary claim-check structure could not be corrected within the available budget."])))
+        coverage = self.discovery.coverage(self.references(), self.tools.tool_measurements)
+        resolved = [item.id for item in update["hypotheses"] if item.status in {"confirmed", "discarded"}
+            and update["evaluation"] and not self.support_issues(item,
+                self.claim_check(update["evaluation"], "hypothesis", item.id))]
+        self._round_progress.append({"round": update["iterations"], "resolved_hypothesis_ids": resolved,
+            "pending_task_count": len(self._research_tasks), "excerpt_file_count": coverage["excerpt_file_count"],
+            "source_lines_delivered": coverage["source_lines_delivered"], "model_calls": self.calls,
+            "tool_calls": self.tools.budget_usage.tool_calls,
+            "repeated_tool_requests": sum(item.repeated for item in self.tools.tool_measurements)})
         return update
 
     def delivered_evidence_repairs(self, evaluation):
@@ -350,7 +469,15 @@ class BoundaryExecution(InvestigationExecution):
             for record in self.tools.retrieved_evidence)
 
     async def investigate(self, state):
-        fingerprint = self.evidence_fingerprint()
+        if self._guided_pending:
+            self._guided_pending = False
+            return {"messages": [AIMessage(content="Bounded pending source reads delivered; re-evaluate their actual scope.")],
+                "model_calls": self.calls}
+        if self._baseline is not None and self._evaluated_evidence is None:
+            # The existing investigate -> evaluate route revalidates restored work
+            # before spending another discovery call; graph topology is unchanged.
+            return {"model_calls": self.calls}
+        fingerprint = self.progress_fingerprint(state)
         if self._progress == fingerprint:
             self._stale_turns += 1
         else:
@@ -369,6 +496,16 @@ class BoundaryExecution(InvestigationExecution):
         if not update.get("messages"):
             self.stop = "model_call_limit" if self.calls >= self.call_limit - self.closing_call_reserve else "tool_call_limit"
             return update
+        answer = update["messages"][-1]
+        if not answer.tool_calls and not empty_ai_message(answer) and state["iterations"] not in self._guided_rounds:
+            reads = self.pending_source_batch(state["evaluation"])
+            if reads:
+                self._guided_rounds.add(state["iterations"])
+                self._guided_pending = True
+                self.logger.info("investigate: executing %d pending dependency/source reads before re-evaluation", len(reads))
+                return {"messages": [AIMessage(content="Inspect the concrete pending source before closing this round.",
+                    tool_calls=[{"id": f"boundary-guided-{self.calls}-{index}", "name": "get_source_excerpt",
+                        "args": read["arguments"]} for index, read in enumerate(reads)])], "model_calls": self.calls}
         # A provider can answer 200 while converting its reply to no usable parts. That
         # is a transport artifact, not a decision that nothing remains, so spend one
         # corrective investigation call before concluding the audit cannot progress.
@@ -384,6 +521,46 @@ class BoundaryExecution(InvestigationExecution):
             else:
                 return {"messages": [retry], "model_calls": self.calls}
         return update
+
+    def pending_source_batch(self, evaluation):
+        """At most two missing reads, through the existing ToolNode and budgets."""
+        if "get_source_excerpt" not in self.config.tools:
+            return []
+        allowance = min(2, self.tool_limit - self.tools.budget_usage.tool_calls)
+        if allowance <= 0 or self.remaining_seconds() <= 0:
+            return []
+        refs = self.references()
+        repairable = {(item["subject_type"], item["subject_id"]) for item in self.delivered_evidence_repairs(evaluation)}
+        selected, seen = [], set()
+        for task in self._research_tasks:
+            if task.get("citation_repair_available") or (task["subject_type"], task["subject_id"]) in repairable:
+                continue
+            if task.get("claim_check_missing") and any(ref.kind == "source"
+                    and ref.path in task.get("cited_paths", []) for ref in refs):
+                continue
+            for read in task.get("next_source_reads", []):
+                args = read["arguments"]
+                key = (args["path"], args.get("start_line", 1), args.get("end_line"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                start, end = key[1], key[2]
+                if end is None:
+                    continue
+                for first, last in sorted((ref.start_line, ref.end_line) for ref in refs
+                        if ref.kind == "source" and ref.path == key[0]):
+                    if last < start:
+                        continue
+                    if first > start:
+                        end = min(end, first - 1)
+                        break
+                    start = max(start, last + 1)
+                if start > end:
+                    continue
+                selected.append({**read, "arguments": {**args, "start_line": start, "end_line": end}})
+                if len(selected) >= allowance:
+                    return selected
+        return selected
 
     def recovery_guidance(self):
         """Re-state concrete unread work after a degenerate investigation turn."""
@@ -444,7 +621,10 @@ class BoundaryExecution(InvestigationExecution):
             return ["boundary_claim_check_missing_or_duplicate"]
         references = {item.id: item for item in self.references()}
         files = {item.id: item for item in self.tools.accessible_snapshot.files}
-        issues, roles, paths = self.scope_issues(subject, check), set(), set()
+        issues, roles, paths = [*self.scope_issues(subject, check), *assertion_issues(subject, check)], set(), set()
+        original = self._planned_hypotheses.get(subject.id) if hasattr(subject, "question") else None
+        if original is not None and original.question != subject.question:
+            issues.append("boundary_hypothesis_question_changed")
         if getattr(subject, "kind", None) == "violation":
             criterion = next((item for item in self.request.criteria if item.id == subject.criterion_id), None)
             if criterion and criterion.origin != "explicit":
@@ -484,7 +664,54 @@ class BoundaryExecution(InvestigationExecution):
             if len(paths) < 2:
                 issues.append("boundary_endpoints_not_inspected")
             issues.extend(self.discovery.claim_issues(check, paths, references.values()))
+            issues.extend(self.coverage_obligations(subject, check, references))
         return list(dict.fromkeys(issues))
+
+    def coverage_obligations(self, subject, check, references):
+        """Validate concrete scope and proof obligations, not a model's coverage flag."""
+        issues = []
+        cited = {item.evidence_id for item in check.support} & set(subject.evidence_ids)
+        refs = [references[item] for item in cited if item in references and references[item].kind == "source"]
+        supported_paths = {ref.path for ref in refs}
+        if check.claim_kind in {"isolation", "deployment"}:
+            required = {"dependency_direction", "shared_resources", "composition"}
+            if check.claim_kind == "deployment":
+                required.add("deployment")
+            verified = set()
+            for item in check.verifications:
+                if set(item.evidence_ids) <= {ref.id for ref in refs} and item.evidence_ids:
+                    verified.add(item.dimension)
+                else:
+                    issues.append("boundary_verification_source_not_supported:" + item.dimension)
+            issues.extend("boundary_verification_missing:" + name for name in sorted(required - verified))
+        named = (self.navigation_scope([subject.question, *subject.evidence_needed], limit=40)
+            if hasattr(subject, "question") else getattr(subject, "components", []))
+        files = list(self.discovery.files.values())
+        required_files = {source.path for source in files if source.path in check.scope_paths}
+        for scope in named:
+            members = {source.path for source in files if source.path == scope or source.path.startswith(scope + "/")}
+            if members:
+                required_files.update(members)
+                if not members & supported_paths:
+                    issues.append("boundary_named_component_not_inspected:" + scope)
+        for path in sorted(required_files):
+            source = next(source for source in files if source.path == path)
+            cursor = 1
+            for start, end in sorted((ref.start_line, ref.end_line) for ref in refs if ref.path == path):
+                if start > cursor:
+                    break
+                cursor = max(cursor, end + 1)
+            if not source.line_count or cursor <= source.line_count:
+                issues.append("boundary_scope_coverage_not_demonstrated")
+                break
+        if check.claim_kind == "deployment":
+            deployment_sources = [ref for ref in refs if any(item.dimension == "deployment" and ref.id in item.evidence_ids
+                for item in check.verifications)]
+            if not any("docker" in ref.path.lower() or "deploy" in ref.path.lower()
+                    or Path(ref.path).name.lower().startswith("compose") or ref.path.startswith(".github/workflows/")
+                    for ref in deployment_sources):
+                issues.append("boundary_deployment_configuration_not_inspected")
+        return issues
 
     @staticmethod
     def symbol_body_delivered(symbol, check, subject, references):
@@ -610,7 +837,60 @@ class BoundaryExecution(InvestigationExecution):
                 "required, or narrow the actual conclusion and its claim_kind together. Comments are declarations "
                 "of intent, not implementation evidence."))
         self.ground_unresolved_tasks(evaluation)
+        self._research_tasks = self.research_tasks(evaluation)
         return gaps
+
+    def research_tasks(self, evaluation):
+        """A bounded work queue tied to questions, not a repository-wide reading quota."""
+        refs = self.references()
+        known = {item.id: item for item in refs}
+        subjects = {("hypothesis", item.id): item for item in evaluation.hypotheses}
+        subjects.update({("candidate", item.id): item for item in evaluation.candidates})
+        tasks = []
+        for recovery in self.evidence_recovery_tasks:
+            subject = subjects.get((recovery["subject_type"], recovery["id"]))
+            if subject is None:
+                continue
+            question = getattr(subject, "question", getattr(subject, "description", ""))
+            paths = [known[item].path for item in subject.evidence_ids if item in known]
+            check = self.claim_check(evaluation, recovery["subject_type"], recovery["id"])
+            if check:
+                paths.extend(check.scope_paths)
+            concrete = [source.path for source in self.discovery.files.values() if source.path.lower() in question.lower()]
+            paths = list(dict.fromkeys([*paths, *concrete]))
+            reads = self.discovery.dependency_reads(paths, refs, self.tools.limits.max_source_lines, limit=4)
+            reads.extend(recovery.get("next_source_reads", []))
+            reads.extend(recovery.get("endpoint_source_reads", []))
+            if not reads:
+                scope = self.navigation_scope([question, *recovery.get("evidence_needed", [])])
+                reads = self.ranked_source_reads([question], scope, refs, limit=4)
+            unique = {}
+            for read in reads:
+                unique.setdefault(json.dumps(read["arguments"], sort_keys=True), read)
+            tasks.append({"subject_type": recovery["subject_type"], "subject_id": subject.id,
+                "question": question, "priority": getattr(subject, "priority", "medium"),
+                "action": recovery["action"], "issues": recovery.get("issues", []),
+                "claim_check_missing": check is None, "cited_paths": recovery.get("cited_paths", []),
+                "citation_repair_available": bool(recovery.get("available_source_evidence_ids")
+                    and (check is None or recovery.get("replacement_support"))),
+                "next_source_reads": list(unique.values())[:4],
+                "completion": "Inspect both dependency endpoints and actual implementation. Re-evaluate only the demonstrated scope; otherwise state the concrete blocker.",
+                "blocker": "" if unique else "No unread source range identified; search concrete imports, resource names or report unavailable evidence.",
+                "navigation_only": True})
+        order = {"high": 0, "medium": 1, "low": 2}
+        return sorted(tasks, key=lambda item: (order[item["priority"]], item["subject_type"], item["subject_id"]))
+
+    def progress_fingerprint(self, state):
+        # Repeated searches producing different hit IDs are not new implementation
+        # inspection. Resolution only counts if host support has actually passed.
+        methods = {item.call_id: item.tool for item in self.tools.tool_measurements}
+        source = frozenset((ref.file_id, ref.start_line, ref.end_line) for ref in self.references()
+            if ref.kind == "source" and methods.get(ref.tool_call_id) == "get_source_excerpt")
+        evaluation = state.get("evaluation")
+        resolved = frozenset((item.id, item.status) for item in state["hypotheses"]
+            if evaluation and item.status in {"confirmed", "discarded"}
+            and not self.support_issues(item, self.claim_check(evaluation, "hypothesis", item.id)))
+        return source, resolved
 
     def scope_recovery(self, check, references):
         """Describe citation/role gaps per file without changing a model conclusion."""
@@ -953,7 +1233,13 @@ class BoundaryExecution(InvestigationExecution):
         if self._review_skipped_no_candidates:
             limitations = [item for item in limitations if item != "Critical review was not completed; no candidate is accepted."]
             limitations.append("Candidate review was not requested because there were no candidates and no syntax-supported resolved hypotheses; this does not verify unresolved hypotheses.")
-        result = result.model_copy(update={"investigation_coverage": self.discovery.coverage(self.references()),
+        result = result.model_copy(update={"investigation_coverage": self.discovery.coverage(
+                self.references(), self.tools.tool_measurements),
+            "request_fingerprint": self._request_fingerprint,
+            "investigation_tasks": self._research_tasks, "investigation_progress": self._round_progress,
+            "consumption_by_phase": self._phase_consumption,
+            "continuation_usage": {key: getattr(self._baseline, key) + self._baseline.continuation_usage.get(key, 0) for key in (
+                "model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")} if self._baseline else {},
             "evaluation_evidence_status": status, "evaluated_evidence_ids": evaluated,
             "pending_evaluation_evidence_ids": pending, "missing_information": gaps, "limitations": limitations})
         evaluation = state["evaluation"]
@@ -983,6 +1269,12 @@ class BoundaryExecution(InvestigationExecution):
                     recommendation="Conditional proposal; verify the candidate before applying: " + finding.recommendation)
             findings.append(finding.model_copy(update=updates))
         for hypothesis in result.hypotheses:
+            original = self._planned_hypotheses.get(hypothesis.id)
+            if original is not None and original.question != hypothesis.question:
+                hypothesis = hypothesis.model_copy(update={"question": original.question, "status": "inconclusive",
+                    "rationale": "boundary_hypothesis_question_changed: Unverified reformulation of the original question: " + hypothesis.question
+                        + "\n" + hypothesis.rationale})
+                gaps.append(f"Hypothesis {hypothesis.id}: boundary_hypothesis_question_changed.")
             if hypothesis.status in {"confirmed", "discarded"}:
                 check = self.claim_check(evaluation, "hypothesis", hypothesis.id)
                 issues = self.support_issues(hypothesis, check)
@@ -1035,6 +1327,24 @@ class BoundaryExecution(InvestigationExecution):
         update["missing_information"] = list(dict.fromkeys([
             *[item for item in state["missing_information"] if item not in self._review_gap_messages], *gaps]))
         self._review_gap_messages = gaps
+        if review and state["evaluation"]:
+            evaluation = state["evaluation"]
+            refs = {ref.id: ref for ref in self.references()}
+            for kind, subjects, judgments, key in (
+                    ("candidate", evaluation.candidates, review.findings, "finding_id"),
+                    ("hypothesis", evaluation.hypotheses, review.hypotheses, "hypothesis_id")):
+                for subject in subjects:
+                    judgment = next((item for item in judgments if getattr(item, key) == subject.id), None)
+                    if judgment is None or judgment.status not in {"insufficient_evidence", "inconclusive"}:
+                        continue
+                    if not any(task["subject_type"] == kind and task["id"] == subject.id for task in self.evidence_recovery_tasks):
+                        self.evidence_recovery_instruction(kind, subject.id, [],
+                            [refs[item] for item in subject.evidence_ids if item in refs], refs,
+                            question=getattr(subject, "question", getattr(subject, "description", "")),
+                            evidence_needed=[judgment.rationale])
+                        self.evidence_recovery_tasks[-1].update(action="inspect_semantic_review_gap",
+                            issues=judgment.unverified_claims)
+            self._research_tasks = self.research_tasks(evaluation)
         return update
 
     def route_review(self, state):

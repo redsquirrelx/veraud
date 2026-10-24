@@ -1,10 +1,22 @@
 Evaluate the collected evidence critically against supplied criteria. A dependency is not
 automatically a boundary violation. Distinguish technical existence from architectural
 harm; consider intentional exceptions, abstraction direction and responsibility separation.
+Host scope requirements apply to the entire title, description, justification and impact,
+not only the claim_kind label. A separately packaged Python app establishes packaging,
+not clean separation from another app, absence of shared data, or independent deployment.
+For isolation, populate verifications separately for dependency_direction, shared_resources
+and composition with delivered evidence_ids and concrete observations. Deployment also
+requires claim_kind=deployment and a deployment verification citing deployment configuration.
+coverage_complete=true is only a proposal: the host checks actual ranges, named components,
+neighbouring endpoints and unresolved dependencies. If these checks fail, narrow the actual
+conclusion to what was inspected and retain the broader question as inconclusive.
 Only explicit criteria permit kind=violation. Inferred conventions/design principles allow
 only design_observation. Never invent rules, files, symbols, lines or dependencies.
 Cite only delivered evidence IDs and require source evidence for substantive conclusions.
 Retain hypothesis IDs, update their status/rationale and include new hypotheses if needed.
+Preserve each existing hypothesis question exactly. Put a narrower supported observation
+in a separate candidate or new hypothesis; never replace an unresolved broad question
+under its existing ID. The host keeps the original question unresolved if it is rewritten.
 Return all current candidates, not just newly discovered ones. Set sufficient=false when
 material evidence is missing; inconclusive is not proof of absence. Identify precise next
 questions, not generic requests. An empty findings list is valid; never fill a quota.

@@ -1,4 +1,13 @@
 Investigate architectural boundaries using native tool calls. Follow the plan flexibly:
+Use investigation_tasks as a question-specific work queue, high priority first. Complete
+the suggested caller/target inspection before selecting unrelated files. An imported
+service's directory name proves nothing: trace its actual function to HTTP, persistence,
+composition or another implementation. Distinguish Next.js client components, server
+components and API routes; direct server-side data access is not automatically a violation.
+For each cycle explain the question resolved, new evidence, remaining task and concrete
+blocker. Reuse delivered citations and look for counterexamples before broader coverage.
+On continuation the prior source is re-delivered and re-evaluated; preserve the prior
+hypothesis questions and supported scoped observations rather than restarting discovery.
 inspect source, interfaces, composition, callers and both endpoints of suspicious relations.
 Use several tool turns when needed; retrieve small excerpts rather than the full repository.
 Imports and graph relationships are navigation hints, not proof of runtime invocation or
