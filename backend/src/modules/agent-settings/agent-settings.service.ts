@@ -2,6 +2,7 @@ import type { AgentConfiguration, AgentSettingsStore, AgentExecutionOptions } fr
 import { InvalidAgentAssignmentError, UnknownAgentTypeError } from "./agent-settings.errors.js"
 import { AgentConfigurationError, type AgentVerification, type ModelAccessVerifier, type PreparedAgentConfiguration } from "./agent-configuration.js"
 import { AgentCatalogError, type AgentCatalogSource } from "./agent-catalog.js"
+import { ModelAccessError } from "./model-access-error.js"
 
 export interface AgentSettingsView {
   agentType: string
@@ -61,13 +62,15 @@ export class AgentSettingsService {
   private async check(agentType: string): Promise<{ prepared: PreparedAgentConfiguration, error: string | null }> {
     const prepared = await this.settings.prepare(agentType)
     let error: string | null = null
+    let storedError: string | null = null
     try {
       await this.verifier.verify(prepared.transport)
     } catch (failure) {
       // Verifiers return controlled messages; never propagate provider response bodies.
       error = failure instanceof Error ? failure.message : "Could not verify model access"
+      storedError = failure instanceof ModelAccessError ? `model_access:${failure.code}` : error
     }
-    await this.settings.recordVerification(prepared, error)
+    await this.settings.recordVerification(prepared, storedError)
     return { prepared, error }
   }
 

@@ -9,6 +9,7 @@ import type { AgentRunConfig } from "../modules/agent-settings/agent-configurati
 import { AgentConfigurationError } from "../modules/agent-settings/agent-configuration.js"
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
 import { AgentSettingsService } from "../modules/agent-settings/agent-settings.service.js"
+import { ModelAccessError } from "../modules/agent-settings/model-access-error.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import { makeTestAgentCatalogSource } from "./helpers/agentCatalog.js"
 
@@ -26,7 +27,7 @@ test("model access gates execution; immutable snapshots, credentials and verific
     if (config.model.name === "model-B" && duringArchitectureVerification) {
       const action = duringArchitectureVerification; duringArchitectureVerification = null; await action()
     }
-    if (denied) throw new Error("Model access denied")
+    if (denied) throw new ModelAccessError("provider_unavailable")
     if (deniedArchitecture && config.model.name === "model-B") throw new Error("Architecture access denied")
   } }
   const { app, db } = await buildApp({
@@ -66,6 +67,8 @@ test("model access gates execution; immutable snapshots, credentials and verific
     await save("semantic_validation", model.id, 0.2, 2048)
     denied = true
     assert.equal((await verify()).json().verification.status, "failed")
+    assert.equal((await settings()).verification.reason, "provider_unavailable", "failure category survives persistence and response serialization")
+    assert.match((await settings()).verification.message, /temporarily unavailable/)
     const blocked = await start()
     assert.equal(blocked.statusCode, 422)
     assert.equal(blocked.json().agents[0].agentType, "orientation")
@@ -74,6 +77,7 @@ test("model access gates execution; immutable snapshots, credentials and verific
 
     denied = false
     assert.equal((await verify()).json().verification.status, "verified")
+    assert.equal((await settings()).verification.reason, undefined, "a successful retry clears the previous failure category")
     assert.ok((await settings()).verification.checkedAt)
     deniedArchitecture = true
     const blockedArchitecture = await start()

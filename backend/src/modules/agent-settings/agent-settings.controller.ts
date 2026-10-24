@@ -27,6 +27,7 @@ const agentSettingsSchema = {
         status: { type: "string", enum: ["not_verified", "verified", "failed"] },
         checkedAt: { type: ["string", "null"], format: "date-time" },
         message: { type: ["string", "null"] },
+        reason: { type: "string" },
       },
     },
   },

@@ -2,6 +2,7 @@ import type { PrismaClient, Prisma } from "../../generated/prisma/client.js"
 import { InvalidAgentAssignmentError } from "./agent-settings.errors.js"
 import { AgentConfigurationError, configurationFingerprint, type AgentVerification, type PreparedAgentConfiguration } from "./agent-configuration.js"
 import { parseAgentCatalog, type AgentCatalog } from "./agent-catalog.js"
+import { storedVerificationFailure } from "./model-access-error.js"
 
 export interface AgentConfiguration {
   model: { id: number, name: string, providerId: number, providerName: string }
@@ -130,7 +131,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
         verification: {
           status: !current || !row.verificationCheckedAt ? "not_verified" as const : row.verificationError ? "failed" as const : "verified" as const,
           checkedAt: current ? row.verificationCheckedAt?.toISOString() ?? null : null,
-          message: current ? row.verificationError : null,
+          ...storedVerificationFailure(current ? row.verificationError : null),
         },
         configuration: row.aiModel !== null && row.aiCredential !== null ? {
           model: { id: row.aiModel.id, name: row.aiModel.name, providerId: row.aiModel.aiProvider.id, providerName: row.aiModel.aiProvider.name },
@@ -191,7 +192,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
     const snapshot: AgentConfiguration = {
       model: { id: row.aiModel.id, name: row.aiModel.name, providerId: row.aiModel.aiProviderId, providerName: row.aiModel.aiProvider.name },
       credential: { id: row.aiCredential.id, name: row.aiCredential.name, providerId: row.aiCredential.aiProviderId, providerName: row.aiCredential.aiProvider.name },
-      temperature: temperature ?? 0.2, maxTokens: row.maxTokens ?? 1000,
+      temperature: temperature ?? 0.2, maxTokens: row.maxTokens,
       tokenBudget: row.tokenBudget, absoluteTokenLimit: row.absoluteTokenLimit,
     }
     return {

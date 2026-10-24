@@ -359,7 +359,7 @@ export interface AgentSettings {
   workflowIds: string[]
   configured: boolean
   configuration: AgentConfiguration | null
-  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null }
+  verification?: { status: "not_verified" | "verified" | "failed", checkedAt: string | null, message: string | null, reason?: string }
 }
 
 export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSettings[]> {

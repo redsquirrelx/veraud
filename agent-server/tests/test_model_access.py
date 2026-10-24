@@ -1,8 +1,12 @@
 """Provider and execution configuration checks without external requests."""
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
+from google.genai.errors import APIError
 
 from server.api import executions
 from server.api.schemas import ExecutionConfig, ModelConfig
@@ -37,13 +41,48 @@ def test_access_probe_uses_explicit_model_and_key_and_sanitizes_failures(monkeyp
         assert received[0][1].api_key == "secret-key"
         denied = True
         response = client.post("/api/agents/verify-access", json=payload)
-        assert response.status_code == 422
+        assert response.status_code == 502
         assert "secret-key" not in response.text
         response = client.post("/api/agents/verify-access", json={**payload, "model": "invalid"})
         assert response.status_code == 422
         assert "secret-key" not in response.text
         response = client.post("/api/agents/verify-access", json={"model": payload["model"]})
         assert response.status_code == 422
+
+
+@pytest.mark.parametrize("provider_status,expected_status,detail", [
+    (400, 422, "rejected the verification request"),
+    (401, 403, "rejected the credential"),
+    (403, 403, "rejected the credential"),
+    (404, 404, "Model not found"),
+    (429, 429, "rate limit or quota"),
+    (500, 503, "temporarily unavailable"),
+    (503, 503, "temporarily unavailable"),
+    (504, 504, "timed out"),
+])
+def test_access_probe_preserves_failure_category_without_provider_payload(monkeypatch, provider_status, expected_status, detail):
+    error = APIError(provider_status, {"error": {"message": "private-key-and-provider-payload"}})
+    wrapper = RuntimeError("wrapped-private-key")
+    wrapper.__cause__ = error
+    monkeypatch.setattr(executions, "build_model", lambda *args: SimpleNamespace(generate=AsyncMock(side_effect=wrapper)))
+    with TestClient(app) as client:
+        response = client.post("/api/agents/verify-access", json={
+            "model": {"provider": "Google", "name": "model"}, "api_key": "private-key"})
+    assert response.status_code == expected_status
+    assert detail in response.json()["detail"]
+    assert "private-key" not in response.text
+    assert "provider-payload" not in response.text
+
+
+@pytest.mark.parametrize("error", [TimeoutError("private-key"), httpx.ReadTimeout("private-key")])
+def test_access_probe_classifies_sdk_and_deadline_timeouts(monkeypatch, error):
+    monkeypatch.setattr(executions, "build_model", lambda *args: SimpleNamespace(generate=AsyncMock(side_effect=error)))
+    with TestClient(app) as client:
+        response = client.post("/api/agents/verify-access", json={
+            "model": {"provider": "Google", "name": "model"}, "api_key": "private-key"})
+    assert response.status_code == 504
+    assert "timed out" in response.json()["detail"]
+    assert "private-key" not in response.text
 
 
 def test_openai_and_openrouter_use_their_own_endpoints(monkeypatch):

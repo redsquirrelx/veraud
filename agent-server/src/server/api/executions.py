@@ -17,6 +17,7 @@ from ..app.execution_service import (
     build_model,
     get_execution_service,
 )
+from ..app.model_access import access_failure
 from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from .dependencies import BlackboardDep
@@ -42,7 +43,15 @@ ServiceDep = Annotated[AgentExecutionService, Depends(get_execution_service)]
     "/verify-access", response_model=VerifyAccessResponse,
     summary="Verify credential access to a model",
     description="Performs a minimal generation request against the explicit provider and model. May incur provider usage. No agent, callbacks or server credential fallback. Timeout: 25 seconds. Provider error bodies and API keys are never returned.",
-    responses={422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid request, missing/unsupported model or denied model access."}, 504: {"model": DomainError, "description": "Provider verification timed out."}},
+    responses={
+        422: {"model": DomainError | RequestValidationErrorResponse, "description": "Invalid verification configuration."},
+        403: {"model": DomainError, "description": "Credential or permissions rejected."},
+        404: {"model": DomainError, "description": "Model not found or unavailable for the credential."},
+        429: {"model": DomainError, "description": "Provider rate limit or quota exceeded."},
+        502: {"model": DomainError, "description": "Verification could not be completed."},
+        503: {"model": DomainError, "description": "Provider temporarily unavailable."},
+        504: {"model": DomainError, "description": "Provider verification timed out."},
+    },
 )
 async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
     if not body.model.provider or not body.model.name or not body.api_key.strip():
@@ -52,11 +61,17 @@ async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
             provider=body.model.provider, name=body.model.name,
             temperature=body.model.temperature if body.model.temperature is not None else 0.2, max_tokens=64,
         ), ModelCredentials(api_key=body.api_key))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid provider or model configuration") from None
+    except Exception as error:  # noqa: BLE001 - classify SDK initialization failures without exposing payloads
+        status, detail = access_failure(error)
+        raise HTTPException(status_code=status, detail=detail) from None
+    try:
         await asyncio.wait_for(model.generate("Reply with OK."), timeout=25)
-    except TimeoutError:
-        raise HTTPException(status_code=504, detail="Model access verification timed out") from None
-    except Exception:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
-        raise HTTPException(status_code=422, detail="Model access denied; check provider, model, credential and permissions") from None
+    except Exception as error:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
+        status, detail = access_failure(error)
+        logger.warning("Model access verification failed status=%d exception_type=%s", status, type(error).__name__)
+        raise HTTPException(status_code=status, detail=detail) from None
     return VerifyAccessResponse(verified=True)
 
 # Domain error -> HTTP status. Every clause of the except chains below picks a
