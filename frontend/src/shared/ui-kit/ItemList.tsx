@@ -8,17 +8,17 @@ export interface ItemListEntry {
   description?: string
 }
 
-interface ItemListProps {
-  items: ItemListEntry[]
+interface ItemListProps<T extends ItemListEntry> {
+  items: T[]
   selectedIds: string[]
   onSelectionChange: (selectedIds: string[]) => void
   mode?: "single" | "multiple"
   loading?: boolean
-  renderItem?: (item: ItemListEntry, selected: boolean) => ReactNode
+  renderItem?: (item: T, selected: boolean) => ReactNode
   emptyText?: string
 }
 
-export function ItemList({ items, selectedIds, onSelectionChange, mode = "multiple", loading = false, renderItem = defaultRender, emptyText }: ItemListProps) {
+export function ItemList<T extends ItemListEntry>({ items, selectedIds, onSelectionChange, mode = "multiple", loading = false, renderItem = defaultRender, emptyText }: ItemListProps<T>) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.itemList.empty")
   if (loading && items.length === 0) {

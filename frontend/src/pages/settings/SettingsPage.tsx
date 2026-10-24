@@ -44,6 +44,17 @@ interface SettingsFormError {
   detail?: string
 }
 
+type SettingsEditorBase = {
+  id: number | null
+  providerId: string | null
+  name: string
+  error: SettingsFormError | null
+}
+
+type SettingsEditor =
+  | (SettingsEditorBase & { kind: "model" })
+  | (SettingsEditorBase & { kind: "credential", apiKey: string })
+
 export function SettingsPage() {
   const { t } = useTranslation("settings")
   const tabsId = useId()
@@ -60,16 +71,7 @@ export function SettingsPage() {
   const { pushToast } = useToasts()
   const [modelId, setModelId] = useState<string[]>([])
   const [credentialId, setCredentialId] = useState<string[]>([])
-  const [modal, setModal] = useState<"model" | "credential" | null>(null)
-  const [editingModelId, setEditingModelId] = useState<number | null>(null)
-  const [editingCredentialId, setEditingCredentialId] = useState<number | null>(null)
-  const [modelProvider, setModelProvider] = useState<string | null>(null)
-  const [modelName, setModelName] = useState("")
-  const [modelError, setModelError] = useState<SettingsFormError | null>(null)
-  const [credentialProvider, setCredentialProvider] = useState<string | null>(null)
-  const [credentialName, setCredentialName] = useState("")
-  const [credentialKey, setCredentialKey] = useState("")
-  const [credentialError, setCredentialError] = useState<SettingsFormError | null>(null)
+  const [editor, setEditor] = useState<SettingsEditor | null>(null)
 
   // useAiProviders reports the backend message verbatim. That hook always
   // throws the fixed "Could not load AI providers" string, so any loadError
@@ -81,99 +83,59 @@ export function SettingsPage() {
       ? t("models.loadFailed")
       : `${t("models.loadFailed")}: ${loadError}`
 
-  const models = providers.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id, provider: provider.name })))
-  const credentials = providers.flatMap((provider) => provider.credentials.map((credential) => ({ ...credential, providerId: provider.id, provider: provider.name })))
+  const models = providers.flatMap((provider) => provider.models.map((model) => ({ ...model,
+    id: String(model.id), resourceId: model.id, providerId: provider.id, provider: provider.name })))
+  const credentials = providers.flatMap((provider) => provider.credentials.map((credential) => ({ ...credential,
+    id: String(credential.id), resourceId: credential.id, providerId: provider.id, provider: provider.name })))
   const providerOptions: ItemSelectorItem[] = providers.map((provider) => ({ id: String(provider.id), label: provider.name }))
 
-  const canSubmitModel = modelProvider !== null && modelName.trim() !== ""
-  const canSubmitCredential = credentialProvider !== null && credentialName.trim() !== "" && (editingCredentialId !== null || credentialKey.trim() !== "")
+  const canSubmitEditor = editor !== null && editor.providerId !== null && editor.name.trim() !== ""
+    && (editor.kind === "model" || editor.id !== null || editor.apiKey.trim() !== "")
 
-  function openModelModal() {
-    setEditingModelId(null)
-    setModelProvider(null)
-    setModelName("")
-    setModelError(null)
-    setModal("model")
+  function openEditor(kind: "model" | "credential", resource?: { id: number, providerId: number, name: string }) {
+    const base: SettingsEditorBase = {
+      id: resource?.id ?? null,
+      providerId: resource ? String(resource.providerId) : null,
+      name: resource?.name ?? "",
+      error: null,
+    }
+    setEditor(kind === "model" ? { ...base, kind } : { ...base, kind, apiKey: "" })
   }
 
-  function openCredentialModal() {
-    setEditingCredentialId(null)
-    setCredentialProvider(null)
-    setCredentialName("")
-    setCredentialKey("")
-    setCredentialError(null)
-    setModal("credential")
-  }
-
-  function openEditModel(providerId: number, id: number, name: string) {
-    setEditingModelId(id)
-    setModelProvider(String(providerId))
-    setModelName(name)
-    setModelError(null)
-    setModal("model")
-  }
-
-  function openEditCredential(providerId: number, id: number, name: string) {
-    setEditingCredentialId(id)
-    setCredentialProvider(String(providerId))
-    setCredentialName(name)
-    setCredentialKey("")
-    setCredentialError(null)
-    setModal("credential")
-  }
-
-  async function submitModel(event: FormEvent) {
+  async function submitEditor(event: FormEvent) {
     event.preventDefault()
-    if (!canSubmitModel || modelProvider === null) {
+    const current = editor
+    if (!canSubmitEditor || current === null || current.providerId === null) {
       return
     }
+    const providerId = Number(current.providerId)
+    const name = current.name.trim()
     try {
-      if (editingModelId === null) {
-        await addModel(Number(modelProvider), modelName.trim())
-        pushToast("success", t("models.registered", { name: modelName.trim() }))
+      if (current.kind === "model" && current.id === null) {
+        await addModel(providerId, name)
+        pushToast("success", t("models.registered", { name }))
+      } else if (current.kind === "model") {
+        await editModel(providerId, current.id!, name)
+        pushToast("success", t("models.updated", { name }))
+      } else if (current.id === null) {
+        await addCredential(providerId, name, current.apiKey.trim())
+        pushToast("success", t("credentials.registered", { name }))
       } else {
-        await editModel(Number(modelProvider), editingModelId, modelName.trim())
-        pushToast("success", t("models.updated", { name: modelName.trim() }))
+        await editCredential(providerId, current.id, name, current.apiKey.trim() || undefined)
+        pushToast("success", t("credentials.updated", { name }))
       }
-      setModelName("")
-      setModelError(null)
-      setModal(null)
+      setEditor(null)
     } catch (failure) {
-      // Backend details are kept verbatim (the English template renders the
-      // detail unchanged so it stays findable); other failures use the
-      // translated generic message.
-      const key = failure instanceof ApiError
-        ? editingModelId === null ? "models.registerFailedWithDetail" : "models.updateFailedWithDetail"
-        : editingModelId === null ? "models.registerFailed" : "models.updateFailed"
+      const editing = current.id !== null
+      const keys: Record<"create" | "createDetail" | "update" | "updateDetail", ParseKeys<"settings">> = current.kind === "model"
+        ? { create: "models.registerFailed", createDetail: "models.registerFailedWithDetail", update: "models.updateFailed", updateDetail: "models.updateFailedWithDetail" }
+        : { create: "credentials.registerFailed", createDetail: "credentials.registerFailedWithDetail", update: "credentials.updateFailed", updateDetail: "credentials.updateFailedWithDetail" }
+      const key: ParseKeys<"settings"> = failure instanceof ApiError
+        ? editing ? keys.updateDetail : keys.createDetail
+        : editing ? keys.update : keys.create
       const detail = failure instanceof ApiError ? failure.message : undefined
-      setModelError(detail === undefined ? { key } : { key, detail })
-      pushToast("error", detail === undefined ? t(key) : t(key, { detail }))
-    }
-  }
-
-  async function submitCredential(event: FormEvent) {
-    event.preventDefault()
-    if (!canSubmitCredential || credentialProvider === null) {
-      return
-    }
-    try {
-      if (editingCredentialId === null) {
-        await addCredential(Number(credentialProvider), credentialName.trim(), credentialKey.trim())
-        pushToast("success", t("credentials.registered", { name: credentialName.trim() }))
-      } else {
-        await editCredential(Number(credentialProvider), editingCredentialId, credentialName.trim(), credentialKey.trim() || undefined)
-        pushToast("success", t("credentials.updated", { name: credentialName.trim() }))
-      }
-      setCredentialName("")
-      setCredentialKey("")
-      setCredentialError(null)
-      setModal(null)
-    } catch (failure) {
-      const key = failure instanceof ApiError
-        ? editingCredentialId === null ? "credentials.registerFailedWithDetail" : "credentials.updateFailedWithDetail"
-        : editingCredentialId === null ? "credentials.registerFailed" : "credentials.updateFailed"
-      const detail = failure instanceof ApiError ? failure.message : undefined
-      setCredentialError(detail === undefined ? { key } : { key, detail })
+      const formError: SettingsFormError = detail === undefined ? { key } : { key, detail }
+      setEditor((latest) => latest?.kind === current.kind && latest.id === current.id ? { ...latest, error: formError } : latest)
       pushToast("error", detail === undefined ? t(key) : t(key, { detail }))
     }
   }
@@ -215,6 +177,10 @@ export function SettingsPage() {
     }
     return <p className="settings-error">{error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail })}</p>
   }
+
+  const editorDialogKey = editor === null ? null : editor.kind === "model"
+    ? editor.id === null ? "models.addDialog" : "models.editDialog"
+    : editor.id === null ? "credentials.addDialog" : "credentials.editDialog"
 
   return (
     <section className="settings-page">
@@ -268,65 +234,49 @@ export function SettingsPage() {
             <div className="settings-llm-row">
               <div className="settings-llm-group">
                 <div className="settings-llm-head">
-                  <Button variant="primary" square ariaLabel={t("models.add")} title={t("models.add")} onClick={openModelModal}>
+                  <Button variant="primary" square ariaLabel={t("models.add")} title={t("models.add")} onClick={() => openEditor("model")}>
                     <PlusIcon />
                   </Button>
                   <span className="label">{t("models.title")}</span>
                 </div>
                 <ItemList
-                  items={models.map((model) => ({ id: String(model.id), name: model.name }))}
+                  items={models}
                   selectedIds={modelId}
                   onSelectionChange={setModelId}
                   mode="single"
                   loading={loading}
                   emptyText={t("models.empty")}
-                  renderItem={(entry) => {
-                    const model = models.find((candidate) => String(candidate.id) === entry.id)
-                    if (model === undefined) {
-                      return null
-                    }
-                    return (
-                      <ModelListItem
-                        name={model.name}
-                        provider={model.provider}
-                        inUse={model.inUse}
-                        onEdit={() => openEditModel(model.providerId, model.id, model.name)}
-                        onRemove={() => void deleteModel(model.providerId, model.id, model.name)}
-                      />
-                    )
-                  }}
+                  renderItem={(model) => <ModelListItem
+                    name={model.name}
+                    provider={model.provider}
+                    inUse={model.inUse}
+                    onEdit={() => openEditor("model", { id: model.resourceId, providerId: model.providerId, name: model.name })}
+                    onRemove={() => void deleteModel(model.providerId, model.resourceId, model.name)}
+                  />}
                 />
               </div>
               <div className="settings-llm-group">
                 <div className="settings-llm-head">
-                  <Button variant="primary" square ariaLabel={t("credentials.add")} title={t("credentials.add")} onClick={openCredentialModal}>
+                  <Button variant="primary" square ariaLabel={t("credentials.add")} title={t("credentials.add")} onClick={() => openEditor("credential")}>
                     <PlusIcon />
                   </Button>
                   <span className="label">{t("credentials.title")}</span>
                 </div>
                 <ItemList
-                  items={credentials.map((credential) => ({ id: String(credential.id), name: credential.name }))}
+                  items={credentials}
                   selectedIds={credentialId}
                   onSelectionChange={setCredentialId}
                   mode="single"
                   loading={loading}
                   emptyText={t("credentials.empty")}
-                  renderItem={(entry) => {
-                    const credential = credentials.find((candidate) => String(candidate.id) === entry.id)
-                    if (credential === undefined) {
-                      return null
-                    }
-                    return (
-                      <CredentialListItem
-                        name={credential.name}
-                        provider={credential.provider}
-                        apiKeyPreview={credential.apiKeyPreview}
-                        inUse={credential.inUse}
-                        onEdit={() => openEditCredential(credential.providerId, credential.id, credential.name)}
-                        onRemove={() => void deleteCredential(credential.providerId, credential.id, credential.name)}
-                      />
-                    )
-                  }}
+                  renderItem={(credential) => <CredentialListItem
+                    name={credential.name}
+                    provider={credential.provider}
+                    apiKeyPreview={credential.apiKeyPreview}
+                    inUse={credential.inUse}
+                    onEdit={() => openEditor("credential", { id: credential.resourceId, providerId: credential.providerId, name: credential.name })}
+                    onRemove={() => void deleteCredential(credential.providerId, credential.resourceId, credential.name)}
+                  />}
                 />
               </div>
             </div>
@@ -359,44 +309,30 @@ export function SettingsPage() {
         </div>
       </Card>
       </div>
-      <Modal open={modal === "model"} label={editingModelId === null ? t("models.addDialog") : t("models.editDialog")} title={editingModelId === null ? t("models.addDialog") : t("models.editDialog")} size="narrow" onClose={() => setModal(null)}>
-        <form className="settings-modal-form" onSubmit={(event) => void submitModel(event)}>
+      <Modal open={editor !== null} label={editorDialogKey === null ? "" : t(editorDialogKey)}
+        title={editorDialogKey === null ? "" : t(editorDialogKey)} size="narrow" onClose={() => setEditor(null)}>
+        {editor !== null && <form className="settings-modal-form" onSubmit={(event) => void submitEditor(event)}>
           <ItemSelector
             items={providerOptions}
-            selectedId={modelProvider}
-            onSelect={setModelProvider}
-            disabled={editingModelId !== null}
+            selectedId={editor.providerId}
+            onSelect={(providerId) => setEditor((current) => current ? { ...current, providerId } : current)}
+            disabled={editor.id !== null}
             hasMore={false}
             onLoadMore={() => {}}
             label={t("form.provider")}
             placeholder={t("form.providerPlaceholder")}
           />
-          <TextInput value={modelName} label={t("models.form.name")} placeholder={t("models.form.namePlaceholder")} onChange={setModelName} />
-          {renderFormError(modelError)}
-          <Button type="submit" disabled={!canSubmitModel}>
-            {editingModelId === null ? t("form.submit") : t("form.edit")}
-          </Button>
-        </form>
-      </Modal>
-      <Modal open={modal === "credential"} label={editingCredentialId === null ? t("credentials.addDialog") : t("credentials.editDialog")} title={editingCredentialId === null ? t("credentials.addDialog") : t("credentials.editDialog")} size="narrow" onClose={() => setModal(null)}>
-        <form className="settings-modal-form" onSubmit={(event) => void submitCredential(event)}>
-          <ItemSelector
-            items={providerOptions}
-            selectedId={credentialProvider}
-            onSelect={setCredentialProvider}
-            disabled={editingCredentialId !== null}
-            hasMore={false}
-            onLoadMore={() => {}}
-            label={t("form.provider")}
-            placeholder={t("form.providerPlaceholder")}
+          <TextInput
+            value={editor.name}
+            label={t(editor.kind === "model" ? "models.form.name" : "credentials.form.name")}
+            placeholder={t(editor.kind === "model" ? "models.form.namePlaceholder" : "credentials.form.namePlaceholder")}
+            onChange={(name) => setEditor((current) => current ? { ...current, name } : current)}
           />
-          <TextInput value={credentialName} label={t("credentials.form.name")} placeholder={t("credentials.form.namePlaceholder")} onChange={setCredentialName} />
-          <TextInput value={credentialKey} label={t("credentials.form.apiKey")} type="password" onChange={setCredentialKey} />
-          {renderFormError(credentialError)}
-          <Button type="submit" disabled={!canSubmitCredential}>
-            {editingCredentialId === null ? t("form.submit") : t("form.edit")}
-          </Button>
-        </form>
+          {editor.kind === "credential" && <TextInput value={editor.apiKey} label={t("credentials.form.apiKey")} type="password"
+            onChange={(apiKey) => setEditor((current) => current?.kind === "credential" ? { ...current, apiKey } : current)} />}
+          {renderFormError(editor.error)}
+          <Button type="submit" disabled={!canSubmitEditor}>{editor.id === null ? t("form.submit") : t("form.edit")}</Button>
+        </form>}
       </Modal>
     </section>
   )
