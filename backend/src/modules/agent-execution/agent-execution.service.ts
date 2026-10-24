@@ -1,6 +1,8 @@
 import { logger } from "../../config/logger.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { setTimeout as delay } from "node:timers/promises"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
@@ -153,6 +155,7 @@ export class AgentExecutionService {
   }
 
   private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {
+    const recoveryDeadline = Date.now() + QUALITY_AUDIT_INVOKE_TIMEOUT_MS
     try {
       if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
       const input = await this.targets.resolve(execution.evaluationId)
@@ -161,20 +164,59 @@ export class AgentExecutionService {
         ...options,
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
       }, { [execution.agentType]: execution.id }, configs)
-      const audit = payload["audit"]
-      if (!audit || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
-        throw new Error("Quality-audit pipeline returned no report")
-      }
-      // Completed means the pipeline delivered its artifacts. The independent
-      // quality status (including partial/failed) remains in the report/envelope.
-      await this.close(execution.id, {
-        status: "Completed", result: JSON.stringify(audit), error: null,
-        inputTokens: null, outputTokens: null,
-        interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
-      })
+      await this.closeAudit(execution.id, payload["audit"])
     } catch (error) {
+      if (error instanceof AgentTransportError && error.outcomeUncertain) {
+        try {
+          await this.reconcileAudit(execution.id, attributes, recoveryDeadline)
+        } catch (recoveryError) {
+          await this.fail(execution.id, recoveryError instanceof Error ? recoveryError.message : "Audit outcome could not be confirmed", "audit_outcome_unconfirmed")
+        }
+        return
+      }
       await this.fail(execution.id, error instanceof Error ? error.message : String(error))
     }
+  }
+
+  private async closeAudit(id: number, audit: AgentInput | undefined) {
+    if (!audit || !audit["report"] || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
+      throw new Error("Quality-audit pipeline returned no report")
+    }
+    // Completion describes delivery, independently of the report's quality status.
+    await this.close(id, {
+      status: "Completed", result: JSON.stringify(audit), error: null,
+      inputTokens: null, outputTokens: null,
+      interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
+    })
+  }
+
+  private async reconcileAudit(id: number, attributes: string[], deadline: number) {
+    this.log.info(`Execution ${id}: connection interrupted; confirming the existing audit without restarting it`)
+    // At least one status lookup even if the HTTP deadline itself just expired.
+    do {
+      const current = await this.require(id)
+      if (current.status === "Completed" || current.status === "Failed") return
+      let runId = current.invocations?.[0]?.run_id
+      try { runId = (JSON.parse(current.result ?? "{}") as { run_id?: string }).run_id ?? runId } catch { /* Retained receipts are the fallback. */ }
+      if (runId && this.agents.getAuditResult) {
+        try {
+          const audit = await this.agents.getAuditResult(runId, attributes)
+          if (audit) {
+            await this.closeAudit(id, audit)
+            return
+          }
+        } catch (error) {
+          if (error instanceof AuditRunUnavailableError) {
+            throw new Error("Audit outcome could not be recovered: the agent-server no longer retains the run; this does not confirm agent failure", { cause: error })
+          }
+          // A transient status/report retrieval failure must not close a live run.
+          this.log.info(`Execution ${id}: audit reconciliation temporarily unavailable`)
+        }
+      }
+      if (Date.now() >= deadline) break
+      await delay(Math.min(5000, deadline - Date.now()), undefined, { ref: false })
+    } while (Date.now() <= deadline)
+    throw new Error("Audit outcome could not be confirmed before the recovery deadline; communication was interrupted, not a confirmed agent failure")
   }
 
   /** Starts the agent and then gets out of the way. Never throws: a failure here
@@ -338,16 +380,18 @@ export class AgentExecutionService {
   /** Records a failure without letting the recording itself throw: the row is
    *  the only trace of this run, so an error while writing it must not silence
    *  the one that caused it. */
-  private async fail(id: number, message: string): Promise<void> {
+  private async fail(id: number, message: string, interruptionReason?: string): Promise<void> {
     this.log.error(`Execution ${id} failed: ${message}`)
 
     try {
+      const retained = interruptionReason === "audit_outcome_unconfirmed" ? await this.require(id) : null
       await this.close(id, {
         status: "Failed",
-        result: null,
+        result: retained?.result ?? null,
         error: message.slice(0, 2000),
         inputTokens: null,
         outputTokens: null,
+        ...(interruptionReason ? { interruptionReason } : {}),
       })
     } catch (error) {
       this.log.error(`Could not record the failure of execution ${id}: ${error}`)
