@@ -55,23 +55,23 @@ export function TestControlsPage() {
   }
 
   return (
-    <section className="test-controls-page">
+    <section className="test-controls-page ui-page-stack">
       <h1>{t("testPages.controls.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.docsExternal")}</span>
         <p className="label">{t("testPages.controls.docsHint")}</p>
         <div className="test-controls-row">
           <DropdownLinks label={t("navigation.apiDocs")} icon={<ExternalIcon size={14} />} items={documentationLinks} />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.navAlign")}</span>
         <div className="test-controls-row">
           <DropdownLinks label={t("testPages.controls.navigate")} items={navigationLinks} />
           <DropdownLinks label={t("testPages.controls.rightAligned")} items={navigationLinks} align="end" />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.disabledEmptyState")}</span>
         <div className="test-controls-row">
           <DropdownLinks label={t("testPages.controls.availablePages")} items={[
@@ -82,13 +82,13 @@ export function TestControlsPage() {
           <DropdownLinks label={t("testPages.controls.emptyMenu")} items={[]} emptyText={t("testPages.controls.noDocs")} />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.textInputs")}</span>
         <TextInput value={plain} placeholder={t("testPages.controls.noLabel")} onChange={setPlain} />
         <TextInput value={model} label={t("testPages.controls.modelName")} placeholder="gpt-4o" onChange={setModel} />
         <TextInput value="locked" label={t("testPages.controls.disabledLabel")} onChange={() => {}} disabled />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.selectorsLegend")}</span>
         <ItemSelector
           items={sampleItems}
@@ -107,7 +107,7 @@ export function TestControlsPage() {
           label={t("testPages.controls.findProvider")}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.registerForm")}</span>
         <form className="test-controls-form" onSubmit={submitForm}>
           <ItemSelector
@@ -125,7 +125,7 @@ export function TestControlsPage() {
         </form>
         {submitted !== null && <p className="mono">{submitted}</p>}
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.squareButtons")}</span>
         <div className="test-controls-row">
           <Button variant="secondary" square ariaLabel={t("testPages.controls.decrease")} onClick={() => setCount((value) => value - 1)}>
@@ -137,11 +137,11 @@ export function TestControlsPage() {
           </Button>
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.defaultTemplate", { count: picked.length })}</span>
         <ItemList items={sampleEntries} selectedIds={picked} onSelectionChange={setPicked} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.customTemplate")}</span>
         <ItemList
           items={sampleEntries}
@@ -155,11 +155,11 @@ export function TestControlsPage() {
           )}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.singleSelect", { favorite: favorite[0] ?? t("testPages.none") })}</span>
         <ItemList items={sampleEntries} selectedIds={favorite} onSelectionChange={setFavorite} mode="single" />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.modalDemo")}</span>
         <Button onClick={() => setModalOpen(true)}>
           {t("testPages.controls.openModal")}

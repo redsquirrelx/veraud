@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ExternalIcon } from "./icons.tsx"
 import { useDropdownDisclosure } from "./useDropdownDisclosure.ts"
+import "./MenuSurface.css"
 import "./Dropdown.css"
 
 export interface DropdownLinkItem {
@@ -52,7 +53,7 @@ export function DropdownLinks({ label, items, icon, disabled = false, align = "s
         {!iconOnly && <span className="ui-dropdown-links-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>}
       </button>
       {expanded && (
-        <nav id={`${id}-links`} className="ui-dropdown-links-panel" data-align={align} aria-labelledby={`${id}-trigger`}>
+        <nav id={`${id}-links`} className="ui-dropdown-links-panel ui-menu-surface" data-align={align} aria-labelledby={`${id}-trigger`}>
           {items.length === 0 ? <p className="ui-dropdown-links-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {

@@ -1,7 +1,7 @@
 .project-page {
   display: flex;
   align-items: stretch;
-  background: #f8fafc;
+  background: var(--color-canvas);
   min-height: calc(100vh - 48px);
 }
 
@@ -36,14 +36,7 @@
 
 .project-content > p { margin: 0; padding: 1rem; }
 
-.project-body .ui-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: stretch;
-  min-width: 0;
-  padding: clamp(1rem, 2vw, 1.5rem);
-}
+.project-body-card { min-width: 0; }
 
 .project-overview {
   display: flex;
@@ -82,7 +75,7 @@
   width: 100%;
 }
 
-.project-date { padding: 0.875rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; background: #f8fafc; font-size: 13px; color: #475569; }
+.project-date { padding: 0.875rem 1rem; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-canvas); font-size: var(--font-size-md); color: var(--color-text-description); }
 
 .files-loading {
   display: flex;
@@ -101,7 +94,7 @@
 }
 
 .files-error {
-  color: #b91c1c;
+  color: var(--color-error-text);
   font-size: 13px;
 }
 
@@ -110,7 +103,7 @@
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #006194;
+  color: var(--color-brand);
 }
 
 .project-link:hover {
@@ -120,8 +113,8 @@
 .project-summary {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .audit-status-row {
@@ -172,12 +165,12 @@
 
 /* subtitles (Type, Key components, ...) read darker than plain labels */
 .audit-block .label {
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .audit-text {
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -187,8 +180,8 @@
   gap: 0.4rem;
   margin: 0;
   padding-left: 1.1rem;
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .audit-path {
@@ -196,13 +189,13 @@
 }
 
 .audit-evidence {
-  font-size: 11px;
-  color: #64748b;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
 .audit-error {
-  font-size: 12px;
-  color: #b91c1c;
+  font-size: var(--font-size-sm);
+  color: var(--color-error-text);
 }
 
 .audit-button-row {
@@ -213,9 +206,9 @@
   width: 100%;
   margin-top: 0.25rem;
 }
-.audit-configuration h3 { font-size: 14px; margin: 1rem 0 0.75rem; }
-.audit-configuration dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1.25rem; font-size: 13px; }
-.audit-configuration dt { color: #64748b; }
+.audit-configuration h3 { font-size: var(--font-size-lg); margin: 1rem 0 0.75rem; }
+.audit-configuration dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1.25rem; font-size: var(--font-size-md); }
+.audit-configuration dt { color: var(--color-text-muted); }
 .audit-configuration dd { margin: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 760px) {

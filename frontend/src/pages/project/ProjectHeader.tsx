@@ -36,7 +36,7 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
       </div>
     </div>
     <div className="project-context-controls">
-      <VersionSelector {...versionSelector} showLocation={false} />
+      <VersionSelector {...versionSelector} showLocation={false} size="compact" />
     </div>
   </header>
 }

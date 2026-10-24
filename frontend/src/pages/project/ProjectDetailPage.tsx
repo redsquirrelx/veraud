@@ -294,7 +294,7 @@ export function ProjectDetailPage() {
               }}
             />
             <div className="project-body">
-            {activeSection === "overview" && <Card>
+            {activeSection === "overview" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <section className="project-overview" aria-label={t("detail.overview.regionLabel")}>
                 <h2>{t("detail.overview.title")}</h2>
                 <div className="project-dates-row">
@@ -326,7 +326,7 @@ export function ProjectDetailPage() {
             {activeSection === "overview" && analysis.execution !== null
               && (orientationSummary !== null || projectArchitectureSummary !== null
                 || semanticValidationSummary !== null) && (
-              <Card>
+              <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                 <div className="audit-block">
                   <div className="audit-head">
                     <h4 className="audit-title">{t("detail.overview.summary")}</h4>
@@ -367,31 +367,31 @@ export function ProjectDetailPage() {
             {activeSection === "analysis" && analysis.execution !== null && (
               <>
                 {analyzerExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     <PipelineRunStatus execution={analyzerExec} />
                   </Card>
                 )}
                 {architectExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     <PipelineRunStatus execution={architectExec} />
                   </Card>
                 )}
                 {orientationExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {orientationSummary !== null
                       ? <OrientationResultView summary={orientationSummary} execution={orientationExec} />
                       : <StageStatusView title={t("pipeline.orientationTitle")} result={orientationExec.result} execution={orientationExec} />}
                   </Card>
                 )}
                 {projectArchitectureExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {projectArchitectureSummary !== null
                       ? <ProjectArchitectureResultView summary={projectArchitectureSummary} execution={projectArchitectureExec} />
                       : <StageStatusView title={t("pipeline.architectureTitle")} result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
                   </Card>
                 )}
                 {semanticValidationExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {semanticValidationSummary !== null
                       ? <SemanticValidationResultView summary={semanticValidationSummary} execution={semanticValidationExec} />
                       : <StageStatusView title={t("pipeline.semanticTitle")} result={semanticValidationExec.result} execution={semanticValidationExec} />}
@@ -400,7 +400,7 @@ export function ProjectDetailPage() {
               </>
             )}
             {activeSection === "files" && (
-              <Card>
+              <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                 <SplitView
                   label={t("detail.files.resizeLabel")}
                   right={
@@ -435,13 +435,13 @@ export function ProjectDetailPage() {
               </Card>
             )}
             {activeSection === "audits" && (
-              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} />
+              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="responsive" />
             )}
             {activeSection === "audits" && (
               analysis.execution === null ? (
                 null
               ) : (
-                <Card>
+                <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                   {runStatuses}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
@@ -461,7 +461,7 @@ export function ProjectDetailPage() {
                 </Card>
               )
             )}
-            {analysis.phase === "error" && <Card>
+            {analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
              <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}

@@ -176,7 +176,7 @@ export function SettingsPage() {
     : editor.id === null ? "credentials.addDialog" : "credentials.editDialog"
 
   return (
-    <section className="settings-page">
+    <section className="settings-page ui-page-stack">
       <div className="home-heading">
         <div>
           <h1>{t("title")}</h1>
@@ -217,8 +217,8 @@ export function SettingsPage() {
         </>}
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-models`} aria-labelledby={`${tabsId}-tab-models`} hidden={activeTab !== "models"} tabIndex={0}>
-      <Card>
-        <span className="label">{t("models.sectionTitle")}</span>
+      <Card layout="stack" gap="sm" align="start">
+        <span className="label settings-section-title">{t("models.sectionTitle")}</span>
         <p className="settings-hint">{t("credentials.editHint")}</p>
         {loadError !== "" ? (
           <p className="settings-error">{loadError}</p>
@@ -230,7 +230,7 @@ export function SettingsPage() {
                   <Button variant="primary" square ariaLabel={t("models.add")} title={t("models.add")} onClick={() => openEditor("model")}>
                     <PlusIcon />
                   </Button>
-                  <span className="label">{t("models.title")}</span>
+                  <span className="label settings-group-title">{t("models.title")}</span>
                 </div>
                 <ItemList
                   items={models}
@@ -253,7 +253,7 @@ export function SettingsPage() {
                   <Button variant="primary" square ariaLabel={t("credentials.add")} title={t("credentials.add")} onClick={() => openEditor("credential")}>
                     <PlusIcon />
                   </Button>
-                  <span className="label">{t("credentials.title")}</span>
+                  <span className="label settings-group-title">{t("credentials.title")}</span>
                 </div>
                 <ItemList
                   items={credentials}
@@ -278,11 +278,11 @@ export function SettingsPage() {
       </Card>
       </div>
       <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={activeTab !== "preferences"} tabIndex={0}>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <LanguageSelector />
       </Card>
-      <Card>
-        <span className="label">{t("preferences.notifications.title")}</span>
+      <Card layout="stack" gap="sm" align="start">
+        <span className="label settings-section-title">{t("preferences.notifications.title")}</span>
         <p className="settings-hint">{t("preferences.notifications.hint")}</p>
         <div className="settings-tasks">
           {TASK_KIND_OPTIONS.map((option) => {

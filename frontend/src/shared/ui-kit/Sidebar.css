@@ -7,10 +7,10 @@
   gap: 0.5rem;
   width: 220px;
   min-height: 320px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  padding: 12px;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  padding: var(--surface-padding);
 }
 
 .ui-sidebar-footer {
@@ -21,7 +21,7 @@
 
 .ui-sidebar-toggle:focus-visible,
 .ui-sidebar-item:focus-visible {
-  outline: 2px solid #006194;
+  outline: var(--focus-width) solid var(--color-focus-strong);
   outline-offset: 2px;
 }
 
@@ -43,9 +43,9 @@
 }
 
 .ui-sidebar-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -59,16 +59,16 @@
   height: 28px;
   flex-shrink: 0;
   background: transparent;
-  color: #334155;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.25rem;
+  color: var(--color-text-secondary);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.08s ease;
 }
 
 .ui-sidebar-toggle:hover {
-  border-color: #94a3b8;
-  color: #0f172a;
+  border-color: var(--color-border-hover);
+  color: var(--color-text);
 }
 
 .ui-sidebar-toggle:active {
@@ -89,8 +89,8 @@
   height: 32px;
   padding: 0 10px;
   background: transparent;
-  color: #334155;
-  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
@@ -104,8 +104,8 @@
 }
 
 .ui-sidebar-item:hover {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-canvas);
+  color: var(--color-text);
 }
 
 .ui-sidebar-item:active {
@@ -113,13 +113,13 @@
 }
 
 .ui-sidebar-item-active {
-  background: #f2f3ff;
-  color: #006194;
-  font-weight: 500;
+  background: var(--color-surface-tint);
+  color: var(--color-brand);
+  font-weight: var(--font-weight-medium);
 }
 
 .ui-sidebar-item-active:hover {
-  color: #006194;
+  color: var(--color-brand);
 }
 
 .ui-sidebar-icon {

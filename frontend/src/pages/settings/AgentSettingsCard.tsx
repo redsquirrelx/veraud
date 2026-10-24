@@ -86,7 +86,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
 
   const unavailable = agent.availability !== undefined && agent.availability !== "available"
   if (!qualityAttribute && (unavailable || agent.requiresModel === false || (agent.modelConfigurationAgentType && agent.modelConfigurationAgentType !== agent.agentType))) {
-    return <Card>
+    return <Card className="settings-agent-card" layout="stack" gap="sm" align="start">
       <div className="settings-agent-heading"><h3>{label ?? agent.name ?? agent.agentType}</h3></div>
       <p className="settings-hint">{unavailable ? t("agents.unavailable") : agent.requiresModel === false ? t("agents.noModelRequired") : t("agents.sharedModel", { agentType: agent.modelConfigurationAgentType })}</p>
       {!unavailable && agent.requiresModel !== false && <>
@@ -97,7 +97,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
   }
 
   return (
-    <Card>
+    <Card className="settings-agent-card" layout="stack" gap="sm" align="start">
       <div className="settings-agent-heading">
         <h3>{label ?? agent.agentType}</h3>
         <Badge tone={dirty ? "info" : agent.configured ? "success" : "info"}>

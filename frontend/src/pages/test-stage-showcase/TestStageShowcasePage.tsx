@@ -107,21 +107,21 @@ function parsed<T>(parse: (result: string | null) => T | null, result: string): 
 export function TestStageShowcasePage() {
   const { t } = useTranslation("common")
   return (
-    <section className="test-stage-showcase-page">
+    <section className="test-stage-showcase-page ui-page-stack">
       <h1>{t("testPages.stageShowcase.title")}</h1>
       <p className="label">
         <Link to="/test">{t("testPages.allPlaygrounds")}</Link> · {t("testPages.stageShowcase.subtitle")}
       </p>
-      <Card>
+      <Card layout="stack" gap="sm" align="stretch">
         <OrientationResultView summary={parsed(parseOrientationResult, orientationJson)} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="stretch">
         <ProjectArchitectureResultView summary={parsed(parseProjectArchitectureResult, architectureJson)} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="stretch">
         <SemanticValidationResultView summary={parsed(parseSemanticValidationResult, validationJson)} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="stretch">
         <span className="label">{t("testPages.stageShowcase.failedRun")}</span>
         <StageStatusView
           title={t("testPages.stageShowcase.architectureTitle")}

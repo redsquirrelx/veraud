@@ -109,7 +109,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
 
   return (
     <div className="settings-agents">
-      <Panel>
+      <Panel tone="subtle" layout="stack" gap="lg" align="stretch">
         <div className="settings-agents-heading">
           <h2>{heading ?? t("agents.title")}</h2>
           <p className="settings-hint">{description ?? t("agents.subtitle")}</p>

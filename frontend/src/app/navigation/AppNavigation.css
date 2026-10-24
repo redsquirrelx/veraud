@@ -4,13 +4,13 @@
   gap: 0.5rem;
   font-weight: 600;
   font-size: 15px;
-  color: #0f172a;
+  color: var(--color-text);
   text-decoration: none;
   transition: color 0.15s ease, opacity 0.15s ease;
 }
 
 .app-brand:hover {
-  color: #006194;
+  color: var(--color-brand);
   opacity: 0.85;
 }
 
@@ -28,7 +28,7 @@
   gap: 0.4rem;
   padding: 4px 10px;
   border-radius: 0.25rem;
-  color: #334155;
+  color: var(--color-text-secondary);
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -36,21 +36,21 @@
 }
 
 .app-nav a:hover {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-canvas);
+  color: var(--color-text);
 }
 
 .app-nav a:active { transform: scale(0.96); }
 
 .app-nav a:focus-visible,
 .app-brand:focus-visible {
-  outline: 2px solid #006194;
+  outline: var(--focus-width) solid var(--color-focus-strong);
   outline-offset: 2px;
 }
 
 .app-nav a.app-nav-active {
-  background: #f2f3ff;
-  color: #006194;
+  background: var(--color-surface-tint);
+  color: var(--color-brand);
 }
 
-.app-nav a.app-nav-active:hover { color: #006194; }
+.app-nav a.app-nav-active:hover { color: var(--color-brand); }

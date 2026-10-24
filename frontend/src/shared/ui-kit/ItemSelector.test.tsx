@@ -72,6 +72,11 @@ describe("ItemSelector", () => {
     expect(screen.getByRole("button", { name: "Select an item" })).toBeDefined()
   })
 
+  it("marks the compact density without changing the selected value", () => {
+    render(<ItemSelector size="compact" items={items} selectedId="main" onSelect={() => {}} hasMore={false} onLoadMore={() => {}} />)
+    expect(screen.getByRole("button", { name: /main/ }).closest(".ui-item-selector")).toHaveAttribute("data-size", "compact")
+  })
+
   it("appends more items through load more without closing", async () => {
     const onLoadMore = vi.fn()
     render(

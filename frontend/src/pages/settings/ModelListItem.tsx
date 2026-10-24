@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { Badge, Button, MinusIcon, PencilIcon } from "../../shared/ui-kit/index.ts"
-import "./ModelListItem.css"
+import "./SettingsResourceItem.css"
 
 interface ModelListItemProps {
   name: string
@@ -13,12 +13,12 @@ interface ModelListItemProps {
 export function ModelListItem({ name, provider, inUse, onEdit, onRemove }: ModelListItemProps) {
   const { t } = useTranslation("settings")
   return (
-    <span className="settings-model-item">
-      <span className="settings-model-main">
+    <span className="settings-model-item settings-resource-item">
+      <span className="settings-model-main settings-resource-main">
         <span className="mono">{name}</span>
         <span className="label">{provider}</span>
       </span>
-      <span className="settings-model-side">
+      <span className="settings-model-side settings-resource-actions">
         {inUse && <Badge tone="neutral">{t("models.inUse")}</Badge>}
         <span onClick={(event) => event.stopPropagation()}>
           <Button variant="secondary" square ariaLabel={t("models.editItem", { name })} title={t("models.editItem", { name })} onClick={onEdit}>

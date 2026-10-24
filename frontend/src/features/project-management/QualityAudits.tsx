@@ -117,8 +117,9 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
     : <span>{pending}</span>}</p>
 }
 
-export function QualityAudits({ projectId, branch, commitHash, canRun }: {
+export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayout = "plain", cardPadding = "default" }: {
   projectId: number, branch: string | null, commitHash: string | null, canRun: boolean,
+  cardLayout?: "plain" | "stack", cardPadding?: "default" | "responsive",
 }) {
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
@@ -198,7 +199,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
   }
 
   return <div className="quality-audits">
-    <Card>
+    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading">
         <div><h2>{t("qualityAudits.title")}</h2><p>{t("qualityAudits.description")}</p></div>
         <span className="quality-audit-revision mono">{branch ?? "—"} @ {commitHash?.slice(0, 7) ?? t("qualityAudits.revisionPending")}</span>
@@ -227,7 +228,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}
       {error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
     </Card>
-    <Card>
+    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
       {audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
@@ -248,7 +249,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun }: {
         </div>}
       </article>)}
     </Card>
-    {report && <Card>
+    {report && <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <h2>{t("qualityAudits.report.title", { id: report.id })}</h2>
       {reportRunId(report.document) && <p>{t("qualityAudits.runId.label")}: <code>{reportRunId(report.document)}</code></p>}
       <p>{t("qualityAudits.report.originalNotice")}</p>

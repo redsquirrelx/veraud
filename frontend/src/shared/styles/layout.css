@@ -1,0 +1,6 @@
+.ui-page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}

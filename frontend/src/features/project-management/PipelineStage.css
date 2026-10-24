@@ -33,7 +33,7 @@
 
 .stage-lede {
   font-size: 12.5px;
-  color: #0f172a;
+  color: var(--color-text);
   margin: 0;
   line-height: 1.45;
 }
@@ -43,14 +43,14 @@
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .stage-rows {
   display: flex;
   flex-direction: column;
   width: 100%;
-  border-top: 1px solid #e2e8f0;
+  border-top: var(--border-width) solid var(--color-border);
 }
 
 .stage-row {
@@ -58,19 +58,19 @@
   align-items: flex-start;
   gap: 0.5rem;
   padding: 0.4rem 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: var(--border-width) solid var(--color-surface-hover);
   font-size: 12px;
 }
 
 .stage-row-main {
   flex: 1;
   min-width: 0;
-  color: #0f172a;
+  color: var(--color-text);
   line-height: 1.45;
 }
 
 .stage-row-sub {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 11px;
   margin-top: 0.15rem;
   line-height: 1.4;
@@ -91,14 +91,14 @@
   padding: 0.3rem 0.5rem;
   border-radius: 0.25rem;
   font-size: 12px;
-  color: #334155;
+  color: var(--color-text-secondary);
   margin-top: 0.25rem;
   line-height: 1.4;
 }
 
 .stage-footnote {
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 .architecture-diagram-view {
   margin: 1.25rem 0;

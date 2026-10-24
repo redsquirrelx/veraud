@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParseKeys } from "i18next"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
+import "../../shared/ui-kit/Field.css"
 import { Button, Drawer, Spinner } from "../../shared/ui-kit/index.ts"
 import { configFields, fieldValue, getAuditSettings, saveAuditSettings, settingsValues,
   type AuditSettingsDescriptor } from "./auditSettingsApi.ts"
@@ -90,8 +91,8 @@ export function AuditSettingsDrawer({ attribute, label, open, onClose }: Props) 
               const numeric = schema.type !== "string"
               const labelKey = fieldLabelKeys[key]
               return <div className="settings-agent-parameter" key={key}>
-                <label className="ui-text-input" htmlFor={`${id}-${key}`}>
-                  <span className="ui-item-legend">{labelKey ? t(labelKey) : path.slice(1).join(" · ")}</span>
+                <label className="ui-field ui-text-input" htmlFor={`${id}-${key}`}>
+                  <span className="ui-field-label">{labelKey ? t(labelKey) : path.slice(1).join(" · ")}</span>
                   <input id={`${id}-${key}`} className="ui-input" type={numeric ? "number" : "text"}
                     value={form[key] ?? ""} min={schema.minimum} max={schema.maximum} minLength={schema.minLength}
                     step={schema.type === "integer" ? "1" : "any"} disabled={saving}

@@ -7,7 +7,7 @@
   justify-content: center;
   padding: 1rem;
   box-sizing: border-box;
-  background: rgb(15 23 42 / 0.45);
+  background: var(--color-overlay);
   animation: ui-modal-fade 160ms ease;
 }
 
@@ -30,10 +30,10 @@
   box-sizing: border-box;
   padding: 1rem;
   overflow: visible;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 0.5rem;
-  box-shadow: 0 16px 48px rgb(15 23 42 / 0.25);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-control);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-modal);
   animation: ui-modal-rise 200ms ease;
 }
 
@@ -49,30 +49,12 @@
 }
 
 .ui-modal-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: var(--font-size-title-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
 }
 
-.ui-modal-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: auto;
-  padding: 0;
-  background: transparent;
-  color: #64748b;
-  border: none;
-  border-radius: 0.25rem;
-  cursor: pointer;
-}
-
-.ui-modal-close:hover {
-  color: #0f172a;
-  background: #f1f5f9;
-}
+.ui-modal-close { margin-left: auto; }
 
 @keyframes ui-modal-rise {
   from {

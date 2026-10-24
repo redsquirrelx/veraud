@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button, Card, FilterTabs, Panel, RefreshButton, SortButton, Spinner, TextInput, Toast, useAsyncAction } from "../../shared/ui-kit/index.ts"
+import { Badge, Button, Card, FilterTabs, IconButton, ItemSelector, Panel, RefreshButton, SortButton, Spinner, TextInput, Toast, XIcon, useAsyncAction } from "../../shared/ui-kit/index.ts"
 import "./ComponentTestPage.css"
 
 function waitASecond() {
@@ -49,6 +49,22 @@ export function ComponentTestPage() {
           <Button loading>{t("testPages.components.registering")}</Button>
           <Toast kind="success" message={t("testPages.components.projectRegistered")} />
         </div>
+      </Panel>
+      <Card layout="stack" gap="md">
+        <span className="label">{t("testPages.components.cardSurface")}</span>
+        <TextInput value="main" label={t("testPages.controls.provider")} onChange={() => {}} />
+        <ItemSelector size="compact" items={[{ id: "main", label: "main" }]} selectedId="main"
+          onSelect={() => {}} hasMore={false} onLoadMore={() => {}} label={t("testPages.controls.provider")} />
+        <div className="playground-row">
+          <IconButton ariaLabel={t("ui.close")} variant="ghost" size="sm"><XIcon size={14} /></IconButton>
+          <Badge tone="danger" dot title={t("navigation.serviceStatus", { label: t("navigation.services.agentsServer"), status: t("navigation.status.offline") })}>
+            {t("navigation.serviceStatus", { label: t("navigation.services.agentsServer"), status: t("navigation.status.offline") })}
+          </Badge>
+        </div>
+      </Card>
+      <Panel tone="subtle" layout="stack" gap="md">
+        <span className="label">{t("testPages.components.panelSurface")}</span>
+        <span>{t("testPages.components.panelNestingCards")}</span>
       </Panel>
 
       <h2>{t("testPages.components.button")}</h2>

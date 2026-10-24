@@ -86,13 +86,13 @@ export function TestFileViewerPage() {
   const longLines = longSample.split("\n").length
 
   return (
-    <section className="test-file-viewer-page">
+    <section className="test-file-viewer-page ui-page-stack">
       <h1>{t("testPages.fileViewer.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/modules/settlement.ts", count: lines })}</span>
         <CodeViewer code={sample} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.withMarks", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>        <CodeViewer
           code={sample}
           language="ts"
@@ -111,7 +111,7 @@ export function TestFileViewerPage() {
           ]}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.groupedByFinding", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>
         <CodeViewer
           code={sample}
@@ -128,35 +128,35 @@ export function TestFileViewerPage() {
           ]}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.emptyFile")}</span>
         <CodeViewer code="" />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/generated/ledger-entries.ts", count: longLines })}</span>
         <CodeViewer code={longSample} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/settle.py" })}</span>
         <CodeViewer code={pythonSample} language="py" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/modules/settlement.highlighted.ts" })}</span>
         <CodeViewer code={sample} language="ts" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/charge.js" })}</span>
         <CodeViewer code={jsSample} language="js" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/config.json" })}</span>
         <CodeViewer code={jsonSample} language="json" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/scripts/deploy.sh" })}</span>
         <CodeViewer code={shellSample} language="sh" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.longLinesFile", { file: "payment-gateway-v2/dist/bundle.min.json" })}</span>
         <CodeViewer code={longLinesSample} language="json" highlight />
       </Card>

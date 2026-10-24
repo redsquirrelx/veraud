@@ -15,12 +15,12 @@ export function TestDropdownPage() {
   const [lastChosen, setLastChosen] = useState<string | null>(null)
 
   return (
-    <section className="test-dropdown-page">
+    <section className="test-dropdown-page ui-page-stack">
       <h1>{t("testPages.dropdown.title")}</h1>
       <p className="label">
         <Link to="/test">{t("testPages.allPlaygrounds")}</Link>
       </p>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.dropdown.actionMenu")}</span>
         <DropdownMenu
           label={t("testPages.dropdown.analyze")}
@@ -32,15 +32,15 @@ export function TestDropdownPage() {
           }}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.dropdown.lastChosen")}</span>
         <p className="mono">{lastChosen ?? t("testPages.none")}</p>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.dropdown.loadingTrigger")}</span>
         <DropdownMenu label={t("testPages.dropdown.analyze")} items={pipelineItems} loading loadingText={t("testPages.dropdown.analyzing")} onSelect={() => {}} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.dropdown.disabledEmpty")}</span>
         <div className="test-dropdown-row">
           <DropdownMenu label={t("testPages.dropdown.disabled")} items={pipelineItems} disabled onSelect={() => {}} />

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { CheckIcon, ChevronDownIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import { useDropdownDisclosure } from "./useDropdownDisclosure.ts"
+import "./MenuSurface.css"
 import "./Dropdown.css"
 
 export interface DropdownMenuItem {
@@ -62,7 +63,7 @@ export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, 
         <span className="ui-dropdown-menu-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>
       </button>
       {expanded && (
-        <div id={`${id}-menu`} className="ui-dropdown-menu-panel" data-align={align} role="menu" aria-labelledby={`${id}-trigger`}>
+        <div id={`${id}-menu`} className="ui-dropdown-menu-panel ui-menu-surface" data-align={align} role="menu" aria-labelledby={`${id}-trigger`}>
           {items.length === 0 ? <p className="ui-dropdown-menu-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {
