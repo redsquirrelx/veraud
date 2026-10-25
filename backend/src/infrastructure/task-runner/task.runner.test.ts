@@ -97,6 +97,43 @@ describe("TaskRunner.enqueue", () => {
     assert.deepEqual(syncedAt, [])
   })
 
+  it("marks an SSH clone as failed and preserves the public-key diagnostic", async () => {
+    let persisted = { ...stored }
+    const events: TaskEvent[] = []
+    const statuses: Array<{ id: number, status: string }> = []
+    const executionOptions: Array<{ remote: boolean, timeoutMs?: number }> = []
+    const store: TaskStore = {
+      create: async () => stored,
+      update: async (_id, data) => (persisted = { ...persisted, ...data }),
+      delete: async () => {},
+      findById: async () => persisted,
+      findActive: async () => [],
+    }
+    const runner = new TaskRunner(
+      store,
+      { setStatus: async (id, status) => { statuses.push({ id, status }) }, markSynced: async () => {} },
+      { broadcast: (event) => { events.push(event) } },
+      mkdtempSync(join(tmpdir(), "veraud-ssh-failure-")),
+      async (_binary, _argv, options) => {
+        assert.ok(options)
+        executionOptions.push(options)
+        throw new Error("Permission denied (publickey)")
+      },
+    )
+
+    const result = await runner.enqueue({
+      taskId: 1,
+      projectId: 2,
+      command: { kind: "clone", cloneUrl: "git@github.com:acme/Demo.git", folder: "repo" },
+    })
+
+    assert.equal(result.status, "Failed")
+    assert.match(result.logTrail ?? "", /Permission denied \(publickey\)/)
+    assert.deepEqual(executionOptions, [{ remote: true, timeoutMs: 5 * 60 * 1000 }])
+    assert.deepEqual(events.map((event) => event.task.status), ["Queued", "Running", "Failed"])
+    assert.deepEqual(statuses, [{ id: 2, status: "SYNCING" }])
+  })
+
   it("marks the project READY on success", async () => {
     const projectStatuses: Array<{ id: number; status: string }> = []
     const syncedAt: Array<{ id: number; at: Date }> = []

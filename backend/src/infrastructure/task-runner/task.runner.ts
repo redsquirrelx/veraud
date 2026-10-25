@@ -1,12 +1,8 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import type { TaskStore } from "../../modules/task/task.repository.js"
 import type { TaskEvent } from "../realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
-import { describeGitCommand, formatCommand, isGitCommand } from "./git.executor.js"
+import { describeGitCommand, executeGit, formatCommand, gitExecutionOptions, isGitCommand } from "./git.executor.js"
 import type { GitCommand } from "./git.executor.js"
-
-const runFile = promisify(execFile)
 
 export interface EventSink {
   broadcast(event: TaskEvent): void
@@ -49,7 +45,7 @@ interface RunnerJob extends QueuedTask {
   blockedFailure?: string
 }
 
-type CommandExecutor = (binary: string, argv: string[]) => Promise<{ stdout: string, stderr: string }>
+type CommandExecutor = (binary: string, argv: string[], options?: ReturnType<typeof gitExecutionOptions>) => Promise<{ stdout: string, stderr: string }>
 
 function isExclusive(command: TaskCommand): boolean {
   return command.kind === "clone" || command.kind === "pull" || command.kind === "fetch"
@@ -66,7 +62,7 @@ export class TaskRunner implements TaskQueue {
     private projects: ProjectStatusWriter,
     private gateway: EventSink,
     private workspaceDir: string,
-    private execute: CommandExecutor = runFile
+    private execute: CommandExecutor = executeGit
   ) {}
 
   async enqueue(task: QueuedTask): Promise<TaskResult> {
@@ -180,7 +176,7 @@ export class TaskRunner implements TaskQueue {
     await announce(job, "Running", null, null)
 
     try {
-      const { stdout, stderr } = await this.execute(description.binary, description.argv)
+      const { stdout, stderr } = await this.execute(description.binary, description.argv, gitExecutionOptions(job.command))
       const result = { status: "Succeded", exitCode: 0, logTrail: `${stdout}\n${stderr}`.slice(-4000), output: stdout }
       await announce(job, result.status, result.exitCode, result.logTrail)
       return result
