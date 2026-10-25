@@ -45,8 +45,14 @@
   border-color: var(--color-border-hover);
 }
 
+.ui-button-primary:active:not(:disabled) { background: var(--color-brand-active); }
+.ui-button-secondary:active:not(:disabled) { background: var(--color-surface-active); }
+
 .ui-button:disabled {
-  opacity: 0.6;
+  opacity: 1;
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  border-color: var(--color-disabled-border);
   cursor: not-allowed;
 }
 

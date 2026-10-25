@@ -33,21 +33,21 @@
   gap: 0.5rem;
   flex-shrink: 0;
   padding: 0.85rem 0.3rem;
-  background: #e0e7ff;
-  border: 1px solid #a5b4fc;
+  background: var(--status-info-bg);
+  border: var(--border-width) solid var(--status-info-border);
   border-right: none;
   border-radius: 0.5rem 0 0 0.5rem;
-  box-shadow: -4px 0 16px rgb(15 23 42 / 0.18);
-  color: #312e81;
-  font-size: 11px;
-  font-weight: 500;
+  box-shadow: var(--shadow-audit-drawer-trigger);
+  color: var(--status-info-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   writing-mode: vertical-rl;
   cursor: pointer;
 }
 
 .audit-drawer-trigger:hover,
 .audit-drawer-trigger[aria-expanded="true"] {
-  background: #c7d2fe;
+  background: var(--status-info-bg);
 }
 
 .audit-drawer-trigger:focus-visible {
@@ -64,8 +64,8 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-focus);
-  box-shadow: 0 0 0 2px #e0e7ff;
+  background: var(--status-info-accent);
+  box-shadow: 0 0 0 2px var(--status-info-bg);
 }
 
 .audit-drawer-panel {
@@ -74,9 +74,9 @@
   flex-direction: column;
   align-self: stretch;
   width: var(--audit-drawer-panel-width);
-  background: #dde5ee;
+  background: var(--color-surface-recessed);
   border-left: var(--border-width) solid var(--color-text-muted);
-  box-shadow: -16px 0 48px rgb(15 23 42 / 0.25);
+  box-shadow: var(--shadow-audit-drawer);
   visibility: hidden;
   /* Visibility waits for the slide-out, so the panel does not vanish early. */
   transition: visibility 0s linear 250ms;
@@ -125,7 +125,7 @@
 }
 
 .audit-drawer-close:hover {
-  background: var(--color-border);
+  background: var(--color-surface-recessed);
   color: var(--color-text);
 }
 
@@ -145,11 +145,11 @@
   padding: 0.75rem;
 }
 
-/* White audit cards on a slate field: the stock #e2e8f0 card border would be
+/* White audit cards on a recessed slate field: the stock surface border would be
    invisible here, so each audit gets a stronger edge plus its state accent. */
 .audit-drawer-body .ui-card {
   border-color: var(--color-border-hover);
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+  box-shadow: var(--shadow-audit-card);
 }
 
 .audit-drawer-body .audit-disclosure {

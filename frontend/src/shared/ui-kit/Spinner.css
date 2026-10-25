@@ -6,12 +6,12 @@
 }
 
 .ui-spinner-dark {
-  border-color: rgba(0, 97, 148, 0.25);
+  border-color: var(--color-spinner-track);
   border-top-color: var(--color-brand);
 }
 
 .ui-spinner-light {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: var(--color-spinner-track-inverse);
   border-top-color: var(--color-on-brand);
 }
 

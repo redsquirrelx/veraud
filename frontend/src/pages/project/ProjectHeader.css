@@ -10,7 +10,7 @@
    padding: 1.25rem clamp(1rem, 3vw, 2.5rem);
    background: var(--color-surface);
    border-bottom: var(--border-width) solid var(--color-border);
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04);
+   box-shadow: var(--shadow-header);
 }
 
 .project-context-top-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1rem; min-width: 0; }

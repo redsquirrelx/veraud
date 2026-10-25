@@ -25,10 +25,14 @@
   color: var(--color-text);
 }
 
+.ui-filter-tab:active:not(:disabled) { background: var(--color-surface-active); }
+
 .ui-filter-tab-active {
   background: var(--color-brand);
   color: var(--color-on-brand);
 }
+
+.ui-filter-tab-active:active:not(:disabled) { background: var(--color-brand-active); }
 
 .ui-filter-tab-active:hover {
   color: var(--color-on-brand);

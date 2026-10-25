@@ -5,5 +5,5 @@
 .ui-item-clear:hover { color: var(--color-text); background: var(--color-surface-hover); }
 .ui-item-search-toggle { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: var(--control-height); height: var(--control-height); background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border-control); border-radius: var(--radius-control); cursor: pointer; }
 .ui-item-search-toggle:hover { border-color: var(--color-focus); }
-.ui-item-search-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.ui-item-search-toggle:disabled { opacity: 1; background: var(--color-disabled-bg); color: var(--color-disabled-text); border-color: var(--color-disabled-border); cursor: not-allowed; }
 .ui-item-search-row .ui-item-search-field .ui-input { min-width: 0; width: 100%; }

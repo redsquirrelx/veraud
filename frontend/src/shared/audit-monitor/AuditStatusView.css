@@ -44,12 +44,12 @@
   min-width: 0;
   max-width: 100%;
   padding: 2px 6px;
-  background: #e0e7ff;
-  border: 1px solid #a5b4fc;
-  border-radius: 0.25rem;
-  color: #312e81;
-  font-size: 11px;
-  font-weight: 500;
+  background: var(--status-info-bg);
+  border: var(--border-width) solid var(--status-info-border);
+  border-radius: var(--radius-control);
+  color: var(--status-info-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
   overflow: hidden;
 }
@@ -64,7 +64,7 @@
 }
 
 .audit-status-project:hover {
-  background: #c7d2fe;
+  background: var(--status-info-bg);
 }
 
 .audit-status-project:focus-visible {
@@ -76,11 +76,11 @@
 .audit-agent-error {
   margin: 0;
   padding: 0.3rem 0.45rem;
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
-  border-radius: 0.25rem;
-  font-size: 11px;
-  color: #9f1239;
+  background: var(--status-danger-bg);
+  border: var(--border-width) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-xs);
+  color: var(--status-danger-text);
 }
 
 /* One accent colour per state, shared by every level of this module — audit,
@@ -122,7 +122,7 @@
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.55rem;
-  background: var(--color-border);
+  background: var(--color-surface-recessed);
   border: var(--border-width) solid var(--color-border-hover);
   border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
   border-radius: 0.375rem;

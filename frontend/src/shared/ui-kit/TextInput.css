@@ -19,7 +19,9 @@
 }
 
 .ui-input:disabled {
-  background: var(--color-surface-hover);
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  border-color: var(--color-disabled-border);
   cursor: not-allowed;
 }
 

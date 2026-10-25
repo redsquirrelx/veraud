@@ -96,12 +96,12 @@
 
 .task-icon-done {
   display: inline-flex;
-  color: #059669;
+  color: var(--status-success-accent);
 }
 
 .task-icon-failed {
   display: inline-flex;
-  color: #be123c;
+  color: var(--status-failed-accent);
 }
 
 .task-menu-list .ui-card { min-width: 0; }

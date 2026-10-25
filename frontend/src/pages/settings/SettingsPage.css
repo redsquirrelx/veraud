@@ -22,7 +22,7 @@
   cursor: pointer;
 }
 
-.settings-tabs button:hover { color: var(--color-brand); background: #ffffff80; }
+.settings-tabs button:hover { color: var(--color-brand); background: var(--color-surface-hover); }
 .settings-tabs button[aria-selected="true"] { color: var(--color-brand); border-bottom-color: var(--color-brand); }
 .settings-tabs button:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: -4px; }
 

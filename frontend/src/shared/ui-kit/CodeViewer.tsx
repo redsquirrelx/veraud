@@ -14,6 +14,7 @@ import {
   type LineMark,
 } from "./codeViewer.ts"
 import "./CodeViewer.css"
+import "./CodeReference.css"
 // Keep the theme import next to the component: it was lost once when the
 // logic moved to codeViewer.ts, and nothing but the browser shows it.
 import "highlight.js/styles/github.css"

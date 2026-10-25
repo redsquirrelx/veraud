@@ -19,11 +19,14 @@
 .ui-icon-button-outline:hover:not(:disabled) { border-color: var(--color-border-hover); color: var(--color-text); }
 .ui-icon-button-pagination { border: 0; background: transparent; color: var(--color-text-secondary); }
 .ui-icon-button-pagination:hover:not(:disabled) { background: var(--color-canvas); color: var(--color-text); }
+.ui-icon-button-ghost:active:not(:disabled),
+.ui-icon-button-outline:active:not(:disabled),
+.ui-icon-button-pagination:active:not(:disabled) { background: var(--color-surface-active); }
 .ui-icon-button-outline:active:not(:disabled),
 .ui-icon-button-pagination:active:not(:disabled) { transform: scale(0.92); }
 .ui-icon-button:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
-.ui-icon-button:disabled { cursor: not-allowed; }
-.ui-icon-button-pagination:disabled { opacity: 0.4; }
+.ui-icon-button:disabled { opacity: 1; background: var(--color-disabled-bg); color: var(--color-disabled-text); border-color: var(--color-disabled-border); cursor: not-allowed; }
+.ui-icon-button-pagination:disabled { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .ui-icon-button { transition: none; }

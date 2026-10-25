@@ -109,6 +109,7 @@
 }
 
 .ui-sidebar-item:active {
+  background: var(--color-surface-active);
   transform: scale(0.97);
 }
 

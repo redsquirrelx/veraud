@@ -27,7 +27,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  border-left: 1px solid #e2e8f0;
+  border-left: var(--border-width) solid var(--color-border);
   padding-left: 0.75rem;
 }
 
@@ -44,7 +44,7 @@
   .app-docs-nav {
     width: 100%;
     border-left: 0;
-    border-top: 1px solid #e2e8f0;
+    border-top: var(--border-width) solid var(--color-border);
     padding: 0.75rem 0 0;
   }
 }

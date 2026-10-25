@@ -6,9 +6,9 @@
   height: 100%;
   min-height: 360px;
   max-height: 465px;
-  background: #ffffff;
-  border: 1px solid #94a3b8;
-  border-radius: 0.5rem;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-hover);
+  border-radius: var(--radius-surface);
   overflow: hidden;
 }
 
@@ -34,61 +34,32 @@
 }
 
 .ui-code-line:hover {
-  background: #f1f5f9;
+  background: var(--color-surface-hover);
 }
 
 .ui-code-line-danger {
-  background: #fef2f2;
-  box-shadow: inset 3px 0 0 #ef4444;
+  background: var(--status-danger-bg);
+  box-shadow: inset 3px 0 0 var(--status-danger-solid);
 }
 
 .ui-code-line-warning {
-  background: #fffbeb;
-  box-shadow: inset 3px 0 0 #f59e0b;
+  background: var(--status-warning-bg);
+  box-shadow: inset 3px 0 0 var(--status-warning-solid);
 }
 
 .ui-code-line-info {
-  background: #f0f9ff;
-  box-shadow: inset 3px 0 0 #0284c7;
+  background: var(--color-selection-soft);
+  box-shadow: inset 3px 0 0 var(--status-info-solid);
 }
 
-.ui-code-ref {
-  flex-shrink: 0;
-  align-self: center;
-  margin-right: 0.5rem;
-  padding: 0 0.375rem;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-2xs);
-  font-weight: var(--font-weight-semibold);
-  border: 1px solid;
-  border-radius: 0.25rem;
-  white-space: nowrap;
-}
-
-.ui-code-ref-danger {
-  background: #ef4444;
-  border-color: #b91c1c;
-  color: #ffffff;
-}
-
-.ui-code-ref-warning {
-  background: #f59e0b;
-  border-color: #b45309;
-  color: #ffffff;
-}
-
-.ui-code-ref-info {
-  background: #0284c7;
-  border-color: #0369a1;
-  color: #ffffff;
-}
+.ui-code-viewer .ui-code-ref { margin-right: 0.5rem; }
 
 .ui-code-number {
   flex-shrink: 0;
   width: 3rem;
   padding-right: 0.75rem;
   text-align: right;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   user-select: none;
 }
 
@@ -96,7 +67,7 @@
   flex: 1;
   padding-right: 1rem;
   white-space: pre;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 .ui-code-bar {
@@ -105,8 +76,8 @@
   gap: 0.75rem;
   flex-shrink: 0;
   padding: 0.375rem 0.75rem;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--color-canvas);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .ui-code-meta {
@@ -115,7 +86,7 @@
   gap: 0.25rem;
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  color: #64748b;
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
@@ -131,8 +102,8 @@
   align-items: center;
   gap: 0.375rem;
   padding: 0.25rem 0.625rem;
-  background: #0f172a;
-  color: #ffffff;
+  background: var(--color-text);
+  color: var(--color-text-inverse);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   border-radius: 999px;

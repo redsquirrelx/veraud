@@ -30,7 +30,7 @@
 
 .project-skeleton {
   height: 64px;
-  background: var(--color-border);
+  background: var(--color-surface-recessed);
   border-radius: var(--radius-surface);
   animation: project-pulse 1.2s ease-in-out infinite;
 }

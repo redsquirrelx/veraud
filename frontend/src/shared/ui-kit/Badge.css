@@ -46,8 +46,8 @@
 }
 
 .ui-badge-success .ui-badge-dot { background: var(--status-success-dot); }
-.ui-badge-danger .ui-badge-dot { background: var(--status-danger-dot); }
-.ui-badge-unknown .ui-badge-dot { background: var(--status-unknown-dot); }
+.ui-badge-danger .ui-badge-dot { background: var(--status-danger-dot); border-radius: 0; }
+.ui-badge-unknown .ui-badge-dot { background: transparent; border: 1px solid var(--status-unknown-dot); box-sizing: border-box; }
 
 .ui-badge-danger { background: var(--status-danger-bg); border-color: var(--status-danger-border); color: var(--status-danger-text); }
 .ui-badge-unknown { background: var(--status-unknown-bg); border-color: var(--status-unknown-border); color: var(--status-unknown-text); }
@@ -80,14 +80,14 @@
 .ui-badge-highlightable { transition: background-color 1200ms ease-out, color 1200ms ease-out, box-shadow 1200ms ease-out; }
 .ui-badge-highlighted {
   animation: ui-badge-ignite 160ms ease-out;
-  background-color: #bfdbfe;
-  color: #1e3a8a;
-  box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
+  background-color: var(--color-highlight-bg);
+  color: var(--color-highlight-text);
+  box-shadow: var(--shadow-highlight);
 }
 
 @keyframes ui-badge-ignite {
-  from { background-color: var(--status-neutral-bg); color: var(--status-neutral-text); box-shadow: 0 0 0 0 rgb(59 130 246 / 0%), 0 0 0 rgb(37 99 235 / 0%); }
-  to { background-color: #bfdbfe; color: #1e3a8a; box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%); }
+  from { background-color: var(--status-neutral-bg); color: var(--status-neutral-text); box-shadow: var(--shadow-highlight-rest); }
+  to { background-color: var(--color-highlight-bg); color: var(--color-highlight-text); box-shadow: var(--shadow-highlight); }
 }
 
 @media (prefers-reduced-motion: reduce) {

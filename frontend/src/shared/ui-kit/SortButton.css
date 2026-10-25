@@ -18,6 +18,7 @@
 }
 
 .ui-sort-button:active {
+  background: var(--color-surface-active);
   transform: scale(0.97);
 }
 

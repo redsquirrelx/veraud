@@ -86,8 +86,8 @@
 }
 
 .stage-correction {
-  border-left: 2px solid #f59e0b;
-  background: #fffbeb;
+  border-left: 2px solid var(--status-partial-accent);
+  background: var(--status-warning-bg);
   padding: 0.3rem 0.5rem;
   border-radius: 0.25rem;
   font-size: 12px;
@@ -103,7 +103,7 @@
 .architecture-diagram-view {
   margin: 1.25rem 0;
   padding: 1rem;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: var(--border-width) solid var(--color-border);
   border-radius: 0.5rem;
 }
 
@@ -137,3 +137,12 @@
   height: 0.85rem;
   border-radius: 0.2rem;
 }
+
+.diagram-legend-architect-supported { background: var(--diagram-architect-supported); }
+.diagram-legend-architect-hypothesis { background: var(--diagram-architect-hypothesis); }
+.diagram-legend-architect-unresolved { background: var(--diagram-architect-unresolved); }
+.diagram-legend-semantic-supported { border: 3px solid var(--diagram-semantic-supported); }
+.diagram-legend-semantic-overstated { border: 3px solid var(--diagram-semantic-overstated); }
+.diagram-legend-semantic-contradicted { border: 3px solid var(--diagram-semantic-contradicted); }
+.diagram-legend-semantic-insufficient { border: 3px dashed var(--diagram-semantic-insufficient); }
+.diagram-legend-semantic-unreviewed { border: 3px solid var(--diagram-semantic-unreviewed); }
