@@ -12,13 +12,13 @@ no vuelve a ejecutar los investigadores y no realiza llamadas a modelos.
 - `knowledge.py`: interpretación de contratos existentes y categorías de auditoría.
 - `interpretation.py`: linaje explícito de continuaciones y matriz de compromisos.
 - `input_validation.py`: validación de las extensiones consumidas al importar JSON o leer el Blackboard.
-- `schemas.py`: exportaciones públicas; contratos canónicos en `agents/schemes/report.py`.
+- `schemas.py`: contratos canónicos del informe.
 - No existe configuración vacía ni parámetros de proveedor: esta ejecución es
   determinista. Por ello no participa en el catálogo de configuraciones LLM.
 - Solo consulta la interfaz `Blackboard`; no depende de su repositorio de almacenamiento.
 
 ```python
-from server.agents.audit_report import AuditReportAgent, AuditReportRequest
+from server.reporting import AuditReportAgent, AuditReportRequest
 
 report = await AuditReportAgent(blackboard=blackboard).run(
     AuditReportRequest(run_id=run_id),
@@ -230,7 +230,7 @@ La representación Word se descarga mediante `GET /api/audits/{run_id}/report.do
 Invoke-WebRequest "http://localhost:8000/api/audits/$runId/report.docx" -OutFile informe.docx
 ```
 
-El conversor `services/audit_report_docx.py` presenta las diez secciones con estilos,
+El conversor `reporting/docx.py` presenta las diez secciones con estilos,
 tablas y referencias, sin llamadas LLM ni cambios en los resultados. La conversión
 se ejecuta fuera del event loop y no utiliza archivos temporales. Para el mismo JSON,
 produce bytes idénticos con la misma política y versión de presentación: fija metadatos y fechas internas del contenedor DOCX. Dos
@@ -298,5 +298,5 @@ solo conserva auditorías durante la vida del proceso.
 ```powershell
 uv run pytest tests/test_audit_report.py tests/test_audits.py tests/test_blackboard_publication.py -q
 uv run pytest tests/test_audit_report_interpretation.py tests/test_audit_snapshot_reports.py -q
-uv run ruff check src/server/agents/audit_report src/server/agents/schemes/report.py
+uv run ruff check src/server/reporting
 ```

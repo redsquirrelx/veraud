@@ -189,3 +189,19 @@ la ejecución no verifica los candidatos ni certifica seguridad. JSON y Word doc
 estas limitaciones. El análisis se exporta e importa con los mismos endpoints/CLI del
 flujo existente; el generador documental no necesita acceso al repositorio ni al
 proveedor para reconstruir el informe de diez secciones.
+## Code map
+
+`audit.py` owns the snapshot-backed, async audit lifecycle and publication. `security_manager/`
+composes the existing SAST, secret, dependency, enrichment, remediation, validation and
+filtering components. Their implementations remain in their named sibling packages; they are
+not separate FastAPI routes. The older synchronous supervisor API remains supported.
+
+The managed audit stages controlled excerpts in a temporary tree for the existing scanners;
+it does not modify the checkout. Keep API credentials out of the legacy synchronous
+remediation path. DAST is a placeholder and is reported as not executed. A remediation is a
+proposal, not proof of a fix; the legacy filter is not technical verification.
+
+See [`../../../../docs/architecture.md`](../../../../docs/architecture.md) and
+[`../../../../docs/contracts.md`](../../../../docs/contracts.md). Focused verification:
+`tests/test_security_audit.py`, plus the relevant repository tool/budget tests when changing
+source staging or tool limits.

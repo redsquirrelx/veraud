@@ -2,6 +2,10 @@
 
 Python service and CLI runners for repository analysis and evidence-grounded audits.
 
+For code navigation, ownership and change-specific checks, see
+[`docs/architecture.md`](docs/architecture.md). Fastify-facing routes and callback
+payloads are summarized in [`docs/contracts.md`](docs/contracts.md).
+
 ## Backend agent discovery
 
 The agent-server owns the discovery catalog. Backend clients can request:

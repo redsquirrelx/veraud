@@ -8,16 +8,16 @@ This package owns reusable execution infrastructure outside concrete agents.
 | `coordination/` | Shared coordinator/manager lifecycle, bounded dispatch, collection, accounting and synthesis helpers |
 | `repository/` | Read-only snapshots, access policy, tools, telemetry and execution budget enforcement |
 
-Dependencies flow from `server.agents` to `server.runtimes`, then to shared
-configuration and services. Runtimes must not import concrete agents, their
+Dependencies flow from concrete quality implementations to `server.runtimes`,
+`server.contracts`, infrastructure and shared configuration. Runtimes must not import concrete agents, their
 registries, prompts or specialized contracts. Agents provide those through hooks
 and retain their domain-specific graph topology and policies.
 
-The data-only module `server.agents.schemes.base` is the shared contract boundary
-and may be imported by runtimes. It has no agent or runtime dependencies.
-`server.agents.schemes.investigator`, `coordinator` and `manager` own category
-contracts and maintainability specializations; runtimes must not import those.
-Previous `schemas.py` paths re-export canonical classes for compatibility.
+The data-only module `server.contracts.audit` owns shared investigator envelopes,
+criteria, evidence, review and accounting contracts. Generic delegation/synthesis
+contracts live in `server.runtimes.coordination.contracts`. Neither imports a
+concrete agent or a quality-specific policy. Specialist schemas are canonical in
+each maintainability participant; `contracts.legacy_schemes` is compatibility-only.
 
 Shared configuration belongs to `config.agents`; exclusive configuration remains
 in each agent's `config.py`. See [coordination/README.md](coordination/README.md)
@@ -32,6 +32,11 @@ in per-agent counters. SDK generation adapters do the same for direct agents,
 architecture stages, access probes and legacy synchronous security remediation.
 Native chat calls are admitted by their runtime, so a generation is not charged twice.
 SDK automatic retries are disabled; each runtime retry must acquire a new slot.
+
+Provider construction is in `server.infrastructure.llm.factory`. Retry and usage
+helpers are in `server.infrastructure.llm.retry` and `.usage`, not in `benchmark/`.
+SDK client closing and provider-error classification live in `infrastructure/llm/resources.py`
+and `diagnostics.py`; `model_runtime.py` retains a compatibility re-export for client cleanup.
 
 The default ledger is `appdata/provider-quotas.sqlite3` at the repository root.
 `PROVIDER_QUOTA_PATH` selects a shared ledger location. All agent-server workers and

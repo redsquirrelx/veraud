@@ -12,9 +12,9 @@ Shared repository execution lives in `runtimes/repository/`, and shared
 configuration remains in `agent-server/config/agents/`.
 
 ```python
-from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
-from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
+from server.project_analysis.project_orientation import ProjectOrientationAgent
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
 ```
 
 Pipeline adapters and CLI entry points use these concrete packages. Configuration
