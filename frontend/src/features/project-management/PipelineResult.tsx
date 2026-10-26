@@ -119,23 +119,23 @@ export function OrientationResultView({ summary, execution }: { summary: Orienta
 
 function DiagramColorLegend() {
   const { t } = useTranslation("projects")
-  const architect: Array<[string, string]> = [
-    ["#dbeafe", t("status.legendArchitect.supported")],
-    ["#fef3c7", t("status.legendArchitect.hypothesis")],
-    ["#e5e7eb", t("status.legendArchitect.unresolved")],
+  const architect = [
+    ["supported", t("status.legendArchitect.supported")],
+    ["hypothesis", t("status.legendArchitect.hypothesis")],
+    ["unresolved", t("status.legendArchitect.unresolved")],
   ]
-  const semantic: Array<[string, string]> = [
-    ["#15803d", t("status.legendSemantic.supported")],
-    ["#c2410c", t("status.legendSemantic.overstated")],
-    ["#b91c1c", t("status.legendSemantic.contradicted")],
-    ["#64748b", t("status.legendSemantic.insufficientEvidence")],
-    ["#94a3b8", t("status.legendSemantic.notReviewed")],
+  const semantic = [
+    ["supported", t("status.legendSemantic.supported")],
+    ["overstated", t("status.legendSemantic.overstated")],
+    ["contradicted", t("status.legendSemantic.contradicted")],
+    ["insufficient", t("status.legendSemantic.insufficientEvidence")],
+    ["unreviewed", t("status.legendSemantic.notReviewed")],
   ]
   return <div className="architecture-diagram-legend">
     <span className="stage-section-label">{t("pipeline.colorLegend")}</span>
     <p className="stage-row-sub">{t("pipeline.legendHint")}</p>
-    <div className="architecture-diagram-key"><strong>{t("pipeline.architectFill")}</strong>{architect.map(([color, label]) => <span key={label}><i style={{ backgroundColor: color }} />{label}</span>)}</div>
-    <div className="architecture-diagram-key"><strong>{t("pipeline.semanticBorder")}</strong>{semantic.map(([color, label]) => <span key={label}><i style={{ border: `3px ${label === t("status.legendSemantic.insufficientEvidence") ? "dashed" : "solid"} ${color}` }} />{label}</span>)}</div>
+    <div className="architecture-diagram-key"><strong>{t("pipeline.architectFill")}</strong>{architect.map(([status, label]) => <span key={status}><i className={`diagram-legend-architect-${status}`} />{label}</span>)}</div>
+    <div className="architecture-diagram-key"><strong>{t("pipeline.semanticBorder")}</strong>{semantic.map(([status, label]) => <span key={status}><i className={`diagram-legend-semantic-${status}`} />{label}</span>)}</div>
     <p className="stage-row-sub">{t("pipeline.legendArrows")}</p>
   </div>
 }
@@ -252,10 +252,12 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
           <span className="stage-section-label">
             {summary.diagramOrigin !== "" ? t("pipeline.diagramWithOrigin", { origin: summary.diagramOrigin }) : t("pipeline.diagram")}
           </span>
-          {summary.diagramViews.map((view, index) => <section className="architecture-diagram-view" key={index} aria-label={view.title}>
-            <h5>{view.title}</h5>
+          {summary.diagramViews.map((view, index) => {
+            const title = view.title || t("pipeline.architectureDiagram")
+            return <section className="architecture-diagram-view" key={index} aria-label={title}>
+            <h5>{title}</h5>
             {view.scope !== "" && <p className="stage-row-sub">{t("pipeline.scopeLabel", { scope: view.scope })}</p>}
-            <MermaidDiagram chart={view.mermaid} label={view.title} />
+            <MermaidDiagram chart={view.mermaid} label={title} />
             {view.colorLegend && <DiagramColorLegend />}
             {view.deviations.length > 0 && <div className="stage-rows">
               {view.deviations.map((note) => <div className="stage-row" key={note.id}>
@@ -266,7 +268,8 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
               </div>)}
             </div>}
             {view.limitations.map((item, limitation) => <p className="stage-footnote" key={limitation}>{item}</p>)}
-          </section>)}
+          </section>
+          })}
         </>
       ) : (
         summary.diagramTitle !== "" && (

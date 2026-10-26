@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from "vitest"
 import type { AgentInvocation } from "../../infrastructure/http-client/httpClient.ts"
 import { mergeInvocations } from "./mergeExecution.ts"

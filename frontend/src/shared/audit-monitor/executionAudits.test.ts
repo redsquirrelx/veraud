@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest"
 import type { AgentExecution, AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { agentTree, auditProgress, auditStateFrom } from "./auditStatus.ts"

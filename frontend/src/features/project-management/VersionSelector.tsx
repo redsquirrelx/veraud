@@ -35,13 +35,14 @@ export function VersionLocation({ selection }: { selection: Selection }) {
   </span>
 }
 
-export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed, showLocation = true }: {
+export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed, showLocation = true, size = "default" }: {
   selection: Selection
   analysis?: AnalysisAction
   mode?: VersionMode
   onModeChange?: (mode: VersionMode) => void
   analyzed?: AnalyzedSelection
   showLocation?: boolean
+  size?: "default" | "compact"
 }) {
   const { t } = useTranslation("projects")
   const current = mode ?? "git"
@@ -85,6 +86,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
             emptyText={t("version.analyzedEmpty")}
             placeholder={t("version.analyzedPlaceholder")}
             label={t("version.analyzedLabel")}
+            size={size}
             loading={analyzed.loading}
             onOpen={() => analyzed.onRefresh()}
           />
@@ -101,6 +103,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           emptyText={t("version.branchesEmpty")}
           placeholder={selection.detached === null ? t("version.branchPlaceholder") : t("version.branchDetachedPlaceholder", { hash: selection.detached })}
           label={t("version.branchLabel")}
+          size={size}
           loading={selection.loadingBranches}
           onOpen={() => void selection.refreshBranches()}
         />
@@ -118,6 +121,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           emptyText={t("version.commitsEmpty")}
           placeholder=""
           label={t("version.commitLabel")}
+          size={size}
           loading={selection.loadingCommits}
           disabled={selection.detached !== null || selection.applying}
         />

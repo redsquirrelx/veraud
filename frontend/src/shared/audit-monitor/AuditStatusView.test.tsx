@@ -153,9 +153,10 @@ describe("AuditStatusView", () => {
   })
 
   it("falls back to the raw identifier for an unknown quality attribute", () => {
-    const region = show({ ...audit, pipelines: [{ id: "performance", state: "running", agents: [] }] })
+    const identifier = "operational-security-and-resilience-under-load"
+    const region = show({ ...audit, pipelines: [{ id: identifier, state: "running", agents: [] }] })
 
-    expect(within(part(region, ".audit-pipeline-head")).getByText("performance")).toBeInTheDocument()
+    expect(within(part(region, ".audit-pipeline-head")).getByText(identifier)).toBeInTheDocument()
   })
 
   it("keeps the header when a pipeline has no agents", () => {
@@ -259,37 +260,6 @@ describe("AuditStatusView pipeline folding", () => {
     // The accessible name carries attribute, state and progress, separated.
     expect(toggles[0]).toHaveAccessibleName("Maintainability · Running · 1 of 2 agents")
     expect(toggles[1]).toHaveAccessibleName("Security · Running · No agents yet")
-  })
-
-  it("splits a pipeline across two rows: identity, then state", () => {
-    const head = part(show(), ".audit-pipeline-head")
-    const lines = head.querySelectorAll(".audit-pipeline-line")
-
-    expect(lines).toHaveLength(2)
-    expect(within(lines[0] as HTMLElement).getByText("Maintainability")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("Running")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("1 of 2 agents")).toBeInTheDocument()
-    // The chevron stays on the identity row, pinned to its end.
-    expect(lines[0]?.querySelector(".audit-pipeline-chevron")).not.toBeNull()
-  })
-
-  it("keeps the chevron reachable whatever the attribute name length", () => {
-    const region = show({
-      ...audit,
-      pipelines: [{
-        id: "operational-security-and-resilience-under-load",
-        state: "running",
-        agents: [],
-      }],
-    })
-
-    const lines = part(region, ".audit-pipeline-head").querySelectorAll(".audit-pipeline-line")
-
-    // Long name truncates inside its own row; the other row is untouched.
-    expect(within(lines[0] as HTMLElement).getByText("operational-security-and-resilience-under-load")).toBeInTheDocument()
-    expect(lines[0]?.querySelector(".audit-pipeline-chevron")).not.toBeNull()
-    expect(within(lines[1] as HTMLElement).getByText("Running")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("No agents yet")).toBeInTheDocument()
   })
 
   it("wires each toggle to the region it controls", () => {

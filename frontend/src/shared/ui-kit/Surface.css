@@ -1,0 +1,18 @@
+.ui-surface {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  padding: var(--surface-padding);
+}
+
+.ui-surface-card { background: var(--color-surface); box-shadow: var(--shadow-card); }
+.ui-surface-tinted { background: var(--color-surface-tint); }
+.ui-surface-subtle { background: var(--color-canvas); }
+.ui-surface-stack { display: flex; flex-direction: column; }
+.ui-surface-gap-sm { --ui-surface-gap: var(--surface-gap-sm); }
+.ui-surface-gap-md { --ui-surface-gap: var(--surface-gap-md); }
+.ui-surface-gap-lg { --ui-surface-gap: var(--surface-gap-lg); }
+.ui-surface-gap-xl { --ui-surface-gap: var(--surface-gap-xl); }
+.ui-surface-stack { gap: var(--ui-surface-gap, var(--surface-gap-sm)); }
+.ui-surface-align-start { align-items: flex-start; }
+.ui-surface-align-stretch { align-items: stretch; }
+.ui-surface-padding-responsive { padding: clamp(1rem, 2vw, 1.5rem); }

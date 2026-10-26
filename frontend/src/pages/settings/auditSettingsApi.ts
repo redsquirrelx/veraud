@@ -1,4 +1,4 @@
-import { ApiError, backendHttpUrl } from "../../infrastructure/http-client/httpClient.ts"
+import { requestJson } from "../../infrastructure/http-client/httpClient.ts"
 
 export interface ConfigSchema {
   $ref?: string
@@ -19,13 +19,10 @@ export interface AuditSettingsDescriptor {
 }
 
 async function request(attribute: string, values?: Record<string, unknown>, signal?: AbortSignal) {
-  const response = await fetch(`${backendHttpUrl()}/api/audit-settings/${encodeURIComponent(attribute)}`, {
+  return requestJson<AuditSettingsDescriptor>(`/api/audit-settings/${encodeURIComponent(attribute)}`, "Could not load audit settings", {
     method: values ? "PUT" : "GET", signal,
     ...(values ? { headers: { "content-type": "application/json" }, body: JSON.stringify(values) } : {}),
   })
-  const body = await response.json() as AuditSettingsDescriptor & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not load audit settings")
-  return body
 }
 
 export const getAuditSettings = (attribute: string, signal?: AbortSignal) => request(attribute, undefined, signal)

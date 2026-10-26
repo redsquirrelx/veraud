@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 
 interface AsyncOptions {
   timeoutMs?: number
 }
 
 export function useAsyncAction<Args extends unknown[]>(action: (...args: Args) => Promise<void>, options?: AsyncOptions) {
+  const { t } = useTranslation("common")
   const timeoutMs = options?.timeoutMs
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<{ key: ParseKeys<"common">, milliseconds?: number } | { detail: string } | null>(null)
+  const error = failure === null ? null : "detail" in failure ? failure.detail : t(failure.key, { milliseconds: failure.milliseconds })
   const mounted = useRef(true)
   const busy = useRef(false)
   const token = useRef(0)
@@ -27,7 +31,7 @@ export function useAsyncAction<Args extends unknown[]>(action: (...args: Args) =
     const id = ++token.current
     const alive = () => mounted.current && token.current === id
     setLoading(true)
-    setError(null)
+    setFailure(null)
 
     let timer: ReturnType<typeof setTimeout> | null = null
     try {
@@ -41,7 +45,7 @@ export function useAsyncAction<Args extends unknown[]>(action: (...args: Args) =
             busy.current = false
             if (mounted.current) {
               setLoading(false)
-              setError(`Timed out after ${timeoutMs}ms`)
+              setFailure({ key: "ui.asyncAction.timeout", milliseconds: timeoutMs })
             }
             reject(new Error("Timed out"))
           }, timeoutMs)
@@ -50,7 +54,7 @@ export function useAsyncAction<Args extends unknown[]>(action: (...args: Args) =
       }
     } catch (unknownError) {
       if (alive()) {
-        setError(unknownError instanceof Error ? unknownError.message : "Something went wrong")
+        setFailure(unknownError instanceof Error ? { detail: unknownError.message } : { key: "ui.asyncAction.failed" })
       }
     } finally {
       if (timer !== null) {

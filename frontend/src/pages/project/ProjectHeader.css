@@ -8,9 +8,9 @@
    gap: 1rem;
   margin: 0;
    padding: 1.25rem clamp(1rem, 3vw, 2.5rem);
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04);
+   background: var(--color-surface);
+   border-bottom: var(--border-width) solid var(--color-border);
+   box-shadow: var(--shadow-header);
 }
 
 .project-context-top-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1rem; min-width: 0; }
@@ -31,7 +31,7 @@
   overflow-wrap: anywhere;
 }
 
-.project-context-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.project-context-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; }
 
 .project-context-controls {
   display: flex;
@@ -39,31 +39,19 @@
   flex-wrap: wrap;
    gap: 0.75rem;
    padding-top: 1rem;
-   border-top: 1px solid #f1f5f9;
+   border-top: var(--border-width) solid var(--color-surface-hover);
 }
 
 .project-context-controls .version-selector { flex: 1 1 420px; min-width: 0; }
 .project-context-actions { display: flex; flex-shrink: 0; gap: 0.5rem; margin-left: auto; }
-.project-context-identity .version-state { font-size: 11px; color: #64748b; }
+.project-context-identity .version-state { font-size: var(--font-size-xs); color: var(--color-text-muted); }
 .project-context-controls .version-selector { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.5rem; }
 .project-context-controls .version-row:not(.version-state-row) { grid-column: 2; grid-row: 1; }
 .project-context-controls .version-state-row,
 .project-context-controls .version-error { grid-column: 1 / -1; }
-.project-context-header .ui-item-selector,
-.project-context-header .ui-item-searcher { margin-top: 6px; }
-.project-context-header .ui-item-button,
-.project-context-header .ui-item-search-input,
-.project-context-header .ui-item-search-toggle { height: 32px; }
-
 .project-context-header .version-state,
 .project-context-header .version-error,
 .project-context-header .ui-item { overflow-wrap: anywhere; min-width: 0; }
-.project-context-header .ui-item-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-context-header .ui-item-button > svg { flex-shrink: 0; }
-.project-context-header .ui-item:focus-visible,
-.project-context-header .ui-item-search-toggle:focus-visible,
-.project-context-header .ui-item-clear:focus-visible { outline: 2px solid #006194; outline-offset: 2px; }
-
 @media (max-width: 760px) {
    .project-context-header { position: relative; padding: 1rem 0.75rem; }
    .project-context-identity { flex-basis: 100%; }

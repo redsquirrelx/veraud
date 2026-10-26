@@ -1,9 +1,9 @@
+@import "./shared/styles/layout.css";
+
 :root {
-  --font-sans: "Geist", system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
   font-family: var(--font-sans);
-  color: #0f172a;
-  background: #f8fafc;
+  color: var(--color-text);
+  background: var(--color-canvas);
 }
 
 body {
@@ -11,18 +11,18 @@ body {
 }
 
 .page {
-  padding: 1.5rem;
+  padding: var(--space-6);
 }
 
 h1 {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: var(--font-size-title-lg);
+  font-weight: var(--font-weight-semibold);
 }
 
 h2 {
-  font-size: 15px;
-  font-weight: 500;
-  color: #334155;
+  font-size: var(--font-size-title-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
 }
 
 .mono {
@@ -31,10 +31,10 @@ h2 {
 
 .label {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  color: #64748b;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--color-text-muted);
   text-transform: uppercase;
 }
 
@@ -42,7 +42,7 @@ h2 {
   position: fixed;
   right: 1.5rem;
   bottom: 1.5rem;
-  z-index: 50;
+  z-index: var(--z-dock);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

@@ -13,7 +13,20 @@
       "sharedBudget": "Shared audit budget", "sharedBudgetHint": "One global token cap shared by all selected attributes. This setting is common to every audit category.",
       "callLimits": "Hierarchy call limits", "securityOptions": "Security audit options", "functionalOptions": "Functional adequacy options",
       "agentDefaults": "Generic agent parameters", "agentDefaultsHint": "Applied to every agent in this category. max_output_tokens is the output token maximum per response, including managers and coordinators. An explicit individual value replaces the inherited value; no second model cap applies. In maintainability, model/tool call defaults apply to investigators; hierarchy limits above control manager and coordinator aggregate budgets.",
-      "defaultsHint": "Leave a field empty to use server defaults. Exclusive settings of individual maintainability agents are configured separately."
+      "defaultsHint": "Leave a field empty to use server defaults. Exclusive settings of individual maintainability agents are configured separately.",
+      "fields": {
+        "sharedTotalTokens": "Shared total token budget",
+        "contextCharacters": "Context characters per call",
+        "personalTokenBudget": "Token budget per agent",
+        "maxModelCalls": "Maximum model calls per agent",
+        "maxToolCalls": "Maximum tool calls per agent",
+        "maxScanFiles": "Maximum files to scan",
+        "retrievalTopK": "Maximum retrieved results"
+      },
+      "loadFailed": "Could not load audit settings.",
+      "loadFailedWithDetail": "Could not load audit settings: {{detail}}",
+      "saveFailed": "Could not save audit settings.",
+      "saveFailedWithDetail": "Could not save audit settings: {{detail}}"
     },
     "modelsTitle": "Quality audit models",
     "modelsDescription": "Choose a model and credential for each quality category. Saving applies that selection to all its model agents declared by the server.",

@@ -1,53 +1,28 @@
 .ui-input {
-  height: 36px;
-  padding: 0 12px;
-  background: #ffffff;
-  color: #0f172a;
-  font-size: 13px;
-  border: 1px solid #cbd5e1;
-  border-radius: 0.25rem;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  border: var(--border-width) solid var(--color-border-control);
+  border-radius: var(--radius-control);
   outline: none;
 }
 
 .ui-input::placeholder {
-  color: #94a3b8;
+  color: var(--color-text-placeholder);
 }
 
 .ui-input:focus {
-  border-color: #0284c7;
-  box-shadow: 0 0 0 1px #0284c7;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-focus);
 }
 
 .ui-input:disabled {
-  background: #f1f5f9;
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  border-color: var(--color-disabled-border);
   cursor: not-allowed;
-}
-
-.ui-text-input {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  margin-top: 8px;
-}
-
-.ui-text-input .ui-item-legend {
-  position: absolute;
-  top: -8px;
-  left: 10px;
-  z-index: 1;
-  padding: 0 4px;
-  background: #ffffff;
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  line-height: 1.6;
-  pointer-events: none;
-}
-
-.ui-text-input:focus-within .ui-item-legend {
-  color: #0284c7;
 }
 
 .ui-text-input .ui-input {

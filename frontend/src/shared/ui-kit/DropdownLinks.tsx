@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ExternalIcon } from "./icons.tsx"
-import "./DropdownLinks.css"
+import { useDropdownDisclosure } from "./useDropdownDisclosure.ts"
+import "./MenuSurface.css"
+import "./Dropdown.css"
 
 export interface DropdownLinkItem {
   label: string
@@ -26,60 +28,14 @@ interface DropdownLinksProps {
 export function DropdownLinks({ label, items, icon, disabled = false, align = "start", emptyText, iconOnly = false }: DropdownLinksProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.dropdownLinks.noLinks")
-  const id = useId()
-  const [open, setOpen] = useState(false)
-  const root = useRef<HTMLDivElement>(null)
-  const trigger = useRef<HTMLButtonElement>(null)
-  const expanded = open && !disabled
-  const pendingFocus = useRef<"first" | "last" | null>(null)
-
-  function close(restoreFocus = false) {
-    setOpen(false)
-    if (restoreFocus) trigger.current?.focus()
-  }
-
-  useEffect(() => {
-    if (!expanded) return
-    function outside(event: MouseEvent) {
-      if (!root.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", outside)
-    if (pendingFocus.current) {
-      const links = root.current?.querySelectorAll<HTMLAnchorElement>("a")
-      const index = pendingFocus.current === "first" ? 0 : (links?.length ?? 0) - 1
-      links?.[index]?.focus()
-      pendingFocus.current = null
-    }
-    return () => document.removeEventListener("mousedown", outside)
-  }, [expanded])
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape" && expanded) {
-      event.preventDefault()
-      close(true)
-      return
-    }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || disabled) return
-    event.preventDefault()
-    if (!expanded) {
-      pendingFocus.current = event.key === "ArrowUp" || event.key === "End" ? "last" : "first"
-      setOpen(true)
-      return
-    }
-    const links = Array.from(root.current?.querySelectorAll<HTMLAnchorElement>("a") ?? [])
-    if (!links.length) return
-    const current = links.indexOf(event.target as HTMLAnchorElement)
-    const next = event.key === "Home" ? 0
-      : event.key === "End" ? links.length - 1
-        : current < 0 ? (event.key === "ArrowUp" ? links.length - 1 : 0)
-          : (current + (event.key === "ArrowDown" ? 1 : -1) + links.length) % links.length
-    links[next]?.focus()
-  }
+  const { id, root, trigger, expanded, close, toggle, onKeyDown, onBlur } = useDropdownDisclosure({
+    inactive: disabled,
+    initialSelector: "a",
+    navigationSelector: "a",
+  })
 
   return (
-    <div className="ui-dropdown-links" ref={root} onKeyDown={handleKeyDown} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close()
-    }}>
+    <div className="ui-dropdown-links" ref={root} onKeyDown={onKeyDown} onBlur={onBlur}>
       <button
         id={`${id}-trigger`}
         ref={trigger}
@@ -90,14 +46,14 @@ export function DropdownLinks({ label, items, icon, disabled = false, align = "s
         aria-label={label}
         title={label}
         aria-controls={`${id}-links`}
-        onClick={() => setOpen(!expanded)}
+        onClick={toggle}
       >
         {icon && <span aria-hidden="true">{icon}</span>}
         {!iconOnly && <span>{label}</span>}
         {!iconOnly && <span className="ui-dropdown-links-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>}
       </button>
       {expanded && (
-        <nav id={`${id}-links`} className="ui-dropdown-links-panel" data-align={align} aria-labelledby={`${id}-trigger`}>
+        <nav id={`${id}-links`} className="ui-dropdown-links-panel ui-menu-surface" data-align={align} aria-labelledby={`${id}-trigger`}>
           {items.length === 0 ? <p className="ui-dropdown-links-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {

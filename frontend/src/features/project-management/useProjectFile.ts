@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, readProjectFile, type ProjectFile } from "../../infrastructure/http-client/httpClient.ts"
+
+type ProjectFileFailure = { key: ParseKeys<"projects"> } | { detail: string }
 
 export function useProjectFile(projectId: number | null) {
   const { t } = useTranslation("projects")
   const [preview, setPreview] = useState<{ projectId: number, file: ProjectFile } | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [failure, setFailure] = useState<ProjectFileFailure | null>(null)
+  const error = failure === null ? "" : "detail" in failure ? failure.detail : t(failure.key)
   const mounted = useRef(true)
   const generation = useRef(0)
 
@@ -26,7 +30,7 @@ export function useProjectFile(projectId: number | null) {
     const token = generation.current
     const alive = () => mounted.current && generation.current === token
     setLoading(true)
-    setError("")
+    setFailure(null)
 
     void readProjectFile(owner, path).then(
       (result) => {
@@ -41,11 +45,12 @@ export function useProjectFile(projectId: number | null) {
           return
         }
         setPreview(null)
-        setError(failure instanceof ApiError ? failure.message : t("detail.files.errors.readFailed"))
+        setFailure(failure instanceof ApiError && failure.messageSource !== "client"
+          ? { detail: failure.message } : { key: "detail.files.errors.readFailed" })
         setLoading(false)
       }
     )
-  }, [projectId, t])
+  }, [projectId])
 
   // a preview always belongs to its project: switching projects hides it
   // without an effect, and leaving the page drops it with the unmount
@@ -54,7 +59,7 @@ export function useProjectFile(projectId: number | null) {
   const clear = useCallback(() => {
     generation.current += 1
     setPreview(null)
-    setError("")
+    setFailure(null)
     setLoading(false)
   }, [])
 

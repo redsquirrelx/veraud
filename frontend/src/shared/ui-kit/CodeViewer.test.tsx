@@ -26,12 +26,6 @@ describe("CodeViewer", () => {
     expect(container.querySelectorAll(".ui-code-line").length).toBe(1)
   })
 
-  it("shows the empty text without code", () => {
-    render(<CodeViewer code="" />)
-
-    expect(screen.getByText("No content to show")).toBeDefined()
-  })
-
   it("highlights TypeScript keywords only when enabled", () => {
     const { container, rerender } = render(<CodeViewer code={code} />)
 

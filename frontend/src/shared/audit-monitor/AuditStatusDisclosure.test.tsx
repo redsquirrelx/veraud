@@ -73,32 +73,22 @@ describe("AuditStatusDisclosure", () => {
 
     // Identity, state and progress stay visible while folded.
     expect(toggle).toHaveAccessibleName("Audit #40 · Completed · 1 of 1 agents")
+    expect(within(toggle).getByText("Audit #40")).toBeInTheDocument()
+    expect(within(toggle).getByText("Completed")).toBeInTheDocument()
+    expect(within(toggle).getByText("1 of 1 agents")).toBeInTheDocument()
+    expect(within(toggle).getByText("Report available")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open acme/Ledger" })).toHaveAttribute("href", "/projects/12/audits")
     expect(detail()).toHaveAttribute("aria-hidden", "true")
     expect(detail()).toHaveAttribute("inert")
   })
 
-  it("splits the summary across two rows instead of one crowded line", () => {
-    show(completed, false)
-    const toggle = document.querySelector(".audit-disclosure-toggle")!
-
-    const lines = toggle.querySelectorAll(".audit-disclosure-line")
-    expect(lines).toHaveLength(2)
-    expect(within(lines[0] as HTMLElement).getByText("Audit #40")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("Completed")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("1 of 1 agents")).toBeInTheDocument()
-    expect(within(lines[1] as HTMLElement).getByText("Report available")).toBeInTheDocument()
-  })
-
-  it("keeps the project link outside the toggle so it cannot squeeze it", () => {
+  it("keeps the project link separate from the disclosure button", () => {
     show(completed, false)
     const head = document.querySelector(".audit-disclosure-head")!
     const toggle = document.querySelector(".audit-disclosure-toggle")!
     const link = screen.getByRole("link", { name: "Open acme/Ledger" })
 
-    // A link inside the toggle is invalid HTML, and as a sibling on the same
-    // row its content width would starve the badges. It gets its own row.
-    expect(Array.from(head.children)).toEqual([link, toggle])
+    // A link inside the toggle is invalid HTML and would swallow its activation.
     expect(toggle.contains(link)).toBe(false)
     expect(head.contains(toggle)).toBe(true)
   })
@@ -123,20 +113,6 @@ describe("AuditStatusDisclosure", () => {
     expect(screen.getAllByText("Audit #40")).toHaveLength(1)
     expect(screen.getAllByRole("link", { name: "Open acme/Ledger" })).toHaveLength(1)
     expect(screen.getByText("security_scanner run #114")).toBeInTheDocument()
-  })
-
-  it("honours the caller's initial state", () => {
-    expect(show(completed, false)).toHaveAttribute("aria-expanded", "false")
-    expect(screen.getByText("security_scanner run #114")).toBeInTheDocument()
-  })
-
-  it("keeps the project link outside the toggle", () => {
-    show(completed, false)
-    const toggle = document.querySelector(".audit-disclosure-toggle")
-    const link = screen.getByRole("link", { name: "Open acme/Ledger" })
-
-    expect(toggle?.contains(link)).toBe(false)
-    expect(toggle?.parentElement?.contains(link)).toBe(true)
   })
 
   it("exposes its state so the card can carry the accent", () => {

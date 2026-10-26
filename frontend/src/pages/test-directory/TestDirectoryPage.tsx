@@ -83,9 +83,9 @@ export function TestDirectoryPage() {
   }
 
   return (
-    <section className="test-directory-page">
+    <section className="test-directory-page ui-page-stack">
       <h1>{t("testPages.directory.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.directory.projectStructure")}</span>
         <DirectoryTree
           tree={mockTree}
@@ -93,7 +93,7 @@ export function TestDirectoryPage() {
           initialSelected="payment-gateway-v2/src/modules/ledger.repository.ts"
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.directory.grouped")}</span>
         <DirectoryTree
           tree={mockTree}
@@ -102,7 +102,7 @@ export function TestDirectoryPage() {
           initialSelected="payment-gateway-v2/src/modules/reconciliation/engine.ts"
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.directory.groupsPlusFindings", { count: flagged.length })}</span>
         <DirectoryTree
           tree={mockTree}
@@ -112,7 +112,7 @@ export function TestDirectoryPage() {
           initialSelected="payment-gateway-v2/src/modules/reconciliation/engine.ts"
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.directory.flaggedOnly", { count: flagged.length })}</span>
         <DirectoryTree
           tree={mockTree}
@@ -121,7 +121,7 @@ export function TestDirectoryPage() {
           initialSelected="payment-gateway-v2/src/modules/reconciliation/engine.ts"
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.directory.reloading", { revision })}</span>
         <DirectoryTree
           tree={buildTree(revision)}

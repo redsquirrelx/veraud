@@ -1,36 +1,96 @@
 .ui-badge {
   display: inline-flex;
   align-items: center;
-  height: 20px;
+  height: var(--badge-height);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0 6px;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 0.25rem;
-  border: 1px solid;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-control);
+  border: var(--border-width) solid;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ui-badge-content {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.ui-badge-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ui-badge-with-dot { gap: 0.4rem; padding-inline: 8px; }
+.ui-badge-compact { width: 20px; min-width: 20px; padding: 0; justify-content: center; }
+.ui-badge-compact .ui-badge-content {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ui-badge-success .ui-badge-dot { background: var(--status-success-dot); }
+.ui-badge-danger .ui-badge-dot { background: var(--status-danger-dot); border-radius: 0; }
+.ui-badge-unknown .ui-badge-dot { background: transparent; border: 1px solid var(--status-unknown-dot); box-sizing: border-box; }
+
+.ui-badge-danger { background: var(--status-danger-bg); border-color: var(--status-danger-border); color: var(--status-danger-text); }
+.ui-badge-unknown { background: var(--status-unknown-bg); border-color: var(--status-unknown-border); color: var(--status-unknown-text); }
+
 .ui-badge-success {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-  color: #065f46;
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+  color: var(--status-success-text);
 }
 
 .ui-badge-warning {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #92400e;
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-text);
 }
 
 .ui-badge-info {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #3730a3;
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+  color: var(--status-info-text);
 }
 
 .ui-badge-neutral {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #475569;
+  background: var(--status-neutral-bg);
+  border-color: var(--status-neutral-border);
+  color: var(--status-neutral-text);
+}
+
+/* Keep the animation after tone declarations so neutral cannot mask its highlight. */
+.ui-badge-highlightable { transition: background-color 1200ms ease-out, color 1200ms ease-out, box-shadow 1200ms ease-out; }
+.ui-badge-highlighted {
+  animation: ui-badge-ignite 160ms ease-out;
+  background-color: var(--color-highlight-bg);
+  color: var(--color-highlight-text);
+  box-shadow: var(--shadow-highlight);
+}
+
+@keyframes ui-badge-ignite {
+  from { background-color: var(--status-neutral-bg); color: var(--status-neutral-text); box-shadow: var(--shadow-highlight-rest); }
+  to { background-color: var(--color-highlight-bg); color: var(--color-highlight-text); box-shadow: var(--shadow-highlight); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-badge-highlightable { transition: none; }
+  .ui-badge-highlighted { animation: none; }
 }

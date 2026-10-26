@@ -1,9 +1,11 @@
 export class ApiError extends Error {
   status: number
+  messageSource?: "server" | "client"
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, messageSource?: "server" | "client") {
     super(message)
     this.status = status
+    this.messageSource = messageSource
   }
 }
 
@@ -22,6 +24,21 @@ export function backendHttpUrl(): string {
 
 export function backendWsUrl(): string {
   return `${baseUrl.replace(/^http/, "ws")}/ws`
+}
+
+/** Reads one JSON response while preserving each endpoint's existing error-message policy. */
+export async function requestJson<T>(path: string, fallback: string, init?: RequestInit, useBackendMessage = true): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, init)
+  if (!response.ok && !useBackendMessage) {
+    throw new ApiError(response.status, fallback, "client")
+  }
+  const body: unknown = await response.json()
+  if (!response.ok) {
+    const serverMessage = typeof body === "object" && body !== null && "message" in body
+      && typeof body.message === "string" ? body.message : undefined
+    throw new ApiError(response.status, serverMessage ?? fallback, serverMessage === undefined ? "client" : "server")
+  }
+  return body as T
 }
 
 export interface ActiveTask {
@@ -49,55 +66,27 @@ export interface ProjectSummary {
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const response = await fetch(`${baseUrl}/api/projects`)
-
-  if (!response.ok) {
-    throw new ApiError(response.status, "Could not load projects")
-  }
-
-  return (await response.json()) as ProjectSummary[]
+  return requestJson("/api/projects", "Could not load projects", undefined, false)
 }
 
 export async function listActiveTasks(): Promise<ActiveTask[]> {
-  const response = await fetch(`${baseUrl}/api/tasks/active`)
-
-  if (!response.ok) {
-    throw new ApiError(response.status, "Could not load tasks")
-  }
-
-  return (await response.json()) as ActiveTask[]
+  return requestJson("/api/tasks/active", "Could not load tasks", undefined, false)
 }
 
 export async function syncProject(id: number): Promise<ProjectSummary> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/sync`, {
+  return requestJson(`/api/projects/${id}/sync`, "Could not sync the project", {
     method: "POST",
     signal: AbortSignal.timeout(600000),
   })
-
-  const body = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, body.message ?? "Could not sync the project")
-  }
-
-  return body as ProjectSummary
 }
 
 export async function registerProject(repositoryUrl: string, shallowClone = false): Promise<RegisteredProject> {
-  const response = await fetch(`${baseUrl}/api/projects`, {
+  return requestJson("/api/projects", "Unexpected error", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ repositoryUrl, shallowClone }),
     signal: AbortSignal.timeout(600000),
   })
-
-  const body = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, body.message ?? "Unexpected error")
-  }
-
-  return body as RegisteredProject
 }
 
 export interface GitBranchList {
@@ -126,20 +115,12 @@ export interface GitCheckout {
 }
 
 async function postGit<T>(id: number, action: string, body: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/git/${action}`, {
+  return requestJson<T>(`/api/projects/${id}/git/${action}`, "Git operation failed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(600000),
   })
-
-  const payload = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, payload.message ?? "Git operation failed")
-  }
-
-  return payload as T
 }
 
 export async function listBranches(id: number): Promise<GitBranchList> {
@@ -170,20 +151,12 @@ export interface ProjectFile {
 }
 
 export async function readProjectFile(id: number, path: string): Promise<ProjectFile> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/file`, {
+  return requestJson(`/api/projects/${id}/file`, "Could not read the file", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
     signal: AbortSignal.timeout(600000),
   })
-
-  const body = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, body.message ?? "Could not read the file")
-  }
-
-  return body as ProjectFile
 }
 
 export interface GitTree {
@@ -243,30 +216,17 @@ export interface ProjectArchitectureRequest {
 }
 
 export async function requestProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureRequest> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/architecture`, {
+  return requestJson(`/api/projects/${id}/architecture`, "Could not analyze the project", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ branch, commitHash }),
     signal: AbortSignal.timeout(600000),
   })
-
-  const body = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, body.message ?? "Could not analyze the project")
-  }
-
-  return body as ProjectArchitectureRequest
 }
 
 export async function getAgentExecution(executionId: number, monitor = false): Promise<AgentExecution> {
-  const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}${monitor ? "?monitor=true" : ""}`)
-
-  if (!response.ok) {
-    throw new ApiError(response.status, "Could not load the agent execution")
-  }
-
-  return (await response.json()) as AgentExecution
+  return requestJson(`/api/agent-executions/${executionId}${monitor ? "?monitor=true" : ""}`,
+    "Could not load the agent execution", undefined, false)
 }
 
 export interface VersionAnalysisSummary {
@@ -283,13 +243,7 @@ export interface VersionAnalysisSummary {
 }
 
 export async function listVersions(id: number): Promise<VersionAnalysisSummary[]> {
-  const response = await fetch(`${baseUrl}/api/projects/${id}/versions`)
-
-  if (!response.ok) {
-    throw new ApiError(response.status, "Could not load analyzed versions")
-  }
-
-  return (await response.json()) as VersionAnalysisSummary[]
+  return requestJson(`/api/projects/${id}/versions`, "Could not load analyzed versions", undefined, false)
 }
 
 export interface AiModelSummary {
@@ -313,29 +267,15 @@ export interface AiProviderDetail {
 }
 
 export async function listAiProviders(): Promise<AiProviderDetail[]> {
-  const response = await fetch(`${baseUrl}/api/ai-providers`)
-
-  if (!response.ok) {
-    throw new ApiError(response.status, "Could not load AI providers")
-  }
-
-  return (await response.json()) as AiProviderDetail[]
+  return requestJson("/api/ai-providers", "Could not load AI providers", undefined, false)
 }
 
 async function postAi<T>(aiProviderId: number, resource: string, body: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}`, {
+  return requestJson<T>(`/api/ai-providers/${aiProviderId}/${resource}`, "AI provider request failed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-
-  const payload = (await response.json()) as { message?: string }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, payload.message ?? "AI provider request failed")
-  }
-
-  return payload as T
 }
 
 export interface AgentConfiguration {
@@ -363,61 +303,37 @@ export interface AgentSettings {
 }
 
 export async function listAgentSettings(signal?: AbortSignal): Promise<AgentSettings[]> {
-  const response = await fetch(`${baseUrl}/api/agent-settings`, { signal })
-  if (!response.ok) {
-    const body = await response.json() as { message?: string }
-    throw new ApiError(response.status, body.message ?? "Could not load agent settings")
-  }
-  return await response.json() as AgentSettings[]
+  return requestJson("/api/agent-settings", "Could not load agent settings", { signal })
 }
 
 export async function saveAgentSettings(agentType: string, modelId: number, credentialId: number, options: { temperature?: number | null, maxTokens?: number | null, tokenBudget?: number | null, absoluteTokenLimit?: number | null } = {}): Promise<AgentSettings> {
-  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}`, {
+  return requestJson(`/api/agent-settings/${encodeURIComponent(agentType)}`, "Could not save agent settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ modelId, credentialId, ...options }),
   })
-  const body = await response.json() as AgentSettings & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save agent settings")
-  return body
 }
 
 export async function verifyAgentSettings(agentType: string): Promise<AgentSettings> {
-  const response = await fetch(`${baseUrl}/api/agent-settings/${encodeURIComponent(agentType)}/verify`, { method: "POST" })
-  const body = await response.json() as AgentSettings & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not verify model access")
-  return body
+  return requestJson(`/api/agent-settings/${encodeURIComponent(agentType)}/verify`, "Could not verify model access", { method: "POST" })
 }
 
 export async function syncAgentSettings(): Promise<AgentSettings[]> {
-  const response = await fetch(`${baseUrl}/api/agent-settings/sync`, { method: "POST" })
-  const body = await response.json() as AgentSettings[] & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not synchronize agent catalog")
-  return body
+  return requestJson("/api/agent-settings/sync", "Could not synchronize agent catalog", { method: "POST" })
 }
 
 export async function saveQualityCategory(attribute: string, modelId: number, credentialId: number): Promise<AgentSettings[]> {
-  const response = await fetch(`${baseUrl}/api/agent-settings/categories/${encodeURIComponent(attribute)}`, {
+  return requestJson(`/api/agent-settings/categories/${encodeURIComponent(attribute)}`, "Could not save category model access", {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId, credentialId }),
   })
-  const body = await response.json() as AgentSettings[] & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not save category model access")
-  return body
 }
 
 async function patchAi<T>(aiProviderId: number, resource: string, id: number, body: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/ai-providers/${aiProviderId}/${resource}/${id}`, {
+  return requestJson<T>(`/api/ai-providers/${aiProviderId}/${resource}/${id}`, "AI provider request failed", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-
-  const payload = (await response.json()) as { message?: string }
-  if (!response.ok) {
-    throw new ApiError(response.status, payload.message ?? "AI provider request failed")
-  }
-
-  return payload as T
 }
 
 async function deleteAi(aiProviderId: number, resource: string, id: number): Promise<void> {
@@ -431,7 +347,7 @@ async function deleteAi(aiProviderId: number, resource: string, id: number): Pro
 
   const payload = (await response.json()) as { message?: string }
 
-  throw new ApiError(response.status, payload.message ?? "AI provider request failed")
+  throw new ApiError(response.status, payload.message ?? "AI provider request failed", payload.message == null ? "client" : "server")
 }
 
 export async function createAiModel(aiProviderId: number, name: string): Promise<AiModelSummary> {

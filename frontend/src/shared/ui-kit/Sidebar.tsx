@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { ChevronLeftIcon, ChevronRightIcon } from "./icons.tsx"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./Sidebar.css"
@@ -22,6 +23,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ title, items, activeId, defaultExpanded = true, storageKey, onSelect, header, beforeItems, footer }: SidebarProps) {
+  const { t } = useTranslation("common")
   const root = useRef<HTMLElement>(null)
   const previousSize = useRef<{ width: number, height: number, padding: string } | null>(null)
   const [expanded, setExpanded] = useState(() => {
@@ -75,7 +77,7 @@ export function Sidebar({ title, items, activeId, defaultExpanded = true, storag
         <button
           type="button"
           className="ui-sidebar-toggle"
-          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          aria-label={t(expanded ? "ui.sidebar.collapse" : "ui.sidebar.expand")}
           aria-expanded={expanded}
           onClick={() => toggle()}
         >
@@ -83,7 +85,7 @@ export function Sidebar({ title, items, activeId, defaultExpanded = true, storag
         </button>
       </div>
       {beforeItems?.(expanded)}
-      <nav className="ui-sidebar-nav" aria-label={`${title} sections`}>
+      <nav className="ui-sidebar-nav" aria-label={t("ui.sidebar.sections", { title })}>
         {items.map((item) => (
           <button
             key={item.id}

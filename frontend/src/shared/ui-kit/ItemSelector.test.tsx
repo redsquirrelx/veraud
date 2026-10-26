@@ -8,12 +8,6 @@ const items = [
   { id: "feature-a", label: "feature-a", detail: "3 commits ahead" },
 ]
 
-function renderClosed() {
-  render(
-    <ItemSelector items={items} selectedId="main" onSelect={() => {}} hasMore={false} onLoadMore={() => {}} />
-  )
-}
-
 describe("ItemSelector", () => {
   it("supports arrow-key selection, Escape focus restoration and tabbing out", async () => {
     const user = userEvent.setup()
@@ -36,20 +30,15 @@ describe("ItemSelector", () => {
     expect(screen.queryByRole("option")).toBeNull()
   })
 
-  it("shows the selected item on the button and stays closed", () => {
-    renderClosed()
-
-    expect(screen.getByRole("button", { name: /main/ })).toBeDefined()
-    expect(screen.queryByRole("option")).toBeNull()
-  })
-
   it("opens the list on button press and closes on select", async () => {
     const onSelect = vi.fn()
     render(
       <ItemSelector items={items} selectedId="main" onSelect={onSelect} hasMore={false} onLoadMore={() => {}} />
     )
 
-    await userEvent.click(screen.getByRole("button", { name: /main/ }))
+    const trigger = screen.getByRole("button", { name: /main/ })
+    expect(screen.queryByRole("option")).toBeNull()
+    await userEvent.click(trigger)
 
     expect(screen.getByRole("option", { selected: true }).textContent).toContain("main")
     expect(screen.getByText("3 commits ahead")).toBeDefined()
@@ -81,6 +70,11 @@ describe("ItemSelector", () => {
     )
 
     expect(screen.getByRole("button", { name: "Select an item" })).toBeDefined()
+  })
+
+  it("marks the compact density without changing the selected value", () => {
+    render(<ItemSelector size="compact" items={items} selectedId="main" onSelect={() => {}} hasMore={false} onLoadMore={() => {}} />)
+    expect(screen.getByRole("button", { name: /main/ }).closest(".ui-item-selector")).toHaveAttribute("data-size", "compact")
   })
 
   it("appends more items through load more without closing", async () => {

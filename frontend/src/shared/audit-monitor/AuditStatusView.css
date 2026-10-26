@@ -4,30 +4,6 @@
   gap: 0.75rem;
 }
 
-.audit-agent-phase .ui-badge {
-  transition: background-color 1200ms ease-out, color 1200ms ease-out, box-shadow 1200ms ease-out;
-}
-
-.audit-agent-phase[data-highlighted="true"] .ui-badge {
-  animation: audit-phase-ignite 160ms ease-out;
-  background-color: #bfdbfe;
-  color: #1e3a8a;
-  box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
-}
-
-@keyframes audit-phase-ignite {
-  from {
-    background-color: #f1f5f9;
-    color: #475569;
-    box-shadow: 0 0 0 0 rgb(59 130 246 / 0%), 0 0 0 rgb(37 99 235 / 0%);
-  }
-  to {
-    background-color: #bfdbfe;
-    color: #1e3a8a;
-    box-shadow: 0 0 0 3px rgb(59 130 246 / 40%), 0 0 16px rgb(37 99 235 / 65%);
-  }
-}
-
 .audit-status-head,
 .audit-status-meta,
 .audit-pipeline-head,
@@ -42,19 +18,19 @@
 .audit-status-id {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 /* Slate-600 on the tinted surfaces clears AA comfortably; slate-500 did not. */
 .audit-status-meta,
 .audit-agent-meta {
   font-size: 11px;
-  color: #475569;
+  color: var(--color-text-description);
 }
 
 .audit-status-revision {
   font-size: 11px;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .audit-progress {
@@ -68,12 +44,12 @@
   min-width: 0;
   max-width: 100%;
   padding: 2px 6px;
-  background: #e0e7ff;
-  border: 1px solid #a5b4fc;
-  border-radius: 0.25rem;
-  color: #312e81;
-  font-size: 11px;
-  font-weight: 500;
+  background: var(--status-info-bg);
+  border: var(--border-width) solid var(--status-info-border);
+  border-radius: var(--radius-control);
+  color: var(--status-info-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
   overflow: hidden;
 }
@@ -88,11 +64,11 @@
 }
 
 .audit-status-project:hover {
-  background: #c7d2fe;
+  background: var(--status-info-bg);
 }
 
 .audit-status-project:focus-visible {
-  outline: 2px solid #0284c7;
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -100,11 +76,11 @@
 .audit-agent-error {
   margin: 0;
   padding: 0.3rem 0.45rem;
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
-  border-radius: 0.25rem;
-  font-size: 11px;
-  color: #9f1239;
+  background: var(--status-danger-bg);
+  border: var(--border-width) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-xs);
+  color: var(--status-danger-text);
 }
 
 /* One accent colour per state, shared by every level of this module — audit,
@@ -113,27 +89,27 @@
 .audit-status[data-state="completed"],
 .audit-disclosure[data-state="completed"],
 .audit-pipeline[data-state="completed"],
-.audit-agent[data-state="completed"] { --audit-accent: #047857; }
+.audit-agent[data-state="completed"] { --audit-accent: var(--status-success-accent); }
 
 .audit-status[data-state="running"],
 .audit-disclosure[data-state="running"],
 .audit-pipeline[data-state="running"],
-.audit-agent[data-state="running"] { --audit-accent: #0369a1; }
+.audit-agent[data-state="running"] { --audit-accent: var(--status-running-accent); }
 
 .audit-status[data-state="waiting"],
 .audit-disclosure[data-state="waiting"],
 .audit-pipeline[data-state="waiting"],
-.audit-agent[data-state="waiting"] { --audit-accent: #64748b; }
+.audit-agent[data-state="waiting"] { --audit-accent: var(--status-waiting-accent); }
 
 .audit-status[data-state="partial"],
 .audit-disclosure[data-state="partial"],
 .audit-pipeline[data-state="partial"],
-.audit-agent[data-state="partial"] { --audit-accent: #b45309; }
+.audit-agent[data-state="partial"] { --audit-accent: var(--status-partial-accent); }
 
 .audit-status[data-state="failed"],
 .audit-disclosure[data-state="failed"],
 .audit-pipeline[data-state="failed"],
-.audit-agent[data-state="failed"] { --audit-accent: #be123c; }
+.audit-agent[data-state="failed"] { --audit-accent: var(--status-failed-accent); }
 
 .audit-pipeline-list {
   display: flex;
@@ -146,9 +122,9 @@
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.55rem;
-  background: #e2e8f0;
-  border: 1px solid #94a3b8;
-  border-left: 4px solid var(--audit-accent, #64748b);
+  background: var(--color-surface-recessed);
+  border: var(--border-width) solid var(--color-border-hover);
+  border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
   border-radius: 0.375rem;
 }
 
@@ -169,7 +145,7 @@
 }
 
 .audit-pipeline-head:focus-visible {
-  outline: 2px solid #0284c7;
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 4px;
   border-radius: 2px;
 }
@@ -183,15 +159,10 @@
   min-width: 0;
 }
 
-/* Badges are nowrap by design: flex shrinking must not squash them. */
-.audit-pipeline-line .ui-badge {
-  flex-shrink: 0;
-}
-
 .audit-pipeline-icon {
   display: inline-flex;
   flex-shrink: 0;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 /* The quality attribute yields width and ellipsizes rather than pushing the
@@ -201,7 +172,7 @@
   min-width: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -211,7 +182,7 @@
   display: inline-flex;
   flex-shrink: 0;
   margin-left: auto;
-  color: #475569;
+  color: var(--color-text-description);
   transition: transform 220ms ease;
 }
 
@@ -260,9 +231,9 @@
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.45rem 0.55rem;
-  background: #ffffff;
-  border: 1px solid #94a3b8;
-  border-left: 4px solid var(--audit-accent, #64748b);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-hover);
+  border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
   border-radius: 0.25rem;
 }
 
@@ -270,7 +241,7 @@
   min-width: 0;
   font-size: 12px;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -279,7 +250,7 @@
 .audit-agent-children {
   margin-top: 0.5rem;
   padding-left: 0.5rem;
-  border-left: 1px solid #94a3b8;
+  border-left: var(--border-width) solid var(--color-border-hover);
 }
 
 .audit-agent-children[hidden] { display: none; }
@@ -295,10 +266,10 @@
   cursor: pointer;
 }
 
-.audit-agent-root { padding: 0.65rem; border-color: #64748b; }
+.audit-agent-root { padding: 0.65rem; border-color: var(--color-text-muted); }
 .audit-agent-toggle .audit-agent-type { flex: 1; }
 
-.audit-agent-toggle:focus-visible { outline: 2px solid #006194; outline-offset: 2px; }
+.audit-agent-toggle:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 2px; }
 
 .audit-agent-icon {
   display: inline-flex;
@@ -307,11 +278,7 @@
   flex-shrink: 0;
   width: 16px;
   /* Check, cross and spinner all inherit currentColor, so one rule covers them. */
-  color: var(--audit-accent, #475569);
-}
-
-.audit-agent-head .ui-badge {
-  flex-shrink: 0;
+  color: var(--audit-accent, var(--color-text-description));
 }
 
 .audit-run-dot {
@@ -319,5 +286,5 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--audit-accent, #64748b);
+  background: var(--audit-accent, var(--status-waiting-accent));
 }

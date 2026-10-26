@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { ChevronLeftIcon, ChevronRightIcon } from "./icons.tsx"
+import { IconButton } from "./IconButton.tsx"
 import "./Pagination.css"
 
 interface PaginationProps {
@@ -17,27 +18,29 @@ export function Pagination({ page, pageCount, onChange, label }: PaginationProps
 
   return (
     <nav className="ui-pagination" aria-label={label ?? t("ui.pagination.pages")}>
-      <button
-        type="button"
+      <IconButton
+        variant="pagination"
+        size="sm"
         className="ui-pagination-button"
-        aria-label={t("ui.pagination.previousPage")}
+        ariaLabel={t("ui.pagination.previousPage")}
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
       >
         <ChevronLeftIcon />
-      </button>
+      </IconButton>
       <span className="ui-pagination-label">
         {t("ui.pagination.pageOf", { page, pageCount })}
       </span>
-      <button
-        type="button"
+      <IconButton
+        variant="pagination"
+        size="sm"
         className="ui-pagination-button"
-        aria-label={t("ui.pagination.nextPage")}
+        ariaLabel={t("ui.pagination.nextPage")}
         disabled={page >= pageCount}
         onClick={() => onChange(page + 1)}
       >
         <ChevronRightIcon />
-      </button>
+      </IconButton>
     </nav>
   )
 }

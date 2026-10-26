@@ -1,4 +1,4 @@
-import { ApiError, backendHttpUrl } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, backendHttpUrl, requestJson } from "../../infrastructure/http-client/httpClient.ts"
 
 export interface QualityAuditSummary {
   id: number
@@ -15,15 +15,8 @@ export interface QualityAuditSummary {
   reportAvailable: boolean
 }
 
-async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${backendHttpUrl()}${path}`, init)
-  const body = await response.json() as T & { message?: string }
-  if (!response.ok) throw new ApiError(response.status, body.message ?? "Could not load the audit")
-  return body
-}
-
 export function listQualityAudits(projectId: number) {
-  return json<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`)
+  return requestJson<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`, "Could not load the audit")
 }
 
 /** Optional operating patches; schemas and numeric bounds are owned by agent-server. */
@@ -36,19 +29,19 @@ export interface AuditOperatingOptions {
 }
 
 export function startQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
-  return json<{ executionId: number }>(`/api/projects/${projectId}/audits`, {
+  return requestJson<{ executionId: number }>(`/api/projects/${projectId}/audits`, "Could not load the audit", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...options, branch, commitHash, attributes }),
   })
 }
 
 export function getQualityAuditReport(projectId: number, id: number) {
-  return json<Record<string, unknown>>(`/api/projects/${projectId}/audits/${id}/report`)
+  return requestJson<Record<string, unknown>>(`/api/projects/${projectId}/audits/${id}/report`, "Could not load the audit")
 }
 
 export async function downloadQualityAuditReport(projectId: number, id: number) {
   const response = await fetch(`${backendHttpUrl()}/api/projects/${projectId}/audits/${id}/report.docx`)
-  if (!response.ok) throw new ApiError(response.status, "Could not download the audit report")
+  if (!response.ok) throw new ApiError(response.status, "Could not download the audit report", "client")
   const url = URL.createObjectURL(await response.blob())
   const anchor = document.createElement("a")
   anchor.href = url

@@ -1,14 +1,1 @@
-.test-stage-showcase-page {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1.0rem;
-  max-width: 880px;
-}
-
-.test-stage-showcase-page .ui-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: stretch;
-}
+.test-stage-showcase-page { max-width: 880px; }

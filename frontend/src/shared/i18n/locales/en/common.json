@@ -31,6 +31,15 @@
     "loading": "Loading",
     "refresh": "Refresh",
     "items": "Items",
+    "asyncAction": {
+      "timeout": "Timed out after {{milliseconds}}ms",
+      "failed": "Something went wrong"
+    },
+    "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
+      "sections": "{{title}} sections"
+    },
     "sortAscending": "Sort ascending",
     "sortDescending": "Sort descending",
     "pages": "Pages",
@@ -209,7 +218,9 @@
       "headlineLabel": "Geist / headline",
       "bodyLabel": "Geist / body",
       "repoNameLabel": "JetBrains Mono / repository name",
-      "commitLabel": "JetBrains Mono / commit"
+      "commitLabel": "JetBrains Mono / commit",
+      "typographyTitle": "Projects and Repositories",
+      "typographyBody": "Continuous autonomous supervision of quality attributes under ISO/IEC 25010."
     },
     "directory": {
       "title": "Directory playground",
@@ -227,7 +238,13 @@
       "longLinesFile": "{{file}} (long lines)",
       "withMarks": "{{file}} with agent marks",
       "groupedByFinding": "{{file}} grouped by finding",
-      "emptyFile": "Empty file"
+      "emptyFile": "Empty file",
+      "findings": {
+        "A": { "note": "unvalidated amount reaches settle", "title": "Unvalidated amount", "body": "Lines 8 to 9 throw a generic error instead of a domain one." },
+        "B": { "note": "currency normalization", "title": "Currency normalization", "body": "Line 12 uppercases in place; consider a value object." },
+        "C": { "note": "plain data shape", "title": "Plain data shape", "body": "Lines 1 to 5 carry no behaviour, safe to extend." },
+        "D": { "note": "untyped shape", "title": "Missing domain types", "body": "Lines 2 to 4 and 7 to 9 repeat the same structural smell in two places." }
+      }
     },
     "selector": {
       "title": "Selector playground",
@@ -298,6 +315,13 @@
       "disabled": "Disabled",
       "emptyMenu": "Empty menu",
       "noDocs": "No documentation registered",
+      "modelCount_one": "{{count}} model",
+      "modelCount_other": "{{count}} models",
+      "docs": {
+        "backend": "HTTP API · Swagger",
+        "websocket": "Realtime events · AsyncAPI",
+        "agentServer": "Agent HTTP API · Swagger"
+      },
       "textInputs": "Text inputs with floating legend",
       "noLabel": "No label here",
       "modelName": "Model name",

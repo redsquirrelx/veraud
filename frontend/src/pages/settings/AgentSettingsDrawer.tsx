@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import "../../shared/ui-kit/Field.css"
 import type { ParseKeys } from "i18next"
 import { ApiError, saveAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { Badge, Button, Drawer, ItemSelector } from "../../shared/ui-kit/index.ts"
@@ -108,7 +109,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
       onSaved(updated)
       onClose()
     } catch (failure) {
-      setError(failure instanceof ApiError
+      setError(failure instanceof ApiError && failure.messageSource !== "client"
         ? { key: "agents.saveFailedWithDetail", detail: failure.message }
         : { key: "agents.saveFailed" })
     } finally {
@@ -159,16 +160,16 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
         <p className="settings-hint">{t("agents.drawer.generationHint")}</p>
         <div className="settings-agent-parameters">
           <div className="settings-agent-parameter">
-            <label className="ui-text-input">
-            <span className="ui-item-legend">{t("agents.drawer.temperature")}</span>
+            <label className="ui-field ui-text-input">
+            <span className="ui-field-label">{t("agents.drawer.temperature")}</span>
             <input className="ui-input" type="number" min="0" max="2" step="any" value={temperature} placeholder={t("agents.drawer.defaultPlaceholder")} disabled={saving}
               aria-invalid={!temperatureValid} onChange={(event) => { setTemperature(event.target.value); setError(null) }} />
             </label>
             <span className="settings-hint">{t("agents.drawer.temperatureHint")}</span>
           </div>
           <div className="settings-agent-parameter">
-            <label className="ui-text-input">
-             <span className="ui-item-legend">{t("agents.drawer.maxTokens")}</span>
+            <label className="ui-field ui-text-input">
+             <span className="ui-field-label">{t("agents.drawer.maxTokens")}</span>
              <input className="ui-input" type="number" min={outputMinimum} max="2147483647" step="1" value={maxTokens}
                placeholder={inheritedValue === undefined ? t("agents.drawer.defaultPlaceholder") : String(inheritedValue)} disabled={saving}
               aria-invalid={!tokensValid} onChange={(event) => { setMaxTokens(event.target.value); setError(null) }} />
@@ -192,16 +193,16 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
         <p className="settings-hint">{t("agents.drawer.tokenBudgetHint")}</p>
         <div className="settings-agent-parameters">
           <div className="settings-agent-parameter">
-          <label className="ui-text-input">
-            <span className="ui-item-legend">{t("agents.drawer.initialBudget")}</span>
+          <label className="ui-field ui-text-input">
+            <span className="ui-field-label">{t("agents.drawer.initialBudget")}</span>
              <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={tokenBudget} placeholder={t("agents.drawer.initialBudgetPlaceholder", { default: formatNumber(DEFAULT_TOKEN_BUDGET) })} disabled={saving}
               aria-invalid={!budgetValid || !limitsValid} onChange={(event) => { setTokenBudget(event.target.value); setError(null) }} />
           </label>
           <span className="settings-hint">{t("agents.drawer.initialBudgetHint", { default: formatNumber(DEFAULT_TOKEN_BUDGET) })}</span>
           </div>
           <div className="settings-agent-parameter">
-          <label className="ui-text-input">
-            <span className="ui-item-legend">{t("agents.drawer.absoluteLimit")}</span>
+          <label className="ui-field ui-text-input">
+            <span className="ui-field-label">{t("agents.drawer.absoluteLimit")}</span>
              <input className="ui-input" type="number" min="1" max="2147483647" step="1" value={absoluteTokenLimit} placeholder={t("agents.drawer.absoluteLimitPlaceholder", { default: formatNumber(DEFAULT_ABSOLUTE_TOKEN_LIMIT) })} disabled={saving}
               aria-invalid={!absoluteValid || !limitsValid} onChange={(event) => { setAbsoluteTokenLimit(event.target.value); setError(null) }} />
           </label>

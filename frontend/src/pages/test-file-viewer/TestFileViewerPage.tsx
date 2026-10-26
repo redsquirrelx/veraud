@@ -86,77 +86,77 @@ export function TestFileViewerPage() {
   const longLines = longSample.split("\n").length
 
   return (
-    <section className="test-file-viewer-page">
+    <section className="test-file-viewer-page ui-page-stack">
       <h1>{t("testPages.fileViewer.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/modules/settlement.ts", count: lines })}</span>
         <CodeViewer code={sample} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.withMarks", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>        <CodeViewer
           code={sample}
           language="ts"
           highlight
           marks={[
-            { id: "A", from: 8, to: 9, tone: "danger", note: "unvalidated amount reaches settle" },
-            { id: "B", from: 12, to: 12, tone: "warning", note: "currency normalization" },
-            { id: "C", from: 1, to: 5, tone: "info", note: "plain data shape" },
+            { id: "A", from: 8, to: 9, tone: "danger", note: t("testPages.fileViewer.findings.A.note") },
+            { id: "B", from: 12, to: 12, tone: "warning", note: t("testPages.fileViewer.findings.B.note") },
+            { id: "C", from: 1, to: 5, tone: "info", note: t("testPages.fileViewer.findings.C.note") },
           ]}
         />
         <CodeExplanations
           items={[
-            { id: "A", tone: "danger", title: "Unvalidated amount", body: "Lines 8 to 9 throw a generic error instead of a domain one." },
-            { id: "B", tone: "warning", title: "Currency normalization", body: "Line 12 uppercases in place; consider a value object." },
-            { id: "C", tone: "info", title: "Plain data shape", body: "Lines 1 to 5 carry no behaviour, safe to extend." },
+            { id: "A", tone: "danger", title: t("testPages.fileViewer.findings.A.title"), body: t("testPages.fileViewer.findings.A.body") },
+            { id: "B", tone: "warning", title: t("testPages.fileViewer.findings.B.title"), body: t("testPages.fileViewer.findings.B.body") },
+            { id: "C", tone: "info", title: t("testPages.fileViewer.findings.C.title"), body: t("testPages.fileViewer.findings.C.body") },
           ]}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.groupedByFinding", { file: "payment-gateway-v2/src/modules/settlement.ts" })}</span>
         <CodeViewer
           code={sample}
           language="ts"
           highlight
           marks={[
-            { id: "D", from: 2, to: 4, tone: "warning", note: "untyped shape" },
-            { id: "D", from: 7, to: 9, tone: "warning", note: "untyped shape" },
+            { id: "D", from: 2, to: 4, tone: "warning", note: t("testPages.fileViewer.findings.D.note") },
+            { id: "D", from: 7, to: 9, tone: "warning", note: t("testPages.fileViewer.findings.D.note") },
           ]}
         />
         <CodeExplanations
           items={[
-            { id: "D", tone: "warning", title: "Missing domain types", body: "Lines 2 to 4 and 7 to 9 repeat the same structural smell in two places." },
+            { id: "D", tone: "warning", title: t("testPages.fileViewer.findings.D.title"), body: t("testPages.fileViewer.findings.D.body") },
           ]}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.emptyFile")}</span>
         <CodeViewer code="" />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.fileLines", { file: "payment-gateway-v2/src/generated/ledger-entries.ts", count: longLines })}</span>
         <CodeViewer code={longSample} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/settle.py" })}</span>
         <CodeViewer code={pythonSample} language="py" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/modules/settlement.highlighted.ts" })}</span>
         <CodeViewer code={sample} language="ts" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/src/charge.js" })}</span>
         <CodeViewer code={jsSample} language="js" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/config.json" })}</span>
         <CodeViewer code={jsonSample} language="json" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.highlightedFile", { file: "payment-gateway-v2/scripts/deploy.sh" })}</span>
         <CodeViewer code={shellSample} language="sh" highlight />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.fileViewer.longLinesFile", { file: "payment-gateway-v2/dist/bundle.min.json" })}</span>
         <CodeViewer code={longLinesSample} language="json" highlight />
       </Card>

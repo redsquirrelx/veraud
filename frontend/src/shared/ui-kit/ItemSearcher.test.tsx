@@ -137,4 +137,9 @@ describe("ItemSearcher", () => {
 
     expect(screen.getByText("No matches")).toBeDefined()
   })
+
+  it("marks the compact density while preserving the search control", () => {
+    render(<ItemSearcher size="compact" items={items} selectedId={null} onSelect={() => {}} hasMore={false} onLoadMore={() => {}} />)
+    expect(screen.getByLabelText("Search items").closest(".ui-item-searcher")).toHaveAttribute("data-size", "compact")
+  })
 })

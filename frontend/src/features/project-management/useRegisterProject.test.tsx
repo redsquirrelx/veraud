@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { act, renderHook } from "@testing-library/react"
 import { StrictMode, type ReactNode } from "react"
 import { useRegisterProject } from "./useRegisterProject.ts"
@@ -22,7 +22,8 @@ function stubFetch(status: number, body: unknown) {
 describe("useRegisterProject", () => {
   it("registers and reports success", async () => {
     stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
-    const { result } = renderHook(() => useRegisterProject())
+    let notified = 0
+    const { result } = renderHook(() => useRegisterProject({ onRegistered: () => { notified += 1 } }))
 
     act(() => {
       result.current.changeUrl("https://github.com/acme/Demo")
@@ -34,80 +35,91 @@ describe("useRegisterProject", () => {
     expect(result.current.state).toBe("success")
     expect(result.current.message).toContain("acme/Demo")
     expect(result.current.project?.id).toBe(1)
-  })
-
-  it("notifies after registering", async () => {
-    stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
-    let notified = 0
-    const { result } = renderHook(() => useRegisterProject({ onRegistered: () => { notified += 1 } }))
-
-    act(() => {
-      result.current.changeUrl("https://github.com/acme/Demo")
-    })
-    await act(async () => {
-      await result.current.register()
-    })
-
     expect(notified).toBe(1)
   })
 
   it("clears the input on submit and cools down for 2s", async () => {
-    stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
-    const { result } = renderHook(() => useRegisterProject(), { wrapper: StrictModeWrapper })
+    vi.useFakeTimers()
+    try {
+      stubFetch(201, { id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" })
+      const { result } = renderHook(() => useRegisterProject(), { wrapper: StrictModeWrapper })
 
-    act(() => {
-      result.current.changeUrl("https://github.com/acme/Demo")
-    })
-    await act(async () => {
-      await result.current.register()
-    })
+      act(() => {
+        result.current.changeUrl("https://github.com/acme/Demo")
+      })
+      await act(async () => {
+        await result.current.register()
+      })
 
-    expect(result.current.url).toBe("")
-    expect(result.current.cooling).toBe(true)
+      expect(result.current.url).toBe("")
+      expect(result.current.cooling).toBe(true)
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2100))
-    })
-    expect(result.current.cooling).toBe(false)
-  }, 10000)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1999)
+      })
+      expect(result.current.cooling).toBe(true)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(result.current.cooling).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it("queues a second submit while the first is still running", async () => {
-    let calls = 0
-    globalThis.fetch = (() => new Promise<Response>((resolve) => {
-      calls += 1
-      const id = calls
-      setTimeout(() => {
-        resolve(new Response(
-          JSON.stringify({ id, repositoryOwner: "acme", repositoryName: `R${id}`, status: "QUEUED" }),
-          { status: 201 }
-        ))
-      }, 2500)
-    })) as typeof fetch
-    const { result } = renderHook(() => useRegisterProject())
+    vi.useFakeTimers()
+    try {
+      let calls = 0
+      globalThis.fetch = (() => new Promise<Response>((resolve) => {
+        calls += 1
+        const id = calls
+        setTimeout(() => {
+          resolve(new Response(
+            JSON.stringify({ id, repositoryOwner: "acme", repositoryName: `R${id}`, status: "QUEUED" }),
+            { status: 201 }
+          ))
+        }, 2500)
+      })) as typeof fetch
+      const { result } = renderHook(() => useRegisterProject())
 
-    act(() => {
-      result.current.changeUrl("https://github.com/acme/A")
-    })
-    const first = result.current.register()
+      let first!: Promise<void>
+      act(() => {
+        result.current.changeUrl("https://github.com/acme/A")
+      })
+      act(() => {
+        first = result.current.register()
+      })
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2100))
-    })
-    expect(result.current.cooling).toBe(false)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100)
+      })
+      expect(result.current.cooling).toBe(false)
 
-    act(() => {
-      result.current.changeUrl("https://github.com/acme/B")
-    })
-    const second = result.current.register()
+      let second!: Promise<void>
+      act(() => {
+        result.current.changeUrl("https://github.com/acme/B")
+      })
+      act(() => {
+        second = result.current.register()
+      })
 
-    await act(async () => {
-      await Promise.all([first, second])
-    })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+        await first
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2100)
+        await second
+      })
 
-    expect(calls).toBe(2)
-    expect(result.current.state).toBe("success")
-    expect(result.current.message).toContain("acme/R2")
-  }, 15000)
+      expect(calls).toBe(2)
+      expect(result.current.state).toBe("success")
+      expect(result.current.message).toContain("acme/R2")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it("does nothing without a url", async () => {
     const { result } = renderHook(() => useRegisterProject())

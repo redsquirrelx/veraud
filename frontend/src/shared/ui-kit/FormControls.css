@@ -2,8 +2,8 @@
   display: inline-flex;
   align-items: flex-start;
   gap: 0.625rem;
-  color: #0f172a;
-  font-size: 13px;
+  color: var(--color-text);
+  font-size: var(--font-size-md);
   line-height: 20px;
   cursor: pointer;
   user-select: none;
@@ -16,13 +16,14 @@
 }
 
 .ui-control-description, .ui-control-error {
-  font-size: 12px;
-  line-height: 1.5;
-  color: #64748b;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  color: var(--color-text-muted);
 }
 
-.ui-control-error { color: #b91c1c; }
-.ui-choice[data-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.ui-control-error { color: var(--color-error-text); }
+.ui-choice[data-disabled="true"] { opacity: 1; color: var(--color-disabled-text); cursor: not-allowed; }
+.ui-choice[data-disabled="true"] .ui-choice-control > span { border-color: var(--color-disabled-border); }
 
 .ui-choice-control {
   position: relative;
@@ -49,8 +50,8 @@
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  border: var(--border-width) solid var(--color-border-control);
+  background: var(--color-surface);
   transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
@@ -60,10 +61,10 @@
   transition: background-color 280ms ease, border-color 280ms ease, box-shadow 280ms ease;
 }
 .ui-checkbox-mark svg { width: 16px; height: 16px; opacity: 0; transform: scale(0.6); transition: opacity 160ms ease, transform 180ms ease; }
-.ui-checkbox-mark path { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ui-checkbox-mark path { fill: none; stroke: var(--color-text-inverse); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ui-choice-control input:checked + .ui-checkbox-mark,
 .ui-choice-control input:indeterminate + .ui-checkbox-mark,
-.ui-choice-control input:checked + .ui-switch-track { background: #006194; border-color: #006194; }
+.ui-choice-control input:checked + .ui-switch-track { background: var(--color-brand); border-color: var(--color-brand); }
 .ui-choice-control input:checked + .ui-checkbox-mark svg,
 .ui-choice-control input:indeterminate + .ui-checkbox-mark svg { opacity: 1; transform: scale(1); }
 .ui-radio-mark::after {
@@ -71,21 +72,21 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #006194;
+  background: var(--color-brand);
   opacity: 0;
   transform: scale(0.35);
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease;
 }
-.ui-choice-control input:checked + .ui-radio-mark { border-color: #006194; background-color: #f0f9ff; }
+.ui-choice-control input:checked + .ui-radio-mark { border-color: var(--color-brand); background-color: var(--color-selection-soft); }
 .ui-choice-control input:checked + .ui-radio-mark::after { transform: scale(1); opacity: 1; }
-.ui-choice:hover:not([data-disabled="true"]) .ui-choice-control > span { border-color: #006194; }
-.ui-choice-control input:focus-visible + span { outline: 2px solid #0284c7; outline-offset: 3px; }
-.ui-choice[data-invalid="true"] .ui-choice-control > span { border-color: #b91c1c; }
+.ui-choice:hover:not([data-disabled="true"]) .ui-choice-control > span { border-color: var(--color-brand); }
+.ui-choice-control input:focus-visible + span { outline: var(--focus-width) solid var(--color-focus); outline-offset: 3px; }
+.ui-choice[data-invalid="true"] .ui-choice-control > span { border-color: var(--color-error-text); }
 
 .ui-switch-control { flex-basis: 36px; width: 36px; }
 .ui-switch-track {
   border-radius: 20px;
-  background: #e2e8f0;
+  background: var(--color-surface-recessed);
   justify-content: flex-start;
   padding: 2px;
   transition: background-color 300ms ease, border-color 300ms ease, box-shadow 300ms ease;
@@ -94,43 +95,27 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px #0f172a33;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-switch-thumb);
   transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .ui-choice-control input:checked + .ui-switch-track .ui-switch-thumb { transform: translateX(16px); }
 
-.ui-combobox { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 8px; font-size: 13px; }
-.ui-combobox .ui-control-label {
-  position: absolute;
-  top: -8px;
-  left: 10px;
-  z-index: 1;
-  padding: 0 4px;
-  background: #fff;
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  line-height: 1.6;
-  pointer-events: none;
-  transition: color 180ms ease;
-}
-.ui-combobox:focus-within .ui-control-label { color: #0284c7; }
-.ui-combobox[data-invalid="true"] .ui-control-label { color: #b91c1c; }
-.ui-combobox-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 0.25rem; background: #fff; color: #0f172a; font: inherit; text-align: left; cursor: pointer; transition: border-color 180ms ease, box-shadow 180ms ease; }
-.ui-combobox-trigger:hover:not(:disabled) { border-color: #006194; }
-.ui-combobox-trigger:focus-visible { outline: 2px solid #0284c7; outline-offset: 2px; }
-.ui-combobox-trigger:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
-.ui-combobox[data-invalid="true"] .ui-combobox-trigger { border-color: #b91c1c; }
+.ui-combobox { gap: 6px; font-size: var(--font-size-md); }
+.ui-combobox .ui-control-label { transition: color 180ms ease; }
+.ui-combobox-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; height: var(--control-height); padding: 0 var(--space-3); border: var(--border-width) solid var(--color-border-control); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: border-color 180ms ease, box-shadow 180ms ease; }
+.ui-combobox-trigger:hover:not(:disabled) { border-color: var(--color-brand); }
+.ui-combobox-trigger:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
+.ui-combobox-trigger:disabled { background: var(--color-disabled-bg); color: var(--color-disabled-text); border-color: var(--color-disabled-border); cursor: not-allowed; }
+.ui-combobox[data-invalid="true"] .ui-combobox-trigger { border-color: var(--color-error-text); }
 .ui-combobox-chevron { display: inline-flex; transition: transform 180ms ease; }
 .ui-combobox-chevron[data-open="true"] { transform: rotate(180deg); }
-.ui-combobox-menu { position: absolute; top: 40px; left: 0; right: 0; z-index: 10; max-height: 220px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 8px 24px #0f172a18; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease; }
+.ui-combobox-menu { position: absolute; top: 40px; left: 0; right: 0; z-index: var(--z-combobox); max-height: 220px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; opacity: 0; visibility: hidden; transform: translateY(-5px); transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease; }
 .ui-combobox-menu[data-open="true"] { opacity: 1; visibility: visible; transform: translateY(0); }
 .ui-combobox-option { display: flex; justify-content: space-between; gap: 8px; padding: 9px 10px; border-radius: 4px; cursor: pointer; transition: background 120ms ease, color 120ms ease; }
-.ui-combobox-option[data-active="true"], .ui-combobox-option[aria-selected="true"] { background: #e0f2fe; color: #006194; }
-.ui-combobox-option[aria-disabled="true"] { color: #94a3b8; background: transparent; cursor: not-allowed; }
-.ui-combobox-empty { padding: 10px; color: #64748b; }
+.ui-combobox-option[data-active="true"], .ui-combobox-option[aria-selected="true"] { background: var(--color-selection-bg); color: var(--color-brand); }
+.ui-combobox-option[aria-disabled="true"] { color: var(--color-disabled-text); background: var(--color-disabled-bg); cursor: not-allowed; }
+.ui-combobox-empty { padding: 10px; color: var(--color-text-muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .ui-choice *, .ui-choice *::after, .ui-combobox * { transition: none; }

@@ -29,7 +29,7 @@ export function AgentAccessVerification({ agent, disabled, onUpdated }: { agent:
     setError(null)
     try { onUpdated(await verifyAgentSettings(agent.agentType)) }
     catch (failure) {
-      setError(failure instanceof ApiError
+      setError(failure instanceof ApiError && failure.messageSource !== "client"
         ? { key: "agents.verification.verifyFailedWithDetail", detail: failure.message }
         : { key: "agents.verification.verifyFailed" })
     }

@@ -1,0 +1,12 @@
+.ui-menu-surface {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-popover);
+}
+
+.ui-menu-surface-compact {
+  border-color: var(--color-border);
+  border-radius: var(--radius-popover-compact);
+  box-shadow: var(--shadow-popover-compact);
+}

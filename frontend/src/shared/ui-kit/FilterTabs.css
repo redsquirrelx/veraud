@@ -1,9 +1,9 @@
 .ui-filter-tabs {
   display: inline-flex;
   gap: 2px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.25rem;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
   padding: 2px;
 }
 
@@ -11,10 +11,10 @@
   height: 26px;
   padding: 0 10px;
   background: transparent;
-  color: #64748b;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
@@ -22,14 +22,18 @@
 }
 
 .ui-filter-tab:hover {
-  color: #0f172a;
+  color: var(--color-text);
 }
+
+.ui-filter-tab:active:not(:disabled) { background: var(--color-surface-active); }
 
 .ui-filter-tab-active {
-  background: #006194;
-  color: #ffffff;
+  background: var(--color-brand);
+  color: var(--color-on-brand);
 }
 
+.ui-filter-tab-active:active:not(:disabled) { background: var(--color-brand-active); }
+
 .ui-filter-tab-active:hover {
-  color: #ffffff;
+  color: var(--color-on-brand);
 }

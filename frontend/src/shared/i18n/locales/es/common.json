@@ -31,6 +31,15 @@
     "loading": "Cargando",
     "refresh": "Actualizar",
     "items": "Elementos",
+    "asyncAction": {
+      "timeout": "Tiempo de espera agotado tras {{milliseconds}} ms",
+      "failed": "Se produjo un error"
+    },
+    "sidebar": {
+      "collapse": "Contraer barra lateral",
+      "expand": "Expandir barra lateral",
+      "sections": "Secciones de {{title}}"
+    },
     "sortAscending": "Orden ascendente",
     "sortDescending": "Orden descendente",
     "pages": "Páginas",
@@ -209,7 +218,9 @@
       "headlineLabel": "Geist / titular",
       "bodyLabel": "Geist / cuerpo",
       "repoNameLabel": "JetBrains Mono / nombre de repositorio",
-      "commitLabel": "JetBrains Mono / commit"
+      "commitLabel": "JetBrains Mono / commit",
+      "typographyTitle": "Proyectos y repositorios",
+      "typographyBody": "Supervisión autónoma continua de atributos de calidad según ISO/IEC 25010."
     },
     "directory": {
       "title": "Zona de directorio",
@@ -227,7 +238,13 @@
       "longLinesFile": "{{file}} (líneas largas)",
       "withMarks": "{{file}} con marcas de agentes",
       "groupedByFinding": "{{file}} agrupado por hallazgo",
-      "emptyFile": "Archivo vacío"
+      "emptyFile": "Archivo vacío",
+      "findings": {
+        "A": { "note": "el importe sin validar llega a settle", "title": "Importe sin validar", "body": "Las líneas 8 a 9 lanzan un error genérico en lugar de uno de dominio." },
+        "B": { "note": "normalización de moneda", "title": "Normalización de moneda", "body": "La línea 12 convierte a mayúsculas en el mismo objeto; considera usar un objeto de valor." },
+        "C": { "note": "estructura de datos simple", "title": "Estructura de datos simple", "body": "Las líneas 1 a 5 no tienen comportamiento y se pueden ampliar con seguridad." },
+        "D": { "note": "estructura sin tipos", "title": "Faltan tipos de dominio", "body": "Las líneas 2 a 4 y 7 a 9 repiten el mismo problema estructural en dos lugares." }
+      }
     },
     "selector": {
       "title": "Zona de selectores",
@@ -298,6 +315,13 @@
       "disabled": "Deshabilitado",
       "emptyMenu": "Menú vacío",
       "noDocs": "No hay documentación registrada",
+      "modelCount_one": "{{count}} modelo",
+      "modelCount_other": "{{count}} modelos",
+      "docs": {
+        "backend": "API HTTP · Swagger",
+        "websocket": "Eventos en tiempo real · AsyncAPI",
+        "agentServer": "API HTTP de agentes · Swagger"
+      },
       "textInputs": "Campos de texto con leyenda flotante",
       "noLabel": "Sin etiqueta aquí",
       "modelName": "Nombre del modelo",

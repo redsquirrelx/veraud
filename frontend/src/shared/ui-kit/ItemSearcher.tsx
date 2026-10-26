@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
 import type { ItemSelectorItem } from "./ItemSelector.tsx"
+import "./Field.css"
+import "./ItemPicker.css"
+import "./MenuSurface.css"
 import "./ItemSearcher.css"
 
 interface ItemSearcherProps {
@@ -18,6 +21,7 @@ interface ItemSearcherProps {
   label?: string
   loading?: boolean
   disabled?: boolean
+  size?: "default" | "compact"
 }
 
 export function ItemSearcher({
@@ -33,6 +37,7 @@ export function ItemSearcher({
   label = "",
   loading = false,
   disabled = false,
+  size = "default",
 }: ItemSearcherProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.itemSearcher.noMatches")
@@ -99,8 +104,8 @@ export function ItemSearcher({
 
   if (loading) {
     return (
-      <div className="ui-item-searcher" ref={root}>
-        {label !== "" && <span className="ui-item-legend">{label}</span>}
+      <div className="ui-field ui-item-searcher" data-size={size} ref={root}>
+        {label !== "" && <span className="ui-field-label">{label}</span>}
         <button type="button" className="ui-item-button" disabled>
           <span className="ui-item-loading">
             <Spinner size={12} />
@@ -123,8 +128,8 @@ export function ItemSearcher({
   }
 
   return (
-    <div className="ui-item-searcher" ref={root}>
-      {label !== "" && <span id={`${id}-label`} className="ui-item-legend">{label}</span>}
+    <div className="ui-field ui-item-searcher" data-size={size} ref={root}>
+      {label !== "" && <span id={`${id}-label`} className="ui-field-label">{label}</span>}
       <div className="ui-item-search-row">
         <div className="ui-item-search-field">
           <input
@@ -171,7 +176,7 @@ export function ItemSearcher({
           {open ? <ChevronUpIcon /> : <ChevronDownIcon />}
         </button>
       </div>
-      <div className={open ? "ui-item-panel ui-item-panel-open" : "ui-item-panel"} aria-hidden={!open} inert={!open}>
+      <div className={`ui-item-panel ui-menu-surface${open ? " ui-item-panel-open" : ""}`} aria-hidden={!open} inert={!open}>
         {loading && visible.length === 0 && !hasMore ? (
           <span className="ui-item-loading">
             <Spinner size={12} />

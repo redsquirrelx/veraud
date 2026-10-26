@@ -30,7 +30,7 @@
 
 .ui-split-handle:hover,
 .ui-split-handle:focus-visible {
-  background: #e0f2fe;
+  background: var(--color-selection-bg);
   outline: none;
-  box-shadow: inset 2px 0 0 #0284c7, inset -2px 0 0 #0284c7;
+  box-shadow: inset 2px 0 0 var(--color-focus), inset -2px 0 0 var(--color-focus);
 }

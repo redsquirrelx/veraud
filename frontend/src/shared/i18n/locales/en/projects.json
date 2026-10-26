@@ -78,6 +78,86 @@
       }
     }
   },
+  "qualityAudits": {
+    "title": "Quality audit",
+    "description": "Evaluate project quality on the selected revision.",
+    "attributesLegend": "Attributes to evaluate",
+    "attributes": {
+      "maintainability": { "description": "Code structure and ease of evolution." },
+      "security": { "description": "Repository risks and potential vulnerabilities." },
+      "functionalAdequacy": { "description": "Compare functional requirements with the repository code." }
+    },
+    "requirements": {
+      "label": "Functional requirements",
+      "help": "Enter one requirement per line ({{minimum}}–{{maximum}}). IDs such as REQ-001 are assigned, and each result is included in the report."
+    },
+    "start": "Start audit",
+    "starting": "Starting…",
+    "configureAgents": "Configure agents",
+    "runningNotice": "Audit in progress. Results are retained even when the evaluation is partial.",
+    "historyTitle": "Project audits",
+    "empty": "No audits recorded.",
+    "revisionPending": "pending",
+    "errors": {
+      "load": "Could not load audits",
+      "start": "Could not start audit",
+      "report": "Could not load report",
+      "download": "Could not download report"
+    },
+    "runId": {
+      "label": "Run ID",
+      "initializing": "Initializing…",
+      "unavailable": "Unavailable",
+      "openBlackboard": "View Blackboard"
+    },
+    "evaluation": {
+      "partial": "Partial evaluation",
+      "completed": "Evaluation completed",
+      "failed": "Evaluation failed"
+    },
+    "viewReport": "View report",
+    "downloadWord": "Download Word report",
+    "downloading": "Downloading…",
+    "report": {
+      "title": "Audit report · #{{id}}",
+      "originalNotice": "Original report generated from this run's Blackboard.",
+      "notRecorded": "Not recorded",
+      "empty": "No records",
+      "sourceReferences_one": "Source reference ({{formattedCount}})",
+      "sourceReferences_other": "Source references ({{formattedCount}})",
+      "sections": {
+        "identification": "1. Identification",
+        "executive_summary": "2. Executive summary",
+        "objectives_and_scope": "3. Objectives and scope",
+        "methodology_and_criteria": "4. Methodology and criteria",
+        "software_description": "5. Software description",
+        "quality_results": "6. Quality results",
+        "consolidated_risks": "7. Consolidated risks",
+        "general_conclusions": "8. General conclusions",
+        "recommendations_and_improvement_plan": "9. Recommendations and improvement plan",
+        "annexes_and_traceability": "10. Annexes and traceability"
+      },
+      "fields": {
+        "objective": "Objective",
+        "evaluated_attributes": "Evaluated attributes",
+        "principal_results": "Principal results",
+        "conclusion": "Conclusion",
+        "findings": "Findings",
+        "total": "Total",
+        "by_verification": "By verification",
+        "verified": "Verified",
+        "inconclusive": "Inconclusive",
+        "discarded": "Discarded",
+        "status": "Status",
+        "limitations": "Limitations",
+        "source_refs": "Source references",
+        "title": "Title",
+        "project_name": "Project",
+        "revisions": "Revisions",
+        "executed_at": "Execution date"
+      }
+    }
+  },
   "analysis": {
     "errors": {
       "startFailed": "Could not analyze the project"
@@ -91,6 +171,7 @@
     "partialResults": "Partial results available — incomplete",
     "orientationTitle": "Orientation",
     "architectureTitle": "Architecture",
+    "architectureDiagram": "Architecture diagram",
     "semanticTitle": "Semantic validation",
     "components": "Components ({{count}})",
     "startingPoints": "Starting points ({{count}})",

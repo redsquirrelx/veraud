@@ -4,12 +4,6 @@ import { Badge, Button, Card, DropdownLinks, ExternalIcon, ItemList, ItemSearche
 import "./TestControlsPage.css"
 import { DrawerExamples } from "./DrawerExamples.tsx"
 
-const sampleItems: ItemSelectorItem[] = [
-  { id: "openai", label: "OpenAI", detail: "3 models" },
-  { id: "anthropic", label: "Anthropic", detail: "2 models" },
-  { id: "google", label: "Google", detail: "1 model" },
-]
-
 const sampleEntries: ItemListEntry[] = [
   { id: "gpt-4o", name: "gpt-4o", description: "OpenAI flagship" },
   { id: "claude-3", name: "claude-3", description: "Anthropic model" },
@@ -27,10 +21,15 @@ const navigationLinkKeys = [
 
 export function TestControlsPage() {
   const { t } = useTranslation("common")
+  const sampleItems: ItemSelectorItem[] = [
+    { id: "openai", label: "OpenAI", detail: t("testPages.controls.modelCount", { count: 3 }) },
+    { id: "anthropic", label: "Anthropic", detail: t("testPages.controls.modelCount", { count: 2 }) },
+    { id: "google", label: "Google", detail: t("testPages.controls.modelCount", { count: 1 }) },
+  ]
   const documentationLinks: DropdownLinkItem[] = [
-    { label: t("navigation.docs.backend"), href: `${backendUrl}/docs`, description: "HTTP API · Swagger", external: true },
-    { label: t("navigation.docs.websocket"), href: `${backendUrl}/docs/ws`, description: "Realtime events · AsyncAPI", external: true },
-    { label: t("navigation.docs.agentServer"), href: `${agentServerUrl}/docs`, description: "Agent HTTP API · Swagger", external: true },
+    { label: t("navigation.docs.backend"), href: `${backendUrl}/docs`, description: t("testPages.controls.docs.backend"), external: true },
+    { label: t("navigation.docs.websocket"), href: `${backendUrl}/docs/ws`, description: t("testPages.controls.docs.websocket"), external: true },
+    { label: t("navigation.docs.agentServer"), href: `${agentServerUrl}/docs`, description: t("testPages.controls.docs.agentServer"), external: true },
   ]
   const navigationLinks: DropdownLinkItem[] = navigationLinkKeys.map((link) => ({ label: t(link.labelKey), href: link.href }))
   const [plain, setPlain] = useState("")
@@ -56,23 +55,23 @@ export function TestControlsPage() {
   }
 
   return (
-    <section className="test-controls-page">
+    <section className="test-controls-page ui-page-stack">
       <h1>{t("testPages.controls.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.docsExternal")}</span>
         <p className="label">{t("testPages.controls.docsHint")}</p>
         <div className="test-controls-row">
           <DropdownLinks label={t("navigation.apiDocs")} icon={<ExternalIcon size={14} />} items={documentationLinks} />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.navAlign")}</span>
         <div className="test-controls-row">
           <DropdownLinks label={t("testPages.controls.navigate")} items={navigationLinks} />
           <DropdownLinks label={t("testPages.controls.rightAligned")} items={navigationLinks} align="end" />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.disabledEmptyState")}</span>
         <div className="test-controls-row">
           <DropdownLinks label={t("testPages.controls.availablePages")} items={[
@@ -83,13 +82,13 @@ export function TestControlsPage() {
           <DropdownLinks label={t("testPages.controls.emptyMenu")} items={[]} emptyText={t("testPages.controls.noDocs")} />
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.textInputs")}</span>
         <TextInput value={plain} placeholder={t("testPages.controls.noLabel")} onChange={setPlain} />
         <TextInput value={model} label={t("testPages.controls.modelName")} placeholder="gpt-4o" onChange={setModel} />
         <TextInput value="locked" label={t("testPages.controls.disabledLabel")} onChange={() => {}} disabled />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.selectorsLegend")}</span>
         <ItemSelector
           items={sampleItems}
@@ -108,7 +107,7 @@ export function TestControlsPage() {
           label={t("testPages.controls.findProvider")}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.registerForm")}</span>
         <form className="test-controls-form" onSubmit={submitForm}>
           <ItemSelector
@@ -126,7 +125,7 @@ export function TestControlsPage() {
         </form>
         {submitted !== null && <p className="mono">{submitted}</p>}
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.squareButtons")}</span>
         <div className="test-controls-row">
           <Button variant="secondary" square ariaLabel={t("testPages.controls.decrease")} onClick={() => setCount((value) => value - 1)}>
@@ -138,11 +137,11 @@ export function TestControlsPage() {
           </Button>
         </div>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.defaultTemplate", { count: picked.length })}</span>
         <ItemList items={sampleEntries} selectedIds={picked} onSelectionChange={setPicked} />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.customTemplate")}</span>
         <ItemList
           items={sampleEntries}
@@ -156,11 +155,11 @@ export function TestControlsPage() {
           )}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.singleSelect", { favorite: favorite[0] ?? t("testPages.none") })}</span>
         <ItemList items={sampleEntries} selectedIds={favorite} onSelectionChange={setFavorite} mode="single" />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.controls.modalDemo")}</span>
         <Button onClick={() => setModalOpen(true)}>
           {t("testPages.controls.openModal")}

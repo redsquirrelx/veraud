@@ -4,24 +4,25 @@
   gap: 0.5rem;
   height: 32px;
   padding: 0 12px;
-  background: #ffffff;
-  color: #334155;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.25rem;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-label);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.15s ease, transform 0.08s ease;
 }
 
 .ui-sort-button:active {
+  background: var(--color-surface-active);
   transform: scale(0.97);
 }
 
 .ui-sort-button:hover {
-  border-color: #94a3b8;
-  color: #0f172a;
+  border-color: var(--color-border-hover);
+  color: var(--color-text);
 }

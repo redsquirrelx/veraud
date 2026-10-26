@@ -382,8 +382,8 @@ describe("ProjectDetailPage", () => {
     await screen.findByText("acme/Demo")
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
-    expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeDefined()
-    expect(screen.getByRole("checkbox", { name: "Mantenibilidad" })).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
+    expect(screen.getByRole("checkbox", { name: "Maintainability" })).toBeDefined()
     expect(screen.queryByRole("tree")).toBeNull()
   })
 

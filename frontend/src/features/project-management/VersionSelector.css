@@ -58,6 +58,6 @@
 }
 
 .version-error {
-  color: #b91c1c;
+  color: var(--color-error-text);
   font-size: 12px;
 }
