@@ -3,7 +3,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, Field
 
-from ..app.execution_service import InvalidConfigError
+from server.api.schemas import DomainError, RequestValidationErrorResponse
+from server.app.execution_config import ExecutionConfig
+
+from ..app.errors import InvalidConfigError
 from ..app.pipeline_service import (
     GenericPipelineService,
     UnknownPipelineError,
@@ -11,7 +14,6 @@ from ..app.pipeline_service import (
 )
 from ..config.logs import get_logger
 from .dependencies import BlackboardDep
-from .schemas import DomainError, ExecutionConfig, RequestValidationErrorResponse
 
 logger = get_logger("api.pipelines")
 

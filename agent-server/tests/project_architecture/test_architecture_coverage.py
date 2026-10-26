@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from server.agents.project_analysis.project_architecture.projection import (
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_architecture.projection import (
     representation_view,
 )
 from server.runtimes.repository import (

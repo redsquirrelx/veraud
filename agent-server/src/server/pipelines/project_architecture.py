@@ -14,20 +14,21 @@ from typing import Literal, Protocol, TypedDict
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict
 
-from ..agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from ..agents.project_analysis.project_architecture.diagram import (
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_architecture.diagram import (
     RenderedArchitectureDiagram,
     render_diagram,
 )
-from ..agents.project_analysis.project_architecture.diagram_composition import (
+from server.project_analysis.project_architecture.diagram_composition import (
     DiagramCompositionResult,
 )
-from ..agents.project_analysis.project_architecture.schemas import ArchitectureResult
-from ..agents.project_analysis.project_orientation import ProjectOrientationAgent
-from ..agents.project_analysis.project_orientation.schemas import OrientationResult
-from ..agents.project_analysis.project_semantic_validation import (
+from server.project_analysis.project_architecture.schemas import ArchitectureResult
+from server.project_analysis.project_orientation import ProjectOrientationAgent
+from server.project_analysis.project_orientation.schemas import OrientationResult
+from server.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
 )
+
 from ..runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,

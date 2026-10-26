@@ -6,8 +6,8 @@ from pydantic import BaseModel
 
 from server.api.schemas import ExecutionConfig
 from server.app.execution_service import AgentExecutionService
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.agent import InvestigationAgent
 from server.runtimes.investigation.schemas import AuditResult
 

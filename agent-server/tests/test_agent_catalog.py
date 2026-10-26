@@ -1,13 +1,13 @@
 """Backend discovery must reflect runnable contracts without executing agents."""
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from config.agents.catalog import describe_agent_config, list_agent_configs
-from server.agents.dummy.agent import DummyAgent
 from server.agents.maintainability.manager.registry import COORDINATORS
 from server.agents.maintainability.modularity.coordinator.registry import (
     INVESTIGATORS as MODULARITY,
@@ -20,6 +20,13 @@ from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app.agent_registry import AgentRegistry
 from server.app.audit_models import validate_model_configs
 from server.app.execution_service import AgentExecutionService, get_execution_service
+from server.examples.dummy.agent import DummyAgent
+
+
+def test_agent_source_tree_contains_only_quality_implementations():
+    agents = Path(__file__).resolve().parents[1] / "src" / "server" / "agents"
+    packages = {path.name for path in agents.iterdir() if path.is_dir() and path.name != "__pycache__"}
+    assert packages == {"maintainability", "functional_adequacy", "security"}
 
 
 @pytest.fixture

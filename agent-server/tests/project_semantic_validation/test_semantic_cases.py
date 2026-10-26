@@ -1,10 +1,10 @@
 """The controlled corpus binds six distinct semantic failure modes to real source."""
 
-from server.agents.project_analysis.project_semantic_validation.context import (
+from server.benchmark.semantic_cases import build_semantic_cases
+from server.project_analysis.project_semantic_validation.context import (
     review_targets,
     validate_input,
 )
-from server.benchmark.semantic_cases import build_semantic_cases
 from server.repository_runner import make_tools
 from server.runtimes.repository import ExecutionBudget
 

@@ -14,39 +14,42 @@ adapter and its output ships embedded in the architecture result.
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from ..agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from ..agents.project_analysis.project_orientation import ProjectOrientationAgent
-from ..agents.project_analysis.project_semantic_validation import (
+from config.agents.budgets import ExecutionTimingConfig
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_orientation import ProjectOrientationAgent
+from server.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
 )
-from ..agents.project_analysis.project_semantic_validation.schemas import (
-    ValidationLimits,
-)
+from server.project_analysis.project_semantic_validation.schemas import ValidationLimits
+
 from ..config.logs import get_logger
 from ..config.settings import resolve_workspace_root
+from ..infrastructure.llm.factory import create_project_model
+from ..infrastructure.llm.resources import close_model_clients
 from ..pipelines.project_architecture import ProjectArchitecturePipeline
 from ..runtimes.repository.model_runtime import (
     ModelGateway,
-    close_model_clients,
-    create_project_model,
 )
 from ..runtimes.repository.schemas import ExecutionBudget
+from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
 )
-from .execution_service import InvalidConfigError
+from .errors import InvalidConfigError
+from .model_configuration import resolve_default_model_settings
+from .pipeline_contracts import PipelineDefinition, bind_no_context
 from .usage_reporting import gateway_progress
 
 if TYPE_CHECKING:
-    from ..api.schemas import ExecutionConfig
-    from .pipeline_service import GenericReportingHooks, PipelineDefinition
+    from server.app.execution_config import ExecutionConfig
 
 logger = get_logger("pipeline.project-architecture")
 
@@ -88,7 +91,7 @@ def parse_project_architecture_input(raw: dict) -> ProjectArchitectureInput:
 
 
 async def build_project_agents(
-    exec_service: Any,
+    _exec_service: Any,
     config: ExecutionConfig,
     stage_configs: dict[str, ExecutionConfig] | None,
     parsed: ProjectArchitectureInput,
@@ -126,20 +129,12 @@ async def build_project_agents(
     if os.environ.get("AGENT_SERVER_SMOKE_MODELS") == "1":
         # Test-only offline protocol check (mirrors the CLI --smoke models):
         # no provider credentials or network, same graphs and snapshots.
-        from ..agents.project_analysis.project_architecture.smoke import (
+        from server.project_analysis.project_architecture.smoke import (
             ArchitectureSmokeModel,
-        )
-        from ..agents.project_analysis.project_semantic_validation.smoke import (
-            SemanticValidationSmokeModel,
+            PipelineSmokeModel,
         )
 
         shared: dict[str, Any] = {}
-
-        class PipelineSmokeModel(ArchitectureSmokeModel):
-            async def generate(self, prompt):
-                if "\nVALIDATION_DATA\n" in prompt:
-                    return await SemanticValidationSmokeModel().generate(prompt)
-                return await super().generate(prompt)
 
         smoke_model = PipelineSmokeModel() if parsed.validate_semantics else ArchitectureSmokeModel()
         def smoke_gateway():
@@ -176,29 +171,36 @@ async def build_project_agents(
 
     models: dict[str, Any] = {}
     agents: dict[str, Any] = {}
-    for stage in STAGES:
-        stage_config = (stage_configs or {}).get(stage) or config
-        settings, credentials, _ = exec_service.resolve_model_settings(stage, stage_config)
-        model = create_project_model(settings, credentials)
-        gateway = ModelGateway(
-            model,
-            interval=_GATEWAY_INTERVAL,
-            max_retries=_GATEWAY_MAX_RETRIES,
-            backoff=_GATEWAY_BACKOFF,
-            trace=True,
-            remaining_seconds=lambda _deadline=deadline: max(0.0, _deadline - monotonic()),
-        )
-        models[stage] = model
-        if stage == "orientation":
-            agents[stage] = ProjectOrientationAgent(model, generate=gateway)
-        elif stage == "architecture":
-            agents[stage] = ProjectArchitectureAgent(model, generate=gateway)
-        else:
-            agents[stage] = ProjectSemanticValidationAgent(
+    resources = AsyncExitStack()
+    await resources.__aenter__()
+    try:
+        for stage in STAGES:
+            stage_config = (stage_configs or {}).get(stage) or config
+            settings, credentials, _ = resolve_default_model_settings(stage, stage_config)
+            model = create_project_model(settings, credentials)
+            resources.push_async_callback(close_model_clients, model)
+            gateway = ModelGateway(
                 model,
-                generate=gateway,
-                limits=ValidationLimits(max_claims=parsed.max_review_claims),
+                interval=_GATEWAY_INTERVAL,
+                max_retries=_GATEWAY_MAX_RETRIES,
+                backoff=_GATEWAY_BACKOFF,
+                trace=True,
+                remaining_seconds=lambda _deadline=deadline: max(0.0, _deadline - monotonic()),
             )
+            models[stage] = model
+            if stage == "orientation":
+                agents[stage] = ProjectOrientationAgent(model, generate=gateway)
+            elif stage == "architecture":
+                agents[stage] = ProjectArchitectureAgent(model, generate=gateway)
+            else:
+                agents[stage] = ProjectSemanticValidationAgent(
+                    model,
+                    generate=gateway,
+                    limits=ValidationLimits(max_claims=parsed.max_review_claims),
+                )
+    except BaseException:
+        await resources.aclose()
+        raise
 
     logger.info(
         "project-architecture prepared snapshot=%s files=%d",
@@ -210,6 +212,7 @@ async def build_project_agents(
         "workspace_root": workspace,
         "deadline": deadline,
         "models": models,
+        "resources": resources.pop_all(),
     }
     return agents, ctx
 
@@ -221,7 +224,7 @@ class ProjectArchitectureHooksAdapter:
 
     _TRACKED = frozenset(STAGES)
 
-    def __init__(self, generic: GenericReportingHooks) -> None:
+    def __init__(self, generic: Any) -> None:
         self._generic = generic
         self._architecture_result: BaseModel | None = None
         self._semantic_result: BaseModel | None = None
@@ -286,8 +289,7 @@ async def run_project_pipeline(
 ) -> dict:
     """Run the graph and return its result as plain dicts. Model clients are
     always released, mirroring the CLI runner's cleanup."""
-    try:
-        result = await pipeline.run(
+    result = await pipeline.run(
             ctx["snapshot"],
             budget=ctx["budget"],
             workspace_root=ctx["workspace_root"],
@@ -296,18 +298,27 @@ async def run_project_pipeline(
             allow_return=parsed.allow_return,
             include_diagram=parsed.include_diagram,
             deadline=ctx["deadline"],
+    )
+    if pipeline.hooks is not None:
+        await pipeline.hooks.finish(result)
+    return result.model_dump(mode="json")
+
+
+async def close_project_resources(ctx: dict[str, Any]) -> None:
+    resources = ctx.pop("resources", None)
+    if resources is not None:
+        cleanup = ActiveDeadline(
+            ExecutionTimingConfig().cancellation_grace_seconds,
+            cancellation_grace_seconds=0,
+            label="project_provider_cleanup",
         )
-        if pipeline.hooks is not None:
-            await pipeline.hooks.finish(result)
-        return result.model_dump(mode="json")
-    finally:
-        for model in ctx["models"].values():
-            await close_model_clients(model)
+        try:
+            await within_deadline(resources.aclose(), cleanup)
+        except TimeoutError:
+            logger.warning("project_provider_cleanup_timeout")
 
 
 def project_architecture_definition() -> PipelineDefinition:
-    from .pipeline_service import PipelineDefinition
-
     return PipelineDefinition(
         name="project-architecture",
         stages=list(STAGES),
@@ -316,4 +327,7 @@ def project_architecture_definition() -> PipelineDefinition:
         adapt_hooks=ProjectArchitectureHooksAdapter,
         create_pipeline=create_project_pipeline,
         run_pipeline=run_project_pipeline,
+        close_resources=close_project_resources,
+        bind_context=bind_no_context,
+        requires_agent_execution_service=False,
     )

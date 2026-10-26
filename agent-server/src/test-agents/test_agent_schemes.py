@@ -7,7 +7,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from server.agents.schemes import base, coordinator, investigator, manager
+from server.contracts.legacy_schemes import base, coordinator, investigator, manager
 
 
 @pytest.mark.parametrize(("module", "old_name", "canonical"), [
@@ -75,7 +75,7 @@ def test_canonical_import_first_does_not_load_concrete_execution(category):
     script = f"""
 import importlib
 import sys
-importlib.import_module('server.agents.schemes.{category}')
+importlib.import_module('server.contracts.legacy_schemes.{category}')
 assert not any(name.startswith('server.agents.maintainability.') and name.endswith('.agent')
                for name in sys.modules), sorted(sys.modules)
 from server.agents.maintainability.manager import MaintainabilityManagerAgent

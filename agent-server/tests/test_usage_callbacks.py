@@ -1,15 +1,17 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
 from pydantic import BaseModel
 
 from server.api.schemas import ExecutionConfig
+from server.app import execution_service as execution_module
+from server.app.agent_registry import AgentRegistry
 from server.app.execution_service import AgentExecutionService
 from server.app.pipeline_service import GenericPipelineService, GenericReportingHooks
 from server.app.project_architecture_definition import ProjectArchitectureHooksAdapter
-from server.app.tracing_port import NoOpTracingBackend
 from server.app.usage_reporting import ReportingModel, gateway_progress
 from server.infrastructure.callback.client import CallbackClient
 from server.infrastructure.callback.schemas import (
@@ -17,6 +19,7 @@ from server.infrastructure.callback.schemas import (
     ExecutionOutcome,
     ExecutionProgress,
 )
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.repository.model_runtime import ModelGateway
 from server.runtimes.repository.schemas import ExecutionBudget
 
@@ -102,6 +105,48 @@ def test_single_agent_reports_live_usage_and_final_counts(fail):
     assert final.status == ("Failed" if fail else "Completed")
 
 
+def test_direct_execution_closes_the_model_client_after_completion(monkeypatch):
+    client = SimpleNamespace(aio=SimpleNamespace(aclose=AsyncMock()), close=Mock())
+    model = Model()
+    model.client = client
+
+    class Agent:
+        agent_type = "test"
+        input_schema = Output
+        output_schema = Output
+
+        def __init__(self, settings, model):
+            self.model = model
+            self.settings = settings
+            self.blackboard = None
+
+        async def run(self, _payload):
+            return Output()
+
+    registry = AgentRegistry()
+    registry.register("test", Agent)
+    monkeypatch.setattr(execution_module, "build_model", lambda *_args: model)
+
+    async def run():
+        service = AgentExecutionService(
+            registry=registry,
+            callbacks_factory=lambda: None,
+            tracing_backend=NoOpTracingBackend(),
+        )
+        await service.run(
+            "test",
+            ExecutionConfig(
+                model={"provider": "openai", "name": "offline"},
+                api_key="test-key",
+            ),
+            {},
+        )
+
+    asyncio.run(run())
+    client.aio.aclose.assert_awaited_once_with()
+    client.close.assert_called_once_with()
+
+
 def test_missing_usage_is_estimated_and_callback_failure_does_not_fail_generation():
     class UnknownModel(Model):
         async def generate(self, prompt):
@@ -170,13 +215,13 @@ def test_retry_usage_keeps_unknown_attempts_separate_from_reported_counts():
 
 
 def test_real_project_pipeline_reports_each_stage_and_closes_validation_last(tmp_path, monkeypatch):
-    from server.agents.project_analysis.project_architecture.smoke import (
+    from server.app import project_architecture_definition as definition
+    from server.project_analysis.project_architecture.smoke import (
         ArchitectureSmokeModel,
     )
-    from server.agents.project_analysis.project_semantic_validation.smoke import (
+    from server.project_analysis.project_semantic_validation.smoke import (
         SemanticValidationSmokeModel,
     )
-    from server.app import project_architecture_definition as definition
 
     workspace = tmp_path / "workspace"
     repo = workspace / "repo"

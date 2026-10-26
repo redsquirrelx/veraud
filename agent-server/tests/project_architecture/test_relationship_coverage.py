@@ -5,22 +5,22 @@ import json
 
 import pytest
 
-from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from server.agents.project_analysis.project_architecture.context import validate_report
-from server.agents.project_analysis.project_architecture.coverage import (
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_architecture.context import validate_report
+from server.project_analysis.project_architecture.coverage import (
     EvidenceGap,
     relationship_coverage,
     validate_closure,
 )
-from server.agents.project_analysis.project_architecture.schemas import (
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureReport,
     ArchitectureResult,
 )
-from server.agents.project_analysis.project_semantic_validation.context import (
+from server.project_analysis.project_semantic_validation.context import (
     review_targets,
     validate_finding,
 )
-from server.agents.project_analysis.project_semantic_validation.schemas import (
+from server.project_analysis.project_semantic_validation.schemas import (
     SemanticFinding,
 )
 from server.runtimes.repository import (

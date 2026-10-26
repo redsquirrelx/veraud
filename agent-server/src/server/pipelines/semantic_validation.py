@@ -2,18 +2,19 @@
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from ..agents.project_analysis.project_architecture.diagram_composition import (
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_architecture.diagram_composition import (
     DiagramCompositionResult,
 )
-from ..agents.project_analysis.project_architecture.schemas import ArchitectureResult
-from ..agents.project_analysis.project_semantic_validation import (
+from server.project_analysis.project_architecture.schemas import ArchitectureResult
+from server.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
 )
-from ..agents.project_analysis.project_semantic_validation.context import review_targets
-from ..agents.project_analysis.project_semantic_validation.schemas import (
+from server.project_analysis.project_semantic_validation.context import review_targets
+from server.project_analysis.project_semantic_validation.schemas import (
     SemanticValidationResult,
 )
+
 from ..runtimes.repository.schemas import AgentContract
 
 
@@ -69,24 +70,29 @@ def revision_feedback(review, tools):
     return {
         "report_hash": review.report_hash,
         "requests": [
-            {
-                "target_id": item.target_id,
-                "original_claim": selected[item.target_id].claim.model_dump(
-                    mode="json"
-                ),
-                "verdict": item.verdict,
-                "reason": item.reason,
-                "counterevidence_check": item.counterevidence_check,
-                "correction": item.correction.model_dump(mode="json")
-                if item.correction
-                else None,
-                "missing_evidence": [
-                    request.model_dump(mode="json") for request in item.missing_evidence
-                ],
-            }
+            serialize_revision_request(item, selected[item.target_id], include_correction=True)
             for item in requests
         ],
     }
+
+
+def serialize_revision_request(item, target, *, include_correction: bool) -> dict:
+    """Serialize selected feedback; caller retains the policy that selects findings."""
+    request = {
+        "target_id": item.target_id,
+        "original_claim": target.claim.model_dump(mode="json"),
+        "verdict": item.verdict,
+        "reason": item.reason,
+    }
+    if include_correction:
+        request["counterevidence_check"] = item.counterevidence_check
+        request["correction"] = (
+            item.correction.model_dump(mode="json") if item.correction else None
+        )
+    request["missing_evidence"] = [
+        evidence.model_dump(mode="json") for evidence in item.missing_evidence
+    ]
+    return request
 
 
 async def validate_architecture_pipeline(
@@ -131,17 +137,7 @@ async def validate_architecture_pipeline(
     feedback = {
         "report_hash": first.report_hash,
         "requests": [
-            {
-                "target_id": item.target_id,
-                "original_claim": selected[item.target_id].claim.model_dump(
-                    mode="json"
-                ),
-                "verdict": item.verdict,
-                "reason": item.reason,
-                "missing_evidence": [
-                    request.model_dump(mode="json") for request in item.missing_evidence
-                ],
-            }
+            serialize_revision_request(item, selected[item.target_id], include_correction=False)
             for item in requests
         ],
     }

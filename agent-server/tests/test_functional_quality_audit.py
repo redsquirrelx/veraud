@@ -14,9 +14,9 @@ from server.app import audit_service, quality_audit_definition
 from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES
 from server.app.execution_service import InvalidConfigError
 from server.app.pipeline_service import GenericPipelineService
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.blackboard.models import Assessment
+from server.infrastructure.tracing import NoOpTracingBackend
 
 pytest_plugins = ["test_audits"]
 

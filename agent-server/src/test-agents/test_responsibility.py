@@ -34,8 +34,8 @@ from server.agents.maintainability.modularity.responsibility import (
 from server.agents.maintainability.modularity.responsibility.schemas import (
     ResponsibilityResult,
 )
-from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.agent import (
     InvestigationAgent,
     InvestigationExecution,

@@ -10,14 +10,16 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from server.contracts.audit import AuditRequest, Criterion
+
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
 from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
+from ...infrastructure.llm.diagnostics import provider_diagnostic
 from ...runtimes.investigation.provider import (
     lean_schema,
     model_pacer,
-    provider_diagnostic,
 )
 from ...runtimes.investigation.structured import (
     finish_diagnostic,
@@ -27,7 +29,6 @@ from ...runtimes.investigation.structured import (
 from ...runtimes.invocation_reporting import report_invocation_phase
 from ...runtimes.repository.model_runtime import ModelGateway
 from ...runtimes.repository.timing import within_deadline
-from ..schemes.base import AuditRequest, Criterion
 from .config import SecurityConfig
 from .secret_scanner.agent import SECRET_PATTERNS
 from .security_manager import SecuritySupervisorAgent

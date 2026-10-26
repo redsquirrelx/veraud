@@ -3,10 +3,9 @@ Schemas y Contrato Único de Datos para el Módulo de Seguridad.
 Garantiza interoperabilidad entre todos los agentes de la tubería.
 """
 
-from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
-from .config import SecurityConfig  # noqa: F401 - compatibility export
 
 @dataclass
 class Finding:
@@ -22,23 +21,23 @@ class Finding:
     matched_text: str
     
     # Enriquecimiento (Agente 2)
-    owasp_official_title: Optional[str] = None
-    associated_cwes: Optional[str] = None
+    owasp_official_title: str | None = None
+    associated_cwes: str | None = None
     cisa_kev_match: bool = False
     
     # DAST Asíncrono (Agente 3)
-    dast_validation: Dict[str, Any] = field(default_factory=lambda: {
+    dast_validation: dict[str, Any] = field(default_factory=lambda: {
         "executed": False,
         "status": "UNCONFIRMED", # CONFIRMED, UNCONFIRMED, NOT_APPLICABLE
         "evidence": "Pending background analysis"
     })
     
     # Remedación LLM + Validación (Agentes 4 y 5)
-    remediation: Dict[str, Any] = field(default_factory=lambda: {
+    remediation: dict[str, Any] = field(default_factory=lambda: {
         "llm_generated": False,
         "validated_by_sast": False,
         "patch_code": None
     })
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)

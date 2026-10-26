@@ -5,13 +5,15 @@ import asyncio
 import json
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from server.runtimes.direct import BaseAgent
+
 from ...config.logs import get_logger
 from ...config.tracing import traced_generate
-from ..base import BaseAgent
 from .config import FunctionalAdequacyConfig
 from .schemas import (
     CodeEvidence,
@@ -95,6 +97,7 @@ class FunctionalAdequacyAgent(
     """Audit functional requirements against supplied code evidence."""
 
     agent_type = "functional_adequacy"
+    prompt_directory = Path(__file__).parent / "prompts"
     input_schema = FunctionalAdequacyInput
     output_schema = FunctionalAdequacyOutput
     config_type = FunctionalAdequacyConfig

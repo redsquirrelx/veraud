@@ -40,7 +40,7 @@ from server.agents.maintainability.reusability.component_adaptability import (
 from server.agents.maintainability.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
 )
-from server.agents.schemes.investigator import BoundaryReview
+from server.contracts.legacy_schemes.investigator import BoundaryReview
 from server.runtimes.investigation.provider import (
     lean_schema,
     provider_diagnostic,
@@ -239,7 +239,7 @@ def test_long_quota_wait_exits_investigator_graph_with_explicit_limitation(repo)
 
 @pytest.mark.parametrize("delay", ["1s", "37020s"])
 def test_daily_quota_is_deferred_without_retry_and_preserves_evidence(repo, delay):
-    from server.benchmark.pacing import retryable
+    from server.infrastructure.llm.retry import retryable
     from server.runtimes.coordination.synthesis import terminal_provider_blocker
 
     cause = errors.ClientError(429, response_json={"error": {"code": 429, "details": [

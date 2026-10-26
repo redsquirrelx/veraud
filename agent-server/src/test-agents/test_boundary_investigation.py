@@ -340,7 +340,7 @@ def test_initial_evaluation_can_repair_citations_from_delivered_source_without_n
 
 
 def test_criterion_and_boundary_diagnostics_are_both_retained(repo):
-    from server.agents.schemes.base import Criterion
+    from server.contracts.legacy_schemes.base import Criterion
 
     def invalid(messages):
         value = evaluation(messages)

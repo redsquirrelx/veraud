@@ -234,7 +234,7 @@ def test_default_langsmith_backend_wraps_execution_and_safe_metadata(audit_runne
 
 
 def test_runner_accepts_injected_tracing_backend(audit_runner):
-    from server.app.tracing_port import TracingBackend
+    from server.infrastructure.tracing import TracingBackend
 
     execute, calls, _, _, _ = audit_runner
     recorded = []

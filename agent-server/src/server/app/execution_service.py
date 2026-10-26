@@ -1,16 +1,28 @@
 import asyncio
 from collections.abc import Callable
+from contextlib import AsyncExitStack
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
-from ..agents.base import BaseAgent
-from ..agents.dummy.agent import DummyAgent
+from config.agents.budgets import ExecutionTimingConfig
+from server.app.errors import InvalidConfigError, InvalidInputError
+from server.app.execution_config import ExecutionConfig
+from server.app.model_configuration import (
+    default_model_configuration,
+    resolve_model_settings,
+    server_api_key,
+)
+from server.examples.dummy.agent import DummyAgent
+from server.infrastructure.llm.factory import UnsupportedModelProviderError
+from server.infrastructure.llm.factory import build_model as _build_model
+from server.infrastructure.llm.resources import close_model_clients
+from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
+from server.runtimes.direct import BaseAgent
+
 from ..agents.functional_adequacy.agent import FunctionalAdequacyAgent
-from ..api.schemas import ExecutionConfig
 from ..config import tracing
-from ..config.dev_agents_config import load_dev_agents_config
 from ..config.logs import get_logger
 from ..config.schemas import (
     AgentSettings,
@@ -18,32 +30,20 @@ from ..config.schemas import (
     ModelSettings,
 )
 from ..infrastructure.callback.schemas import ExecutionOutcome
-from ..infrastructure.llm.anthropic import AnthropicModel
 from ..infrastructure.llm.base import Model
-from ..infrastructure.llm.gemini import GeminiModel
-from ..infrastructure.llm.groq import GroqModel
-from ..infrastructure.llm.openrouter import OpenRouterModel
+from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from .agent_registry import AgentRegistry
 from .callback_port import (
     CallbackSink,
     backend_url,
     default_callback_sink,
 )
-from .tracing_port import LangSmithTracingBackend, TracingBackend
 from .usage_reporting import ReportingModel
 
 logger = get_logger("execution-service")
 
 if TYPE_CHECKING:
     from ..blackboard.interface import Blackboard
-
-
-class InvalidConfigError(ValueError):
-    pass
-
-
-class InvalidInputError(ValueError):
-    pass
 
 
 def _backend_url() -> str | None:
@@ -56,23 +56,23 @@ def _backend_url() -> str | None:
 
 
 def build_model(settings: ModelSettings, credentials: ModelCredentials) -> Model:
-    provider = settings.provider.lower()
+    try:
+        return _build_model(settings, credentials)
+    except UnsupportedModelProviderError as error:
+        raise InvalidConfigError(str(error)) from None
 
-    logger.info("Building model provider=%r name=%r", provider, settings.name)
 
-    if provider in ("gemini", "google"):
-        return GeminiModel(settings=settings, credentials=credentials)
-    
-    if provider in ("openrouter", "openai"):
-        return OpenRouterModel(settings=settings, credentials=credentials)
-
-    if provider == "groq":
-        return GroqModel(settings=settings, credentials=credentials)
-    
-    if provider == "anthropic":
-        return AnthropicModel(settings=settings, credentials=credentials)
-
-    raise InvalidConfigError(f"Unsupported model provider: {settings.provider!r}")
+async def close_model_client(model) -> None:
+    """Close a direct-run provider client within the shared cleanup grace."""
+    deadline = ActiveDeadline(
+        ExecutionTimingConfig().cancellation_grace_seconds,
+        cancellation_grace_seconds=0,
+        label="direct_provider_cleanup",
+    )
+    try:
+        await within_deadline(close_model_clients(model), deadline)
+    except TimeoutError:
+        logger.warning("direct_provider_cleanup_timeout")
 
 
 def build_default_registry() -> AgentRegistry:
@@ -103,7 +103,7 @@ class AgentExecutionService:
         callbacks_factory: Callable[[], CallbackSink | None] | None = None,
     ) -> None:
         self._registry = registry or build_default_registry()
-        self._base_config = load_dev_agents_config()
+        self._base_config = dict(default_model_configuration())
         self._tracing = tracing_backend or LangSmithTracingBackend()
         self._callbacks_factory = callbacks_factory or default_callback_sink
 
@@ -135,60 +135,18 @@ class AgentExecutionService:
         `BaseAgent`s (e.g. project-architecture stages): the merge, the groq
         name guard and the dev-key fallback live here exactly once.
         """
-        base_settings, base_model = self._base_config.get(agent_type, (None, None))
-
-        provider = config.model.provider or (
-            base_model.provider if base_model else "gemini"
-        )
-
-        if (
-            provider.lower() == "groq"
-            and not config.model.name
-            and (base_model is None or base_model.provider.lower() != "groq")
-        ):
-            raise InvalidConfigError(
-                "model.name is required when switching to provider 'groq'"
-            )
-
-        name = config.model.name or (base_model.name if base_model else None)
-
-        if not name:
-            raise InvalidConfigError("model.name is required for this agent_type")
-
-        temperature = config.model.temperature
-        if temperature is None:
-            temperature = base_model.temperature if base_model else 0.2
-
-        max_tokens = config.model.max_tokens
-        if max_tokens is None:
-            max_tokens = base_model.max_tokens if base_model else 40000
-
-        timeout = config.timeout_seconds
-        if timeout is None:
-            timeout = (
-                base_settings.timeout_seconds if base_settings else 60
-            )
-        if timeout <= 0:
-            raise InvalidConfigError("timeout_seconds must be positive")
-
-        try:
-            api_key = config.api_key or self._server_api_key()
-        except ValidationError:
-            api_key = "dev-dummy-key"
-
-        return (
-            ModelSettings(
-                provider=provider,
-                name=name,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            ),
-            ModelCredentials(api_key=api_key),
-            timeout,
+        return resolve_model_settings(
+            self._base_config,
+            agent_type,
+            config,
+            api_key_provider=self._server_api_key,
         )
 
     def build_agent(
-        self, agent_type: str, config: ExecutionConfig
+        self,
+        agent_type: str,
+        config: ExecutionConfig,
+        resource_stack: AsyncExitStack | None = None,
     ) -> tuple[BaseAgent, int]:
         logger.info("Instantiating agent %r", agent_type)
         agent_cls = self._registry.get(agent_type)
@@ -196,6 +154,8 @@ class AgentExecutionService:
         settings, credentials, timeout = self.resolve_model_settings(agent_type, config)
 
         model = build_model(settings, credentials)
+        if resource_stack is not None:
+            resource_stack.push_async_callback(close_model_client, model)
 
         agent = agent_cls(
             settings=AgentSettings(agent_id=agent_type, timeout_seconds=timeout),
@@ -211,9 +171,7 @@ class AgentExecutionService:
 
     @staticmethod
     def _server_api_key() -> str:
-        from ..config.settings import get_server_settings
-
-        return get_server_settings().llm_api_key
+        return server_api_key()
 
     async def run(
         self,
@@ -233,7 +191,20 @@ class AgentExecutionService:
         The agent itself knows nothing about this, so no agent has to change to
         take part.
         """
-        agent, timeout = self.build_agent(agent_type, config)
+        resources = AsyncExitStack()
+        await resources.__aenter__()
+        try:
+            agent, timeout = self.build_agent(agent_type, config, resources)
+            return await self._run_built_agent(
+                agent, timeout, agent_type, payload, execution_id, blackboard
+            )
+        finally:
+            await resources.aclose()
+
+
+    async def _run_built_agent(
+        self, agent, timeout, agent_type, payload, execution_id, blackboard
+    ) -> BaseModel:
         agent.blackboard = blackboard
 
         input_schema = type(agent).input_schema

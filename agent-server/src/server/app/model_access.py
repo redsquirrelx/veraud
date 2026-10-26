@@ -2,8 +2,8 @@
 
 import httpx
 
+from ..infrastructure.llm.diagnostics import causes, provider_status
 from ..infrastructure.llm.quota import RequestTokenQuotaExceeded
-from ..runtimes.investigation.provider import causes, provider_status
 
 
 def access_failure(error):

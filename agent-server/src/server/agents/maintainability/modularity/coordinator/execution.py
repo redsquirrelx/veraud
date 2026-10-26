@@ -61,7 +61,7 @@ class ModularityExecution(CoordinatorExecution):
         projection = super().project_record(record)
         if not record.result or record.assignment.investigator_id != "architecture_boundary":
             return projection
-        from ....schemes.base import InvestigationCommitment
+        from server.contracts.audit import InvestigationCommitment
 
         result = record.result
         final = {h.id: h for h in result.hypotheses}

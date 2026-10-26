@@ -13,8 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from ..runtimes.coordination.schemas import Consumption
-from ..runtimes.investigation.schemas import Criterion
+from server.contracts.audit import Consumption, Criterion
 
 NonEmptyString = Annotated[str, Field(min_length=1, pattern=r"\S")]
 Confidence = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]

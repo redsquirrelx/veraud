@@ -4,19 +4,21 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field, ValidationError
 
-from ..agents.audit_report import SoftwareAuditReport
+from server.api.schemas import DomainError, RequestValidationErrorResponse
+from server.app.execution_config import ExecutionConfig
+from server.reporting import SoftwareAuditReport
+from server.reporting.docx import DOCX_MEDIA_TYPE, render_audit_report_docx
+from server.reporting.schemas import ReportGenerationSummary
+from server.reporting.snapshot import BlackboardSnapshot, report_from_snapshot
+
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
 from ..agents.maintainability.manager import MaintainabilityRequest
-from ..agents.schemes.report import ReportGenerationSummary
 from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_attributes import QualityAttributes
 from ..app.audit_configuration import category_type, validate_category
 from ..app.audit_options import AuditExecutionOptions
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
-from ..app.execution_service import InvalidConfigError
-from ..services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
-from ..services.audit_report_snapshot import BlackboardSnapshot, report_from_snapshot
-from .schemas import DomainError, ExecutionConfig, RequestValidationErrorResponse
+from ..app.errors import InvalidConfigError
 
 router = APIRouter(prefix="/api/audits", tags=["Audits"])
 

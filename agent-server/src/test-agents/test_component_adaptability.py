@@ -881,8 +881,8 @@ def test_js_ts_discovery_uses_real_indexed_locations(repo, extension, content):
 def test_shared_yaml_harness_and_tracing_accept_specialized_result(repo, capsys):
     from run_architecture_boundary import run_audit
 
-    from server.app.tracing_port import NoOpTracingBackend
     from server.config.schemas import ModelSettings
+    from server.infrastructure.tracing import NoOpTracingBackend
 
     spans = []
     class Trace(NoOpTracingBackend):

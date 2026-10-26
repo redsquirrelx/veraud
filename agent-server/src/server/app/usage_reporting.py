@@ -2,10 +2,11 @@
 
 import math
 
-from ..benchmark.telemetry import response_usage
+from server.infrastructure.llm.usage import response_usage
+
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionProgress
-from ..runtimes.repository.model_runtime import extract_text
+from ..infrastructure.llm.usage import extract_text
 from ..runtimes.repository.token_budget import account_tokens
 
 logger = get_logger("usage-reporting")

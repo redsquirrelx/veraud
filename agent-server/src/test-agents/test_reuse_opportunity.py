@@ -701,8 +701,8 @@ def test_javascript_typescript_indexes_supply_real_locations(repo, extension, co
 def test_simulated_harness_preserves_tracing_and_result(repo, capsys):
     from run_architecture_boundary import run_audit
 
-    from server.app.tracing_port import NoOpTracingBackend
     from server.config.schemas import ModelSettings
+    from server.infrastructure.tracing import NoOpTracingBackend
 
     spans = []
     class Trace(NoOpTracingBackend):

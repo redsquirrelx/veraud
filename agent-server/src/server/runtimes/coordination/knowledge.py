@@ -4,7 +4,8 @@ Concrete coordinators supply analysis/binding field names. This module never imp
 investigators or treats a model's raw critical review as an authoritative decision.
 """
 
-from ...agents.schemes.base import InvestigationCommitment
+from server.contracts.audit import InvestigationCommitment
+
 from .synthesis import evidence_key, normalized, stable_id
 
 

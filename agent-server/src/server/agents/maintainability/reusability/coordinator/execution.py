@@ -19,7 +19,6 @@ from .....runtimes.coordination.synthesis import (
 )
 from .....runtimes.investigation.schemas import EvidenceReference
 from .....runtimes.invocation_reporting import phase_node
-from . import synthesis
 from .registry import EVIDENCE_EXPECTATIONS, INVESTIGATORS
 from .schemas import (
     Assignment,
@@ -33,6 +32,15 @@ from .schemas import (
     SynthesisRound,
 )
 from .state import ReusabilityState
+from .synthesis import (
+    ReusabilitySynthesisExecution,
+    actionable,
+    consolidate,
+    detect_contradictions,
+    finding_index,
+    polarity,
+    shared,
+)
 
 
 def route_after_synthesis(state) -> Route:
@@ -55,11 +63,11 @@ class ReusabilityExecution(CoordinatorExecution):
     invocation_record_type = InvocationRecord
     gap_type = EvidenceGap
     synthesis_draft_type = SynthesisDraft
-    synthesis_execution_type = synthesis.ReusabilitySynthesisExecution
-    finding_index = staticmethod(synthesis.finding_index)
-    detect_contradictions = staticmethod(synthesis.detect_contradictions)
-    consolidate = staticmethod(synthesis.consolidate)
-    actionable = staticmethod(synthesis.actionable)
+    synthesis_execution_type = ReusabilitySynthesisExecution
+    finding_index = staticmethod(finding_index)
+    detect_contradictions = staticmethod(detect_contradictions)
+    consolidate = staticmethod(consolidate)
+    actionable = staticmethod(actionable)
 
     def task_question(self, commitment, task):
         if task == "source_inspection" and any("input_preparation" in issue for issue in commitment.validation_issues):
@@ -199,12 +207,12 @@ class ReusabilityExecution(CoordinatorExecution):
             roots = sorted({a.get("constraint_key") or a.get("declaration_id") or a.get("group_id") for a in linked
                 if a.get("constraint_key") or a.get("declaration_id") or a.get("group_id")})
             context["findings"][ref].update(investigator_id=contribution.investigator_id,
-                polarity=synthesis.polarity(contribution.finding),
+                polarity=polarity(contribution.finding),
                 grouping_identity={"roots": roots, "boundaries": sorted({a["proposed_boundary"] for a in linked if a.get("proposed_boundary")}
                     | ({finding.sharing_boundary} if getattr(finding, "sharing_boundary", "") else set())),
                     "context": getattr(finding, "assessed_context", ""), "conditions": sorted(getattr(finding, "conditions", [])),
                     "assumptions": sorted(getattr(finding, "assumptions", [])), "components": sorted(finding.components)},
-                required_qualifications=synthesis.shared.qualifications(finding),
+                required_qualifications=shared.qualifications(finding),
                 details=contribution.finding.model_dump(exclude={"evidence", "criterion"}))
         rounds = {r.assignment.invocation_id: r.assignment.round for r in records}
         for invocation in context["invocations"]:

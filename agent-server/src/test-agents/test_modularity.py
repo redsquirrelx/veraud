@@ -30,7 +30,7 @@ from server.agents.maintainability.modularity.coordinator.synthesis import (
     consolidate,
     detect_contradictions,
 )
-from server.app.tracing_port import NoOpTracingBackend
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.schemas import Finding, InvestigationConfig
 
 

@@ -9,15 +9,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic_core import PydanticCustomError
 
-from .....config.token_budget import (
-    effective_token_budget_policy,
-    token_budget_exceeded,
-)
-from .....runtimes.investigation.agent import InvestigationExecution
-from .....runtimes.investigation.messages import compact_tool_history, empty_ai_message
-from .....runtimes.investigation.provider import lean_schema
-from ....schemes.base import CandidateFinding, Hypothesis, InvestigationPlan
-from ....schemes.investigator import (
+from server.agents.maintainability.modularity.architecture_boundary.schemas import (
     BoundaryEvaluation,
     BoundaryFinding,
     BoundaryFindingReview,
@@ -25,6 +17,15 @@ from ....schemes.investigator import (
     BoundaryResult,
     BoundaryReview,
 )
+from server.contracts.audit import CandidateFinding, Hypothesis, InvestigationPlan
+
+from .....config.token_budget import (
+    effective_token_budget_policy,
+    token_budget_exceeded,
+)
+from .....runtimes.investigation.agent import InvestigationExecution
+from .....runtimes.investigation.messages import compact_tool_history, empty_ai_message
+from .....runtimes.investigation.provider import lean_schema
 from .claims import assertion_issues
 from .discovery import BoundaryDiscovery
 from .support import dependency_span, supports_role

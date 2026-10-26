@@ -15,11 +15,11 @@ from server.app.audit_service import AuditService
 from server.app.callback_port import CallbackSink
 from server.app.execution_service import InvalidConfigError
 from server.app.pipeline_service import GenericPipelineService
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.blackboard.models import Assessment
 from server.infrastructure.callback.schemas import CallbackResult
-from server.services.audit_report_snapshot import (
+from server.infrastructure.tracing import NoOpTracingBackend
+from server.reporting.snapshot import (
     BlackboardSnapshot,
     report_from_snapshot,
 )
@@ -379,7 +379,7 @@ def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_envi
 
     clients = {}
 
-    def resolve(agent_type, config):
+    def resolve(_base_config, agent_type, config):
         return (ModelSettings(provider=config.model.provider, name=config.model.name,
             temperature=0.2, max_tokens=1000), ModelCredentials(api_key=config.api_key), 1200)
 
@@ -399,7 +399,7 @@ def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_envi
             assert all(model.key == f"secret-{name}" for name, model in self.agent_models.items())
             return SimpleNamespace(status="complete")
 
-    monkeypatch.setattr(audit_service, "get_execution_service", lambda: SimpleNamespace(resolve_model_settings=resolve))
+    monkeypatch.setattr(audit_service, "resolve_model_settings", resolve)
     monkeypatch.setattr(audit_service, "build_chat_model", build)
     monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
     with TestClient(app) as client:

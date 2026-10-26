@@ -11,11 +11,11 @@ from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate
 from pydantic import BaseModel
 
-from server.agents.dummy.schemas import DummyInput, DummyOutput, Finding
 from server.api.schemas import ExecutionConfig, ExecutionRequest, ModelConfig
 from server.app import execution_service
 from server.app.agent_registry import UnknownAgentError
 from server.app.execution_service import InvalidConfigError, InvalidInputError
+from server.examples.dummy.schemas import DummyInput, DummyOutput, Finding
 from server.main import app
 
 

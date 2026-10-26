@@ -6,34 +6,22 @@ from time import monotonic
 from types import SimpleNamespace
 
 from config.agents.provider import ProviderRetryConfig
+from server.infrastructure.llm.factory import (
+    create_project_model as create_project_model,  # noqa: PLC0414 - public runtime facade
+)
+from server.infrastructure.llm.resources import (
+    close_model_clients as close_model_clients,  # noqa: PLC0414 - public runtime facade
+)
+from server.infrastructure.llm.retry import (
+    RequestPacer,
+    http_status,
+    retry_after,
+    retryable,
+)
+from server.infrastructure.llm.usage import extract_text, response_usage
 
-from ...benchmark.pacing import RequestPacer, http_status, retry_after, retryable
-from ...benchmark.telemetry import response_usage
 from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
 from .timing import ActiveDeadline, within_deadline
-
-
-def extract_text(response: object) -> str:
-    """Normalize whatever the model client returns into a string."""
-    if response is None:
-        return ""
-    if isinstance(response, str):
-        return response
-
-    content = getattr(response, "content", None)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in content
-        )
-
-    text = getattr(response, "text", None)
-    if isinstance(text, str):
-        return text
-
-    return str(response)
 
 
 class ModelGateway:
@@ -335,70 +323,3 @@ class ModelGateway:
 
     def telemetry(self, tool_requests=()):
         return execution_telemetry(self.measurements, tool_requests)
-
-
-async def close_model_clients(model):
-    """Release runner-owned clients on success, timeout, error, or cancellation."""
-    failures = []
-    client = getattr(model, "client", None)
-    llm = getattr(model, "llm", None)
-    operations = []
-    if client is not None and hasattr(client, "aio"):
-        operations.extend(((client.aio, "aclose"), (client, "close")))
-    if llm is not None:
-        operations.extend(
-            (
-                (getattr(llm, "root_async_client", None), "close"),
-                (getattr(llm, "root_client", None), "close"),
-                (getattr(llm, "async_client", None), "aclose"),
-                (getattr(llm, "client", None), "close"),
-            )
-        )
-    closed = set()
-    for resource, name in operations:
-        if resource is None or not hasattr(resource, name):
-            continue
-        key = (id(resource), name)
-        if key in closed:
-            continue
-        closed.add(key)
-        try:
-            value = getattr(resource, name)()
-            if hasattr(value, "__await__"):
-                await value
-        except Exception as error:  # noqa: BLE001 - attempt every cleanup without hiding the run result
-            failures.append(type(error).__name__)
-    return tuple(failures)
-
-
-def create_project_model(settings, credentials):
-    """Reuse provider adapters; honor Gemini JSON/sampling/output configuration."""
-    from ...app.execution_service import build_model
-
-    if settings.provider.lower() not in ("google", "gemini"):
-        return build_model(settings, credentials)
-    from ...infrastructure.llm.gemini import GeminiModel
-
-    class ConfiguredGeminiModel(GeminiModel):
-        async def generate(self, message):
-            return await self.generate_with_output_limit(
-                message, max_output_tokens=self.settings.max_tokens
-            )
-
-        async def generate_with_output_limit(self, message, *, max_output_tokens):
-            from google.genai import types
-
-            from ...infrastructure.llm.quota import quota_generate
-
-            output_limit = min(self.settings.max_tokens, max_output_tokens)
-            return await quota_generate(self, message, lambda: self.client.aio.models.generate_content(
-                model=self.settings.name,
-                contents=str(message),
-                config=types.GenerateContentConfig(
-                    temperature=self.settings.temperature,
-                    max_output_tokens=output_limit,
-                    response_mime_type="application/json",
-                ),
-            ), max_output_tokens=output_limit)
-
-    return ConfiguredGeminiModel(settings, credentials)

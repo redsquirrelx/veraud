@@ -19,6 +19,13 @@ from ...blackboard.publication import publication_for
 from ...config.logs import get_logger
 from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
+from ...infrastructure.llm.diagnostics import (
+    provider_diagnostic,
+    provider_status,
+    retry_delay,
+    retry_hint,
+    transient,
+)
 from ..invocation_reporting import phase_node, report_invocation_usage
 from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
@@ -29,11 +36,6 @@ from .provider import (
     RequestTokenQuotaExceeded,
     lean_schema,
     model_pacer,
-    provider_diagnostic,
-    provider_status,
-    retry_delay,
-    retry_hint,
-    transient,
 )
 from .schemas import (
     AuditRequest,
@@ -569,7 +571,7 @@ class InvestigationExecution:
                     self.retryable_failure = False
                     self.defer_provider_stage(node, reason, error, 0, retry + 1)
                     return None
-                from ...benchmark.pacing import daily_quota_exhausted
+                from server.infrastructure.llm.retry import daily_quota_exhausted
                 if daily_quota_exhausted(error):
                     self.retryable_failure = False
                     self.defer_provider_stage(node, "provider_daily_quota_exhausted", error, retry_delay(error), retry + 1)

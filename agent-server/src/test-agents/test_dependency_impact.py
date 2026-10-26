@@ -35,9 +35,9 @@ from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactResult,
 )
 from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
-from server.agents.schemes.base import Hypothesis
-from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
+from server.contracts.legacy_schemes.base import Hypothesis
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.agent import InvestigationExecution
 
 PLAN = {"objectives": ["Assess provider replacement costs"], "components": ["OrderService", "PaymentGateway"],

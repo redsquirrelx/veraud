@@ -27,8 +27,8 @@ from server.agents.maintainability.reusability.abstraction import (
     AbstractionResult,
 )
 from server.agents.maintainability.reusability.abstraction.discovery import discover
-from server.app.tracing_port import NoOpTracingBackend
 from server.config.schemas import ModelSettings
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.agent import InvestigationExecution
 
 

@@ -5,34 +5,34 @@ import json
 
 import pytest
 
-from server.agents.project_analysis.project_architecture import ProjectArchitectureAgent
-from server.agents.project_analysis.project_architecture.context import (
+from server.pipelines import ProjectArchitecturePipeline
+from server.project_analysis.project_architecture import ProjectArchitectureAgent
+from server.project_analysis.project_architecture.context import (
     retain_valid_sections,
     validate_report,
 )
-from server.agents.project_analysis.project_architecture.diagram import (
+from server.project_analysis.project_architecture.diagram import (
     project_component_diagram,
     render_diagram,
     render_mermaid,
 )
-from server.agents.project_analysis.project_architecture.diagram_composition import (
+from server.project_analysis.project_architecture.diagram_composition import (
     complete_views,
     missing_views,
 )
-from server.agents.project_analysis.project_architecture.schemas import (
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureDiagram,
     ArchitectureReport,
     ArchitectureResult,
 )
-from server.agents.project_analysis.project_semantic_validation.context import (
+from server.project_analysis.project_semantic_validation.context import (
     report_hash,
     review_targets,
 )
-from server.agents.project_analysis.project_semantic_validation.schemas import (
+from server.project_analysis.project_semantic_validation.schemas import (
     SemanticFinding,
     SemanticValidationResult,
 )
-from server.pipelines import ProjectArchitecturePipeline
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
@@ -928,7 +928,7 @@ def test_runner_checkpoints_before_503_and_resumes_without_investigation(
     fixture, tmp_path, monkeypatch
 ):
     from server import repository_runner
-    from server.agents.project_analysis.project_semantic_validation import (
+    from server.project_analysis.project_semantic_validation import (
         ProjectSemanticValidationAgent,
     )
 

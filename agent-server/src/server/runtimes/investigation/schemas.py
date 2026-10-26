@@ -1,8 +1,7 @@
 """Compatibility exports for the canonical domain-independent agent contracts."""
 
 from config.agents import InvestigationConfig, ProviderRateLimits
-
-from ...agents.schemes.base import (
+from server.contracts.audit import (
     AuditRequest,
     AuditResult,
     CandidateFinding,

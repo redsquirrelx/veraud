@@ -28,11 +28,11 @@ from server.agents.maintainability.modularity.architecture_boundary import (
     AuditRequest,
     BoundaryConfig,
 )
-from server.app.tracing_port import LangSmithTracingBackend, TracingBackend
 from server.config.dev_agents_config import load_dev_agents_config
 from server.config.runner import load_runner_config
 from server.config.settings import ENV_FILE
 from server.config.token_budget import using_token_budget_policy
+from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
 from server.runtimes.repository.context import RepositoryContext
 from server.runtimes.repository.model_runtime import close_model_clients
 from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput

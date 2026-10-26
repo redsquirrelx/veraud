@@ -1,14 +1,10 @@
 """Prompt templates, loaded from disk instead of defined in code.
 
-Layout under `prompts/`:
+Prompts normally live beside their implementation:
 
-    prompts/
-      dummy/
-        system.md
-        user.md          # optional, {placeholders} filled by the agent
-      analyzer/
-        system.md
-        user.md
+    agents/<attribute>/<participant>/prompts/
+      system.md
+      user.md          # optional, {placeholders} filled by the agent
 
 An agent names the prompt it wants; the loader resolves it. The agent decides
 what to fill in, never how to word the instruction.
@@ -30,19 +26,19 @@ class PromptNotFoundError(FileNotFoundError):
     """Raised when a prompt file is missing or unreadable."""
 
 
-def prompt_path(agent_type: str, name: str = "system") -> Path:
-    """Where a prompt lives, without touching the filesystem."""
-    return PROMPTS_DIR / agent_type / f"{name}.md"
+def prompt_path(agent_type: str, name: str = "system", *, directory: Path | None = None) -> Path:
+    """Resolve a package-local prompt directory or the legacy global fallback."""
+    return (directory if directory is not None else PROMPTS_DIR / agent_type) / f"{name}.md"
 
 
 @lru_cache(maxsize=64)
-def load_prompt(agent_type: str, name: str = "system") -> str:
+def load_prompt(agent_type: str, name: str = "system", *, directory: Path | None = None) -> str:
     """Read a prompt template.
 
     Cached: templates are read once per process and never change at runtime,
     so re-reading them per request would be pure overhead.
     """
-    path = prompt_path(agent_type, name)
+    path = prompt_path(agent_type, name, directory=directory)
 
     if not path.is_file():
         raise PromptNotFoundError(

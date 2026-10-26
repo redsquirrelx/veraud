@@ -42,7 +42,7 @@ from server.agents.maintainability.modularity.coordinator import (
     ModularityRequest,
 )
 from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
-from server.app.tracing_port import LangSmithTracingBackend
+from server.infrastructure.tracing import LangSmithTracingBackend
 from server.runtimes.investigation.schemas import (
     Criterion,
     InvestigationConfig,
@@ -252,9 +252,9 @@ def test_manager_collection_reuses_real_child_publications_and_tool_measurements
         MaintainabilityManagerAgent,
         MaintainabilityRequest,
     )
-    from server.app.tracing_port import NoOpTracingBackend
     from server.blackboard.identity import AuditIdentity
     from server.blackboard.impls.memory import MemoryBlackboard
+    from server.infrastructure.tracing import NoOpTracingBackend
 
     originals, writes, coordinator_calls = {}, {}, []
 
