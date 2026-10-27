@@ -13,6 +13,8 @@ from server.runtimes.repository.schemas import (
 )
 from server.runtimes.repository.telemetry import ExecutionTelemetry
 
+from .config import ArchitectureLimits  # noqa: F401 - compatibility export
+
 
 class ArchitecturalClaim(AgentContract):
     statement: str = Field(min_length=1, max_length=3000)
