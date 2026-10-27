@@ -31,6 +31,23 @@ export class AgentSettingsService {
     return this.list()
   }
 
+  async validateMaintainabilitySelection(selection: Record<string, string[]>): Promise<void> {
+    const agents = await this.settings.listDeclared()
+    const root = agents.find((agent) => agent.agentType === "maintainability_manager" && agent.availability === "available")
+    const invalid = () => { throw new AgentConfigurationError([{ agentType: "maintainability_manager", reason: "Select registered maintainability coordinators and their available investigators" }]) }
+    if (!root || !Object.keys(selection).length) invalid()
+    for (const [dimension, investigators] of Object.entries(selection)) {
+      const coordinator = agents.find((agent) => agent.agentType === dimension)
+      if (!coordinator || coordinator.role !== "coordinator" || coordinator.availability !== "available"
+        || !root!.childAgentTypes.includes(dimension) || new Set(investigators).size !== investigators.length) invalid()
+      for (const id of investigators) {
+        const investigator = agents.find((agent) => agent.agentType === id)
+        if (!investigator || investigator.role !== "investigator" || investigator.availability !== "available"
+          || !coordinator!.childAgentTypes.includes(id)) invalid()
+      }
+    }
+  }
+
   /** Model transport keys come from the synchronized hierarchy, not a local agent list. */
   async modelParticipants(rootAgentType: string): Promise<string[]> {
     const agents = new Map((await this.settings.listDeclared()).map((agent) => [agent.agentType, agent]))

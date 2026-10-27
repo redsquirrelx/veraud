@@ -1,4 +1,5 @@
 import { logger } from "../../config/logger.js"
+import { auditRunConfiguration } from "../quality-audit/audit-run-configuration.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
@@ -133,6 +134,9 @@ export class AgentExecutionService {
   }
 
   async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
+    if (options.maintainability_selection !== undefined) {
+      await this.settings.validateMaintainabilitySelection(options.maintainability_selection)
+    }
     const agentType = attributes.includes("maintainability") ? MAINTAINABILITY_AGENT_TYPE
       : attributes.includes("security") ? SECURITY_AGENT_TYPE : FUNCTIONAL_ADEQUACY_AGENT_TYPE
     const configurations = await this.settings.prepareExecution([
@@ -146,11 +150,19 @@ export class AgentExecutionService {
       const participants = await this.settings.modelParticipants(configuration.agentType)
       for (const participant of participants) configs[participant] = configuration.transport
     }
-    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [rootConfiguration], "QualityAudit")
+    const scope = auditRunConfiguration(await this.settings.list(), branch, commitHash, attributes, options.maintainability_selection)
+    const maintainability = scope.scopes.find((attribute) => attribute.id === "maintainability")
+    const effectiveOptions = maintainability ? { ...options, maintainability_selection: Object.fromEntries(
+      maintainability.subcharacteristics.map((child) => [child.id, child.investigators.map((agent) => agent.id)])) } : options
+    if (effectiveOptions.maintainability_selection !== undefined) {
+      await this.settings.validateMaintainabilitySelection(effectiveOptions.maintainability_selection)
+    }
+    const snapshot = { ...rootConfiguration.snapshot, auditConfiguration: scope }
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [{ ...rootConfiguration, snapshot }], "QualityAudit")
     const execution = result.executions[agentType]!
     await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
-    void this.dispatchQualityAudit(execution, configs, commitHash, attributes, options)
+    void this.dispatchQualityAudit(execution, configs, commitHash, attributes, effectiveOptions)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
   }
 
