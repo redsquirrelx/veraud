@@ -8,6 +8,7 @@ Real model calls are out of scope: no provider credentials in tests.
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -22,7 +23,7 @@ from server.app.project_architecture_definition import (
     build_project_agents,
     parse_project_architecture_input,
 )
-from server.app.tracing_port import NoOpTracingBackend
+from server.infrastructure.tracing import NoOpTracingBackend
 
 
 def _config(**overrides):
@@ -103,12 +104,15 @@ class TestResolveModelSettings:
 
 
 class TestWorkspaceGuard:
-    def test_root_outside_workspace_is_422(self):
-        exec_stub = SimpleNamespace(
-            resolve_model_settings=lambda *args: (_ for _ in ()).throw(
-                AssertionError("must not build models")
-            )
+    def test_root_outside_workspace_is_422(self, monkeypatch):
+        from server.app import project_architecture_definition as definition_module
+
+        monkeypatch.setattr(
+            definition_module,
+            "resolve_default_model_settings",
+            lambda *args: (_ for _ in ()).throw(AssertionError("must not resolve models")),
         )
+        exec_stub = SimpleNamespace()
         parsed = parse_project_architecture_input({"root_path": "/elsewhere/repo"})
         with pytest.raises(InvalidConfigError, match="directly inside the shared workspace"):
             asyncio.run(build_project_agents(exec_stub, _config(), None, parsed, 600))
@@ -139,13 +143,15 @@ class TestBuildProjectAgents:
             definition_module, "create_project_model", fake_create
         )
 
-        exec_stub = SimpleNamespace(
-            resolve_model_settings=lambda stage, config: (
+        monkeypatch.setattr(
+            "server.app.project_architecture_definition.resolve_default_model_settings",
+            lambda stage, config: (
                 SimpleNamespace(provider="test", name=f"{stage}-model"),
                 SimpleNamespace(api_key="k"),
                 600,
-            )
+            ),
         )
+        exec_stub = SimpleNamespace()
         parsed = parse_project_architecture_input({"root_path": str(repo)})
         agents, ctx = asyncio.run(
             build_project_agents(exec_stub, _config(), None, parsed, 600)
@@ -159,6 +165,40 @@ class TestBuildProjectAgents:
         assert ctx["workspace_root"] == workspace.resolve()
         for agent in agents.values():
             assert agent.generate.trace is True
+
+    def test_closes_earlier_model_when_a_later_stage_fails(self, tmp_path, monkeypatch):
+        from server.app import project_architecture_definition as definition_module
+
+        workspace = tmp_path / "workspace"
+        repo = workspace / "repo"
+        repo.mkdir(parents=True)
+        (repo / "main.py").write_text("def main():\n    return 1\n")
+        monkeypatch.setattr(definition_module, "resolve_workspace_root", lambda: workspace)
+        close = AsyncMock()
+        client = SimpleNamespace(aio=SimpleNamespace(aclose=close), close=Mock())
+        monkeypatch.setattr(
+            definition_module,
+            "create_project_model",
+            lambda settings, _credentials: SimpleNamespace(settings=settings, client=client),
+        )
+
+        def resolve(stage, _config):
+            if stage == "architecture":
+                raise RuntimeError("second stage setup failed")
+            return (
+                SimpleNamespace(provider="test", name=f"{stage}-model"),
+                SimpleNamespace(api_key="key"),
+                600,
+            )
+
+        monkeypatch.setattr(
+            definition_module, "resolve_default_model_settings", resolve
+        )
+        parsed = parse_project_architecture_input({"root_path": str(repo)})
+        with pytest.raises(RuntimeError, match="second stage setup failed"):
+            asyncio.run(build_project_agents(None, _config(), None, parsed, 600))
+
+        close.assert_awaited_once_with()
 
 
 class TestHooksAdapter:

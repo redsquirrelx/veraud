@@ -2,7 +2,7 @@
 
 import warnings
 
-from server.agents.project_analysis.project_architecture.schemas import (
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureDiagram,
 )
 from server.runtimes.repository.responses import normalize_record_arrays

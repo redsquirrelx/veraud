@@ -10,11 +10,11 @@ from ..app.agent_catalog import (
     list_agent_catalog,
 )
 from ..app.agent_registry import UnknownAgentError
+from ..app.errors import InvalidConfigError, InvalidInputError
 from ..app.execution_service import (
     AgentExecutionService,
-    InvalidConfigError,
-    InvalidInputError,
     build_model,
+    close_model_client,
     get_execution_service,
 )
 from ..app.model_access import access_failure
@@ -67,12 +67,15 @@ async def verify_access(body: VerifyAccessRequest) -> VerifyAccessResponse:
         status, detail = access_failure(error)
         raise HTTPException(status_code=status, detail=detail) from None
     try:
-        await asyncio.wait_for(model.generate("Reply with OK."), timeout=25)
-    except Exception as error:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
-        status, detail = access_failure(error)
-        logger.warning("Model access verification failed status=%d exception_type=%s", status, type(error).__name__)
-        raise HTTPException(status_code=status, detail=detail) from None
-    return VerifyAccessResponse(verified=True)
+        try:
+            await asyncio.wait_for(model.generate("Reply with OK."), timeout=25)
+        except Exception as error:  # noqa: BLE001 - SDK errors must not expose provider bodies or credentials.
+            status, detail = access_failure(error)
+            logger.warning("Model access verification failed status=%d exception_type=%s", status, type(error).__name__)
+            raise HTTPException(status_code=status, detail=detail) from None
+        return VerifyAccessResponse(verified=True)
+    finally:
+        await close_model_client(model)
 
 # Domain error -> HTTP status. Every clause of the except chains below picks a
 # status from here, so the error contract is readable in one place.

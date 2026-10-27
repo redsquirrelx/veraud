@@ -7,18 +7,20 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field, ValidationError
 
+from server.app.pipeline_contracts import PipelineDefinition, bind_no_context
+from server.reporting.docx import render_audit_report_docx
+
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
 from ..agents.maintainability.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
 from ..runtimes.invocation_reporting import invocation_reporting
-from ..services.audit_report_docx import render_audit_report_docx
 from .audit_attributes import QualityAttributes, audit_root
 from .audit_models import validate_model_configs
 from .audit_options import AuditExecutionOptions
 from .audit_service import AuditService
-from .execution_service import InvalidConfigError
+from .errors import InvalidConfigError
 
 
 class QualityAuditInput(AuditExecutionOptions):
@@ -45,15 +47,12 @@ def parse_input(raw):
 
 
 class QualityAuditRunner:
-    uses_audit_service = True
-
     def __init__(self, config, agent_configs=None):
         self.config = config
         self.agent_configs = agent_configs
         self.blackboard = MemoryBlackboard()
-        self.audit_service = None
 
-    async def run(self, parsed, hooks):
+    async def run(self, parsed, hooks, *, blackboard=None, audit_service=None):
         root = Path(parsed.root_path).expanduser().resolve()
         if root.parent != resolve_workspace_root() or not root.is_dir():
             raise InvalidConfigError("root_path must be a checkout directly inside the shared workspace.")
@@ -70,7 +69,8 @@ class QualityAuditRunner:
             raise InvalidConfigError("Git revision verification could not start.") from None
         if revision.returncode or revision.stdout.strip().lower() != parsed.commit_hash.lower():
             raise InvalidConfigError("The checkout no longer matches the selected project revision.")
-        service = self.audit_service or AuditService(self.blackboard)
+        board = blackboard or (audit_service.blackboard if audit_service is not None else self.blackboard)
+        service = audit_service or AuditService(board)
         security = parsed.attributes == ["security"]
         stage = audit_root(parsed.attributes)
         if hooks:
@@ -104,7 +104,7 @@ class QualityAuditRunner:
                 "docx_base64": base64.b64encode(document).decode("ascii"),
             }}
         finally:
-            if self.audit_service is None:
+            if audit_service is None:
                 await service.aclose()
             elif state is not None:
                 await service.cancel(state.run_id)
@@ -117,12 +117,14 @@ async def build_agents(exec_service, config, stage_configs, parsed, timeout_seco
 
 
 def quality_audit_definition():
-    from .pipeline_service import PipelineDefinition
-
     return PipelineDefinition(
         name="quality-audit", stages=["maintainability_manager"], parse_input=parse_input,
         resolve_stages=lambda parsed: [audit_root(parsed.attributes)],
         build_agents=build_agents, adapt_hooks=lambda hooks: hooks,
         create_pipeline=lambda agents, hooks, ctx: (agents["maintainability_manager"], hooks),
-        run_pipeline=lambda pipeline, parsed, ctx: pipeline[0].run(parsed, pipeline[1]),
+        run_pipeline=lambda pipeline, parsed, ctx: pipeline[0].run(
+            parsed, pipeline[1], blackboard=ctx.get("blackboard"),
+            audit_service=ctx.get("audit_service")),
+        bind_context=bind_no_context,
+        requires_agent_execution_service=False,
     )

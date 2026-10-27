@@ -48,7 +48,7 @@ def test_runtime_and_shared_configuration_do_not_import_concrete_agents():
                     if node.level:
                         module = resolve_name("." * node.level + module, parent)
                     # Only the neutral data-only contracts may cross this boundary.
-                    assert (package.__name__ == "server.runtimes" and module == "server.agents.schemes.base"
+                    assert (package.__name__ == "server.runtimes" and module == "server.contracts.legacy_schemes.base"
                             or module != "server.agents" and not module.startswith("server.agents.")), path
                     components = set((node.module or "").split("."))
                     assert not components & {"maintainability", "project_analysis", "security", "functional_adequacy"}, path

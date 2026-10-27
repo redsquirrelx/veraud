@@ -26,7 +26,7 @@ from server.agents.maintainability.reusability.coordinator import (
     ReusabilityAssessment,
     ReusabilityRequest,
 )
-from server.app.tracing_port import NoOpTracingBackend
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.coordination.execution import CoordinatorExecution
 from server.runtimes.coordination.synthesis import evidence_key
 from server.runtimes.investigation.schemas import InvestigationConfig
@@ -233,7 +233,7 @@ def test_modularity_closes_only_the_validated_same_source_component_repair(repo,
         assert after.consumption.model_calls == after.result.consumption.model_calls - before.result.consumption.model_calls
         assert after.consumption.tool_calls == 1
         assert report.resolved_gap_ids
-        from server.agents.audit_report import AuditReportAgent, AuditReportRequest
+        from server.reporting import AuditReportAgent, AuditReportRequest
 
         document = asyncio.run(AuditReportAgent(blackboard=board).run(AuditReportRequest(run_id=report.assessment_id)))
         assert document.identification.status == "completed", document.model_dump_json(indent=2)

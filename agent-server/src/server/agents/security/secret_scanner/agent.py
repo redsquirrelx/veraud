@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List
+
 from ..schemas import Finding
 
 SECRET_PATTERNS = [
@@ -10,7 +10,7 @@ SECRET_PATTERNS = [
 ]
 
 class SecretScannerAgent:
-    def scan_path(self, target_path: str) -> List[Finding]:
+    def scan_path(self, target_path: str) -> list[Finding]:
         findings = []
         path = Path(target_path)
         files = list(path.rglob("*")) if path.is_dir() else [path]
@@ -22,7 +22,7 @@ class SecretScannerAgent:
             try:
                 with open(f, "r", encoding="utf-8", errors="ignore") as fp:
                     lines = fp.readlines()
-            except Exception:
+            except OSError:
                 continue
 
             for line_num, text in enumerate(lines, 1):

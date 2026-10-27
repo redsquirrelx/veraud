@@ -66,11 +66,14 @@ class AgentCatalog(BaseModel):
 
 
 def _symbol(package, name):
-    return getattr(import_module("server.agents." + package), name)
+    module = "server." + package if package.startswith(("project_analysis.", "reporting.")) else "server.agents." + package
+    return getattr(import_module(module), name)
 
 
 def _definitions(service):
     """Return descriptors and optional typed input/output contracts, lazily."""
+    from server.app.pipeline_registry import default_pipeline_registry
+
     from ..agents.maintainability.manager.registry import COORDINATORS
     from ..agents.maintainability.modularity.coordinator.registry import (
         INVESTIGATORS as MODULARITY,
@@ -79,7 +82,6 @@ def _definitions(service):
         INVESTIGATORS as REUSABILITY,
     )
     from .audit_models import MAINTAINABILITY_AGENT_TYPES
-    from .pipeline_service import default_pipeline_registry
     from .project_architecture_definition import ProjectArchitectureInput
     from .quality_audit_definition import QualityAuditInput
 
@@ -151,8 +153,8 @@ def _definitions(service):
 
     add("audit_report", "AuditReportAgent", "report_generator", ["internal", "snapshot"],
         "Deterministic ten-section report from Blackboard; no model or repository reads.", model=False,
-        workflows=["quality-audit"], attributes=["maintainability", "security", "functional_adequacy"], request=_symbol("audit_report.schemas", "AuditReportRequest"),
-        result=_symbol("audit_report.schemas", "SoftwareAuditReport"))
+        workflows=["quality-audit"], attributes=["maintainability", "security", "functional_adequacy"], request=_symbol("reporting.schemas", "AuditReportRequest"),
+        result=_symbol("reporting.schemas", "SoftwareAuditReport"))
 
     pipelines = default_pipeline_registry()
     groups = {"maintainability": list(MAINTAINABILITY_AGENT_TYPES), "security": ["security"], "functional_adequacy": ["functional_adequacy"]}

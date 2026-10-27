@@ -7,11 +7,12 @@ import json
 import os
 from pathlib import Path
 
+from server.app.execution_config import ExecutionConfig, ModelConfig
+
 from .agents.functional_adequacy.repository_adapter import (
     prepare_repository_input,
 )
 from .agents.functional_adequacy.schemas import FunctionalRequirement
-from .api.schemas import ExecutionConfig, ModelConfig
 from .app.pipeline_service import GenericPipelineService
 
 

@@ -1,0 +1,37 @@
+"""Compatibility re-exports for the relocated report schema."""
+
+from server.reporting.schemas import (
+    AttributeResult,
+    AuditAnnexes,
+    AuditConclusions,
+    AuditMethodology,
+    AuditReportRequest,
+    AuditScope,
+    ConsolidatedRiskAnalysis,
+    CoverageCommitment,
+    EvaluationStatus,
+    ExecutionTrace,
+    ExecutiveSummary,
+    FindingRelationship,
+    FindingStatistics,
+    ImprovementRecommendation,
+    QualityResults,
+    RecordReference,
+    ReportDecision,
+    ReportEvidence,
+    ReportFinding,
+    ReportGeneration,
+    ReportGenerationSummary,
+    ReportIdentification,
+    ReportQualifications,
+    ReportRisk,
+    ReportStatement,
+    ReportStatus,
+    RepositoryRevision,
+    SoftwareAuditReport,
+    SoftwareDescription,
+    SubcharacteristicResult,
+    VerificationStatus,
+)
+
+__all__ = ['AttributeResult', 'AuditAnnexes', 'AuditConclusions', 'AuditMethodology', 'AuditReportRequest', 'AuditScope', 'ConsolidatedRiskAnalysis', 'CoverageCommitment', 'EvaluationStatus', 'ExecutionTrace', 'ExecutiveSummary', 'FindingRelationship', 'FindingStatistics', 'ImprovementRecommendation', 'QualityResults', 'RecordReference', 'ReportDecision', 'ReportEvidence', 'ReportFinding', 'ReportGeneration', 'ReportGenerationSummary', 'ReportIdentification', 'ReportQualifications', 'ReportRisk', 'ReportStatement', 'ReportStatus', 'RepositoryRevision', 'SoftwareAuditReport', 'SoftwareDescription', 'SubcharacteristicResult', 'VerificationStatus']

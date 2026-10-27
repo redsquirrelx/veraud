@@ -7,6 +7,7 @@ while defaulting to the production LangSmith/HTTP behavior.
 import asyncio
 from types import SimpleNamespace
 
+import pytest
 from pydantic import BaseModel
 
 from server.api.schemas import ExecutionConfig
@@ -18,8 +19,8 @@ from server.app.pipeline_service import (
     GenericPipelineService,
     PipelineDefinition,
 )
-from server.app.tracing_port import NoOpTracingBackend
 from server.infrastructure.callback.client import CallbackClient
+from server.infrastructure.tracing import NoOpTracingBackend
 
 
 class _Output(BaseModel):
@@ -156,3 +157,35 @@ class TestPortsInjectedIntoPipeline:
         assert result == {"first": {"value": "one"}, "second": {"value": "two"}}
         kinds = [(c[0], c[1]) for c in sink.calls if c[0] != "close"]
         assert kinds == [("running", 11), ("complete", 11), ("running", 12), ("complete", 12)]
+
+
+def test_pipeline_closes_definition_resources_if_composition_fails():
+    closed = []
+
+    async def build(_exec_service, _config, _stage_configs, _parsed, _timeout):
+        return {}, {"token": "resource"}
+
+    async def close_resources(ctx):
+        closed.append(ctx["token"])
+
+    definition = PipelineDefinition(
+        name="broken-composition",
+        stages=[],
+        parse_input=lambda raw: raw,
+        build_agents=build,
+        adapt_hooks=lambda hooks: hooks,
+        create_pipeline=lambda *_args: (_ for _ in ()).throw(RuntimeError("setup")),
+        run_pipeline=lambda *_args: {},
+        close_resources=close_resources,
+    )
+    service = GenericPipelineService(
+        execution_service=SimpleNamespace(),
+        callbacks_factory=lambda: None,
+        tracing_backend=NoOpTracingBackend(),
+        registry={definition.name: definition},
+    )
+
+    with pytest.raises(RuntimeError, match="setup"):
+        asyncio.run(service.run(definition.name, {}, ExecutionConfig()))
+
+    assert closed == ["resource"]

@@ -5,17 +5,20 @@ from threading import Barrier
 import pytest
 from pydantic import ValidationError
 
-from server.agents.schemes.coordinator import (
+from server.blackboard.identity import AuditIdentity
+from server.blackboard.impls.memory import MemoryBlackboard
+from server.blackboard.models import Evidence
+from server.blackboard.publication import Publication
+from server.contracts.legacy_schemes.coordinator import (
     ModularityAssessment,
     ReusabilityAssessment,
     ReusabilityAssignment,
     ReusabilityInvocationRecord,
 )
-from server.agents.schemes.investigator import AbstractionFinding, AbstractionResult
-from server.blackboard.identity import AuditIdentity
-from server.blackboard.impls.memory import MemoryBlackboard
-from server.blackboard.models import Evidence
-from server.blackboard.publication import Publication
+from server.contracts.legacy_schemes.investigator import (
+    AbstractionFinding,
+    AbstractionResult,
+)
 from server.runtimes.investigation.schemas import EvidenceReference
 from server.services.execution_failures import (
     ExecutionValidationError,

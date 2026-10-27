@@ -84,7 +84,7 @@ agent-server/config/agents/
     catalog.py      per-agent descriptions and validation entry points
 agent-server/src/server/agents/maintainability/<dimension>/<agent>/config.py
 agent-server/src/server/agents/maintainability/manager/config.py
-agent-server/src/server/agents/project_analysis/<agent>/config.py
+agent-server/src/server/project_analysis/<agent>/config.py
 ```
 
 `AgentExecutionConfig` composes `AgentUserConfig` and `AgentDeveloperConfig`.

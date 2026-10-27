@@ -23,7 +23,7 @@ from server.agents.maintainability.modularity.coordinator import (
 from server.agents.maintainability.modularity.coordinator.agent import (
     ModularityExecution,
 )
-from server.app.tracing_port import NoOpTracingBackend
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.provider import (
     ProviderPacer,
     RequestTokenQuotaExceeded,

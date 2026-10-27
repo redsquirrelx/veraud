@@ -26,9 +26,9 @@ from server.agents.maintainability.manager.agent import (
 from server.agents.maintainability.manager.registry import COORDINATORS
 from server.agents.maintainability.manager.schemas import RawAssessment
 from server.agents.maintainability.modularity.coordinator.schemas import Consumption
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.identity import AuditIdentity
 from server.blackboard.impls.memory import MemoryBlackboard
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.schemas import InvestigationConfig
 
 BASE = ["analyze_audit_scope", "plan_audit", "delegate_auditors", "collect_assessments", "synthesize_assessments"]

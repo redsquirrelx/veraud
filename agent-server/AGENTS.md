@@ -13,17 +13,29 @@ These rules apply to `agent-server/`. All paths below are relative to that direc
 | Configuration shared across agents or protocols | `config/agents/` |
 | Configuration exclusive to an agent, coordinator or manager | `{agent_path}/config.py` |
 | Agent-specific prompts | `{agent_path}/prompts/` |
+| Neutral audit contracts | `src/server/contracts/audit.py` |
+| Report agent and report contracts | `src/server/reporting/` |
+| Project analysis agents and graphs | `src/server/project_analysis/` |
+| Direct example agent | `src/server/examples/dummy/` |
 | Shared coordinator and manager execution | `src/server/runtimes/coordination/` |
 | Shared investigator execution | `src/server/runtimes/investigation/` |
 | Repository snapshots, access and tools | `src/server/runtimes/repository/` |
 | Common LLM contract (`Model`) and provider adapters | `src/server/infrastructure/llm/` |
-| Service infrastructure: environment, logging and tracing | `src/server/config/` |
+| Provider construction, pacing and usage helpers | `src/server/infrastructure/llm/` |
+| Service environment and logging | `src/server/config/` |
+| Tracing port and provider quota ledger | `src/server/infrastructure/` |
+| Direct/audit model configuration resolution | `src/server/app/model_configuration.py` |
+| Shared per-audit model cache and repository-tool construction | `src/server/app/audit_resources.py` |
 
-1. Shared execution infrastructure MUST live in `src/server/runtimes/`, outside `agents/`. Dependency direction is `agents → runtimes → shared configuration and services`.
-2. A shared runtime MUST NOT import concrete agents, their registries, prompts or specialized contracts.
+1. Shared execution infrastructure MUST live outside `agents/`. Dependency direction is `FastAPI/app composition → quality implementations → runtimes/contracts/infrastructure → shared configuration and deterministic services`.
+2. A shared runtime MUST NOT import concrete agents, their registries, prompts or specialized contracts. It may import `contracts/audit.py` and `runtimes/coordination/contracts.py`.
 3. Sibling agents MUST NOT inherit infrastructure from one another. They MUST use a common base and supply their specializations.
 4. Each agent MUST retain its domain decisions, specialized contracts and graph topology.
 5. Code extraction MUST preserve existing nodes, routes and termination rules unless a functional change is requested.
+6. `src/server/agents/` MUST contain exactly `maintainability/`, `functional_adequacy/` and `security/` as source packages. Project analysis, reporting, examples and neutral contracts MUST remain outside it.
+7. Canonical schemas for a maintainability investigator/coordinator/manager MUST live with that participant. Neutral envelopes MUST live in `contracts/` or `runtimes/coordination/contracts.py`; compatibility re-exports MUST point to the same classes and MUST NOT be used by production consumers.
+8. `src/server/runtimes/`, `contracts/` and `infrastructure/` MUST NOT import `app/` or `api/`. FastAPI and composition modules may depend inward on those packages.
+9. Discovery/configuration catalogs may import implementation modules lazily to describe contracts; they MUST NOT instantiate agents, models, repositories or toolsets.
 
 ## Configuration: one declaration per parameter
 
@@ -91,5 +103,7 @@ the agent would use `InvestigationConfig` directly, without a local configuratio
 25. Changes to the distribution layout MUST include building the package and verifying imports/resources outside the checkout.
     Skipped or blocked checks MUST be reported and MUST NOT be presented as verified.
 
-Contract and API details: [config/agents/README.md](config/agents/README.md).
+Navigation map: [docs/architecture.md](docs/architecture.md).
+HTTP and callback contracts: [docs/contracts.md](docs/contracts.md).
+Configuration details: [config/agents/README.md](config/agents/README.md).
 Runtime responsibilities: [runtimes/README.md](src/server/runtimes/README.md).

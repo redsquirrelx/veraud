@@ -23,7 +23,7 @@ from server.agents.maintainability.reusability.coordinator.agent import (
 )
 from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
 from server.agents.maintainability.reusability.coordinator.schemas import Route
-from server.app.tracing_port import NoOpTracingBackend
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.coordination.execution import CoordinatorExecution
 from server.runtimes.investigation.schemas import InvestigationConfig
 

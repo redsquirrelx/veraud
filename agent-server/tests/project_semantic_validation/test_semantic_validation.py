@@ -5,21 +5,21 @@ import json
 
 import pytest
 
-from server.agents.project_analysis.project_architecture.schemas import (
+from server.pipelines.semantic_validation import validate_architecture_pipeline
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureReport,
     ArchitectureResult,
 )
-from server.agents.project_analysis.project_semantic_validation import (
+from server.project_analysis.project_semantic_validation import (
     ProjectSemanticValidationAgent,
     ValidationLimits,
 )
-from server.agents.project_analysis.project_semantic_validation.context import (
+from server.project_analysis.project_semantic_validation.context import (
     review_targets,
 )
-from server.agents.project_analysis.project_semantic_validation.schemas import (
+from server.project_analysis.project_semantic_validation.schemas import (
     SemanticFinding,
 )
-from server.pipelines.semantic_validation import validate_architecture_pipeline
 from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,

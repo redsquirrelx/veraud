@@ -8,10 +8,10 @@ from fastapi.testclient import TestClient
 from server.app import audit_service
 from server.app.audit_service import AuditService
 from server.app.execution_service import InvalidConfigError
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.blackboard.models import Assessment, Evidence, Finding
 from server.config.schemas import ModelCredentials, ModelSettings
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.main import app
 
 
@@ -23,7 +23,7 @@ def audit_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(audit_service, "resolve_workspace_root", lambda: tmp_path)
     resolver = Mock(return_value=(ModelSettings(provider="openai", name="offline", temperature=0.2, max_tokens=1000),
         ModelCredentials(api_key="private-key"), 1200))
-    monkeypatch.setattr(audit_service, "get_execution_service", lambda: SimpleNamespace(resolve_model_settings=resolver))
+    monkeypatch.setattr(audit_service, "resolve_model_settings", resolver)
     client = SimpleNamespace(close=Mock())
     async_client = SimpleNamespace(aclose=AsyncMock())
     model = SimpleNamespace(bind_tools=lambda tools: model, client=client, async_client=async_client)

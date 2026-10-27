@@ -19,7 +19,7 @@ Paths below are relative to `agent-server/src/`:
 | `server/runtimes/investigation/schemas.py` | Extends `AuditRequest`, `InvestigationConfig`, `Evaluation`, `Finding` and `AuditResult`; preserves provenance and original rejected/unsupported candidates. |
 | `server/runtimes/repository/tools.py` | Reuses all seven existing bounded, read-only inspection tools and evidence ledger. |
 | `server/services/repository_analysis/schemas.py` | Existing symbol, inheritance/base-name and relationship indexes provide deterministic candidate navigation; no new parser or graph service. |
-| `server/app/tracing_port.py` | Standalone harness wraps execution with existing tracing; native graph/model calls inherit tracing. |
+| `server/infrastructure/tracing.py` | Standalone harness wraps execution with existing tracing; native graph/model calls inherit tracing. |
 | `test-agents/run_architecture_boundary.py` | Shared YAML/`.env` loader, snapshot creation, execution budgets, LangSmith span and caller-owned client cleanup. |
 
 There is no existing reusability coordinator using this investigator protocol. The

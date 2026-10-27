@@ -20,8 +20,8 @@ from server.app.pipeline_service import (
     UnknownPipelineError,
     get_generic_pipeline_service,
 )
-from server.app.tracing_port import NoOpTracingBackend
 from server.blackboard.impls.memory import MemoryBlackboard
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.main import app
 
 

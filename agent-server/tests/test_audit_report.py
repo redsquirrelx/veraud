@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from server.agents.audit_report import (
+from server.blackboard.impls.memory import MemoryBlackboard
+from server.blackboard.models import Assessment, Evidence, Finding
+from server.reporting import (
     AuditReportAgent,
     AuditReportRequest,
     SoftwareAuditReport,
 )
-from server.blackboard.impls.memory import MemoryBlackboard
-from server.blackboard.models import Assessment, Evidence, Finding
 
 
 def evidence(identifier="e1", **changes):

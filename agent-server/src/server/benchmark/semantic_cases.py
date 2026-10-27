@@ -2,10 +2,11 @@
 
 from pathlib import Path
 
-from ..agents.project_analysis.project_architecture.schemas import (
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureReport,
     ArchitectureResult,
 )
+
 from ..runtimes.repository import (
     RepositoryContext,
     RepositoryInput,

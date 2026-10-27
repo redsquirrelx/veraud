@@ -29,7 +29,6 @@ class AgentConfigSpec:
     shared_config: type[BaseModel] | None = None
 
 
-_ROOT = "server.agents."
 AGENT_CONFIGS = {
     "architecture_boundary": AgentConfigSpec("maintainability.modularity.architecture_boundary", "BoundaryConfig", "AuditRequest", "investigator", InvestigationConfig),
     "responsibility": AgentConfigSpec("maintainability.modularity.responsibility", "ResponsibilityConfig", "ResponsibilityRequest", "investigator", InvestigationConfig),
@@ -40,9 +39,9 @@ AGENT_CONFIGS = {
     "modularity": AgentConfigSpec("maintainability.modularity.coordinator", "ModularityConfig", "ModularityRequest", "coordinator", CoordinatorConfig),
     "reusability": AgentConfigSpec("maintainability.reusability.coordinator", "ReusabilityConfig", "ReusabilityRequest", "coordinator", CoordinatorConfig),
     "maintainability_manager": AgentConfigSpec("maintainability.manager", "MaintainabilityConfig", "MaintainabilityRequest", "manager"),
-    "project_orientation": AgentConfigSpec("project_analysis.project_orientation", "OrientationLimits", None, "repository_agent"),
-    "project_architecture": AgentConfigSpec("project_analysis.project_architecture", "ArchitectureLimits", None, "repository_agent"),
-    "project_semantic_validation": AgentConfigSpec("project_analysis.project_semantic_validation", "ValidationLimits", None, "repository_agent"),
+    "project_orientation": AgentConfigSpec("server.project_analysis.project_orientation", "OrientationLimits", None, "repository_agent"),
+    "project_architecture": AgentConfigSpec("server.project_analysis.project_architecture", "ArchitectureLimits", None, "repository_agent"),
+    "project_semantic_validation": AgentConfigSpec("server.project_analysis.project_semantic_validation", "ValidationLimits", None, "repository_agent"),
     "functional_adequacy": AgentConfigSpec("functional_adequacy", "FunctionalAdequacyConfig", None, "service_agent"),
     "security": AgentConfigSpec("security", "SecurityAuditConfig", None, "security_pipeline"),
 }
@@ -56,7 +55,12 @@ def configuration_type(agent_id):
     spec = AGENT_CONFIGS[agent_id]
     if spec.shared_config is not None:
         return spec.shared_config
-    return getattr(import_module(_ROOT + spec.package + ".config"), spec.config_name)
+    return getattr(import_module(_module_name(spec.package, ".config")), spec.config_name)
+
+
+def _module_name(package, suffix=""):
+    root = package if package.startswith("server.") else "server.agents." + package
+    return root + suffix
 
 
 def validate_developer_agent_config(agent_id, values):
@@ -126,9 +130,9 @@ def describe_developer_agent_config(agent_id):
         common = set(RepositoryAgentLimits.model_fields)
         specific = fields - common
         groups = {"repository_execution": sorted(fields & common), "specific": sorted(specific)}
-    module = import_module(_ROOT + spec.package)
+    module = import_module(_module_name(spec.package))
     prompt_dir = Path(module.__file__).parent / "prompts"
-    request_type = getattr(import_module(_ROOT + spec.package + ".schemas"), spec.request_name) if spec.request_name else None
+    request_type = getattr(import_module(_module_name(spec.package, ".schemas")), spec.request_name) if spec.request_name else None
     return {
         "agent_id": agent_id,
         "role": spec.role,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .pipeline_service import PipelineDefinition
+from server.app.pipeline_contracts import PipelineDefinition, bind_no_context
 
 STAGE = "functional_adequacy"
 
@@ -52,6 +52,7 @@ async def run_functional_pipeline(
         agent_type=STAGE,
         config=ctx["config"],
         payload=parsed,
+        blackboard=ctx.get("blackboard"),
     )
 
     if hooks is not None:
@@ -70,4 +71,6 @@ def functional_adequacy_definition() -> PipelineDefinition:
         create_pipeline=create_functional_pipeline,
         run_pipeline=run_functional_pipeline,
         agent_types={STAGE: STAGE},
+        bind_context=bind_no_context,
+        requires_agent_execution_service=True,
     )

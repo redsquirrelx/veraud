@@ -28,8 +28,9 @@ Start with the smallest module that answers your question:
 | Candidate selection before investigation | `discovery.py`, where present |
 | Consolidation, synthesis projections and proposal checks | `synthesis.py`, where present |
 | Manager accounting, nested provenance and coverage checks | `manager/validation.py` |
-| Agent-specific contract names | Local `schemas.py` compatibility exports |
-| Canonical contract definitions | [`../schemes/`](../schemes/) |
+| Agent-specific request/result contracts | Local `schemas.py` (canonical definitions) |
+| Neutral investigator envelope and evidence contracts | [`../../contracts/audit.py`](../../contracts/audit.py) |
+| Generic delegation/synthesis envelopes | [`../../runtimes/coordination/contracts.py`](../../runtimes/coordination/contracts.py) |
 | Model instructions | Local `prompts/` |
 
 The small architecture-boundary binding remains self-contained in `agent.py`.

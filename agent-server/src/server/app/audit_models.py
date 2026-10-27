@@ -7,7 +7,7 @@ from ..agents.maintainability.modularity.coordinator.registry import (
 from ..agents.maintainability.reusability.coordinator.registry import (
     INVESTIGATORS as REUSABILITY_INVESTIGATORS,
 )
-from .execution_service import InvalidConfigError
+from .errors import InvalidConfigError
 
 MAINTAINABILITY_AGENT_TYPES = (
     "maintainability_manager", *COORDINATORS, *MODULARITY_INVESTIGATORS, *REUSABILITY_INVESTIGATORS,

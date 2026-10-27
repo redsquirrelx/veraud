@@ -4,10 +4,10 @@ import copy
 import pytest
 from test_audit_report import assessment, build, evidence, finding, populated
 
-from server.agents.audit_report.execution import ReportExecution
-from server.agents.audit_report.references import ReferenceCatalog
 from server.blackboard.impls.memory import MemoryBlackboard
-from server.services.audit_report_snapshot import (
+from server.reporting.execution import ReportExecution
+from server.reporting.references import ReferenceCatalog
+from server.reporting.snapshot import (
     BlackboardSnapshot,
     report_from_snapshot,
 )

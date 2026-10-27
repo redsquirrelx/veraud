@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 from test_audit_diagnostics import incomplete_board
 from test_audit_report import assessment, build, evidence, finding, populated
 
-from server.agents.audit_report.config import ReportPresentationConfig
 from server.api.audits import get_audit_service, router
 from server.app.audit_service import AuditService, AuditState
 from server.blackboard.impls.memory import MemoryBlackboard
-from server.services.audit_report_docx import DOCX_MEDIA_TYPE, render_audit_report_docx
+from server.reporting.config import ReportPresentationConfig
+from server.reporting.docx import DOCX_MEDIA_TYPE, render_audit_report_docx
 
 
 def document_text(document):

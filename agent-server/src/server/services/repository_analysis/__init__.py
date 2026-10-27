@@ -1,12 +1,20 @@
-"""Deterministic, in-memory repository analysis and evidence-backed queries."""
+"""Lazy exports for deterministic repository analysis and evidence queries."""
 
-from .queries import RepositoryQueryService
-from .schemas import RepositoryAnalysisInput, RepositorySnapshot
-from .service import RepositoryAnalysisService
+from importlib import import_module
 
-__all__ = [
-    "RepositoryAnalysisInput",
-    "RepositoryAnalysisService",
-    "RepositoryQueryService",
-    "RepositorySnapshot",
-]
+_EXPORTS = {
+    "RepositoryQueryService": ".queries",
+    "RepositoryAnalysisInput": ".schemas",
+    "RepositorySnapshot": ".schemas",
+    "RepositoryAnalysisService": ".service",
+}
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module, __name__), name)
+    globals()[name] = value
+    return value

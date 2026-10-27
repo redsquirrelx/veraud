@@ -30,7 +30,7 @@ from server.agents.maintainability.modularity.architecture_boundary.discovery im
 from server.agents.maintainability.modularity.architecture_boundary.execution import (
     BoundaryExecution,
 )
-from server.agents.schemes.investigator import BoundaryEvaluation
+from server.contracts.legacy_schemes.investigator import BoundaryEvaluation
 from server.runtimes.investigation.messages import compact_tool_history
 
 pytest_plugins = ["test_architecture_boundary"]
@@ -165,8 +165,8 @@ def test_focused_search_history_preserves_cited_line_and_authoritative_messages(
 
 
 def test_counterexample_does_not_require_proving_complete_isolation():
-    from server.agents.schemes.base import Hypothesis
-    from server.agents.schemes.investigator import BoundaryClaimCheck
+    from server.contracts.legacy_schemes.base import Hypothesis
+    from server.contracts.legacy_schemes.investigator import BoundaryClaimCheck
 
     subject = Hypothesis(id="h", question="Are the two services cleanly decoupled?", status="discarded",
         rationale="They are not decoupled: this inspected caller directly accesses the same database.")

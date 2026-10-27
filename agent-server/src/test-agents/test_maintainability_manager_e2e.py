@@ -34,7 +34,7 @@ from server.agents.maintainability.reusability.component_adaptability import (
 from server.agents.maintainability.reusability.reuse_opportunity import (
     ReuseOpportunityRequest,
 )
-from server.app.tracing_port import LangSmithTracingBackend
+from server.infrastructure.tracing import LangSmithTracingBackend
 from server.runtimes.investigation.schemas import Criterion, InvestigationConfig
 
 
@@ -134,9 +134,9 @@ def test_broader_nested_first_pass_and_internal_coordinator_followup(audit_repos
     assert reusability.rounds_completed == 1 and len(reusability.invocations) == 3
     assert all(r.evidence_sufficient for r in report.assessments)
     assert len(report.findings) >= 4 and all(r.result.consolidated_findings for r in report.assessments)
-    from server.agents.audit_report import AuditReportAgent, AuditReportRequest
     from server.blackboard.impls.memory import MemoryBlackboard
     from server.blackboard.publication import Publication
+    from server.reporting import AuditReportAgent, AuditReportRequest
 
     board = MemoryBlackboard()
     Publication(board, "maintainability_manager", run_id=report.assessment_id,

@@ -6,26 +6,31 @@ Adding a pipeline means registering a `PipelineDefinition`, not writing a
 new service.
 """
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from ..api.schemas import ExecutionConfig
+from server.app.execution_config import ExecutionConfig
+from server.app.pipeline_contracts import PipelineDefinition
+from server.app.pipeline_registry import default_pipeline_registry
+from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
+
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
 from .callback_port import CallbackSink, default_callback_sink
-from .execution_service import AgentExecutionService, InvalidConfigError
-from .tracing_port import LangSmithTracingBackend, TracingBackend
+from .errors import InvalidConfigError
 from .usage_reporting import report_progress
 
 logger = get_logger("pipeline-service")
 
 if TYPE_CHECKING:
     from ..blackboard.interface import Blackboard
+    from .execution_service import AgentExecutionService
 
 # The whole pipeline gets one deadline, like the dev runner's --timeout.
 DEFAULT_PIPELINE_TIMEOUT_SECONDS = 600
@@ -146,43 +151,6 @@ class GenericReportingHooks:
         self.open_rows.discard(execution_id)
 
 
-@dataclass
-class PipelineDefinition:
-    """How to run one registered pipeline. New pipelines add an entry here.
-
-    The generic service only touches `name`, `stages`, and these callables:
-    stage/agent names, graph hook shapes and run lifecycles live in the
-    definition, never in the service. `ctx` is the definition's private
-    per-run state (e.g. snapshot, budget, models) threaded from
-    `build_agents` through `create_pipeline` into `run_pipeline`.
-    """
-
-    name: str
-    stages: list[str]
-    parse_input: Callable[[dict], Any]
-    build_agents: Callable[..., Any] = field(repr=False)
-    adapt_hooks: Callable[[GenericReportingHooks], Any] = field(repr=False)
-    create_pipeline: Callable[[dict[str, Any], Any, dict[str, Any]], Any] = field(repr=False)
-    run_pipeline: Callable[..., Any] = field(repr=False)
-    agent_types: dict[str, str] | None = None
-    resolve_stages: Callable[[Any], list[str]] | None = None
-
-    def agent_type_for(self, stage: str) -> str:
-        return (self.agent_types or {}).get(stage, stage)
-
-
-def default_pipeline_registry() -> dict[str, PipelineDefinition]:
-    from .functional_adequacy_definition import functional_adequacy_definition
-    from .project_architecture_definition import project_architecture_definition
-    from .quality_audit_definition import quality_audit_definition
-
-    return {
-        "functional-adequacy": functional_adequacy_definition(),
-        "project-architecture": project_architecture_definition(),
-        "quality-audit": quality_audit_definition(),
-    }
-
-
 class GenericPipelineService:
     """Runs any registered pipeline by name with generic stage maps."""
 
@@ -193,7 +161,7 @@ class GenericPipelineService:
         tracing_backend: TracingBackend | None = None,
         registry: dict[str, PipelineDefinition] | None = None,
     ) -> None:
-        self._exec = execution_service or AgentExecutionService()
+        self._exec = execution_service
         self._callbacks_factory = callbacks_factory or _default_callbacks
         self._tracing = tracing_backend or LangSmithTracingBackend()
         self._registry = registry if registry is not None else default_pipeline_registry()
@@ -210,10 +178,11 @@ class GenericPipelineService:
         execution_ids: dict[str, int] | None = None,
         timeout_seconds: int = DEFAULT_PIPELINE_TIMEOUT_SECONDS,
         *,
-        blackboard: "Blackboard | None" = None,
+        blackboard: Blackboard | None = None,
         audit_service=None,
     ) -> dict:
         """Run the named pipeline and return its stage outputs as plain dicts."""
+
         definition = self._registry.get(pipeline_name)
         if definition is None:
             raise UnknownPipelineError(f"Unknown pipeline: {pipeline_name!r}")
@@ -228,18 +197,39 @@ class GenericPipelineService:
                     f"Missing execution ids for stages: {', '.join(missing)}"
                 )
 
+        requires_executor = definition.requires_agent_execution_service
+        if requires_executor is None:
+            requires_executor = True  # compatibility for custom pipeline definitions
+        if requires_executor and self._exec is None:
+            from .execution_service import AgentExecutionService
+
+            self._exec = AgentExecutionService()
         agents, ctx = await definition.build_agents(
             self._exec, config, stage_configs, parsed, timeout_seconds
         )
-        if audit_service is not None:
-            # Only audit-aware stages opt in; other pipelines keep their own scope.
-            for agent in agents.values():
-                if getattr(agent, "uses_audit_service", False):
-                    agent.audit_service = audit_service
-        if blackboard is not None:
-            for agent in agents.values():
-                agent.blackboard = blackboard
+        try:
+            # Pipeline-private context is the explicit injection boundary. Definitions
+            # decide which of these optional request-scoped services they consume.
+            ctx = dict(ctx or {})
+            ctx["blackboard"] = blackboard
+            ctx["audit_service"] = audit_service
+            definition.bind_context(agents, ctx, blackboard, audit_service)
+            return await self._execute_prepared(
+                definition, pipeline_name, parsed, agents, ctx, config,
+                stage_configs, execution_ids, stages, timeout_seconds,
+            )
+        finally:
+            if definition.close_resources is not None:
+                try:
+                    await definition.close_resources(ctx)
+                except Exception as error:  # noqa: BLE001 - never mask pipeline outcome
+                    logger.warning("Pipeline %r resource cleanup failed (%s)", pipeline_name, type(error).__name__)
 
+
+    async def _execute_prepared(
+        self, definition, pipeline_name, parsed, agents, ctx, config, stage_configs,
+        execution_ids, stages, timeout_seconds,
+    ) -> dict:
         callbacks = self._callbacks_factory() if execution_ids is not None else None
         if execution_ids is not None and callbacks is None:
             logger.warning(
@@ -249,11 +239,19 @@ class GenericPipelineService:
 
         hooks: GenericReportingHooks | None = None
         graph_hooks: Any = None
-        if execution_ids is not None:
-            hooks = GenericReportingHooks(callbacks, execution_ids, stages)
-            graph_hooks = definition.adapt_hooks(hooks)
+        try:
+            if execution_ids is not None:
+                hooks = GenericReportingHooks(callbacks, execution_ids, stages)
+                graph_hooks = definition.adapt_hooks(hooks)
 
-        pipeline = definition.create_pipeline(agents, graph_hooks, ctx)
+            pipeline = definition.create_pipeline(agents, graph_hooks, ctx)
+        except BaseException:
+            if callbacks is not None:
+                try:
+                    await callbacks.aclose()
+                except Exception as error:  # noqa: BLE001 - retain setup failure
+                    logger.warning("Pipeline callback cleanup failed (%s)", type(error).__name__)
+            raise
 
         try:
             return await self._tracing.wrap_pipeline(

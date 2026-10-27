@@ -5,7 +5,7 @@ import json
 from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticCustomError
 
-from ..repository.model_runtime import extract_text
+from ...infrastructure.llm.usage import extract_text
 from ..repository.responses import parse_json_value
 
 

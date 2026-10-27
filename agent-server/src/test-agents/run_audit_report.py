@@ -5,8 +5,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from server.agents.audit_report import AuditReportRequest
-from server.services.audit_report_snapshot import (
+from server.reporting import AuditReportRequest
+from server.reporting.snapshot import (
     BlackboardSnapshot,
     report_from_snapshot,
 )

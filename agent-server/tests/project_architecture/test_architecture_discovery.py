@@ -4,15 +4,15 @@ import json
 
 import pytest
 
-from server.agents.project_analysis.project_architecture.context import (
+from server.project_analysis.project_architecture.context import (
     normalize_source_references,
     retain_valid_sections,
     validate_report,
 )
-from server.agents.project_analysis.project_architecture.projection import (
+from server.project_analysis.project_architecture.projection import (
     representation_view,
 )
-from server.agents.project_analysis.project_architecture.schemas import (
+from server.project_analysis.project_architecture.schemas import (
     ArchitectureReport,
 )
 from server.runtimes.repository import (

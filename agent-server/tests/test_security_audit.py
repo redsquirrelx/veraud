@@ -24,8 +24,8 @@ from server.app import audit_service
 from server.app.audit_service import AuditService
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.main import app
-from server.services.audit_report_docx import render_audit_report_docx
-from server.services.audit_report_snapshot import (
+from server.reporting.docx import render_audit_report_docx
+from server.reporting.snapshot import (
     BlackboardSnapshot,
     report_from_snapshot,
 )

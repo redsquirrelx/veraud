@@ -6,27 +6,36 @@ from operator import attrgetter
 from pathlib import Path
 from time import monotonic
 from types import SimpleNamespace
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from config.agents.audit import (
     AuditAgentDefaults,
     AuditCallLimits,
     apply_audit_call_limits,
     apply_audit_defaults,
-    audit_output_envelope,
     validate_audit_agents,
     validate_audit_output_capacity,
 )
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import validate_agent_config
-
-from ..agents.audit_report import (
-    AuditReportAgent,
-    AuditReportRequest,
-    SoftwareAuditReport,
+from server.app.audit_state import (
+    AuditActivity as AuditActivity,  # noqa: PLC0414 - public compatibility export
 )
+from server.app.audit_state import (
+    AuditSnapshot,
+    AuditState,
+    AuditStatus,
+)
+from server.app.audit_state import (
+    AuditWait as AuditWait,  # noqa: PLC0414 - public compatibility export
+)
+from server.app.execution_config import ExecutionConfig
+from server.infrastructure.tracing import LangSmithTracingBackend
+from server.reporting import AuditReportAgent, AuditReportRequest, SoftwareAuditReport
+from server.reporting.schemas import ReportGenerationSummary
+from server.services.audit_diagnostics import execution_diagnostics
+
 from ..agents.functional_adequacy.audit import run_functional_audit
 from ..agents.functional_adequacy.config import FunctionalAdequacyConfig
 from ..agents.functional_adequacy.schemas import FunctionalAdequacyInput
@@ -36,7 +45,6 @@ from ..agents.maintainability.manager import (
     MaintainabilityRequest,
 )
 from ..agents.maintainability.manager.validation import validate_call_capacity
-from ..agents.schemes.report import ReportGenerationSummary
 from ..agents.security.audit import (
     SecurityAuditRequest,
     run_security_audit,
@@ -46,23 +54,20 @@ from ..agents.security.config import (
     SecurityAuditOverrides,
     resolve_security_audit_config,
 )
-from ..api.schemas import ExecutionConfig
 from ..blackboard.identity import AuditIdentity
 from ..blackboard.interface import Blackboard
-from ..blackboard.models import Assessment, Evidence, Finding
+from ..blackboard.models import Assessment
 from ..blackboard.publication import publish_audit_context, publish_audit_outcome
+from ..config import tracing
 from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
+from ..infrastructure.llm.resources import close_model_clients
 from ..runtimes.invocation_reporting import observe_invocation
-from ..runtimes.repository.context import RepositoryContext
-from ..runtimes.repository.model_runtime import close_model_clients
-from ..runtimes.repository.schemas import ExecutionBudget, RepositoryInput
 from ..runtimes.repository.shared_tokens import SharedTokenBudget
 from ..runtimes.repository.timing import ActiveDeadline, within_deadline
-from ..runtimes.repository.tools import RepositoryToolset, ToolLimits
-from ..services.audit_diagnostics import ExecutionDiagnostic, execution_diagnostics
+from ..runtimes.repository.tools import RepositoryToolset as RepositoryToolset  # noqa: PLC0414 - test compatibility
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -70,55 +75,11 @@ from ..services.repository_analysis import (
 from .audit_attributes import QualityAttributes, audit_root
 from .audit_configuration import resolve_attribute_limits
 from .audit_models import validate_model_configs
-from .execution_service import InvalidConfigError, get_execution_service
-from .tracing_port import LangSmithTracingBackend
+from .audit_resources import audit_client, repository_tools
+from .errors import InvalidConfigError
+from .model_configuration import default_model_configuration, resolve_model_settings
 
 logger = get_logger("audit-service")
-AuditStatus = Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
-
-
-class AuditState(BaseModel):
-    """Public lifecycle state; results live in the Blackboard, credentials never enter this model."""
-
-    model_config = ConfigDict(frozen=True)
-
-    run_id: str
-    invocation_id: str
-    status: AuditStatus
-    view_url: str
-    created_at: datetime
-    error: str | None = None
-
-
-class AuditWait(BaseModel):
-    agent_id: str | None
-    invocation_id: str | None
-    reason: str
-    source: str | None
-    retry_after_seconds: float | None = Field(ge=0)
-
-
-class AuditSnapshot(AuditState):
-    """Lifecycle state and the audit's currently published knowledge, including partial results."""
-
-    findings: list[Finding] = Field(default_factory=list)
-    evidence: list[Evidence] = Field(default_factory=list)
-    assessments: list[Assessment] = Field(default_factory=list)
-    waiting: list[AuditWait] = Field(default_factory=list)
-    execution_issues: list[ExecutionDiagnostic] = Field(default_factory=list)
-    activity: list["AuditActivity"] = Field(default_factory=list)
-    last_progress_at: datetime | None = None
-    active_seconds_remaining: float | None = None
-    wall_seconds_remaining: float | None = None
-
-
-class AuditActivity(BaseModel):
-    agent_id: str | None
-    invocation_id: str | None
-    stage: str
-    started_at: datetime
-    elapsed_seconds: float = Field(ge=0)
-    status: Literal["running", "cancellation_pending"]
 
 
 class AuditService:
@@ -129,6 +90,7 @@ class AuditService:
         self._timings: dict[str, ActiveDeadline] = {}
         self._closing = False
         self._report_generations: dict[str, dict[str, SoftwareAuditReport]] = {}
+        self._base_model_config: dict | None = None
 
     def get(self, run_id: str) -> AuditState | None:
         return self._states.get(run_id)
@@ -323,14 +285,23 @@ class AuditService:
         except ValueError as error:
             raise InvalidConfigError(str(error)) from None
         root_config = (agent_configs or {}).get(audit_root(attributes), config)
-        settings, credentials, _ = get_execution_service().resolve_model_settings(
-            agent_config, root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
+        if self._base_model_config is None:
+            self._base_model_config = default_model_configuration()
+        # The direct-run service used to be instantiated here only to resolve
+        # configuration (also registering direct agents and initializing tracing).
+        tracing.setup()
+        settings, credentials, _ = resolve_model_settings(
+            self._base_model_config,
+            agent_config,
+            root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
         )
         if settings.provider.lower() not in PROVIDERS:
             raise InvalidConfigError("Unsupported model provider.")
         model_selections = {}
         for agent_type, selected in (agent_configs or {}).items():
-            resolved, access, _ = get_execution_service().resolve_model_settings(agent_type, selected)
+            resolved, access, _ = resolve_model_settings(
+                self._base_model_config, agent_type, selected
+            )
             if resolved.provider.lower() not in PROVIDERS:
                 raise InvalidConfigError("Unsupported model provider.")
             model_selections[agent_type] = (resolved, access)
@@ -388,30 +359,17 @@ class AuditService:
                 return await self._run_combined(identity, root, snapshot, request, security_request, limits,
                     settings, credentials, total_tokens, model_selections, timing, clients, security_limits,
                     attributes, functional_requirements, functional_limits, output_overrides)
-            budget = ExecutionBudget(
-                max_model_calls=limits.max_model_calls, max_tool_calls=max(1, limits.max_tool_calls),
-                max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
-                max_input_tokens_per_call=max(500, limits.max_context_characters // 2),
-                max_output_tokens_per_call=audit_output_envelope(limits, output_overrides),
-                max_elapsed_seconds=limits.timeout_seconds,
+            tools = repository_tools(
+                snapshot,
+                root,
+                limits,
+                total_tokens,
+                timing,
+                SharedTokenBudget(total_tokens),
+                output_overrides,
+                security=isinstance(request, SecurityAuditRequest),
             )
-            tool_limits = ToolLimits(compact=True)
-            if isinstance(request, SecurityAuditRequest):
-                budget = ExecutionBudget.model_validate(budget.model_dump() | {
-                    "max_retrieved_characters": limits.max_retrieved_characters})
-                tool_limits = ToolLimits(compact=True, max_source_lines=limits.max_source_lines,
-                    max_source_characters=limits.max_source_characters)
-            tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
-                snapshot_hash=snapshot.repository.snapshot_hash, budget=budget,
-            )), workspace_root=root.parent, limits=tool_limits,
-                token_budget=SharedTokenBudget(total_tokens), timing=timing)
-            def client(selected, access):
-                key = (selected.model_dump_json(), access.api_key)
-                if key not in clients:
-                    clients[key] = build_chat_model(selected, access)
-                return clients[key]
-
-            model = client(settings, credentials)
+            model = audit_client(clients, settings, credentials, build_chat_model)
             tracing = LangSmithTracingBackend()
             if isinstance(request, SecurityAuditRequest):
                 with timing.stage("security_audit"):
@@ -421,7 +379,7 @@ class AuditService:
                         name="security-audit", audit_id=identity.run_id, invocation_id=identity.invocation_id,
                         repository_id=snapshot.repository.name, snapshot_hash=snapshot.repository.snapshot_hash),
                         agent_id="security", invocation_id=identity.invocation_id, run_id=identity.run_id)
-            models = {agent_type: client(selected, access)
+            models = {agent_type: audit_client(clients, selected, access, build_chat_model)
                 for agent_type, (selected, access) in (model_selections or {}).items()}
             manager = MaintainabilityManagerAgent(model, limits, blackboard=self.blackboard,
                 audit_identity=identity, tracing_backend=tracing)
@@ -466,12 +424,6 @@ class AuditService:
         shared_tokens = SharedTokenBudget(total_tokens)
         tracing = LangSmithTracingBackend()
 
-        def client(selected, access):
-            key = (selected.model_dump_json(), access.api_key)
-            if key not in clients:
-                clients[key] = build_chat_model(selected, access)
-            return clients[key]
-
         async def evaluate(attribute, selected_request, policy):
             # Keep the manager's established root identity for report authority
             # and continuation lineage; security owns a distinct invocation.
@@ -482,22 +434,18 @@ class AuditService:
                 cancellation_grace_seconds=policy.cancellation_grace_seconds)
 
             async def execute():
-                budget = ExecutionBudget(max_model_calls=policy.max_model_calls, max_tool_calls=max(1, policy.max_tool_calls),
-                    max_total_tokens=total_tokens, max_tokens_per_objective=total_tokens,
-                    max_input_tokens_per_call=max(500, policy.max_context_characters // 2),
-                    max_output_tokens_per_call=audit_output_envelope(policy, output_overrides),
-                    max_elapsed_seconds=policy.timeout_seconds)
-                tool_limits = ToolLimits(compact=True)
-                if attribute == "security":
-                    budget = ExecutionBudget.model_validate(budget.model_dump() | {
-                        "max_retrieved_characters": policy.max_retrieved_characters})
-                    tool_limits = ToolLimits(compact=True, max_source_lines=policy.max_source_lines,
-                        max_source_characters=policy.max_source_characters)
-                tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
-                    snapshot_hash=snapshot.repository.snapshot_hash, budget=budget)), workspace_root=root.parent,
-                    limits=tool_limits, token_budget=shared_tokens.fork(), timing=deadline)
+                tools = repository_tools(
+                    snapshot,
+                    root,
+                    policy,
+                    total_tokens,
+                    deadline,
+                    shared_tokens.fork(),
+                    output_overrides,
+                    security=attribute == "security",
+                )
                 selected, access = (model_selections or {}).get(agent_id, (settings, credentials))
-                model = client(selected, access)
+                model = audit_client(clients, selected, access, build_chat_model)
                 if attribute == "functional_adequacy":
                     operation = run_functional_audit(snapshot, selected_request, policy, model,
                         self.blackboard, child, shared_tokens.fork(), deadline)
@@ -508,7 +456,8 @@ class AuditService:
                 else:
                     manager = MaintainabilityManagerAgent(model, policy, blackboard=self.blackboard,
                         audit_identity=child, tracing_backend=tracing)
-                    manager.agent_models = {name: client(*selection) for name, selection in (model_selections or {}).items()
+                    manager.agent_models = {name: audit_client(clients, *selection, build_chat_model)
+                        for name, selection in (model_selections or {}).items()
                         if name not in {"security", "functional_adequacy"}}
                     manager.agent_output_limits = output_overrides or {}
                     operation = manager.run(tools, selected_request)
