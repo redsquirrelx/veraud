@@ -45,6 +45,7 @@ InvestigationResult = Annotated[
 ]
 
 class ReusabilityRequest(ScopedAuditRequest, TargetContext):
+    investigator_ids: list[ReusabilityInvestigatorId] | None = None
     objective: str = "Assess reusability through abstractions, shared-implementation opportunities and context-specific adaptation constraints."
 
 class ReusabilityInvestigatorCapability(AgentCapability[ReusabilityInvestigatorId]):
