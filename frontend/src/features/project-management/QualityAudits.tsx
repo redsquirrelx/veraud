@@ -2,12 +2,18 @@ import { useEffect, useId, useState } from "react"
 import { Link } from "react-router-dom"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
-import { Badge, Button, Card } from "../../shared/ui-kit/index.ts"
+import { Accordion, Badge, Button, Card, Checkbox, Drawer } from "../../shared/ui-kit/index.ts"
 import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 import { downloadQualityAuditReport, getQualityAuditReport, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
+import { MaintainabilityConfiguration } from "./MaintainabilityConfiguration.tsx"
+import { AuditAttributeSummary } from "./AuditAttributeSummary.tsx"
+import { AuditConfigurationDetails } from "./AuditConfigurationDetails.tsx"
+import { ReuseAuditConfiguration } from "./ReuseAuditConfiguration.tsx"
+import type { ReusedAuditSelection } from "./reuseAuditSelection.ts"
+import { availableSubcharacteristics, isAvailable, useAuditAgentCatalog } from "./auditAgentCatalog.ts"
 
 const sections = [
   ["identification", "qualityAudits.report.sections.identification"],
@@ -124,9 +130,14 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const attributeId = useId()
+  const agentCatalog = useAuditAgentCatalog()
   const [selected, setSelected] = useState(true)
   const [securitySelected, setSecuritySelected] = useState(true)
   const [functionalSelected, setFunctionalSelected] = useState(false)
+  const [configurationOpen, setConfigurationOpen] = useState(false)
+  const [expandedAttributes, setExpandedAttributes] = useState<Record<string, boolean>>({ maintainability: true, security: true, functional_adequacy: false })
+  const [maintainabilitySelection, setMaintainabilitySelection] = useState<Record<string, string[]> | undefined>()
+  const invalidMaintainability = selected && maintainabilitySelection !== undefined && Object.keys(maintainabilitySelection).length === 0
   const [requirementsText, setRequirementsText] = useState("")
   const requirements = requirementsText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   const invalidRequirements = functionalSelected && (requirements.length === 0 || requirements.length > 100
@@ -138,6 +149,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const [report, setReport] = useState<{ id: number, document: Record<string, unknown> } | null>(null)
   const [loadingReport, setLoadingReport] = useState<number | null>(null)
   const [downloading, setDownloading] = useState<number | null>(null)
+  const [reuseNotice, setReuseNotice] = useState<"loaded" | "adjusted" | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -162,21 +174,61 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }, [projectId, refresh])
 
   const running = audits.some((row) => ["Waiting", "Running"].includes(row.executionStatus))
+  const configurationAttributes = [
+    { id: "maintainability", selected, label: "auditStatus.pipelines.maintainability" },
+    { id: "security", selected: securitySelected, label: "auditStatus.pipelines.security" },
+    { id: "functional_adequacy", selected: functionalSelected, label: "auditStatus.pipelines.functionalAdequacy" },
+  ] as const
+
+  function setAttributeEnabled(id: string, checked: boolean) {
+    setExpandedAttributes((current) => ({ ...current, [id]: checked }))
+    if (id === "maintainability") {
+      setSelected(checked)
+      setMaintainabilitySelection(checked ? undefined : {})
+    } else if (id === "security") setSecuritySelected(checked)
+    else setFunctionalSelected(checked)
+  }
+
+  function restoreSelectionDefaults() {
+    setReuseNotice(null)
+    const maintainability = availableSubcharacteristics(agentCatalog.agents).length > 0
+    const security = agentCatalog.agents.some((agent) => agent.agentType === "security" && isAvailable(agent))
+    setMaintainabilitySelection(undefined)
+    setSelected(maintainability)
+    setSecuritySelected(security)
+    setFunctionalSelected(false)
+    setExpandedAttributes({ maintainability, security, functional_adequacy: false })
+  }
+
+  function reuseConfiguration(selection: ReusedAuditSelection) {
+    const maintainability = Object.keys(selection.maintainability).length > 0
+    setMaintainabilitySelection(selection.maintainability)
+    setSelected(maintainability)
+    setSecuritySelected(selection.security)
+    setFunctionalSelected(selection.functionalAdequacy)
+    setExpandedAttributes({ maintainability, security: selection.security, functional_adequacy: selection.functionalAdequacy })
+    setReuseNotice(selection.adjusted ? "adjusted" : "loaded")
+    setConfigurationOpen(true)
+  }
 
   async function start() {
-    if (!branch || !commitHash || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || starting) return
+    if (!branch || !commitHash || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || invalidMaintainability || starting) return
     setStarting(true)
     setError(null)
     try {
+      const selectionOptions = selected && maintainabilitySelection !== undefined
+        ? { maintainability_selection: maintainabilitySelection } : {}
       const attributes = [
         ...(selected ? ["maintainability"] : []), ...(securitySelected ? ["security"] : []),
         ...(functionalSelected ? ["functional_adequacy"] : []),
       ]
       if (functionalSelected) {
         await startQualityAudit(projectId, branch, commitHash, attributes, {
+          ...selectionOptions,
           functional_requirements: requirements.map((description, index) => ({ requirement_id: `REQ-${String(index + 1).padStart(3, "0")}`, description })),
         })
-      } else await startQualityAudit(projectId, branch, commitHash, attributes)
+      } else if (Object.keys(selectionOptions).length) await startQualityAudit(projectId, branch, commitHash, attributes, selectionOptions)
+      else await startQualityAudit(projectId, branch, commitHash, attributes)
       setRefresh((value) => value + 1)
     } catch (cause) { setError(qualityAuditError(cause, "qualityAudits.errors.start")) }
     finally { setStarting(false) }
@@ -206,12 +258,14 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       </div>
       <fieldset className="quality-attributes">
         <legend>{t("qualityAudits.attributesLegend")}</legend>
-        <label className="quality-attribute" data-selected={selected}><input type="checkbox" aria-labelledby={`${attributeId}-maintainability`} aria-describedby={`${attributeId}-maintainability-description`} checked={selected} onChange={(event) => setSelected(event.target.checked)} /><span><strong id={`${attributeId}-maintainability`}>{t("auditStatus.pipelines.maintainability")}</strong><small id={`${attributeId}-maintainability-description`}>{t("qualityAudits.attributes.maintainability.description")}</small></span></label>
-        <label className="quality-attribute" data-selected={securitySelected}><input type="checkbox" aria-labelledby={`${attributeId}-security`} aria-describedby={`${attributeId}-security-description`} checked={securitySelected} onChange={(event) => setSecuritySelected(event.target.checked)} /><span><strong id={`${attributeId}-security`}>{t("auditStatus.pipelines.security")}</strong><small id={`${attributeId}-security-description`}>{t("qualityAudits.attributes.security.description")}</small></span></label>
-      <label className="quality-attribute" data-selected={functionalSelected}>
-        <input type="checkbox" aria-labelledby={`${attributeId}-functional`} checked={functionalSelected} onChange={(event) => setFunctionalSelected(event.target.checked)} />
-        <span><strong id={`${attributeId}-functional`}>{t("auditStatus.pipelines.functionalAdequacy")}</strong><small>{t("qualityAudits.attributes.functionalAdequacy.description")}</small></span>
-      </label>
+        {configurationAttributes.map((attribute) => <section key={attribute.id} className="quality-attribute" data-selected={attribute.selected} aria-label={t(attribute.label)}>
+          <div className="quality-attribute-copy">
+            <div className="quality-attribute-status"><strong>{t(attribute.label)}</strong>
+              <Badge tone={attribute.selected ? "success" : "neutral"}>{t(attribute.selected ? "qualityAudits.configuration.active" : "qualityAudits.configuration.inactive")}</Badge>
+            </div>
+            {attribute.selected && <AuditAttributeSummary attribute={attribute.id} catalog={agentCatalog} selection={maintainabilitySelection} />}
+          </div>
+        </section>)}
       </fieldset>
       {functionalSelected && <div className="quality-functional-requirements">
         <label htmlFor={`${attributeId}-requirements`}>{t("qualityAudits.requirements.label")}</label>
@@ -221,10 +275,12 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
           onChange={(event) => setRequirementsText(event.target.value)} />
       </div>}
       <div className="quality-audit-actions">
-        <Button disabled={!canRun || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
+        <Button disabled={!canRun || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || invalidMaintainability || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
         <Button onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
+        <Button variant="secondary" onClick={() => setConfigurationOpen(true)}>{t("qualityAudits.configuration.title")}</Button>
         <Link to="/settings">{t("qualityAudits.configureAgents")}</Link>
       </div>
+      {invalidMaintainability && <p role="status">{t("qualityAudits.configuration.maintainability.selectDimension")}</p>}
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}
       {error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
     </Card>
@@ -243,6 +299,11 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <p className="label">{Number.isNaN(new Date(audit.createdAt).getTime())
           ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</p>
         {audit.error && <p role="alert">{audit.error}</p>}
+        <div className="quality-audit-history-actions">
+          <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
+          <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
+            available={audit.configurationAvailable === true} catalog={agentCatalog} disabled={starting} onReuse={reuseConfiguration} />
+        </div>
         {audit.reportAvailable && <div className="audit-button-row">
           <Button disabled={loadingReport !== null} onClick={() => void view(audit.id)}>{loadingReport === audit.id ? tCommon("ui.loading") : t("qualityAudits.viewReport")}</Button>
           <Button disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>
@@ -258,5 +319,31 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <ReportValue value={report.document[key]} />
       </details>)}</div>
     </Card>}
+    <Drawer
+      open={configurationOpen}
+      title={t("qualityAudits.configuration.title")}
+      description={t("qualityAudits.configuration.description")}
+      onClose={() => setConfigurationOpen(false)}
+      footer={<Button variant="secondary" disabled={agentCatalog.loading || agentCatalog.failed} onClick={restoreSelectionDefaults}>
+        {t("qualityAudits.configuration.restoreDefaults")}
+      </Button>}
+    >
+      <div className="quality-audit-configuration">
+        {reuseNotice && <p role="status" className="label">{t(reuseNotice === "adjusted" ? "qualityAudits.configurationHistory.reuseAdjusted" : "qualityAudits.configurationHistory.reuseLoaded")}</p>}
+        <p className="label">{t("qualityAudits.configuration.previewNotice")}</p>
+         {configurationAttributes.map((attribute) => <Accordion key={attribute.id} title={t(attribute.label)}
+           open={Boolean(expandedAttributes[attribute.id])} disabled={!attribute.selected}
+           onOpenChange={(open) => setExpandedAttributes((current) => ({ ...current, [attribute.id]: open }))}
+           headerAction={<Checkbox label={t("qualityAudits.configuration.enableAttribute", { attribute: t(attribute.label) })} checked={attribute.selected}
+             onChange={(checked) => setAttributeEnabled(attribute.id, checked)} />}>
+          {attribute.id === "maintainability" ? <MaintainabilityConfiguration catalog={agentCatalog} value={maintainabilitySelection} onChange={(selection) => {
+            setMaintainabilitySelection(selection)
+            setSelected(Object.keys(selection).length > 0)
+            if (!Object.keys(selection).length) setExpandedAttributes((current) => ({ ...current, maintainability: false }))
+          }} /> : <p className="label">{t("qualityAudits.configuration.optionsPending")}</p>}
+         </Accordion>)}
+        {!configurationAttributes.some((attribute) => attribute.selected) && <p className="label">{t("qualityAudits.configuration.noAttributes")}</p>}
+      </div>
+    </Drawer>
   </div>
 }

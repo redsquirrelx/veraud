@@ -375,7 +375,7 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
   })
 
-  it("shows quality audit selection independently of the file tree", async () => {
+  it("shows quality audit status and its configuration entry independently of the file tree", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
@@ -383,7 +383,9 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
-    expect(screen.getByRole("checkbox", { name: "Maintainability" })).toBeDefined()
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
+    expect(screen.queryByRole("checkbox", { name: "Maintainability" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
     expect(screen.queryByRole("tree")).toBeNull()
   })
 

@@ -45,6 +45,33 @@ optional and is not authorization unless the backend separately implements it.
 
 ## `quality-audit` artifact and reconciliation
 
+The project audit endpoint and `quality-audit` pipeline accept optional
+`maintainability_selection`, a map from registered maintainability coordinator IDs to
+their enabled investigator IDs (for example, `{"modularity": ["responsibility"]}`).
+It requires the `maintainability` attribute and at least one selected coordinator.
+An empty investigator list is allowed for a selected coordinator; it cannot establish
+successful coverage without investigator evidence. Omission preserves the existing full
+hierarchy. The manager and selected coordinators are implicit, not individual toggles.
+Unknown, cross-coordinator and duplicate investigator IDs are rejected. Deselected
+dimensions and investigators are not dispatched, including during follow-up rounds;
+successful work with reduced coverage is reported as partial, not complete.
+
+Fastify stores a versioned, credential-free scope snapshot with each new project audit
+at execution creation: branch, full commit, attributes, selected subcharacteristics,
+techniques, investigators and implicit manager/coordinator IDs and names. The default
+maintainability selection is resolved from the synchronized catalog and forwarded
+explicitly, so dispatch matches the saved scope. This metadata is independent of report
+completion and later catalog/model-setting changes; it requires no new database column.
+`GET /api/projects/{project_id}/audits/{execution_id}/configuration` returns
+`{configuration, invocations}` for history inspection. Older runs return
+`configuration: null`, never a reconstruction from current settings. Recorded invocation
+statuses are separate from selected scope: selecting a participant does not prove it ran.
+History reuse reads this endpoint and copies selections into a new form only. It keeps
+the currently selected branch/commit and current model/credential/operating settings;
+it never updates or restarts the source audit. Missing participants are omitted with
+a review notice. Scopes whose technique selection cannot be reproduced are disabled
+rather than silently substituted with today's defaults.
+
 The pipeline artifact remains `{"audit": {"attributes", "status", "run_id", "report",
 "blackboard", "docx_base64"}}`. Fastify may reconcile an existing run using GET snapshot,
 report and DOCX; it must not replay the POST after an uncertain transport result. Do not move

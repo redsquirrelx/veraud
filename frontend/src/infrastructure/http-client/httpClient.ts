@@ -288,6 +288,8 @@ export interface AgentConfiguration {
 }
 
 export interface AgentSettings {
+  parentAgentTypes?: string[]
+  childAgentTypes?: string[]
   requiresModel?: boolean
   modelConfigurationAgentType?: string | null
   availability?: string
