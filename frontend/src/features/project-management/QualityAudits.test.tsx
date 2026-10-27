@@ -367,6 +367,9 @@ describe("project quality audits", () => {
     expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Functional adequacy" })).toHaveTextContent("Disabled")
+    const settingsLink = screen.getByRole("link", { name: "Configure agents" })
+    expect(settingsLink).toHaveClass("ui-button", "ui-button-secondary")
+    expect(settingsLink).toHaveAttribute("href", "/settings")
     await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"]))
     expect(api.startQualityAudit).toHaveBeenCalledOnce()
@@ -382,6 +385,7 @@ describe("project quality audits", () => {
     expect(await screen.findByText("c".repeat(32))).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "View Blackboard" }).getAttribute("href"))
       .toBe(`http://localhost:7502/blackboard?run_id=${"c".repeat(32)}`)
+    expect(screen.getByRole("link", { name: "View Blackboard" })).toHaveClass("ui-button", "ui-button-secondary")
     // A running audit has no report yet, so no extra request is made for it.
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
   })

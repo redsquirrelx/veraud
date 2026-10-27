@@ -119,7 +119,7 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
   const pending = audit.reportAvailable && !loaded ? tCommon("ui.loading")
     : ["Waiting", "Running"].includes(audit.executionStatus) ? t("qualityAudits.runId.initializing") : t("qualityAudits.runId.unavailable")
   return <p className="audit-run-id">{t("qualityAudits.runId.label")}: {id
-    ? <><code>{id}</code>{" · "}<a href={`${serverUrl}/blackboard?run_id=${encodeURIComponent(id)}`} target="_blank" rel="noreferrer">{t("qualityAudits.runId.openBlackboard")}</a></>
+    ? <><code>{id}</code>{" · "}<a className="ui-button ui-button-secondary" href={`${serverUrl}/blackboard?run_id=${encodeURIComponent(id)}`} target="_blank" rel="noreferrer">{t("qualityAudits.runId.openBlackboard")}</a></>
     : <span>{pending}</span>}</p>
 }
 
@@ -278,7 +278,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <Button disabled={!canRun || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || invalidMaintainability || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
         <Button onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
         <Button variant="secondary" onClick={() => setConfigurationOpen(true)}>{t("qualityAudits.configuration.title")}</Button>
-        <Link to="/settings">{t("qualityAudits.configureAgents")}</Link>
+        <Link className="ui-button ui-button-secondary" to="/settings">{t("qualityAudits.configureAgents")}</Link>
       </div>
       {invalidMaintainability && <p role="status">{t("qualityAudits.configuration.maintainability.selectDimension")}</p>}
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}

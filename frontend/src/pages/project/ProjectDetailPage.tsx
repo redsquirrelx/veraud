@@ -308,7 +308,7 @@ export function ProjectDetailPage() {
                   </span>
                 </div>
                 <a
-                  className="project-link"
+                  className="ui-button ui-button-secondary"
                   href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
                   target="_blank"
                   rel="noreferrer"
@@ -443,7 +443,7 @@ export function ProjectDetailPage() {
               ) : (
                 <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                   {runStatuses}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link className="ui-button ui-button-secondary" to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>
                     <p className="label">{t("detail.audits.configuration.capturedFor", { agentType: execution.agentType, id: execution.id })}</p>
@@ -463,7 +463,7 @@ export function ProjectDetailPage() {
             )}
             {analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
-             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
+             <Link className="ui-button ui-button-secondary" to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}
             </div>
           </>

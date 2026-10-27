@@ -155,6 +155,7 @@ describe("ProjectDetailPage", () => {
     expect(link.getAttribute("href")).toBe("https://github.com/acme/Demo")
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noreferrer")
+    expect(link).toHaveClass("ui-button", "ui-button-secondary")
   })
 
   it("shows SSH for a repository registered over SSH", async () => {
