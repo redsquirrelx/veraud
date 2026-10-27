@@ -251,7 +251,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }
 
   return <div className="quality-audits">
-    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading">
         <div><h2>{t("qualityAudits.title")}</h2><p>{t("qualityAudits.description")}</p></div>
         <span className="quality-audit-revision mono">{branch ?? "—"} @ {commitHash?.slice(0, 7) ?? t("qualityAudits.revisionPending")}</span>
@@ -284,30 +284,34 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}
       {error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
     </Card>
-    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
       {audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
+        <div className="quality-audit-run-heading">
         <h4>{audit.attributes?.map((attribute) => attributeLabelKeys[attribute] ? t(attributeLabelKeys[attribute]) : attribute).join(" + ") || t("auditStatus.pipelines.maintainability")} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
-        <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
           {audit.auditStatus !== null && evaluationLabelKeys[audit.auditStatus]
             ? t(evaluationLabelKeys[audit.auditStatus]!)
             : statusLabelKey(executionStatusLabelKeys, audit.executionStatus)
               ? t(statusLabelKey(executionStatusLabelKeys, audit.executionStatus)!) : audit.auditStatus ?? audit.executionStatus}
         </Badge>
+        </div>
+        <div className="quality-audit-run-meta">
+        <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <p className="label">{Number.isNaN(new Date(audit.createdAt).getTime())
           ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</p>
+        </div>
         {audit.error && <p role="alert">{audit.error}</p>}
         <div className="quality-audit-history-actions">
           <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
           <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
             available={audit.configurationAvailable === true} catalog={agentCatalog} disabled={starting} onReuse={reuseConfiguration} />
-        </div>
-        {audit.reportAvailable && <div className="audit-button-row">
+        {audit.reportAvailable && <>
           <Button disabled={loadingReport !== null} onClick={() => void view(audit.id)}>{loadingReport === audit.id ? tCommon("ui.loading") : t("qualityAudits.viewReport")}</Button>
           <Button disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>
-        </div>}
+        </>}
+        </div>
       </article>)}
     </Card>
     {report && <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>

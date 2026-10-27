@@ -435,7 +435,7 @@ export function ProjectDetailPage() {
               </Card>
             )}
             {activeSection === "audits" && (
-              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="responsive" />
+              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default" />
             )}
             {activeSection === "audits" && (
               analysis.execution === null ? (
