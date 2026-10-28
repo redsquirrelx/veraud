@@ -68,7 +68,8 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
   }) })
   auditResponseSerialization(app)
   const hash = "a".repeat(40)
-  const report = { schema_version: "1.0", identification: { status: "partial", audit_id: "audit-123" }, executive_summary: { conclusion: "Cobertura pendiente" } }
+   const report = { schema_version: "1.0", identification: { status: "partial", audit_id: "audit-123" }, executive_summary: { conclusion: "Cobertura pendiente" },
+     recommendations_and_improvement_plan: [{ id: "REC-1", description: "Follow up" }] }
   const word = Buffer.from("PK-original-word-artifact")
   let executionId: number
   let projectId: number
@@ -156,6 +157,11 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     assert.equal(savedConfiguration.commitHash, hash)
     assert.deepEqual(savedConfiguration.attributes, attributes)
     assert.doesNotMatch(configurationResponse.body, /secret-test-key|security-test-key|api_key|credential|temperature/)
+    const initialSummary = await app.inject({ url: `${url}/${executionId}` })
+    assert.equal(initialSummary.statusCode, 200, initialSummary.body)
+    assert.equal(initialSummary.json().reportAvailable, false)
+    assert.doesNotMatch(initialSummary.body, /docx_base64|blackboard|configurationSnapshot/)
+    assert.equal((await app.inject({ url: `${url}/${executionId}/report/sections/executive_summary` })).statusCode, 422)
     if (options.maintainability_selection) {
       const scope = savedConfiguration.scopes.find((scope) => scope.id === "maintainability")!
       assert.deepEqual(scope.subcharacteristics.map((child) => child.id), ["modularity"])
@@ -261,6 +267,22 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     assert.equal(rows[0].auditStatus, "partial")
     assert.equal(rows[0].reportAvailable, true)
     assert.equal(rows[0].configurationAvailable, true)
+    assert.equal(typeof rows[0].startedAt, "string", "history and result metadata retain the actual execution start date")
+    const detail = await app.inject({ url: `${url}/${executionId}` })
+    assert.equal(detail.statusCode, 200, detail.body)
+    assert.deepEqual(detail.json(), rows[0])
+    assert.doesNotMatch(detail.body, /docx_base64|blackboard|executive_summary/)
+    const section = await app.inject({ url: `${url}/${executionId}/report/sections/executive_summary` })
+    assert.equal(section.statusCode, 200, section.body)
+    assert.deepEqual(section.json(), { section: "executive_summary", data: report.executive_summary })
+    assert.doesNotMatch(section.body, /docx_base64|blackboard|identification|audit-123/)
+    const recommendations = await app.inject({ url: `${url}/${executionId}/report/sections/recommendations_and_improvement_plan` })
+    assert.deepEqual(recommendations.json(), { section: "recommendations_and_improvement_plan", data: report.recommendations_and_improvement_plan })
+    const missingSection = await app.inject({ url: `${url}/${executionId}/report/sections/software_description` })
+    assert.deepEqual(missingSection.json(), { section: "software_description", data: null })
+    assert.equal((await app.inject({ url: `${url}/${executionId}/report/sections/docx_base64` })).statusCode, 400)
+    assert.equal((await app.inject({ url: `/api/projects/999/audits/${executionId}` })).statusCode, 404)
+    assert.equal((await app.inject({ url: `/api/projects/999/audits/${executionId}/report/sections/executive_summary` })).statusCode, 404)
     assert.equal(rows[0].runId, "audit-123", "the delivered envelope remains the stored run id")
     const compact = await app.inject({ url: `/api/agent-executions/${executionId}?monitor=true` })
     assert.equal(compact.statusCode, 200)

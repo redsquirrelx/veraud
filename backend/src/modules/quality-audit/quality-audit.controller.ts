@@ -6,6 +6,7 @@ import { configurationIssuesSchema } from "../agent-settings/agent-settings.sche
 import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
 import { AnalysisAlreadyRunningError, InvalidGitRequestError, ProjectNotFoundError, SyncInProgressError, WorkspaceMissingError } from "../project/project.service.js"
 import { AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
+import { auditReportSections } from "./audit-report-sections.js"
 
 const params = {
   type: "object", required: ["id"], properties: {
@@ -20,6 +21,7 @@ const summary = objectResponse({
   attributes: { type: "array", items: { type: "string" } },
   executionStatus: { type: "string" }, auditStatus: { type: ["string", "null"] }, runId: { type: ["string", "null"] },
   error: { type: ["string", "null"] }, createdAt: { type: "string", format: "date-time" },
+  startedAt: { type: ["string", "null"], format: "date-time" },
   finishedAt: { type: ["string", "null"], format: "date-time" }, reportAvailable: { type: "boolean" },
   configurationAvailable: { type: "boolean" },
 })
@@ -75,6 +77,27 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     response: { 200: { type: "array", items: summary }, ...errorResponses([400, 404, 422]) },
   } }, async (request, reply) => {
     try { return await service.list(Number((request.params as { id: string }).id)) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId", { schema: {
+    tags: ["Projects"], summary: "Read one audit without loading report artifacts or the project history",
+    params: { ...params, required: ["id", "auditId"] },
+    response: { 200: summary, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    try { return await service.detail(Number(id), Number(auditId)) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId/report/sections/:section", { schema: {
+    tags: ["Projects"], summary: "Read one stored audit report section without other sections or artifacts",
+    params: { type: "object", required: ["id", "auditId", "section"], properties: { ...params.properties,
+      section: { type: "string", enum: auditReportSections } } },
+    response: { 200: objectResponse({ section: { type: "string", enum: auditReportSections }, data: {} }), ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId, section } = request.params as { id: string, auditId: string, section: string }
+    try { return await service.reportSection(Number(id), Number(auditId), section) }
     catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 
