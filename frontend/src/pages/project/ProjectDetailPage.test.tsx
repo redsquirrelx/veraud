@@ -390,6 +390,25 @@ describe("ProjectDetailPage", () => {
     expect(screen.queryByRole("tree")).toBeNull()
   })
 
+  it("opens quality audits directly from the header Analyze button without starting an execution", async () => {
+    const executions: string[] = []
+    stubFetch((url, init) => {
+      if (init?.method === "POST" && (url.includes("/audits") || url.includes("/agent-executions"))) executions.push(url)
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings") || url.endsWith("/api/projects/2/audits")) {
+        return new Response("[]", { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    expect(analyze).not.toHaveAttribute("aria-haspopup")
+    await userEvent.click(analyze)
+    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+    expect(executions).toEqual([])
+  })
+
   it("applies the selected version from the selectors above the header", async () => {
     stubProjects()
     renderDetail("/projects/2")

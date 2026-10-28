@@ -2,7 +2,6 @@ import type { ComponentProps } from "react"
 import { useTranslation } from "react-i18next"
 import { Badge, Button } from "../../shared/ui-kit/index.ts"
 import { projectStatusLabelKey, statusTone } from "../../features/project-management/projectStatus.ts"
-import { AnalyzeMenu } from "../../features/project-management/AnalyzeMenu.tsx"
 import { VersionLocation, VersionSelector, type AnalysisAction } from "../../features/project-management/VersionSelector.tsx"
 import type { ProjectSummary } from "../../infrastructure/http-client/httpClient.ts"
 import "./ProjectHeader.css"
@@ -13,7 +12,7 @@ interface ProjectHeaderProps {
   analysis: AnalysisAction
   syncing: boolean
   onSync: () => void
-  onAudit?: () => void
+  onAudit: () => void
 }
 
 export function ProjectHeader({ project, versionSelector, analysis, syncing, onSync, onAudit }: ProjectHeaderProps) {
@@ -31,8 +30,8 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
         <VersionLocation selection={versionSelector.selection} />
       </div>
       <div className="project-context-actions" role="group" aria-label={t("detail.actionsLabel")}>
-        <Button onClick={onSync} disabled={syncing || analysis.analyzing} loading={syncing} loadingText={t("detail.syncing")}>{t("detail.syncLabel")}</Button>
-        <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} onAudit={onAudit} />
+        <Button variant="secondary" onClick={onSync} disabled={syncing || analysis.analyzing} loading={syncing} loadingText={t("detail.syncing")}>{t("detail.syncLabel")}</Button>
+        <Button onClick={onAudit}>{t("analyze.label")}</Button>
       </div>
     </div>
     <div className="project-context-controls">
