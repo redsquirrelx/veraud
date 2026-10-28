@@ -105,6 +105,7 @@ function renderDetail(entry: string) {
         <Routes>
           <Route path="projects/:id" element={<Navigate to="overview" replace />} />
           <Route path="projects/:id/audits/:auditId" element={<ProjectDetailPage />} />
+          <Route path="projects/:id/audits/:auditId/evidence/:invocationId" element={<ProjectDetailPage />} />
           <Route path="projects/:id/:section" element={<ProjectDetailPage />} />
         </Routes>
         <Dock />
@@ -114,6 +115,93 @@ function renderDetail(entry: string) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("renders historical evidence and findings inside project details without reading the working copy", async () => {
+    const auditRequests: string[] = []
+    const fileRequests: string[] = []
+    const historicalRequests: string[] = []
+    stubFetch((url, init) => {
+      if (url.includes("/audits") && !url.endsWith("/file")) auditRequests.push(url)
+      if (url.endsWith("/audits/41/file")) {
+        historicalRequests.push(String(init?.body))
+        return new Response(JSON.stringify({ path: "src/service.ts", content: "// audited complete source\nexport const value = 1", size: 55, commitHash: "audited-commit" }), { status: 200 })
+      }
+      if (url.endsWith("/api/projects/2/file")) fileRequests.push(String(init?.body))
+      if (url.endsWith("/audits/41")) return new Response(JSON.stringify({ id: 41, branch: "main", commitHash: "audited-commit", executionStatus: "Completed", reportAvailable: true }), { status: 200 })
+      if (url.endsWith("/report/sections/quality_results")) return new Response(JSON.stringify({ section: "quality_results", data: {
+        findings: [{ id: "F-1", title: "Recorded responsibility finding", description: "Historical finding details", evidence_ids: ["E-1"] }],
+      } }), { status: 200 })
+      if (url.endsWith("/report/sections/annexes_and_traceability")) return new Response(JSON.stringify({ section: "annexes_and_traceability", data: {
+        executions: [{ invocation_id: "investigator-1", agent_id: "responsibility" }],
+        evidence_inventory: [{ id: "E-1", source: "src/service.ts", content: "Existing evidence content", commit: "audited-commit",
+          provenance: { invocation_id: "investigator-1", agent_id: "responsibility" } }],
+      } }), { status: 200 })
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/audits/41/evidence/investigator-1?agent=responsibility&name=Responsibility")
+    expect(await screen.findByRole("heading", { name: "Agent evidence" })).toBeVisible()
+    expect(screen.getByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(await screen.findByText("Responsibility")).toBeVisible()
+    expect(screen.getAllByText("investigator-1").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    await waitFor(() => expect(screen.getByRole("region", { name: "Read-only code viewer" })).toHaveTextContent("audited complete source"))
+    expect(auditRequests).toHaveLength(3)
+    expect(auditRequests[0]).toMatch(/\/audits\/41$/)
+    expect(auditRequests).toEqual(expect.arrayContaining([expect.stringMatching(/\/report\/sections\/annexes_and_traceability$/), expect.stringMatching(/\/report\/sections\/quality_results$/)]))
+    expect(fileRequests).toEqual([])
+    expect(historicalRequests).toEqual([JSON.stringify({ path: "src/service.ts" })])
+    expect(screen.queryByRole("button", { name: "Use recorded evidence" })).toBeNull()
+    expect(screen.getByText("Audited branch")).toBeVisible()
+    expect(screen.getByText("Audited commit")).toBeVisible()
+    await userEvent.click(await screen.findByRole("button", { name: "F-1 — Recorded responsibility finding" }))
+    expect(await screen.findByRole("dialog", { name: "Recorded responsibility finding" })).toHaveTextContent("Historical finding details")
+    expect(fileRequests).toEqual([])
+  })
+
+  it("embeds configured executed-agent evidence in the audit results tab while keeping the project context", async () => {
+    const commit = "a".repeat(40)
+    const reads: string[] = []
+    stubFetch((url, init) => {
+      if (url.endsWith("/audits/41")) return new Response(JSON.stringify({ id: 41, branch: "main", commitHash: commit,
+        executionStatus: "Completed", reportAvailable: true, configurationAvailable: true }), { status: 200 })
+      if (url.endsWith("/audits/41/configuration")) return new Response(JSON.stringify({ configuration: {
+        version: 1, branch: "main", commitHash: commit, attributes: ["maintainability"], scopes: [{ id: "maintainability",
+          requiredAgents: [{ id: "responsibility", name: "Saved responsibility investigator" }], subcharacteristics: [], techniques: [], investigators: [] }],
+      }, invocations: [{ id: "inv-1", agentId: "responsibility", status: "completed" }] }), { status: 200 })
+      if (url.endsWith("/report/sections/annexes_and_traceability")) return new Response(JSON.stringify({ section: "annexes_and_traceability", data: {
+        executions: [{ invocation_id: "inv-1", agent_id: "responsibility" }], evidence_inventory: [{ id: "E-embedded", kind: "source", source: "Demo/src/example.ts",
+          commit, start_line: 1, end_line: 1, provenance: { invocation_id: "inv-1", agent_id: "responsibility" } }],
+      } }), { status: 200 })
+      if (url.endsWith("/report/sections/quality_results")) return new Response(JSON.stringify({ section: "quality_results", data: { findings: [
+        { id: "F-navigation", title: "Evidence navigation finding", evidence_ids: ["E-embedded"] },
+      ] } }), { status: 200 })
+      if (url.endsWith("/report/sections/executive_summary")) return new Response(JSON.stringify({ section: "executive_summary", data: {} }), { status: 200 })
+      if (url.endsWith("/audits/41/file")) {
+        reads.push(String(init?.body))
+        return new Response(JSON.stringify({ path: "src/example.ts", content: "export const audited = true", size: 27, commitHash: commit }), { status: 200 })
+      }
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/audits/41")
+    expect(await screen.findByRole("heading", { name: "Audit report · #41" })).toBeVisible()
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Executed agent" }), "responsibility")
+    expect(await screen.findByText("E-embedded")).toBeVisible()
+    await waitFor(() => expect(screen.getByRole("region", { name: "Read-only code viewer" })).toHaveTextContent("export const audited = true"))
+    expect(screen.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(reads).toEqual([JSON.stringify({ path: "src/example.ts" })])
+    await userEvent.click(screen.getByRole("tab", { name: "Findings" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Evidence navigation finding" }))
+    await userEvent.click(screen.getByRole("link", { name: "View evidence E-embedded" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(screen.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: /^E-embedded/ })).toHaveAttribute("aria-pressed", "true")
+    expect(reads).toHaveLength(1)
+  })
+
   it("keeps the contextual header and version selection mounted across project sections", async () => {
     stubProjects()
     renderDetail("/projects/2")

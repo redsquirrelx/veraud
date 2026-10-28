@@ -31,6 +31,7 @@ import { useAnalyzedVersions } from "../../features/project-management/useAnalyz
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
 import { QualityAuditResults } from "../../features/project-management/QualityAuditResults.tsx"
+import { AuditAgentEvidence } from "../../features/project-management/AuditAgentEvidence.tsx"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
@@ -48,7 +49,7 @@ const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: R
 const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
 
 export function ProjectDetailPage() {
-  const { id, section, auditId } = useParams()
+  const { id, section, auditId, invocationId } = useParams()
   const { t } = useTranslation("projects")
   const navigate = useNavigate()
   const activeSection = auditId !== undefined ? "audits" : section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
@@ -441,7 +442,9 @@ export function ProjectDetailPage() {
             {activeSection === "audits" && auditId === undefined && (
               <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default" />
             )}
-            {auditId !== undefined && <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} />}
+            {auditId !== undefined && (invocationId !== undefined
+              ? <AuditAgentEvidence projectId={project.id} auditId={Number(auditId)} invocationId={invocationId} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />
+              : <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />)}
             {activeSection === "audits" && auditId === undefined && (
               analysis.execution === null ? (
                 null
