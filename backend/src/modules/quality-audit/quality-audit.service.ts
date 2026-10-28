@@ -5,6 +5,7 @@ import { InvalidGitRequestError, ProjectNotFoundError, type ProjectService } fro
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
 import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
+import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
@@ -22,8 +23,11 @@ function artifacts(row: AuditRow): AuditArtifacts | null {
   return row.result === null ? null : JSON.parse(row.result) as AuditArtifacts
 }
 
-function summary(row: AuditRow) {
-  const result = artifacts(row)
+type SummaryRow = Pick<AuditRow, "id" | "agentType" | "evaluationId" | "status" | "error" | "createdAt" | "startedAt" | "finishedAt" | "configurationSnapshot"> & {
+  evaluation: { projectVersion: { branch: string | null, commitHash: string | null } } | null
+}
+
+function summary(row: SummaryRow, result: Partial<Pick<AuditArtifacts, "run_id" | "attributes" | "status">> | null, reportAvailable: boolean) {
   const configuration = savedConfiguration(row)
   return {
     id: row.id,
@@ -37,12 +41,13 @@ function summary(row: AuditRow) {
     auditStatus: result?.status ?? null,
     error: row.error,
     createdAt: row.createdAt,
+    startedAt: row.startedAt,
     finishedAt: row.finishedAt,
-    reportAvailable: result?.report != null,
+    reportAvailable,
   }
 }
 
-function savedConfiguration(row: AuditRow): AuditRunConfiguration | null {
+function savedConfiguration(row: { configurationSnapshot: string | null }): AuditRunConfiguration | null {
   try {
     const snapshot = JSON.parse(row.configurationSnapshot ?? "null") as { auditConfiguration?: AuditRunConfiguration } | null
     return snapshot?.auditConfiguration?.version === 1 ? snapshot.auditConfiguration : null
@@ -91,7 +96,27 @@ export class QualityAuditService {
 
   async list(projectId: number) {
     if (!await this.repository.projectExists(projectId)) throw new ProjectNotFoundError("Project not found")
-    return (await this.repository.list(projectId)).map(summary)
+    return (await this.repository.list(projectId)).map((row) => {
+      const result = artifacts(row)
+      return summary(row, result, result?.report != null)
+    })
+  }
+
+  async detail(projectId: number, id: number) {
+    const data = await this.repository.findSummary(projectId, id)
+    if (!data) throw new AuditNotFoundError("Audit not found for this project")
+    const { row, projection } = data
+    return summary(row, { ...(projection.runId !== null ? { run_id: projection.runId } : {}),
+      ...(projection.auditStatus !== null ? { status: projection.auditStatus } : {}),
+      ...(projection.attributes ? { attributes: JSON.parse(projection.attributes) as string[] } : {}) }, projection.reportType === "object")
+  }
+
+  async reportSection(projectId: number, id: number, section: string) {
+    if (!auditReportSections.includes(section as AuditReportSection)) throw new InvalidGitRequestError("Unknown audit report section")
+    const row = await this.repository.findReportSection(projectId, id, section as AuditReportSection)
+    if (!row) throw new AuditNotFoundError("Audit not found for this project")
+    if (row.reportType !== "object") throw new AuditReportUnavailableError("The audit report is not available yet")
+    return { section, data: JSON.parse(row.data ?? "null") as unknown }
   }
 
   async report(projectId: number, id: number) {
@@ -99,7 +124,7 @@ export class QualityAuditService {
   }
 
   async configuration(projectId: number, id: number) {
-    const row = await this.repository.find(projectId, id)
+    const row = await this.repository.findConfiguration(projectId, id)
     if (!row) throw new AuditNotFoundError("Audit not found for this project")
     const receipts = JSON.parse(row.invocationReceipts) as InvocationReceipt[]
     return { configuration: savedConfiguration(row), invocations: receipts.map((receipt) => ({

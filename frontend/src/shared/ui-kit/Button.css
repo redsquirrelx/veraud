@@ -17,6 +17,8 @@
 
 .ui-button:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
 
+a.ui-button { box-sizing: border-box; text-decoration: none; vertical-align: middle; }
+
 .ui-button > span {
   display: inline-flex;
   align-items: center;

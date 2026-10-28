@@ -3,14 +3,20 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { changeLanguage } from "../../shared/i18n/index.ts"
-import { ApiError, listAgentSettings } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, listAgentSettings, type AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { QualityAudits } from "./QualityAudits.tsx"
 import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import * as api from "./qualityAuditApi.ts"
+import * as operating from "./auditOperatingSettingsApi.ts"
+
+vi.mock("./auditOperatingSettingsApi.ts", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./auditOperatingSettingsApi.ts")>(), getAuditSettings: vi.fn(), saveAuditSettings: vi.fn(),
+}))
 
 vi.mock("./qualityAuditApi.ts", () => ({
   listQualityAudits: vi.fn(), startQualityAudit: vi.fn(), getQualityAuditReport: vi.fn(), downloadQualityAuditReport: vi.fn(),
   getQualityAuditConfiguration: vi.fn(),
+  getQualityAudit: vi.fn(),
 }))
 
 vi.mock("../../infrastructure/http-client/httpClient.ts", async (importOriginal) => ({
@@ -18,7 +24,22 @@ vi.mock("../../infrastructure/http-client/httpClient.ts", async (importOriginal)
   listAgentSettings: vi.fn(),
 }))
 
-beforeEach(() => { vi.mocked(listAgentSettings).mockResolvedValue([]) })
+const historicalSummary: api.QualityAuditSummary = { id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
+  executionStatus: "Completed", auditStatus: "partial", runId: "report-run-id", error: null,
+  createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: true }
+const readyAgents: AgentSettings[] = ["maintainability_manager", "security", "functional_adequacy"].map((agentType) => ({
+  agentType, qualityAttributes: [agentType], workflowIds: [], configured: true, configuration: null, availability: "available", requiresModel: true,
+}))
+beforeEach(() => {
+  vi.mocked(listAgentSettings).mockResolvedValue(readyAgents)
+  vi.mocked(api.getQualityAudit).mockResolvedValue(historicalSummary)
+  vi.mocked(operating.getAuditSettings).mockImplementation(async (attribute) => ({ schema: { type: "object", properties: {
+    [attribute === "security" ? "security_config" : "functional_config"]: { type: "object", properties: {
+      [attribute === "security" ? "max_scan_files" : "retrieval_top_k"]: { type: "integer", minimum: 1, maximum: 100, default: 5 },
+    } },
+    audit_budget: { type: "object", properties: { max_total_tokens: { type: "integer" } } },
+  } }, values: {} }))
+})
 afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en") })
 
 function show() {
@@ -33,6 +54,118 @@ async function toggleAttribute(name: string) {
 }
 
 describe("project quality audits", () => {
+  it("uses the same secondary button style for all audit history actions", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, configurationAvailable: true }])
+    show()
+    await screen.findByRole("link", { name: "View results" })
+    const history = within(screen.getByRole("article"))
+    for (const name of ["View configuration", "Reuse configuration", "Download Word report"]) {
+      expect(history.getByRole("button", { name })).toHaveClass("ui-button-secondary")
+    }
+    expect(history.getByRole("link", { name: "View results" })).toHaveClass("ui-button-secondary")
+    expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("ui-button-secondary")
+    expect(screen.getByRole("button", { name: "Start audit" })).toHaveClass("ui-button-primary")
+  })
+
+  it("blocks an unconfigured selection and allows starting after rechecking the catalog", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    vi.mocked(listAgentSettings).mockResolvedValueOnce(readyAgents.map((agent) => agent.agentType === "security" ? { ...agent, configured: false } : agent))
+      .mockResolvedValue(readyAgents)
+    show()
+    expect(await screen.findByText("Security: Configure a model and compatible credentials before starting.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Check agents again" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "Start audit" }))
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"])
+  })
+
+  it("configures security and functional run-only options and requirements inside the drawer", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    show()
+    await screen.findByText("No audits recorded.")
+    const user = userEvent.setup()
+    expect(operating.getAuditSettings).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    await user.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
+    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy" }))
+    await user.type(screen.getByRole("textbox", { name: "Functional requirements" }), "Allow exporting a report.")
+    const security = within(screen.getByRole("button", { name: "Collapse Security" }).closest("section")!)
+    const functional = within(screen.getByRole("button", { name: "Collapse Functional adequacy" }).closest("section")!)
+    await user.click(security.getByRole("button", { name: "Advanced settings for this run (developer)" }))
+    const scan = await security.findByRole("spinbutton", { name: "security_config · max_scan_files" })
+    await user.type(scan, "25")
+    await user.click(functional.getByRole("button", { name: "Advanced settings for this run (developer)" }))
+    await user.type(await functional.findByRole("spinbutton", { name: "functional_config · retrieval_top_k" }), "3")
+    expect(screen.queryByRole("spinbutton", { name: /audit_budget/ })).not.toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    expect(screen.getByRole("spinbutton", { name: "security_config · max_scan_files" })).toHaveValue(25)
+    expect(screen.getByRole("textbox", { name: "Functional requirements" })).toHaveValue("Allow exporting a report.")
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: "Start audit" }))
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security", "functional_adequacy"], {
+      functional_requirements: [{ requirement_id: "REQ-001", description: "Allow exporting a report." }],
+      attribute_options: { security: { security_config: { max_scan_files: 25 } }, functional_adequacy: { functional_config: { retrieval_top_k: 3 } } },
+    })
+    vi.mocked(api.startQualityAudit).mockClear()
+    await toggleAttribute("Security")
+    await user.click(screen.getByRole("button", { name: "Start audit" }))
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["functional_adequacy"], {
+      functional_requirements: [{ requirement_id: "REQ-001", description: "Allow exporting a report." }],
+      attribute_options: { functional_adequacy: { functional_config: { retrieval_top_k: 3 } } },
+    })
+    expect(operating.saveAuditSettings).not.toHaveBeenCalled()
+  })
+
+  it("blocks invalid run settings and can restore local defaults without saving global options", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    show()
+    await screen.findByText("No audits recorded.")
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    await user.click(screen.getByRole("button", { name: "Advanced settings for this run (developer)" }))
+    await user.type(await screen.findByRole("spinbutton", { name: "security_config · max_scan_files" }), "101")
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    await user.click(screen.getByRole("button", { name: "Restore defaults" }))
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled()
+    expect(operating.saveAuditSettings).not.toHaveBeenCalled()
+    expect(api.startQualityAudit).not.toHaveBeenCalled()
+  })
+
+  it("retries unavailable parameter schemas and leaves inherited settings untouched", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(operating.getAuditSettings).mockRejectedValueOnce(new Error("offline"))
+    show()
+    await screen.findByText("No audits recorded.")
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    await user.click(screen.getByRole("button", { name: "Advanced settings for this run (developer)" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load available settings.")
+    await user.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByRole("spinbutton", { name: "security_config · max_scan_files" })).toHaveValue(null)
+    expect(operating.getAuditSettings).toHaveBeenCalledTimes(2)
+    expect(operating.saveAuditSettings).not.toHaveBeenCalled()
+  })
+
+  it.each(["Completed", "Failed"])("offers results for a finalized %s audit without a report", async (executionStatus) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([{ id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
+      executionStatus, auditStatus: executionStatus === "Failed" ? "failed" : "partial", error: null,
+      createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false }])
+    show()
+    expect(await screen.findByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+  })
+
   it("reuses historical selections for the current revision without changing or restarting the original audit", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "old-branch", commitHash: "b".repeat(40), attributes: ["maintainability"],
@@ -50,6 +183,7 @@ describe("project quality audits", () => {
     vi.mocked(api.getQualityAuditConfiguration).mockResolvedValue(history)
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 44 })
     vi.mocked(listAgentSettings).mockResolvedValue([
+      ...readyAgents,
       ...["modularity", "reusability"].map((agentType) => ({ agentType, qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null })),
       ...["responsibility", "architecture_boundary"].map((agentType) => ({ agentType, name: agentType, role: "investigator", parentAgentTypes: ["modularity"],
         qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null })),
@@ -79,6 +213,7 @@ describe("project quality audits", () => {
   it("restores available scope defaults locally without saving global agent settings or clearing requirements", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(listAgentSettings).mockResolvedValue([
+      ...readyAgents.filter((agent) => agent.agentType !== "security"),
       ...["modularity", "reusability"].map((agentType) => ({ agentType, qualityAttributes: ["maintainability"],
         workflowIds: [], configured: false, configuration: null })),
       ...["architecture_boundary", "responsibility"].map((agentType) => ({ agentType, name: agentType, role: "investigator",
@@ -134,6 +269,7 @@ describe("project quality audits", () => {
   it("keeps activation controls visible while independently collapsing enabled attribute content", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(listAgentSettings).mockResolvedValue([
+      ...readyAgents,
       { agentType: "modularity", qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null },
     ])
     const user = userEvent.setup()
@@ -164,6 +300,7 @@ describe("project quality audits", () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 43 })
     vi.mocked(listAgentSettings).mockResolvedValue([
+      ...readyAgents,
       { agentType: "modularity", qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null },
       { agentType: "responsibility", name: "ResponsibilityAgent", role: "investigator", parentAgentTypes: ["modularity"],
         qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null },
@@ -193,6 +330,7 @@ describe("project quality audits", () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 42 })
     vi.mocked(listAgentSettings).mockResolvedValue([
+      ...readyAgents,
       ...["modularity", "reusability"].map((agentType) => ({ agentType, role: "coordinator", qualityAttributes: ["maintainability"],
         workflowIds: [], configured: false, configuration: null })),
       ...["architecture_boundary", "responsibility"].map((agentType) => ({ agentType, name: agentType, role: "investigator",
@@ -326,25 +464,20 @@ describe("project quality audits", () => {
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability"]))
   })
 
-  it("shows the original partial report and permits downloading it", async () => {
+  it("links to dedicated results for a completed partial audit and permits downloading its report", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
       executionStatus: "Completed", auditStatus: "partial", error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: "2026-10-17T10:05:00Z", reportAvailable: true,
     }])
-    vi.mocked(api.getQualityAuditReport).mockResolvedValue({
-      identification: { audit_id: "bdeb6efb73bd45fe9cb193f54710cf60" },
-      executive_summary: { conclusion: "Evaluación parcial; la ausencia de hallazgos no demuestra conformidad." },
-    })
+    vi.mocked(api.getQualityAudit).mockResolvedValue({ ...historicalSummary, runId: "bdeb6efb73bd45fe9cb193f54710cf60" })
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     expect(await screen.findByText("bdeb6efb73bd45fe9cb193f54710cf60")).toBeInTheDocument()
-    await userEvent.click(screen.getByRole("button", { name: "View report" }))
-    expect(await screen.findByText(/la ausencia de hallazgos no demuestra conformidad/)).toBeInTheDocument()
-    expect(screen.getAllByText("bdeb6efb73bd45fe9cb193f54710cf60").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.queryByRole("heading", { name: "Audit report · #8" })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Download Word report" }))
     expect(api.downloadQualityAuditReport).toHaveBeenCalledWith(5, 8)
-    expect(screen.getAllByText(/^\d+\. /)).toHaveLength(10)
   })
 
   it("starts security independently with the selected revision", async () => {
@@ -367,6 +500,9 @@ describe("project quality audits", () => {
     expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Functional adequacy" })).toHaveTextContent("Disabled")
+    const settingsLink = screen.getByRole("link", { name: "Configure agents" })
+    expect(settingsLink).toHaveClass("ui-button", "ui-button-secondary")
+    expect(settingsLink).toHaveAttribute("href", "/settings")
     await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"]))
     expect(api.startQualityAudit).toHaveBeenCalledOnce()
@@ -382,8 +518,10 @@ describe("project quality audits", () => {
     expect(await screen.findByText("c".repeat(32))).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "View Blackboard" }).getAttribute("href"))
       .toBe(`http://localhost:7502/blackboard?run_id=${"c".repeat(32)}`)
+    expect(screen.getByRole("link", { name: "View Blackboard" })).toHaveClass("ui-button", "ui-button-secondary")
     // A running audit has no report yet, so no extra request is made for it.
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
+    expect(screen.queryByRole("link", { name: "View results" })).not.toBeInTheDocument()
   })
 
   it("waits for the run id while the audit is starting", async () => {
@@ -396,44 +534,32 @@ describe("project quality audits", () => {
     expect(await screen.findByText("Initializing…")).toBeInTheDocument()
   })
 
-  it("translates an open report without changing selections, requirements, or API activity", async () => {
+  it("translates history links without changing selections, requirements, or API activity", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
       executionStatus: "Completed", auditStatus: "partial", error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: "2026-10-17T10:05:00Z", reportAvailable: true,
     }])
-    vi.mocked(api.getQualityAuditReport).mockResolvedValue({
-      identification: { audit_id: "report-run-id" },
-      executive_summary: {
-        conclusion: "Original report conclusion.",
-        summary: { text: "Original report content", source_refs: ["source-1", "source-2"] },
-      },
-    })
+    vi.mocked(api.getQualityAudit).mockResolvedValue(historicalSummary)
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     await toggleAttribute("Functional adequacy")
     const requirements = screen.getByRole("textbox", { name: "Functional requirements" })
     await userEvent.type(requirements, "Requirement one.\nRequirement two.")
-    await userEvent.click(screen.getByRole("button", { name: "View report" }))
-    expect(await screen.findByRole("heading", { name: "Audit report · #8" })).toBeInTheDocument()
-    expect(screen.getByText("Original report conclusion.")).toBeInTheDocument()
-    expect(screen.getByText("Original report content")).toBeInTheDocument()
-    expect(screen.getByText("Source references (2)")).toBeInTheDocument()
-    await waitFor(() => expect(api.getQualityAuditReport).toHaveBeenCalledTimes(2))
-    const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAuditReport).mock.calls.length]
+    expect(screen.getByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+    await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledTimes(1))
+    const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
 
     await changeLanguage("es")
 
     expect(screen.getByRole("heading", { name: "Auditoría de calidad" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Informe de auditoría · #8" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Ver resultados" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.getByRole("heading", { name: "Auditorías del proyecto" })).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Adecuación funcional" })).toHaveTextContent("Activado")
     expect(screen.getByRole("textbox", { name: "Requisitos funcionales" })).toHaveValue("Requirement one.\nRequirement two.")
-    expect(screen.getByText("Original report conclusion.")).toBeInTheDocument()
-    expect(screen.getByText("Original report content")).toBeInTheDocument()
-    expect(screen.getByText("Referencias de origen (2)")).toBeInTheDocument()
-    expect(screen.getAllByText("report-run-id").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText("report-run-id")).toBeInTheDocument()
     expect(api.startQualityAudit).not.toHaveBeenCalled()
-    expect([vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAuditReport).mock.calls.length]).toEqual(requestCounts)
+    expect([vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]).toEqual(requestCounts)
+    expect(api.getQualityAuditReport).not.toHaveBeenCalled()
   })
 })

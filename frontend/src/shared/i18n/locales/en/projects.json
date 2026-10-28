@@ -79,6 +79,49 @@
     }
   },
   "qualityAudits": {
+    "viewResults": "View results",
+    "findingsList": {
+      "pageRange": "Findings {{start}}–{{end}} of {{total}} · {{order}}",
+      "perPage": "Findings per page", "sortOrder": "Severity order",
+      "severityDescending": "Highest to lowest severity", "severityAscending": "Lowest to highest severity",
+      "identifier": "Identifier", "description": "Full description", "impact": "Software impact", "recommendation": "Recommendations",
+      "attribute": "Attribute", "subcharacteristic": "Subcharacteristic", "validation": "Validation",
+      "verified": "Verified", "inconclusive": "Inconclusive", "discarded": "Discarded",
+      "title": "Findings by quality attribute", "severity": "Severity", "components": "Affected component",
+      "agent": "Detecting agent", "original": "View original details", "empty": "No findings were recorded in the report.",
+      "functionalAdequacy": "Functional adequacy"
+    },
+    "findingsSummary": {
+      "title": "Findings summary", "total": "Total findings detected",
+      "byAttribute": "By quality attribute", "bySeverity": "By severity level",
+      "maintainability": "Maintainability", "security": "Security", "performance_efficiency": "Performance",
+      "critical": "Critical", "high": "High", "medium": "Medium", "low": "Low", "info": "Informational",
+      "otherAttributes": "Other attributes", "otherSeverities": "Undetermined / other severity",
+      "notice": "Counts from the original report. Zero findings does not imply that the attribute was evaluated or demonstrate compliance."
+    },
+    "setup": {
+      "securityScope": "Security runs the available catalog techniques. Selecting individual techniques is not supported by the executor.",
+      "functionalScope": "Functional adequacy checks the supplied requirements against the selected code revision.",
+      "inheritedSettings": "Saved models, credentials and operating settings are inherited. Model access is checked again when starting.",
+      "advanced": "Advanced settings for this run (developer)",
+      "runOnly": "Local changes for the next audit. Empty fields inherit saved values; global settings are not changed.",
+      "optionsFailed": "Could not load available settings. Retry or continue with inherited values.",
+      "invalidOptions": "Check the audit settings: some values are outside the allowed limits.",
+      "catalogFailed": "Could not check availability of the selected agents.",
+      "unavailable": "The agent is not available in the current catalog.",
+      "unconfigured": "Configure a model and compatible credentials before starting.",
+      "verificationFailed": "The last model access check failed. Review the agent settings.",
+      "checkAgain": "Check agents again"
+    },
+    "results": {
+      "noFindings": "No findings were identified in this audit", "unfinished": "The audit has not finished yet", "retry": "Retry",
+      "generalTab": "General Overview", "findingsTab": "Findings", "tabsLabel": "Audit result views",
+      "headerLabel": "Audit details", "executionDate": "Execution date", "finalStatus": "Final status",
+      "sectionFailed": "Could not load this section.", "showMore": "Show more ({{remaining}} remaining)",
+      "title": "Audit results · #{{id}}", "back": "Back to audits",
+      "notFound": "This audit does not exist in the project.", "loadFailed": "Could not load the audit results.",
+      "noReport": "This audit did not produce a report."
+    },
     "configurationHistory": {
       "reuse": "Reuse configuration",
       "reuseFailed": "Could not load the configuration. Try again.",

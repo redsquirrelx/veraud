@@ -1,4 +1,5 @@
 import { ApiError, backendHttpUrl, requestJson } from "../../infrastructure/http-client/httpClient.ts"
+import type { AuditReportSection } from "./qualityAuditReport.ts"
 
 export interface QualityAuditSummary {
   id: number
@@ -11,6 +12,7 @@ export interface QualityAuditSummary {
   auditStatus: string | null
   error: string | null
   createdAt: string
+  startedAt?: string | null
   finishedAt: string | null
   reportAvailable: boolean
   configurationAvailable?: boolean
@@ -40,8 +42,16 @@ export function getQualityAuditConfiguration(projectId: number, id: number, sign
   return requestJson<AuditConfigurationHistory>(`/api/projects/${projectId}/audits/${id}/configuration`, "Could not load audit configuration", { signal })
 }
 
-export function listQualityAudits(projectId: number) {
-  return requestJson<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`, "Could not load the audit")
+export function listQualityAudits(projectId: number, signal?: AbortSignal) {
+  return requestJson<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`, "Could not load the audit", { signal })
+}
+
+export function getQualityAudit(projectId: number, id: number, signal?: AbortSignal) {
+  return requestJson<QualityAuditSummary>(`/api/projects/${projectId}/audits/${id}`, "Could not load the audit", { signal })
+}
+
+export function getQualityAuditReportSection(projectId: number, id: number, section: AuditReportSection, signal?: AbortSignal) {
+  return requestJson<{ section: AuditReportSection, data: unknown }>(`/api/projects/${projectId}/audits/${id}/report/sections/${section}`, "Could not load report section", { signal })
 }
 
 /** Optional audit scope and operating patches, validated by the server. */
@@ -50,6 +60,8 @@ export interface AuditOperatingOptions {
   functional_requirements?: { requirement_id: string, description: string }[]
   agent_defaults?: Record<string, unknown>
   security_config?: Record<string, unknown>
+  functional_config?: Record<string, unknown>
+  attribute_options?: Record<string, Record<string, unknown>>
   audit_budget?: Record<string, unknown>
   call_limits?: Record<string, unknown>
 }
@@ -61,8 +73,8 @@ export function startQualityAudit(projectId: number, branch: string, commitHash:
   })
 }
 
-export function getQualityAuditReport(projectId: number, id: number) {
-  return requestJson<Record<string, unknown>>(`/api/projects/${projectId}/audits/${id}/report`, "Could not load the audit")
+export function getQualityAuditReport(projectId: number, id: number, signal?: AbortSignal) {
+  return requestJson<Record<string, unknown>>(`/api/projects/${projectId}/audits/${id}/report`, "Could not load the audit", { signal })
 }
 
 export async function downloadQualityAuditReport(projectId: number, id: number) {

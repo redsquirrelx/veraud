@@ -79,6 +79,49 @@
     }
   },
   "qualityAudits": {
+    "viewResults": "Ver resultados",
+    "findingsList": {
+      "pageRange": "Hallazgos {{start}}–{{end}} de {{total}} · {{order}}",
+      "perPage": "Hallazgos por página", "sortOrder": "Orden de severidad",
+      "severityDescending": "Mayor a menor severidad", "severityAscending": "Menor a mayor severidad",
+      "identifier": "Identificador", "description": "Descripción completa", "impact": "Impacto sobre el software", "recommendation": "Recomendaciones",
+      "attribute": "Atributo", "subcharacteristic": "Subcaracterística", "validation": "Validación",
+      "verified": "Verificado", "inconclusive": "No concluyente", "discarded": "Descartado",
+      "title": "Hallazgos por atributo de calidad", "severity": "Severidad", "components": "Componente afectado",
+      "agent": "Agente detector", "original": "Ver detalle original", "empty": "No se registraron hallazgos en el reporte.",
+      "functionalAdequacy": "Adecuación funcional"
+    },
+    "findingsSummary": {
+      "title": "Resumen de hallazgos", "total": "Total de hallazgos detectados",
+      "byAttribute": "Por atributo de calidad", "bySeverity": "Por nivel de severidad",
+      "maintainability": "Mantenibilidad", "security": "Seguridad", "performance_efficiency": "Rendimiento",
+      "critical": "Crítica", "high": "Alta", "medium": "Media", "low": "Baja", "info": "Informativa",
+      "otherAttributes": "Otros atributos", "otherSeverities": "Sin severidad determinada / otras",
+      "notice": "Conteos del reporte original. Cero hallazgos no implica que el atributo haya sido evaluado ni demuestra conformidad."
+    },
+    "setup": {
+      "securityScope": "Seguridad ejecuta las técnicas disponibles del catálogo. Su selección individual no está soportada por el ejecutor.",
+      "functionalScope": "La adecuación funcional contrasta los requisitos indicados con el código de la revisión seleccionada.",
+      "inheritedSettings": "Se heredan los modelos, credenciales y parámetros guardados. El acceso al modelo se comprueba nuevamente al iniciar.",
+      "advanced": "Parámetros avanzados de esta ejecución (desarrollador)",
+      "runOnly": "Cambios locales para la próxima auditoría. Los campos vacíos heredan los valores guardados; no se modifican los ajustes globales.",
+      "optionsFailed": "No se pudieron cargar los parámetros disponibles. Puedes reintentar o continuar con los valores heredados.",
+      "invalidOptions": "Revisa los parámetros de la auditoría: hay valores fuera de los límites permitidos.",
+      "catalogFailed": "No se pudo comprobar la disponibilidad de los agentes seleccionados.",
+      "unavailable": "El agente no está disponible en el catálogo actual.",
+      "unconfigured": "Configura un modelo y credenciales compatibles antes de iniciar.",
+      "verificationFailed": "La última comprobación de acceso al modelo falló. Revisa la configuración del agente.",
+      "checkAgain": "Volver a comprobar agentes"
+    },
+    "results": {
+      "noFindings": "No se identificaron hallazgos en esta auditoría", "unfinished": "La auditoría aún no ha finalizado", "retry": "Reintentar",
+      "generalTab": "Resumen General", "findingsTab": "Hallazgos", "tabsLabel": "Vistas de resultados de auditoría",
+      "headerLabel": "Datos de la auditoría", "executionDate": "Fecha de ejecución", "finalStatus": "Estado final",
+      "sectionFailed": "No se pudo cargar esta sección.", "showMore": "Mostrar más ({{remaining}} restantes)",
+      "title": "Resultados de auditoría · #{{id}}", "back": "Volver a auditorías",
+      "notFound": "Esta auditoría no existe en el proyecto.", "loadFailed": "No se pudieron cargar los resultados de la auditoría.",
+      "noReport": "Esta auditoría no generó un informe."
+    },
     "configurationHistory": {
       "reuse": "Reutilizar configuración",
       "reuseFailed": "No se pudo cargar la configuración. Inténtalo de nuevo.",

@@ -6,7 +6,7 @@ import { Accordion, Badge, Button, Card, Checkbox, Drawer } from "../../shared/u
 import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
-import { downloadQualityAuditReport, getQualityAuditReport, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { downloadQualityAuditReport, getQualityAudit, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { MaintainabilityConfiguration } from "./MaintainabilityConfiguration.tsx"
 import { AuditAttributeSummary } from "./AuditAttributeSummary.tsx"
@@ -14,39 +14,9 @@ import { AuditConfigurationDetails } from "./AuditConfigurationDetails.tsx"
 import { ReuseAuditConfiguration } from "./ReuseAuditConfiguration.tsx"
 import type { ReusedAuditSelection } from "./reuseAuditSelection.ts"
 import { availableSubcharacteristics, isAvailable, useAuditAgentCatalog } from "./auditAgentCatalog.ts"
-
-const sections = [
-  ["identification", "qualityAudits.report.sections.identification"],
-  ["executive_summary", "qualityAudits.report.sections.executive_summary"],
-  ["objectives_and_scope", "qualityAudits.report.sections.objectives_and_scope"],
-  ["methodology_and_criteria", "qualityAudits.report.sections.methodology_and_criteria"],
-  ["software_description", "qualityAudits.report.sections.software_description"],
-  ["quality_results", "qualityAudits.report.sections.quality_results"],
-  ["consolidated_risks", "qualityAudits.report.sections.consolidated_risks"],
-  ["general_conclusions", "qualityAudits.report.sections.general_conclusions"],
-  ["recommendations_and_improvement_plan", "qualityAudits.report.sections.recommendations_and_improvement_plan"],
-  ["annexes_and_traceability", "qualityAudits.report.sections.annexes_and_traceability"],
-] as const
-
-const fieldLabelKeys: Record<string, ParseKeys<"projects">> = {
-  objective: "qualityAudits.report.fields.objective",
-  evaluated_attributes: "qualityAudits.report.fields.evaluated_attributes",
-  principal_results: "qualityAudits.report.fields.principal_results",
-  conclusion: "qualityAudits.report.fields.conclusion",
-  findings: "qualityAudits.report.fields.findings",
-  total: "qualityAudits.report.fields.total",
-  by_verification: "qualityAudits.report.fields.by_verification",
-  verified: "qualityAudits.report.fields.verified",
-  inconclusive: "qualityAudits.report.fields.inconclusive",
-  discarded: "qualityAudits.report.fields.discarded",
-  status: "qualityAudits.report.fields.status",
-  limitations: "qualityAudits.report.fields.limitations",
-  source_refs: "qualityAudits.report.fields.source_refs",
-  title: "qualityAudits.report.fields.title",
-  project_name: "qualityAudits.report.fields.project_name",
-  revisions: "qualityAudits.report.fields.revisions",
-  executed_at: "qualityAudits.report.fields.executed_at",
-}
+import { auditReadiness } from "./auditReadiness.ts"
+import { AuditAttributeConfiguration } from "./AuditAttributeConfiguration.tsx"
+import { auditDraftValues, type AuditAttributeDraft } from "./auditOperatingSettingsApi.ts"
 
 const attributeLabelKeys: Record<string, ParseKeys<"projects">> = {
   maintainability: "auditStatus.pipelines.maintainability",
@@ -66,38 +36,6 @@ function qualityAuditError(cause: unknown, key: ParseKeys<"projects">): QualityA
   return cause instanceof ApiError && cause.messageSource !== "client" ? { detail: cause.message } : { key }
 }
 
-/** Render the canonical report as data, preserving statements and traceability. */
-function ReportValue({ value }: { value: unknown }) {
-  const { t } = useTranslation("projects")
-  if (value === null || value === undefined) return <span className="label">{t("qualityAudits.report.notRecorded")}</span>
-  if (Array.isArray(value)) return value.length === 0 ? <span className="label">{t("qualityAudits.report.empty")}</span>
-    : <ul>{value.map((item, index) => <li key={index}><ReportValue value={item} /></li>)}</ul>
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    if (typeof record.text === "string") return <>
-      <p>{record.text}</p>
-      {Array.isArray(record.source_refs) && record.source_refs.length > 0 && <details>
-        <summary>{t("qualityAudits.report.sourceReferences", {
-          count: record.source_refs.length, formattedCount: formatNumber(record.source_refs.length),
-        })}</summary>
-        <pre>{JSON.stringify(record.source_refs, null, 2)}</pre>
-      </details>}
-    </>
-    return <dl>{Object.entries(record).map(([key, child]) => <div key={key}>
-      <dt>{fieldLabelKeys[key] ? t(fieldLabelKeys[key]) : key.replaceAll("_", " ")}</dt>
-      <dd><ReportValue value={child} /></dd>
-    </div>)}</dl>
-  }
-  return <span>{String(value)}</span>
-}
-
-function reportRunId(document: Record<string, unknown>): string | null {
-  const identification = document.identification
-  if (!identification || typeof identification !== "object") return null
-  const id = (identification as Record<string, unknown>).audit_id
-  return typeof id === "string" && id.length > 0 ? id : null
-}
-
 function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAuditSummary }) {
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
@@ -107,8 +45,8 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
   useEffect(() => {
     if (audit.runId || !audit.reportAvailable) return
     let alive = true
-    getQualityAuditReport(projectId, audit.id).then(
-      (document) => { if (alive) setRunId(reportRunId(document)) },
+    getQualityAudit(projectId, audit.id).then(
+      (summary) => { if (alive) setRunId(summary.runId ?? null) },
       () => { if (alive) setRunId(null) },
     ).finally(() => { if (alive) setLoaded(true) })
     return () => { alive = false }
@@ -119,7 +57,7 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
   const pending = audit.reportAvailable && !loaded ? tCommon("ui.loading")
     : ["Waiting", "Running"].includes(audit.executionStatus) ? t("qualityAudits.runId.initializing") : t("qualityAudits.runId.unavailable")
   return <p className="audit-run-id">{t("qualityAudits.runId.label")}: {id
-    ? <><code>{id}</code>{" · "}<a href={`${serverUrl}/blackboard?run_id=${encodeURIComponent(id)}`} target="_blank" rel="noreferrer">{t("qualityAudits.runId.openBlackboard")}</a></>
+    ? <><code>{id}</code>{" · "}<a className="ui-button ui-button-secondary" href={`${serverUrl}/blackboard?run_id=${encodeURIComponent(id)}`} target="_blank" rel="noreferrer">{t("qualityAudits.runId.openBlackboard")}</a></>
     : <span>{pending}</span>}</p>
 }
 
@@ -139,6 +77,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const [maintainabilitySelection, setMaintainabilitySelection] = useState<Record<string, string[]> | undefined>()
   const invalidMaintainability = selected && maintainabilitySelection !== undefined && Object.keys(maintainabilitySelection).length === 0
   const [requirementsText, setRequirementsText] = useState("")
+  const [attributeDrafts, setAttributeDrafts] = useState<Record<string, AuditAttributeDraft>>({})
+  const [configurationRevision, setConfigurationRevision] = useState(0)
   const requirements = requirementsText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
   const invalidRequirements = functionalSelected && (requirements.length === 0 || requirements.length > 100
     || requirements.some((description) => description.length > 10000))
@@ -146,8 +86,6 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const [starting, setStarting] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [error, setError] = useState<QualityAuditError | null>(null)
-  const [report, setReport] = useState<{ id: number, document: Record<string, unknown> } | null>(null)
-  const [loadingReport, setLoadingReport] = useState<number | null>(null)
   const [downloading, setDownloading] = useState<number | null>(null)
   const [reuseNotice, setReuseNotice] = useState<"loaded" | "adjusted" | null>(null)
 
@@ -179,6 +117,25 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     { id: "security", selected: securitySelected, label: "auditStatus.pipelines.security" },
     { id: "functional_adequacy", selected: functionalSelected, label: "auditStatus.pipelines.functionalAdequacy" },
   ] as const
+  const selectedAttributes = configurationAttributes.filter((attribute) => attribute.selected).map((attribute) => attribute.id)
+  const readinessIssues = auditReadiness(agentCatalog.agents, selectedAttributes)
+  const ready = !agentCatalog.loading && !agentCatalog.failed && readinessIssues.length === 0
+  let invalidOptions = false
+  const attributeOptions: Record<string, Record<string, unknown>> = {}
+  for (const attribute of selectedAttributes) {
+    if (attribute === "maintainability") continue
+    try {
+      const values = auditDraftValues(attribute, attributeDrafts[attribute])
+      if (Object.keys(values).length) attributeOptions[attribute] = values
+    } catch { invalidOptions = true }
+  }
+  const requirementsEditor = <div className="quality-functional-requirements">
+    <label htmlFor={`${attributeId}-requirements`}>{t("qualityAudits.requirements.label")}</label>
+    <p id={`${attributeId}-requirements-help`} className="label">{t("qualityAudits.requirements.help", { minimum: 1, maximum: 100 })}</p>
+    <textarea id={`${attributeId}-requirements`} rows={6} value={requirementsText}
+      aria-describedby={`${attributeId}-requirements-help`} aria-invalid={invalidRequirements}
+      onChange={(event) => setRequirementsText(event.target.value)} />
+  </div>
 
   function setAttributeEnabled(id: string, checked: boolean) {
     setExpandedAttributes((current) => ({ ...current, [id]: checked }))
@@ -191,6 +148,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
 
   function restoreSelectionDefaults() {
     setReuseNotice(null)
+    setAttributeDrafts({})
+    setConfigurationRevision((value) => value + 1)
     const maintainability = availableSubcharacteristics(agentCatalog.agents).length > 0
     const security = agentCatalog.agents.some((agent) => agent.agentType === "security" && isAvailable(agent))
     setMaintainabilitySelection(undefined)
@@ -201,6 +160,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }
 
   function reuseConfiguration(selection: ReusedAuditSelection) {
+    setAttributeDrafts({})
+    setConfigurationRevision((value) => value + 1)
     const maintainability = Object.keys(selection.maintainability).length > 0
     setMaintainabilitySelection(selection.maintainability)
     setSelected(maintainability)
@@ -212,12 +173,13 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }
 
   async function start() {
-    if (!branch || !commitHash || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || invalidMaintainability || starting) return
+    if (!canRun || running || !ready || !branch || !commitHash || !selectedAttributes.length || invalidRequirements || invalidMaintainability || invalidOptions || starting) return
     setStarting(true)
     setError(null)
     try {
       const selectionOptions = selected && maintainabilitySelection !== undefined
         ? { maintainability_selection: maintainabilitySelection } : {}
+      const operatingOptions = Object.keys(attributeOptions).length ? { attribute_options: attributeOptions } : {}
       const attributes = [
         ...(selected ? ["maintainability"] : []), ...(securitySelected ? ["security"] : []),
         ...(functionalSelected ? ["functional_adequacy"] : []),
@@ -225,21 +187,14 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       if (functionalSelected) {
         await startQualityAudit(projectId, branch, commitHash, attributes, {
           ...selectionOptions,
+          ...operatingOptions,
           functional_requirements: requirements.map((description, index) => ({ requirement_id: `REQ-${String(index + 1).padStart(3, "0")}`, description })),
         })
-      } else if (Object.keys(selectionOptions).length) await startQualityAudit(projectId, branch, commitHash, attributes, selectionOptions)
+      } else if (Object.keys(selectionOptions).length || Object.keys(operatingOptions).length) await startQualityAudit(projectId, branch, commitHash, attributes, { ...selectionOptions, ...operatingOptions })
       else await startQualityAudit(projectId, branch, commitHash, attributes)
       setRefresh((value) => value + 1)
     } catch (cause) { setError(qualityAuditError(cause, "qualityAudits.errors.start")) }
     finally { setStarting(false) }
-  }
-
-  async function view(id: number) {
-    setLoadingReport(id)
-    setError(null)
-    try { setReport({ id, document: await getQualityAuditReport(projectId, id) }) }
-    catch (cause) { setError(qualityAuditError(cause, "qualityAudits.errors.report")) }
-    finally { setLoadingReport(null) }
   }
 
   async function download(id: number) {
@@ -251,7 +206,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }
 
   return <div className="quality-audits">
-    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading">
         <div><h2>{t("qualityAudits.title")}</h2><p>{t("qualityAudits.description")}</p></div>
         <span className="quality-audit-revision mono">{branch ?? "—"} @ {commitHash?.slice(0, 7) ?? t("qualityAudits.revisionPending")}</span>
@@ -267,58 +222,54 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
           </div>
         </section>)}
       </fieldset>
-      {functionalSelected && <div className="quality-functional-requirements">
-        <label htmlFor={`${attributeId}-requirements`}>{t("qualityAudits.requirements.label")}</label>
-        <p id={`${attributeId}-requirements-help`} className="label">{t("qualityAudits.requirements.help", { minimum: 1, maximum: 100 })}</p>
-        <textarea id={`${attributeId}-requirements`} rows={6} value={requirementsText}
-          aria-describedby={`${attributeId}-requirements-help`} aria-invalid={invalidRequirements}
-          onChange={(event) => setRequirementsText(event.target.value)} />
-      </div>}
+      {functionalSelected && !configurationOpen && requirementsEditor}
       <div className="quality-audit-actions">
-        <Button disabled={!canRun || (!selected && !securitySelected && !functionalSelected) || invalidRequirements || invalidMaintainability || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
-        <Button onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
+        <Button disabled={!canRun || !ready || !selectedAttributes.length || invalidRequirements || invalidMaintainability || invalidOptions || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
+        <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
         <Button variant="secondary" onClick={() => setConfigurationOpen(true)}>{t("qualityAudits.configuration.title")}</Button>
-        <Link to="/settings">{t("qualityAudits.configureAgents")}</Link>
+        <Link className="ui-button ui-button-secondary" to="/settings">{t("qualityAudits.configureAgents")}</Link>
       </div>
+      {!agentCatalog.loading && (agentCatalog.failed || readinessIssues.length > 0) && <div role="status">
+        {agentCatalog.failed ? <p>{t("qualityAudits.setup.catalogFailed")}</p> : readinessIssues.map((issue) => <p key={issue.attribute}>
+          {t(attributeLabelKeys[issue.attribute]!)}: {t(`qualityAudits.setup.${issue.reason}`)}
+        </p>)}
+        <Button variant="secondary" onClick={agentCatalog.retry}>{t("qualityAudits.setup.checkAgain")}</Button>
+      </div>}
+      {invalidOptions && <p role="status">{t("qualityAudits.setup.invalidOptions")}</p>}
       {invalidMaintainability && <p role="status">{t("qualityAudits.configuration.maintainability.selectDimension")}</p>}
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}
       {error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
     </Card>
-    <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
       {audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
       {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
+        <div className="quality-audit-run-heading">
         <h4>{audit.attributes?.map((attribute) => attributeLabelKeys[attribute] ? t(attributeLabelKeys[attribute]) : attribute).join(" + ") || t("auditStatus.pipelines.maintainability")} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
-        <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
           {audit.auditStatus !== null && evaluationLabelKeys[audit.auditStatus]
             ? t(evaluationLabelKeys[audit.auditStatus]!)
             : statusLabelKey(executionStatusLabelKeys, audit.executionStatus)
               ? t(statusLabelKey(executionStatusLabelKeys, audit.executionStatus)!) : audit.auditStatus ?? audit.executionStatus}
         </Badge>
+        </div>
+        <div className="quality-audit-run-meta">
+        <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
         <p className="label">{Number.isNaN(new Date(audit.createdAt).getTime())
           ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</p>
+        </div>
         {audit.error && <p role="alert">{audit.error}</p>}
         <div className="quality-audit-history-actions">
           <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
           <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
             available={audit.configurationAvailable === true} catalog={agentCatalog} disabled={starting} onReuse={reuseConfiguration} />
+          {["Completed", "Failed", "Cancelled"].includes(audit.executionStatus) && <Link className="ui-button ui-button-secondary" to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewResults")}</Link>}
+        {audit.reportAvailable && <>
+          <Button variant="secondary" disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>
+        </>}
         </div>
-        {audit.reportAvailable && <div className="audit-button-row">
-          <Button disabled={loadingReport !== null} onClick={() => void view(audit.id)}>{loadingReport === audit.id ? tCommon("ui.loading") : t("qualityAudits.viewReport")}</Button>
-          <Button disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>
-        </div>}
       </article>)}
     </Card>
-    {report && <Card layout={cardLayout} gap={cardLayout === "stack" ? "md" : "sm"} align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
-      <h2>{t("qualityAudits.report.title", { id: report.id })}</h2>
-      {reportRunId(report.document) && <p>{t("qualityAudits.runId.label")}: <code>{reportRunId(report.document)}</code></p>}
-      <p>{t("qualityAudits.report.originalNotice")}</p>
-      <div className="quality-report">{sections.map(([key, titleKey]) => <details key={`${report.id}-${key}`} open={key === "executive_summary"}>
-        <summary>{t(titleKey)}</summary>
-        <ReportValue value={report.document[key]} />
-      </details>)}</div>
-    </Card>}
     <Drawer
       open={configurationOpen}
       title={t("qualityAudits.configuration.title")}
@@ -340,7 +291,12 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
             setMaintainabilitySelection(selection)
             setSelected(Object.keys(selection).length > 0)
             if (!Object.keys(selection).length) setExpandedAttributes((current) => ({ ...current, maintainability: false }))
-          }} /> : <p className="label">{t("qualityAudits.configuration.optionsPending")}</p>}
+           }} /> : <>
+             {attribute.id === "functional_adequacy" && attribute.selected && configurationOpen && requirementsEditor}
+             <AuditAttributeConfiguration key={`${configurationRevision}-${attribute.id}`} attribute={attribute.id} catalog={agentCatalog}
+               draft={attributeDrafts[attribute.id] ?? { form: {} }}
+               onChange={(draft) => setAttributeDrafts((current) => ({ ...current, [attribute.id]: draft }))} />
+           </>}
          </Accordion>)}
         {!configurationAttributes.some((attribute) => attribute.selected) && <p className="label">{t("qualityAudits.configuration.noAttributes")}</p>}
       </div>

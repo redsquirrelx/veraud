@@ -66,6 +66,15 @@ completion and later catalog/model-setting changes; it requires no new database 
 `{configuration, invocations}` for history inspection. Older runs return
 `configuration: null`, never a reconstruction from current settings. Recorded invocation
 statuses are separate from selected scope: selecting a participant does not prove it ran.
+The dedicated results view reads `GET /api/projects/{project_id}/audits/{execution_id}`
+for compact metadata, then `GET .../{execution_id}/report/sections/{section}` for each
+expanded report section. The section allowlist follows `SoftwareAuditReport`; responses
+are `{section, data}`, with null for an absent section. Stored JSON is projected in
+SQLite instead of materializing the full result envelope in the backend. Word and
+Blackboard artifacts are not included. Existing complete-report and DOCX endpoints
+remain available for explicit callers. The frontend initially opens only the executive
+summary, caches loaded sections, retries failures independently and renders long lists
+in batches of 50; batching the rendering does not paginate a section's HTTP payload.
 History reuse reads this endpoint and copies selections into a new form only. It keeps
 the currently selected branch/commit and current model/credential/operating settings;
 it never updates or restarts the source audit. Missing participants are omitted with

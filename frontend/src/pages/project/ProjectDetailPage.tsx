@@ -30,6 +30,7 @@ import { useVersionSelector } from "../../features/project-management/useVersion
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
+import { QualityAuditResults } from "../../features/project-management/QualityAuditResults.tsx"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
@@ -47,10 +48,10 @@ const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: R
 const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
 
 export function ProjectDetailPage() {
-  const { id, section } = useParams()
+  const { id, section, auditId } = useParams()
   const { t } = useTranslation("projects")
   const navigate = useNavigate()
-  const activeSection = section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
+  const activeSection = auditId !== undefined ? "audits" : section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
@@ -260,6 +261,9 @@ export function ProjectDetailPage() {
   if (section !== undefined && !VALID_SECTIONS.has(section)) {
     return <Navigate to={`/projects/${id}/overview`} replace />
   }
+  if (auditId !== undefined && (!/^[1-9]\d*$/.test(auditId) || !Number.isSafeInteger(Number(auditId)))) {
+    return <Navigate to={`/projects/${id}/audits`} replace />
+  }
 
   return (
     <section className="project-page">
@@ -308,7 +312,7 @@ export function ProjectDetailPage() {
                   </span>
                 </div>
                 <a
-                  className="project-link"
+                  className="ui-button ui-button-secondary"
                   href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
                   target="_blank"
                   rel="noreferrer"
@@ -434,16 +438,17 @@ export function ProjectDetailPage() {
                 />
               </Card>
             )}
-            {activeSection === "audits" && (
-              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="responsive" />
+            {activeSection === "audits" && auditId === undefined && (
+              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default" />
             )}
-            {activeSection === "audits" && (
+            {auditId !== undefined && <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} />}
+            {activeSection === "audits" && auditId === undefined && (
               analysis.execution === null ? (
                 null
               ) : (
                 <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                   {runStatuses}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link className="ui-button ui-button-secondary" to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>
                     <p className="label">{t("detail.audits.configuration.capturedFor", { agentType: execution.agentType, id: execution.id })}</p>
@@ -461,9 +466,9 @@ export function ProjectDetailPage() {
                 </Card>
               )
             )}
-            {analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
+            {auditId === undefined && analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
-             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
+             <Link className="ui-button ui-button-secondary" to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}
             </div>
           </>
