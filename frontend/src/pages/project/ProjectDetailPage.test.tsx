@@ -104,6 +104,7 @@ function renderDetail(entry: string) {
       <ToastProvider>
         <Routes>
           <Route path="projects/:id" element={<Navigate to="overview" replace />} />
+          <Route path="projects/:id/audits/:auditId" element={<ProjectDetailPage />} />
           <Route path="projects/:id/:section" element={<ProjectDetailPage />} />
         </Routes>
         <Dock />
@@ -407,6 +408,37 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
     expect(screen.queryByRole("menu")).not.toBeInTheDocument()
     expect(executions).toEqual([])
+  })
+
+  it.each([false, true])("opens dedicated audit results and keeps the Audits sidebar selected (direct: %s)", async (direct) => {
+    const audit = { id: 8, evaluationId: 4, runId: "original-run", branch: "report-branch", commitHash: "b".repeat(40), attributes: ["maintainability"],
+      executionStatus: "Completed", auditStatus: "partial", error: null, createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: true }
+    const requested: string[] = []
+    stubFetch((url, init) => {
+      requested.push(url)
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      if (url.endsWith("/api/projects/2/audits")) return new Response(JSON.stringify([audit]), { status: 200 })
+      if (url.endsWith("/api/projects/2/audits/8")) return new Response(JSON.stringify(audit), { status: 200 })
+      if (url.endsWith("/api/projects/2/audits/8/report/sections/executive_summary")) return new Response(JSON.stringify({
+        section: "executive_summary", data: { conclusion: "Saved audit result" },
+      }), { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail(direct ? "/projects/2/audits/8" : "/projects/2/audits")
+    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View results" }))
+    expect(await screen.findByRole("heading", { name: "Audit results · #8" })).toBeInTheDocument()
+    expect(await screen.findByText("Saved audit result")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("heading", { name: "Project audits" })).not.toBeInTheDocument()
+    const resultsHeader = within(screen.getByLabelText("Audit details"))
+    expect(resultsHeader.getByText("acme/Demo")).toBeInTheDocument()
+    expect(resultsHeader.getByText("report-branch")).toBeInTheDocument()
+    expect(resultsHeader.getByText("b".repeat(40))).toBeInTheDocument()
+    expect(requested.some((url) => url.endsWith("/audits/8/report"))).toBe(false)
+    if (direct) expect(requested.some((url) => url.endsWith("/api/projects/2/audits"))).toBe(false)
+    await userEvent.click(screen.getByRole("link", { name: "Back to audits" }))
+    expect(await screen.findByRole("heading", { name: "Project audits" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
   })
 
   it("applies the selected version from the selectors above the header", async () => {

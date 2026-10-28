@@ -45,6 +45,7 @@ export const router = createBrowserRouter([
         element: <ProjectLayout />,
         children: [
           { index: true, element: <ProjectDetailPage /> },
+          { path: "audits/:auditId", element: <ProjectDetailPage /> },
           { path: ":section", element: <ProjectDetailPage /> },
         ],
       },
