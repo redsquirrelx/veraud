@@ -6,9 +6,6 @@ from typing import Annotated, Literal
 from pydantic import ConfigDict, Field
 
 from config.agents import CoordinatorConfig as ReusabilityConfig
-from server.agents.maintainability.modularity.coordinator.schemas import (
-    InvestigatorCapability,
-)
 from server.agents.maintainability.reusability.abstraction.schemas import (
     AbstractionFinding,
     AbstractionResult,
@@ -48,6 +45,7 @@ InvestigationResult = Annotated[
 ]
 
 class ReusabilityRequest(ScopedAuditRequest, TargetContext):
+    investigator_ids: list[ReusabilityInvestigatorId] | None = None
     objective: str = "Assess reusability through abstractions, shared-implementation opportunities and context-specific adaptation constraints."
 
 class ReusabilityInvestigatorCapability(AgentCapability[ReusabilityInvestigatorId]):
@@ -131,6 +129,7 @@ class ReusabilityAssessment(CoordinatorResult[
 __all__ = ['Assignment', 'Conclusion', 'ConsolidatedFinding', 'ContinuationDecision', 'Contract', 'EvidenceGap', 'FindingContribution', 'FindingRelationship', 'InvestigationResult', 'InvestigatorCapability', 'InvestigatorId', 'InvocationRecord', 'ProposedGap', 'RawInvocation', 'ReusabilityAssessment', 'ReusabilityConfig', 'ReusabilityRequest', 'Route', 'SynthesisDraft', 'SynthesisRound']
 
 Assignment = ReusabilityAssignment
+InvestigatorCapability = ReusabilityInvestigatorCapability
 ConsolidatedFinding = ReusabilityConsolidatedFinding
 EvidenceGap = ReusabilityEvidenceGap
 FindingContribution = ReusabilityFindingContribution

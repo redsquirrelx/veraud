@@ -48,6 +48,23 @@ def test_all_registered_outputs_use_the_category_envelopes():
     assert manager._MODULARITY_RESULTS == {key: spec.result_class for key, spec in modularity.items()}
 
 
+def test_reusability_capability_uses_its_own_investigator_ids():
+    from server.agents.maintainability.reusability.coordinator.schemas import (
+        InvestigatorCapability,
+        ReusabilityInvestigatorCapability,
+    )
+
+    assert InvestigatorCapability is ReusabilityInvestigatorCapability
+    capability = InvestigatorCapability(
+        id="abstraction", agent_name="AbstractionAgent", capability="Inspect abstractions",
+    )
+    assert capability.id == "abstraction"
+    with pytest.raises(ValidationError):
+        InvestigatorCapability(
+            id="architecture_boundary", agent_name="Other", capability="Wrong category",
+        )
+
+
 def test_coordinator_envelopes_retain_concrete_nested_contracts():
     from typing import get_args
 

@@ -3,6 +3,8 @@ import type { AuditSettingsService } from "./audit-settings.service.js"
 import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { InvalidGitRequestError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
+import type { AuditRunConfiguration } from "./audit-run-configuration.js"
+import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
@@ -22,13 +24,15 @@ function artifacts(row: AuditRow): AuditArtifacts | null {
 
 function summary(row: AuditRow) {
   const result = artifacts(row)
+  const configuration = savedConfiguration(row)
   return {
     id: row.id,
     runId: result?.run_id ?? null,
     evaluationId: row.evaluationId,
-    branch: row.evaluation!.projectVersion.branch,
-    commitHash: row.evaluation!.projectVersion.commitHash,
-    attributes: result?.attributes ?? [row.agentType === "maintainability_manager" ? "maintainability" : row.agentType],
+    branch: configuration?.branch ?? row.evaluation!.projectVersion.branch,
+    commitHash: configuration?.commitHash ?? row.evaluation!.projectVersion.commitHash,
+    attributes: configuration?.attributes ?? result?.attributes ?? [row.agentType === "maintainability_manager" ? "maintainability" : row.agentType],
+    configurationAvailable: configuration !== null,
     executionStatus: row.status,
     auditStatus: result?.status ?? null,
     error: row.error,
@@ -36,6 +40,13 @@ function summary(row: AuditRow) {
     finishedAt: row.finishedAt,
     reportAvailable: result?.report != null,
   }
+}
+
+function savedConfiguration(row: AuditRow): AuditRunConfiguration | null {
+  try {
+    const snapshot = JSON.parse(row.configurationSnapshot ?? "null") as { auditConfiguration?: AuditRunConfiguration } | null
+    return snapshot?.auditConfiguration?.version === 1 ? snapshot.auditConfiguration : null
+  } catch { return null }
 }
 
 export class QualityAuditService {
@@ -48,6 +59,9 @@ export class QualityAuditService {
       throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security, functional_adequacy")
     }
     const requirements = options.functional_requirements
+    if (options.maintainability_selection !== undefined && !attributes.includes("maintainability")) {
+      throw new InvalidGitRequestError("maintainability_selection requires maintainability in attributes")
+    }
     if (attributes.includes("functional_adequacy")) {
       if (!requirements?.length || requirements.length > 100
         || requirements.some((item) => !item.requirement_id?.trim() || !item.description?.trim())
@@ -82,6 +96,15 @@ export class QualityAuditService {
 
   async report(projectId: number, id: number) {
     return (await this.requireArtifacts(projectId, id)).report
+  }
+
+  async configuration(projectId: number, id: number) {
+    const row = await this.repository.find(projectId, id)
+    if (!row) throw new AuditNotFoundError("Audit not found for this project")
+    const receipts = JSON.parse(row.invocationReceipts) as InvocationReceipt[]
+    return { configuration: savedConfiguration(row), invocations: receipts.map((receipt) => ({
+      id: receipt.invocation_id, agentId: receipt.agent_id, status: receipt.status,
+    })) }
   }
 
   async document(projectId: number, id: number) {

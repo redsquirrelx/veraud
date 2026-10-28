@@ -79,6 +79,27 @@
     }
   },
   "qualityAudits": {
+    "configurationHistory": {
+      "reuse": "Reuse configuration",
+      "reuseFailed": "Could not load the configuration. Try again.",
+      "reuseLoaded": "Selections loaded. The current branch and commit are unchanged.",
+      "reuseAdjusted": "Some selections are no longer available or cannot be reproduced. They have been disabled; review the configuration. The current branch and commit are unchanged.",
+      "view": "View configuration", "title": "Audit configuration · #{{id}}",
+      "branch": "Branch", "commit": "Commit", "unavailable": "Configuration was not recorded for this audit.",
+      "loadFailed": "Could not load this audit's configuration.",
+      "invocations": "Invoked agents", "noInvocations": "No invocations recorded.",
+      "scopeNotice": "The recorded selection does not imply that every agent was executed.",
+      "running": "Running", "completed": "Completed", "failed": "Failed", "skipped": "Skipped", "cancelled": "Cancelled"
+    },
+    "summary": {
+      "unavailable": "Summary unavailable",
+      "titles": {
+        "architectureBoundary": "Architectural boundaries", "responsibility": "Responsibilities", "dependencyImpact": "Dependency impact",
+        "abstraction": "Abstractions", "reuseOpportunity": "Reuse opportunities", "componentAdaptability": "Adaptability",
+        "sast": "Static analysis", "secrets": "Secrets", "dependencies": "Dependencies", "enrichment": "Context",
+        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification"
+      }
+    },
     "title": "Quality audit",
     "description": "Evaluate project quality on the selected revision.",
     "attributesLegend": "Attributes to evaluate",
@@ -94,6 +115,43 @@
     "start": "Start audit",
     "starting": "Starting…",
     "configureAgents": "Configure agents",
+    "configuration": {
+      "title": "Configure audit",
+      "description": "Enable attributes and configure their scope for this audit.",
+      "enableAttribute": "Enable {{attribute}}",
+      "restoreDefaults": "Restore defaults",
+      "active": "Enabled",
+      "inactive": "Disabled",
+      "previewNotice": "The maintainability selection applies to the next audit. Its manager and the coordinators of selected subcharacteristics are included automatically.",
+      "maintainability": {
+        "selectDimension": "Select at least one maintainability subcharacteristic or deselect Maintainability.",
+        "legend": "Subcharacteristics to evaluate",
+        "modularity": "Modularity",
+        "reusability": "Reusability",
+        "analyzability": "Analyzability",
+        "modifiability": "Modifiability",
+        "testability": "Testability",
+        "available": "Available on the server",
+        "unavailable": "Unavailable: no registered and available agent",
+        "loading": "Checking registered agents…",
+        "loadFailed": "Could not check agent availability.",
+        "retry": "Retry"
+      },
+      "optionsPending": "Configuration options will be available soon.",
+      "investigators": {
+        "view": "View investigators",
+        "partialNotice": "The audit result will be partial because not all available investigators are selected.",
+        "empty": "No investigators are registered for this subcharacteristic.",
+        "noDescription": "No description is available for this investigator.",
+        "architectureBoundary": "Evaluates whether dependencies respect architectural boundaries and design principles.",
+        "responsibility": "Examines coherent responsibilities and independent reasons for change.",
+        "dependencyImpact": "Analyzes dependency impacts on maintenance and change propagation.",
+        "abstraction": "Evaluates whether abstractions enable reuse or introduce unnecessary complexity.",
+        "reuseOpportunity": "Identifies functionality that could share an implementation and weighs its differences.",
+        "componentAdaptability": "Examines constraints that make components difficult to reuse in other contexts."
+      },
+      "noAttributes": "Enable at least one attribute in this panel to start the audit."
+    },
     "runningNotice": "Audit in progress. Results are retained even when the evaluation is partial.",
     "historyTitle": "Project audits",
     "empty": "No audits recorded.",

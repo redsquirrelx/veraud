@@ -30,6 +30,7 @@ class QualityAuditInput(AuditExecutionOptions):
     attributes: QualityAttributes
     commit_hash: str = Field(pattern=r"^[a-fA-F0-9]{40}$")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
+    maintainability_selection: dict[str, list[str]] | None = None
     security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
     functional_requirements: list[FunctionalRequirement] | None = Field(default=None, min_length=1, max_length=100)
 
@@ -37,6 +38,12 @@ class QualityAuditInput(AuditExecutionOptions):
 def parse_input(raw):
     try:
         parsed = QualityAuditInput.model_validate(raw)
+        if parsed.maintainability_selection is not None:
+            if "maintainability" not in parsed.attributes:
+                raise InvalidConfigError("maintainability_selection requires maintainability in attributes.")
+            parsed.request = MaintainabilityRequest.model_validate({**parsed.request.model_dump(),
+                "dimensions": list(parsed.maintainability_selection),
+                "investigator_selection": parsed.maintainability_selection})
         if ("functional_adequacy" in parsed.attributes) != (parsed.functional_requirements is not None):
             raise InvalidConfigError("Functional adequacy requires functional_requirements; omit them for other attributes.")
         if parsed.functional_requirements and len({item.requirement_id for item in parsed.functional_requirements}) != len(parsed.functional_requirements):

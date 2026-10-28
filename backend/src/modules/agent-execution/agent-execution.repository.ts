@@ -303,6 +303,10 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     configurationSnapshot?: string | null
     invocationReceipts?: string
   }): StoredAgentExecution {
+    const configuration = execution.configurationSnapshot
+      ? JSON.parse(execution.configurationSnapshot) as AgentConfiguration & { auditConfiguration?: unknown } : null
+    // Audit scope has its own history endpoint; the generic model-config contract stays unchanged.
+    if (configuration) delete configuration.auditConfiguration
     return {
       id: execution.id,
       invocations: JSON.parse(execution.invocationReceipts ?? "[]") as InvocationReceipt[],
@@ -318,7 +322,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       createdAt: execution.createdAt,
       startedAt: execution.startedAt,
       finishedAt: execution.finishedAt,
-      configuration: execution.configurationSnapshot ? JSON.parse(execution.configurationSnapshot) as AgentConfiguration : null,
+      configuration,
     }
   }
 }

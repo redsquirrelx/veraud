@@ -34,6 +34,9 @@ export function makeQualityAuditCatalogSource(): AgentCatalogSource {
   for (const agent of catalog.agents) {
     agent.child_ids = children[agent.agent_id] ?? []
     agent.parent_ids = Object.entries(children).filter(([, ids]) => ids.includes(agent.agent_id)).map(([id]) => id)
+    if (agent.agent_id === "maintainability_manager") agent.role = "manager"
+    else if (children[agent.agent_id]) agent.role = "coordinator"
+    else if (agent.parent_ids.length) agent.role = "investigator"
   }
   return { getAgentCatalog: async () => catalog }
 }

@@ -35,6 +35,7 @@ InvestigatorId = Literal["architecture_boundary", "responsibility", "dependency_
 Route = Literal["reinvestigate", "finalize", "finalize_limited"]
 
 class ModularityRequest(ScopedAuditRequest):
+    investigator_ids: list[InvestigatorId] | None = None
     objective: str = "Assess software modularity within the declared scope using the three specialized investigators."
 
 class InvestigatorCapability(AgentCapability[InvestigatorId]):

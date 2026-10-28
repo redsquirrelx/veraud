@@ -27,6 +27,7 @@
     }
   },
   "ui": {
+    "accordion": { "expand": "Expand {{title}}", "collapse": "Collapse {{title}}" },
     "close": "Close",
     "loading": "Loading",
     "refresh": "Refresh",

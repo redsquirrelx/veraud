@@ -13,6 +13,8 @@ from server.runtimes.repository.schemas import (
 )
 from server.runtimes.repository.telemetry import ExecutionTelemetry
 
+from .config import OrientationLimits  # noqa: F401 - compatibility export
+
 
 class Observation(AgentContract):
     statement: str = Field(min_length=1, max_length=2500)

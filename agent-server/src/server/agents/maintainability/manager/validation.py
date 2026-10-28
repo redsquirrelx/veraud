@@ -24,6 +24,8 @@ def validate_call_capacity(limits, request):
             f"({len(selected)} coordinators). Configure call_limits.manager.max_tool_calls.")
     for key in selected:
         registry = MODULARITY if key == "modularity" else REUSABILITY
+        if request.investigator_selection is not None:
+            registry = {name: spec for name, spec in registry.items() if name in request.investigator_selection[key]}
         required = len(registry) * coordinator.invocation_limits.max_model_calls + 1 + coordinator.max_schema_retries
         if coordinator.max_model_calls < required:
             raise ValueError(f"coordinator_call_budget_too_small: coordinator={key}, available={coordinator.max_model_calls}, "
@@ -71,6 +73,10 @@ def validate_assessment(result, assignment, *, snapshot, request, check_referenc
         raise ExecutionValidationError("coordinator_provenance_mismatch", "El alcance o procedencia del coordinador no coincide con su asignación.")
     if assignment.investigator_id == "reusability" and result.target_context != request.target_context:
         raise ExecutionValidationError("target_context_mismatch", "El contexto objetivo del resultado no coincide con la solicitud.")
+    if request.investigator_selection is not None:
+        selected = set(request.investigator_selection[assignment.investigator_id])
+        if any(record.assignment.investigator_id not in selected for record in result.invocations):
+            raise ExecutionValidationError("excluded_investigator", "El resultado incluye un investigador excluido de la auditoría.")
     validate_accounting(result, assignment.budget, baseline=baseline)
     _validate_invocations(result, snapshot, check_reference, verify_references)
     _validate_consolidated_findings(result, check_reference)

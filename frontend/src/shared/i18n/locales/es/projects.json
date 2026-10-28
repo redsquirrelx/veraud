@@ -79,6 +79,27 @@
     }
   },
   "qualityAudits": {
+    "configurationHistory": {
+      "reuse": "Reutilizar configuración",
+      "reuseFailed": "No se pudo cargar la configuración. Inténtalo de nuevo.",
+      "reuseLoaded": "Selecciones cargadas. Se mantienen la rama y el commit actuales.",
+      "reuseAdjusted": "Algunas selecciones ya no están disponibles o no pueden reproducirse. Se han desactivado; revisa la configuración. Se mantienen la rama y el commit actuales.",
+      "view": "Ver configuración", "title": "Configuración de auditoría · #{{id}}",
+      "branch": "Rama", "commit": "Commit", "unavailable": "Configuración no registrada para esta auditoría.",
+      "loadFailed": "No se pudo cargar la configuración de esta auditoría.",
+      "invocations": "Agentes invocados", "noInvocations": "No hay invocaciones registradas.",
+      "scopeNotice": "La selección registrada no implica que todos los agentes hayan llegado a ejecutarse.",
+      "running": "En curso", "completed": "Completado", "failed": "Fallido", "skipped": "Omitido", "cancelled": "Cancelado"
+    },
+    "summary": {
+      "unavailable": "Resumen no disponible",
+      "titles": {
+        "architectureBoundary": "Límites arquitectónicos", "responsibility": "Responsabilidades", "dependencyImpact": "Impacto de dependencias",
+        "abstraction": "Abstracciones", "reuseOpportunity": "Oportunidades de reúso", "componentAdaptability": "Adaptabilidad",
+        "sast": "Análisis estático", "secrets": "Secretos", "dependencies": "Dependencias", "enrichment": "Contexto",
+        "remediation": "Remediación", "validation": "Validación", "verification": "Verificación", "functional": "Verificación funcional"
+      }
+    },
     "title": "Auditoría de calidad",
     "description": "Evalúa la calidad del proyecto sobre la revisión seleccionada.",
     "attributesLegend": "Atributos a evaluar",
@@ -94,6 +115,43 @@
     "start": "Iniciar auditoría",
     "starting": "Iniciando…",
     "configureAgents": "Configurar agentes",
+    "configuration": {
+      "title": "Configurar auditoría",
+      "description": "Activa los atributos y configura su alcance para esta auditoría.",
+      "enableAttribute": "Activar {{attribute}}",
+      "restoreDefaults": "Restaurar valores predeterminados",
+      "active": "Activado",
+      "inactive": "Desactivado",
+      "previewNotice": "La selección de mantenibilidad se aplicará a la próxima auditoría. El gestor y los coordinadores de las subcaracterísticas seleccionadas se incluyen automáticamente.",
+      "maintainability": {
+        "selectDimension": "Selecciona al menos una subcaracterística de mantenibilidad o desmarca Mantenibilidad.",
+        "legend": "Subcaracterísticas a evaluar",
+        "modularity": "Modularidad",
+        "reusability": "Reusabilidad",
+        "analyzability": "Analizabilidad",
+        "modifiability": "Modificabilidad",
+        "testability": "Testabilidad",
+        "available": "Disponible en el servidor",
+        "unavailable": "No disponible: no hay un agente registrado y disponible",
+        "loading": "Consultando los agentes registrados…",
+        "loadFailed": "No se pudo consultar la disponibilidad de los agentes.",
+        "retry": "Reintentar"
+      },
+      "optionsPending": "Las opciones de configuración estarán disponibles próximamente.",
+      "investigators": {
+        "view": "Ver investigadores",
+        "partialNotice": "El resultado de la auditoría será parcial porque no están seleccionados todos los investigadores disponibles.",
+        "empty": "No hay investigadores registrados para esta subcaracterística.",
+        "noDescription": "No hay una descripción disponible para este investigador.",
+        "architectureBoundary": "Evalúa si las dependencias respetan los límites arquitectónicos y los principios de diseño.",
+        "responsibility": "Examina la coherencia de las responsabilidades y las razones independientes de cambio.",
+        "dependencyImpact": "Analiza el impacto de las dependencias en el mantenimiento y la propagación de cambios.",
+        "abstraction": "Evalúa si las abstracciones facilitan la reutilización o añaden complejidad innecesaria.",
+        "reuseOpportunity": "Identifica funcionalidades que podrían compartir una implementación y valora sus diferencias.",
+        "componentAdaptability": "Examina las restricciones que dificultan reutilizar componentes en otros contextos."
+      },
+      "noAttributes": "Activa al menos un atributo en este panel para iniciar la auditoría."
+    },
     "runningNotice": "Auditoría en curso. Los resultados se conservarán aunque la evaluación sea parcial.",
     "historyTitle": "Auditorías del proyecto",
     "empty": "No hay auditorías registradas.",

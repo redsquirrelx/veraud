@@ -18,6 +18,8 @@ from server.runtimes.repository.schemas import (
 )
 from server.runtimes.repository.telemetry import ExecutionTelemetry
 
+from .config import ValidationLimits  # noqa: F401 - compatibility export
+
 
 class ReviewTarget(AgentContract):
     id: str = Field(min_length=1)

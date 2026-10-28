@@ -34,6 +34,36 @@ from server.runtimes.investigation.schemas import InvestigationConfig
 BASE = ["analyze_audit_scope", "plan_audit", "delegate_auditors", "collect_assessments", "synthesize_assessments"]
 
 
+@pytest.mark.parametrize("selection", [
+    {"modularity": ["responsibility"]},
+    {"reusability": ["abstraction"]},
+    {"modularity": [], "reusability": ["abstraction"]},
+])
+def test_selected_hierarchy_executes_only_enabled_investigators_and_reports_partial_scope(repo, selection):
+    calls = []
+    coordinators = []
+
+    def coordinator(key, model, limits):
+        coordinators.append(key)
+        make = modularity_factory([]) if key == "modularity" else reusability_factory([])
+
+        def investigator(name, child_model, child_limits):
+            calls.append(name)
+            return make(name, child_model, child_limits)
+
+        return COORDINATORS[key].agent_class(model, limits, investigator_factory=investigator,
+            tracing_backend=NoOpTracingBackend())
+
+    agent = MaintainabilityManagerAgent(NativeStructuredModel([{"summary": "Selected scope"}]), config(),
+        coordinator_factory=coordinator, tracing_backend=NoOpTracingBackend())
+    result = asyncio.run(agent.run(tools(repo), MaintainabilityRequest(
+        targets=["main.py"], dimensions=list(selection), investigator_selection=selection)))
+    assert set(coordinators) == set(selection)
+    assert set(calls) == {name for ids in selection.values() for name in ids}
+    assert result.status == "partial"
+    assert any("User-selected scope" in limitation for limitation in result.limitations)
+
+
 def test_explicit_models_reach_coordinators_and_their_investigators(repo):
     from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES
 

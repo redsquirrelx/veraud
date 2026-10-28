@@ -21,6 +21,7 @@ const summary = objectResponse({
   executionStatus: { type: "string" }, auditStatus: { type: ["string", "null"] }, runId: { type: ["string", "null"] },
   error: { type: ["string", "null"] }, createdAt: { type: "string", format: "date-time" },
   finishedAt: { type: ["string", "null"], format: "date-time" }, reportAvailable: { type: "boolean" },
+  configurationAvailable: { type: "boolean" },
 })
 
 function failure(error: unknown) {
@@ -40,6 +41,8 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
       attributes: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security", "functional_adequacy"] } },
+      maintainability_selection: { type: "object", minProperties: 1, maxProperties: 12,
+        additionalProperties: { type: "array", maxItems: 12, uniqueItems: true, items: { type: "string", minLength: 1 } } },
       functional_requirements: { type: "array", minItems: 1, maxItems: 100, items: {
         type: "object", additionalProperties: false, required: ["requirement_id", "description"], properties: {
           requirement_id: { type: "string", minLength: 1, maxLength: 128, pattern: "\\S" },
@@ -72,6 +75,19 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     response: { 200: { type: "array", items: summary }, ...errorResponses([400, 404, 422]) },
   } }, async (request, reply) => {
     try { return await service.list(Number((request.params as { id: string }).id)) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId/configuration", { schema: {
+    tags: ["Projects"], summary: "Read the immutable audit scope and recorded invocations",
+    params: { ...params, required: ["id", "auditId"] },
+    response: { 200: objectResponse({
+      configuration: { anyOf: [{ type: "null" }, { type: "object", additionalProperties: true }] },
+      invocations: { type: "array", items: objectResponse({ id: { type: "string" }, agentId: { type: "string" }, status: { type: "string" } }) },
+    }), ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    try { return await service.configuration(Number(id), Number(auditId)) }
     catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 

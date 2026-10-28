@@ -11,6 +11,7 @@ import { AuditSettingsService } from "../modules/quality-audit/audit-settings.se
 import { makeQualityAuditCatalogSource, TEST_MAINTAINABILITY_AGENTS } from "./helpers/agentCatalog.js"
 import { auditResponseSerialization } from "./helpers/responseSerializationAudit.js"
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
+import type { AuditRunConfiguration } from "../modules/quality-audit/audit-run-configuration.js"
 import { AgentTransportError } from "../infrastructure/agent-server-client/agent-server.client.js"
 
 const selections = [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
@@ -71,6 +72,7 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
   const word = Buffer.from("PK-original-word-artifact")
   let executionId: number
   let projectId: number
+  let savedConfiguration: AuditRunConfiguration
   try {
     if (attributes.length === 1 && attributes[0] === "functional_adequacy") {
       const originalFetch = globalThis.fetch
@@ -109,6 +111,8 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     const architecture = await db.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
     const url = `/api/projects/${projectId}/audits`
     const options = {
+      ...(attributes.length === 1 && attributes[0] === "maintainability" && !disconnect
+        ? { maintainability_selection: { modularity: ["responsibility"] } } : {}),
       agent_defaults: { max_context_characters: 20000000, max_output_tokens: 16000, max_total_tokens: 80000000, max_model_calls: 20, max_tool_calls: 30 },
       audit_budget: { max_total_tokens: 3000000000 },
       ...(attributes.includes("security") ? { security_config: { max_scan_files: 30, max_source_lines: 200 } } : {}),
@@ -123,6 +127,15 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
       }) })),
     ] })
     assert.equal((await app.inject({ method: "POST", url, payload: { ...body, attributes: ["unsupported"] } })).statusCode, 400)
+    if (attributes.includes("maintainability")) {
+      for (const selection of [{ modularity: ["abstraction"] }, { maintainability_manager: [] }, { unknown: [] }]) {
+        const invalid = await app.inject({ method: "POST", url, payload: { ...body, maintainability_selection: selection } })
+        assert.equal(invalid.statusCode, 422, invalid.body)
+      }
+    } else {
+      assert.equal((await app.inject({ method: "POST", url, payload: { ...body,
+        maintainability_selection: { modularity: ["responsibility"] } } })).statusCode, 400)
+    }
     assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
     assert.equal(await db.evaluation.count(), 1, "invalid configurations create no audit rows")
     const provider = await db.aiProvider.create({ data: { name: "test" } })
@@ -136,6 +149,19 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     const opened = await app.inject({ method: "POST", url, payload: body })
     assert.equal(opened.statusCode, 202, opened.body)
     executionId = opened.json().executionId
+    const configurationResponse = await app.inject({ url: `${url}/${executionId}/configuration` })
+    assert.equal(configurationResponse.statusCode, 200)
+    savedConfiguration = configurationResponse.json().configuration
+    assert.equal(savedConfiguration.branch, "main")
+    assert.equal(savedConfiguration.commitHash, hash)
+    assert.deepEqual(savedConfiguration.attributes, attributes)
+    assert.doesNotMatch(configurationResponse.body, /secret-test-key|security-test-key|api_key|credential|temperature/)
+    if (options.maintainability_selection) {
+      const scope = savedConfiguration.scopes.find((scope) => scope.id === "maintainability")!
+      assert.deepEqual(scope.subcharacteristics.map((child) => child.id), ["modularity"])
+      assert.deepEqual(scope.subcharacteristics[0]!.investigators.map((agent) => agent.id), ["responsibility"])
+      assert.deepEqual(scope.requiredAgents.map((agent) => agent.id), ["maintainability_manager", "modularity"])
+    }
     const monitored = await app.inject({ url: `/api/agent-executions/${executionId}` })
     assert.equal(monitored.statusCode, 200)
     assert.deepEqual(monitored.json().monitorContext.project, { id: projectId, repositoryOwner: "acme", repositoryName: "shop" })
@@ -146,6 +172,10 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     for (let i = 0; !seen && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 10))
     assert.deepEqual(seen?.attributes, attributes)
     assert.deepEqual(seen?.agent_defaults, options.agent_defaults)
+    const savedMaintainability = savedConfiguration.scopes.find((scope) => scope.id === "maintainability")
+    assert.deepEqual(seen?.maintainability_selection, savedMaintainability
+      ? Object.fromEntries(savedMaintainability.subcharacteristics.map((child) => [child.id, child.investigators.map((agent) => agent.id)])) : undefined,
+      "dispatch uses the exact frozen investigator selection, including default scopes")
     assert.deepEqual(seen?.audit_budget, options.audit_budget)
     for (const attribute of attributes) {
       assert.deepEqual(seen?.attribute_options?.[attribute]?.agent_defaults, options.agent_defaults,
@@ -230,6 +260,7 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     const rows = (await app.inject({ url })).json()
     assert.equal(rows[0].auditStatus, "partial")
     assert.equal(rows[0].reportAvailable, true)
+    assert.equal(rows[0].configurationAvailable, true)
     assert.equal(rows[0].runId, "audit-123", "the delivered envelope remains the stored run id")
     const compact = await app.inject({ url: `/api/agent-executions/${executionId}?monitor=true` })
     assert.equal(compact.statusCode, 200)
@@ -239,6 +270,20 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     assert.equal(JSON.stringify(rows).includes("secret-test-key"), false)
     const versions = (await app.inject({ url: `/api/projects/${projectId}/versions` })).json()
     assert.equal(versions[0].evaluationId, architecture.id, "audits do not replace architecture history")
+    await db.projectVersion.update({ where: { id: version.id }, data: { branch: "later-branch" } })
+    const frozen = await app.inject({ url: `${url}/${executionId}/configuration` })
+    assert.deepEqual(frozen.json().configuration, savedConfiguration, "completing an audit must not overwrite its saved scope")
+    assert.ok(frozen.json().invocations.some((item: { agentId: string }) => item.agentId === agentType))
+    assert.equal((await app.inject({ url })).json()[0].branch, "main", "the audit branch must not follow mutable version metadata")
+    if (options.maintainability_selection) {
+      const legacy = await db.agentExecution.create({ data: { evaluationId: architecture.id, agentType, status: "Failed" } })
+      // A non-audit execution, even in the same project, is not an audit configuration.
+      assert.equal((await app.inject({ url: `${url}/${legacy.id}/configuration` })).statusCode, 404)
+      const auditEvaluation = await db.evaluation.create({ data: { projectVersionId: version.id, type: "QualityAudit" } })
+      const historical = await db.agentExecution.create({ data: { evaluationId: auditEvaluation.id, agentType, status: "Failed" } })
+      const missing = await app.inject({ url: `${url}/${historical.id}/configuration` })
+      assert.deepEqual(missing.json(), { configuration: null, invocations: [] })
+    }
   } finally { await app.close(); await db.$disconnect() }
 
   // Restart without any agent-server connection: both artifacts remain available.
@@ -248,6 +293,9 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     const restored = await restarted.app.inject({ url: `${url}/report` })
     assert.equal(restored.statusCode, 200)
     assert.deepEqual(restored.json(), report)
+    const configuration = await restarted.app.inject({ url: `${url}/configuration` })
+    assert.deepEqual(configuration.json().configuration, savedConfiguration!)
+    assert.equal((await restarted.app.inject({ url: `/api/projects/999/audits/${executionId}/configuration` })).statusCode, 404)
     const download = await restarted.app.inject({ url: `${url}/report.docx` })
     assert.equal(download.statusCode, 200)
     assert.deepEqual(download.rawPayload, word)

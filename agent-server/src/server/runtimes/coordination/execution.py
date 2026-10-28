@@ -115,6 +115,11 @@ class CoordinatorExecution(ABC):
 
     def __init__(self, agent, tools, request):
         self.agent, self.tools, self.request = agent, tools, request
+        selected = getattr(request, "investigator_ids", None)
+        if selected is not None:
+            if set(selected) - self.registry.keys():
+                raise ValueError("Unknown investigator selection.")
+            self.registry = {key: spec for key, spec in self.registry.items() if key in selected}
         self.blackboard = getattr(agent, "blackboard", None)
         self.publication = publication_for(agent) if self.blackboard is not None else None
         self.audit_identity = self.publication.identity if self.publication is not None else getattr(agent, "audit_identity", None)

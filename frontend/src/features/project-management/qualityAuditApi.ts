@@ -13,14 +13,40 @@ export interface QualityAuditSummary {
   createdAt: string
   finishedAt: string | null
   reportAvailable: boolean
+  configurationAvailable?: boolean
+}
+
+export interface AuditParticipant { id: string, name: string }
+export interface AuditAttributeScope {
+  id: string
+  requiredAgents: AuditParticipant[]
+  subcharacteristics: { id: string, name: string, investigators: AuditParticipant[] }[]
+  techniques: AuditParticipant[]
+  investigators: AuditParticipant[]
+}
+export interface AuditRunConfiguration {
+  version: 1
+  branch: string
+  commitHash: string
+  attributes: string[]
+  scopes: AuditAttributeScope[]
+}
+export interface AuditConfigurationHistory {
+  configuration: AuditRunConfiguration | null
+  invocations: { id: string, agentId: string, status: string }[]
+}
+
+export function getQualityAuditConfiguration(projectId: number, id: number, signal?: AbortSignal) {
+  return requestJson<AuditConfigurationHistory>(`/api/projects/${projectId}/audits/${id}/configuration`, "Could not load audit configuration", { signal })
 }
 
 export function listQualityAudits(projectId: number) {
   return requestJson<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`, "Could not load the audit")
 }
 
-/** Optional operating patches; schemas and numeric bounds are owned by agent-server. */
+/** Optional audit scope and operating patches, validated by the server. */
 export interface AuditOperatingOptions {
+  maintainability_selection?: Record<string, string[]>
   functional_requirements?: { requirement_id: string, description: string }[]
   agent_defaults?: Record<string, unknown>
   security_config?: Record<string, unknown>

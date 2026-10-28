@@ -146,6 +146,8 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
                 "follow_up": assignment.commitments, "follow_up_diagnostics": assignment.diagnostics}
         if assignment.investigator_id == "reusability":
             args["target_context"] = self.request.target_context
+        if self.request.investigator_selection is not None:
+            args["investigator_ids"] = self.request.investigator_selection[assignment.investigator_id]
         return spec.request_class(**args)
 
     def invocation_metadata(self, assignment, state):
@@ -183,6 +185,8 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
 
     def coverage_issues(self, result, key):
         registry = MODULARITY_INVESTIGATORS if key == "modularity" else REUSABILITY_INVESTIGATORS
+        if self.request.investigator_selection is not None:
+            registry = {name: spec for name, spec in registry.items() if name in self.request.investigator_selection[key]}
         return validation.coverage_issues(result, registry)
 
     def collect_received(self, raw, state):
@@ -404,7 +408,15 @@ class MaintainabilityManagerExecution(CoordinatorExecution):
         limitations = list(dict.fromkeys([g.question for g in state["material_gaps"]]
             + [w for r in state["investigation_results"] for w in r.warnings] + self.synth.issues + [
                 "Only modularity and reusability are implemented; no claim of full ISO/IEC 25010 maintainability coverage.",
-                 "Linked observations preserve shared provenance and are not independent confirmation or a numeric quality score."]))
+                  "Linked observations preserve shared provenance and are not independent confirmation or a numeric quality score."]))
+        if self.request.investigator_selection is not None:
+            omitted = set(COORDINATORS) - set(self.request.dimensions)
+            reduced = any(set(ids) != set(MODULARITY_INVESTIGATORS if dimension == "modularity" else REUSABILITY_INVESTIGATORS)
+                for dimension, ids in self.request.investigator_selection.items())
+            if omitted or reduced:
+                if status == "complete":
+                    status = "partial"
+                limitations.append("User-selected scope excludes registered maintainability dimensions or investigators; coverage is partial.")
         if state["decision"].reason == "resource_limit":
             remaining = self.resources()
             limits = self.config.invocation_limits

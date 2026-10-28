@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, get_args
 
-from pydantic import Field, SerializeAsAny, field_validator
+from pydantic import Field, SerializeAsAny, field_validator, model_validator
 
 from server.agents.maintainability.manager.config import MaintainabilityConfig
 from server.agents.maintainability.modularity.architecture_boundary.schemas import (
@@ -47,6 +47,22 @@ class MaintainabilityRequest(ScopedAuditRequest, TargetContext):
     dimensions: list[str] = Field(default_factory=lambda: ["modularity", "reusability"], min_length=1, max_length=12)
     depth: Literal["bounded", "thorough"] = "bounded"
     dimension_targets: dict[Dimension, list[str]] = Field(default_factory=dict)
+    investigator_selection: dict[Dimension, list[str]] | None = None
+
+    @model_validator(mode="after")
+    def validate_investigator_selection(self):
+        if self.investigator_selection is None:
+            return self
+        from ..modularity.coordinator.registry import INVESTIGATORS as modularity
+        from ..reusability.coordinator.registry import INVESTIGATORS as reusability
+
+        if set(self.investigator_selection) != set(self.dimensions):
+            raise ValueError("Investigator selection must match the selected dimensions.")
+        for dimension, selected in self.investigator_selection.items():
+            registry = modularity if dimension == "modularity" else reusability
+            if len(set(selected)) != len(selected) or set(selected) - registry.keys():
+                raise ValueError("Select distinct investigators registered with their coordinator.")
+        return self
 
     @field_validator("dimensions")
     @classmethod
