@@ -8,6 +8,7 @@ import esProjects from "./locales/es/projects.json"
 import esSettings from "./locales/es/settings.json"
 import esAgents from "./locales/es/agents.json"
 import esTasks from "./locales/es/tasks.json"
+import { auditEvidenceMessages } from "../audit-monitor/auditEvidenceMessages.ts"
 
 export const defaultNS = "common"
 export const fallbackLanguage = "en"
@@ -16,6 +17,7 @@ export type SupportedLanguage = typeof supportedLanguages[number]
 
 export const resources = {
   en: {
+    auditEvidence: auditEvidenceMessages.en,
     common: enCommon,
     projects: enProjects,
     settings: enSettings,
@@ -23,6 +25,7 @@ export const resources = {
     tasks: enTasks,
   },
   es: {
+    auditEvidence: auditEvidenceMessages.es,
     common: esCommon,
     projects: esProjects,
     settings: esSettings,

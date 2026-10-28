@@ -55,9 +55,10 @@ function PhaseBadge({ phase }: { phase: string }) {
   </span>
 }
 
-function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: boolean }) {
+function AgentRow({ node, primary = false, evidenceAudit }: { node: AuditAgentNode, primary?: boolean, evidenceAudit?: AuditStatusModel }) {
   const { agent, children } = node
   const { t } = useTranslation("projects")
+  const { t: tEvidence } = useTranslation("auditEvidence")
   const childrenId = useId()
   const [expanded, setExpanded] = useState(true)
   const expandable = primary || children.length > 0
@@ -88,14 +89,20 @@ function AgentRow({ node, primary = false }: { node: AuditAgentNode, primary?: b
       </div>
       <AgentTokenUsage execution={agent} />
       {agent.error && <p role="alert" className="audit-agent-error">{agent.error}</p>}
+      {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
+        <Link className="ui-button ui-button-secondary"
+          to={`/projects/${evidenceAudit.project.id}/audits/${evidenceAudit.id}/evidence/${encodeURIComponent(agent.id)}?${new URLSearchParams({ agent: agent.agentType, name: agent.name ?? agent.agentType })}`}>
+          {tEvidence("view")}
+        </Link>
+      </div>}
       {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
-        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} />)}
+        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} evidenceAudit={evidenceAudit} />)}
       </ul>}
     </li>
   )
 }
 
-function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
+function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, evidenceAudit?: AuditStatusModel }) {
   const { t } = useTranslation("projects")
   const agentsId = useId()
   // Pipelines start open: the agent runs are the point of the view. Folding is
@@ -112,7 +119,7 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
   // headers for empty groups or historical rows without an identified root.
   if (tree.length > 0 && tree.every((node) => node.agent.agentType === rootType)) {
     return <ul className="audit-agent-list audit-root-list" data-state={pipeline.state}>
-      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} primary />)}
+      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} primary evidenceAudit={evidenceAudit} />)}
     </ul>
   }
 
@@ -159,7 +166,7 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
           ) : (
             <ul className="audit-agent-list">
               {tree.map((node) => (
-                <AgentRow key={node.agent.agentType} node={node} />
+                <AgentRow key={node.agent.agentType} node={node} evidenceAudit={evidenceAudit} />
               ))}
             </ul>
           )}
@@ -174,10 +181,11 @@ function PipelineRow({ pipeline }: { pipeline: AuditPipelineRun }) {
  *  nothing, so any caller can drive it with live or fixture data.
  *  `bare` drops the card surface and `summary` drops the header, so a caller
  *  that renders its own summary shows the identity once instead of twice. */
-export function AuditStatusView({ audit, bare = false, summary = true }: {
+export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false }: {
   audit: AuditStatusModel
   bare?: boolean
   summary?: boolean
+  evidenceLinks?: boolean
 }) {
   const { t } = useTranslation("projects")
   const hasRevision = audit.branch !== null || audit.commitHash !== null
@@ -216,7 +224,7 @@ export function AuditStatusView({ audit, bare = false, summary = true }: {
       ) : (
         <div className="audit-pipeline-list">
           {audit.pipelines.map((pipeline) => (
-            <PipelineRow key={pipeline.id} pipeline={pipeline} />
+            <PipelineRow key={pipeline.id} pipeline={pipeline} evidenceAudit={evidenceLinks ? audit : undefined} />
           ))}
         </div>
       )}

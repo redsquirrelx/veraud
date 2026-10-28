@@ -1,0 +1,54 @@
+.audit-evidence { min-width: 0; font-size: var(--font-size-sm); line-height: var(--line-height-body); }
+.audit-evidence-header, .audit-evidence-item > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
+.audit-evidence h2, .audit-evidence h3, .audit-evidence h4, .audit-evidence p { margin: 0; }
+.audit-evidence h2 { font-size: var(--font-size-title-sm); }
+.audit-evidence h3, .audit-evidence h4 { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+.audit-evidence-header p, .audit-evidence dt { color: var(--color-text-muted); }
+.audit-evidence > [role="status"] { display: flex; align-items: center; gap: var(--space-2); }
+.audit-evidence dl { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); margin: 0; }
+.audit-evidence dl > div, .audit-evidence dd { display: grid; gap: var(--space-1); min-width: 0; margin: 0; }
+.audit-evidence code { font-family: var(--font-mono); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.audit-evidence-list { display: grid; gap: var(--space-3); padding: 0; margin: var(--space-3) 0 0; list-style: none; }
+.audit-evidence-item { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); }
+.audit-evidence pre { min-width: 0; max-width: 100%; overflow: auto; margin: 0; padding: var(--space-3); background: var(--color-surface-recessed); border-radius: var(--radius-control); }
+.audit-evidence .ui-button { font-family: inherit; font-size: var(--font-size-sm); }
+.audit-evidence-browser { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); align-items: start; gap: var(--space-3); margin-top: var(--space-3); }
+.audit-evidence-browser .audit-evidence-list { margin-top: 0; }
+.audit-evidence-choice { display: grid; gap: var(--space-2); width: 100%; padding: var(--space-2); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: inherit; text-align: start; cursor: pointer; }
+.audit-evidence-choice:hover { background: var(--color-surface-hover); }
+.audit-evidence-choice[aria-pressed="true"] { border-color: var(--color-focus); background: var(--color-surface-recessed); }
+.audit-evidence-choice:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
+.audit-evidence-code { display: grid; min-width: 0; gap: var(--space-2); position: sticky; top: var(--space-3); }
+.audit-evidence-code > header { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; }
+.audit-evidence-code > [role="note"] { color: var(--color-text-muted); }
+.audit-evidence-code .ui-code-body { padding: 0; max-height: 65vh; }
+.audit-evidence-code-frame { position: relative; min-width: 0; height: clamp(280px, 60vh, 465px); border-radius: var(--radius-surface); overflow: hidden; }
+.audit-evidence-code-layer { height: 100%; min-width: 0; animation: audit-evidence-code-enter 180ms ease-out; transition: opacity 180ms ease; }
+.audit-evidence-code-frame .ui-code-viewer { height: 100%; min-height: 0; max-height: none; }
+.audit-evidence-code-frame[data-loading="true"] .audit-evidence-code-layer { opacity: 0.5; }
+.audit-evidence-code-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-2); background: color-mix(in srgb, var(--color-surface) 65%, transparent); }
+@keyframes audit-evidence-code-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .audit-evidence-code-layer { animation: none; transition: none; }
+}
+.audit-evidence-browser .audit-evidence-item dl[hidden] { display: none; }
+.audit-evidence-detail-toggle { justify-self: start; padding: var(--space-1) var(--space-2); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: inherit; cursor: pointer; }
+.audit-evidence-detail-toggle:hover { background: var(--color-surface-hover); }
+.audit-evidence-detail-toggle:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
+.audit-evidence-no-content { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.audit-evidence-symbol-select { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.audit-evidence-symbol-select label { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; font-size: var(--font-size-xs); }
+.audit-evidence-symbol-select select { min-width: 0; max-width: 100%; width: min(100%, 32rem); font: inherit; color: var(--color-text); background: var(--color-surface); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-surface); padding: var(--space-1) var(--space-2); }
+.audit-evidence-symbol-location { font-size: var(--font-size-xs); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.audit-evidence-file-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.audit-evidence-code > [role="status"] { display: flex; align-items: center; gap: var(--space-2); }
+.audit-evidence-browser .audit-evidence-item { gap: var(--space-1); padding: var(--space-2); }
+.audit-evidence-browser .audit-evidence-choice { gap: var(--space-1); padding: var(--space-1) var(--space-2); }
+.audit-evidence-choice-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
+.audit-evidence-choice-heading > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.audit-evidence-choice-heading > .ui-badge { flex-shrink: 0; }
+.audit-evidence-browser .audit-evidence-detail-toggle { font-size: var(--font-size-xs); padding: 0 var(--space-2); }
+@media (max-width: 800px) {
+  .audit-evidence-browser { grid-template-columns: minmax(0, 1fr); }
+  .audit-evidence-code { grid-row: 1; position: static; }
+}

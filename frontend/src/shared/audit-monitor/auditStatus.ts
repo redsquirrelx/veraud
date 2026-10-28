@@ -6,6 +6,8 @@ import { formatNumber } from "../i18n/format.ts"
 export type AuditRunState = "waiting" | "running" | "completed" | "partial" | "failed" | "unknown"
 
 export interface AuditAgentRun {
+  role?: string
+  name?: string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
   estimatedTokens?: number | null
   interruptionReason?: string | null

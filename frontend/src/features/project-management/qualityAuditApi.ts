@@ -54,6 +54,18 @@ export function getQualityAuditReportSection(projectId: number, id: number, sect
   return requestJson<{ section: AuditReportSection, data: unknown }>(`/api/projects/${projectId}/audits/${id}/report/sections/${section}`, "Could not load report section", { signal })
 }
 
+export interface PublishedAuditEvidence { partial: boolean, available: boolean, data: unknown }
+export function getPublishedAuditEvidence(projectId: number, id: number, signal?: AbortSignal) {
+  return requestJson<PublishedAuditEvidence>(`/api/projects/${projectId}/audits/${id}/evidence`, "Could not load published evidence", { signal })
+}
+
+export interface AuditSourceFile { path: string, content: string, size: number, commitHash: string }
+export function readAuditSourceFile(projectId: number, auditId: number, path: string, signal?: AbortSignal) {
+  return requestJson<AuditSourceFile>(`/api/projects/${projectId}/audits/${auditId}/file`, "Could not read the audited source file", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }), signal,
+  })
+}
+
 /** Optional audit scope and operating patches, validated by the server. */
 export interface AuditOperatingOptions {
   maintainability_selection?: Record<string, string[]>

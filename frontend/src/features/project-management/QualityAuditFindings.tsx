@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useContext, useMemo, useState, type ReactNode } from "react"
+import { Link } from "react-router-dom"
+import { AuditEvidenceNavigation, auditEvidenceLink } from "./auditEvidenceNavigation.ts"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
-import { Badge, Drawer, Pagination } from "../../shared/ui-kit/index.ts"
+import { Badge, CodeIcon, Drawer, Pagination } from "../../shared/ui-kit/index.ts"
 import { formatNumber } from "../../shared/i18n/format.ts"
 
 type Finding = Record<string, unknown>
@@ -78,8 +80,12 @@ function FindingItem({ finding, onSelect }: { finding: Finding, onSelect: (findi
   </li>
 }
 
-function FindingDetails({ finding, renderDetails }: { finding: Finding, renderDetails: (finding: Finding) => ReactNode }) {
+export function FindingDetails({ finding, renderDetails, onEvidenceNavigate }: {
+  finding: Finding, renderDetails: (finding: Finding) => ReactNode, onEvidenceNavigate?: () => void
+}) {
   const { t } = useTranslation("projects")
+  const { t: tEvidence } = useTranslation("auditEvidence")
+  const evidenceBasePath = useContext(AuditEvidenceNavigation)
   const [originalOpen, setOriginalOpen] = useState(false)
   const missing = t("qualityAudits.report.notRecorded")
   const text = (value: unknown) => typeof value === "string" && value.trim() ? value : missing
@@ -96,6 +102,17 @@ function FindingDetails({ finding, renderDetails }: { finding: Finding, renderDe
       <div><dt>{t("qualityAudits.findingsList.recommendation")}</dt><dd>{text(finding.recommendation)}</dd></div>
       <div><dt>{t("qualityAudits.findingsList.components")}</dt><dd>{strings(finding.components).join(", ") || missing}</dd></div>
       <div><dt>{t("qualityAudits.findingsList.agent")}</dt><dd>{agents.join(", ") || missing}</dd></div>
+      <div><dt>{tEvidence("findingEvidence")}</dt><dd>
+        {Array.isArray(finding.evidence_ids) ? strings(finding.evidence_ids).length > 0
+          ? <ul className="quality-audit-finding-evidence-links">{[...new Set(strings(finding.evidence_ids))].map((id) => <li key={id}>
+            {evidenceBasePath ? <Link className="ui-button ui-button-secondary quality-audit-evidence-link"
+              to={auditEvidenceLink(evidenceBasePath, id)} aria-label={tEvidence("openEvidence", { id })} title={id}
+              onClick={(event) => { if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) onEvidenceNavigate?.() }}>
+                <CodeIcon size={12} /><code>{id}</code>
+              </Link>
+              : <code>{id}</code>}
+          </li>)}</ul> : tEvidence("findingNoEvidence") : missing}
+      </dd></div>
     </dl>
     <details onToggle={(event) => setOriginalOpen(event.currentTarget.open)}>
       <summary>{t("qualityAudits.findingsList.original")}</summary>
@@ -173,7 +190,8 @@ export function QualityAuditFindings({ findings, renderDetails }: { findings: un
     <Pagination page={page} pageCount={pageCount} onChange={(next) => setPagination({ source: findings, page: next })} />
     <Drawer open={drawerOpen} title={typeof selected?.title === "string" && selected.title.trim() ? selected.title : t("qualityAudits.report.notRecorded")}
       onClose={() => setDrawerOpen(false)}>
-      {selected && <FindingDetails key={typeof selected.id === "string" ? selected.id : undefined} finding={selected} renderDetails={renderDetails} />}
+      {selected && <FindingDetails key={typeof selected.id === "string" ? selected.id : undefined} finding={selected} renderDetails={renderDetails}
+        onEvidenceNavigate={() => setDrawerOpen(false)} />}
     </Drawer>
   </section>
 }

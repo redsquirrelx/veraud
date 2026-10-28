@@ -46,6 +46,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <ProjectDetailPage /> },
           { path: "audits/:auditId", element: <ProjectDetailPage /> },
+          { path: "audits/:auditId/evidence/:invocationId", element: <ProjectDetailPage /> },
           { path: ":section", element: <ProjectDetailPage /> },
         ],
       },

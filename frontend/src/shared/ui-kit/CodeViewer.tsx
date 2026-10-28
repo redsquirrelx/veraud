@@ -25,6 +25,12 @@ interface CodeViewerProps {
   highlight?: boolean
   marks?: CodeViewerMark[]
   emptyText?: string
+  /** Original source line for excerpts. Marks use the same source numbering. */
+  startLine?: number
+  /** Scroll only this viewer to a source line once it has been rendered. */
+  scrollToLine?: number
+  /** A changed selection can request the same line again without remounting. */
+  scrollTargetKey?: string
 }
 
 interface CodeLineProps {
@@ -43,7 +49,7 @@ const CodeLine = memo(function CodeLine({ line, number, grammar, mark }: CodeLin
   const highlighted = useMemo(() => highlightLine(line, grammar), [line, grammar])
 
   return (
-    <span className={rowClassName(mark)} title={mark?.note ?? undefined}>
+    <span className={rowClassName(mark)} title={mark?.note ?? undefined} data-line={number}>
       <span className="ui-code-number" aria-hidden="true">{number}</span>
       {highlighted === null ? (
         <span className="ui-code-text">{line === "" ? " " : line}</span>
@@ -73,15 +79,18 @@ function FileBar({ code, grammar }: { code: string, grammar: string | null }) {
   )
 }
 
-export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText }: CodeViewerProps) {
+export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText, startLine = 1, scrollToLine, scrollTargetKey }: CodeViewerProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.codeViewer.noContent")
+  const firstLine = Number.isInteger(startLine) && startLine > 0 ? startLine : 1
   const grammar = useMemo(() => resolveGrammar(language, highlight), [language, highlight])
   const marked = useMemo(() => buildMarkIndex(marks), [marks])
   const lines = useMemo(() => splitLines(code), [code])
   const [rendered, setRendered] = useState<number | null>(null)
   const [renderedFor, setRenderedFor] = useState(code)
   const renderGeneration = useRef(0)
+  const body = useRef<HTMLPreElement>(null)
+  const scrolled = useRef<{ code: string, firstLine: number, line: number, key?: string } | null>(null)
 
   // Render-phase reset (not an effect): the first paint of a large file must
   // already be chunked, otherwise the full parse blocks before loading shows.
@@ -119,6 +128,23 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
     }
   }, [code, lines.length])
 
+  useEffect(() => {
+    if (scrollToLine === undefined || !Number.isInteger(scrollToLine) || scrollToLine < firstLine || scrollToLine >= firstLine + lines.length) return
+    if (scrolled.current?.code === code && scrolled.current.firstLine === firstLine && scrolled.current.line === scrollToLine && scrolled.current.key === scrollTargetKey) return
+    // Wait for the committed layout, including progressively rendered chunks.
+    const timer = setTimeout(() => {
+      const viewport = body.current
+      const row = viewport?.querySelector<HTMLElement>(`[data-line="${scrollToLine}"]`)
+      if (!viewport || !row) return
+      const top = Math.max(0, row.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop)
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+      if (viewport.scrollTo) viewport.scrollTo({ top, behavior: reduced ? "auto" : "smooth" })
+      else viewport.scrollTop = top
+      scrolled.current = { code, firstLine, line: scrollToLine, key: scrollTargetKey }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [code, firstLine, scrollToLine, scrollTargetKey, lines.length, rendered])
+
   if (code === "") {
     return (
       <div className="ui-code-viewer">
@@ -133,16 +159,16 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
   return (
     <div className="ui-code-viewer">
       <FileBar code={code} grammar={grammar} />
-      <pre className="ui-code-body" aria-label={t("ui.codeViewer.fileContent")}>
+      <pre ref={body} className="ui-code-body" aria-label={t("ui.codeViewer.fileContent")}>
         <code>
           {visible.map((line, index) => (
             // index keys are safe: lines never reorder, insert or delete
             <CodeLine
               key={index}
               line={line}
-              number={index + 1}
+              number={index + firstLine}
               grammar={grammar}
-              mark={marked.get(index + 1) ?? null}
+              mark={marked.get(index + firstLine) ?? null}
             />
           ))}
         </code>

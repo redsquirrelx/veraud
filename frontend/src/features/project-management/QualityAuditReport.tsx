@@ -20,7 +20,7 @@ const fieldLabelKeys: Record<string, ParseKeys<"projects">> = {
 }
 
 /** Preserve canonical report statements and provenance rather than interpreting them. */
-function ReportValue({ value }: { value: unknown }) {
+export function ReportValue({ value }: { value: unknown }) {
   const { t } = useTranslation("projects")
   if (value === null || value === undefined) return <span className="label">{t("qualityAudits.report.notRecorded")}</span>
   if (Array.isArray(value)) return value.length === 0 ? <span className="label">{t("qualityAudits.report.empty")}</span>

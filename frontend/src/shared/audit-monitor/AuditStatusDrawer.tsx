@@ -87,7 +87,7 @@ export function AuditStatusDrawer({ audits }: AuditStatusDrawerProps) {
             ) : (
               audits.map((audit) => (
                 // A finished audit has nothing left to watch, so it stays folded.
-                <AuditStatusDisclosure key={audit.id} audit={audit} defaultExpanded={audit.state !== "completed"} />
+                <AuditStatusDisclosure key={audit.id} audit={audit} defaultExpanded={audit.state !== "completed"} evidenceLinks />
               ))
             )}
           </div>

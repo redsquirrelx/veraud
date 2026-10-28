@@ -118,7 +118,7 @@ export async function buildApp(options: BuildAppOptions) {
   registerProjectRoutes(app, projectService)
   const auditSettings = new AuditSettingsService(db, options.agentServerUrl)
   registerAuditSettingsRoutes(app, auditSettings)
-  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings))
+  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings, agentInvoker))
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)

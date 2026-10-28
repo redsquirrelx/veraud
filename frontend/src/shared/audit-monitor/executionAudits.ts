@@ -132,6 +132,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         }
         const consumption = object(trace.consumption)
         add(bucket(text(root.agent_id) ?? agentType), {
+          role: byAgent.get(agentType)?.role, name: byAgent.get(agentType)?.name,
           id: invocation, agentType, state: auditStateFrom(text(trace.status) ?? "", null),
           runId: text(trace.run_id) ?? text(result.run_id),
           phase: trace.status === "running" ? text(trace.phase) : null,
@@ -146,6 +147,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         // into both attributes. No per-attribute execution state is inferred.
         const pipeline = bucket(execution.agentType)
         add(pipeline, { id: execution.id, agentType: execution.agentType,
+          role: metadata?.role, name: metadata?.name,
           configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
           interruptionReason: execution.interruptionReason,
           state: auditStateFrom(execution.status, quality ? text(result.status) : null),

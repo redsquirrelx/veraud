@@ -10,12 +10,13 @@ export interface AuditStatusDisclosureProps {
   audit: AuditStatusModel
   /** Callers decide the initial state: a finished audit is usually folded. */
   defaultExpanded?: boolean
+  evidenceLinks?: boolean
 }
 
 /** One audit as a summary row that reveals its pipelines and agents. The
  *  project link stays outside the toggle: a link nested in a button is invalid
  *  and swallows the toggle's own activation. */
-export function AuditStatusDisclosure({ audit, defaultExpanded = true }: AuditStatusDisclosureProps) {
+export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceLinks = false }: AuditStatusDisclosureProps) {
   const { t } = useTranslation("projects")
   const regionId = useId()
   const [expanded, setExpanded] = useState(defaultExpanded)
@@ -67,7 +68,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true }: AuditSt
         >
           <div className="audit-disclosure-detail-inner">
             {/* No summary: the row above already carries the identity. */}
-            <AuditStatusView audit={audit} bare summary={false} />
+            <AuditStatusView audit={audit} bare summary={false} evidenceLinks={evidenceLinks} />
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import type { AgentExecutionService } from "../agent-execution/agent-execution.service.js"
 import type { AuditSettingsService } from "./audit-settings.service.js"
-import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
-import { InvalidGitRequestError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
+import { AuditRunUnavailableError, type AgentInvoker, type AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
 import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
@@ -9,6 +9,7 @@ import { auditReportSections, type AuditReportSection } from "./audit-report-sec
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
+export class AuditEvidenceUnavailableError extends Error {}
 
 type AuditRow = NonNullable<Awaited<ReturnType<QualityAuditRepository["find"]>>>
 interface AuditArtifacts {
@@ -56,7 +57,7 @@ function savedConfiguration(row: { configurationSnapshot: string | null }): Audi
 
 export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
-    private settings?: AuditSettingsService) {}
+    private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">) {}
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     if (!attributes.length || new Set(attributes).size !== attributes.length
@@ -121,6 +122,48 @@ export class QualityAuditService {
 
   async report(projectId: number, id: number) {
     return (await this.requireArtifacts(projectId, id)).report
+  }
+
+  async file(projectId: number, id: number, path: string) {
+    // Scope and revision come from the persisted audit, never from client input.
+    const audit = await this.detail(projectId, id)
+    if (!audit.commitHash) throw new ProjectFileError("The audit has no recorded commit")
+    return this.projects.readFileAtCommit(projectId, path, audit.commitHash)
+  }
+
+  async evidence(projectId: number, id: number) {
+    // Project scope is checked before any remote read; no artifacts are materialized.
+    const context = await this.repository.findSummary(projectId, id)
+    if (!context) throw new AuditNotFoundError("Audit not found for this project")
+    const partial = ["Waiting", "Running"].includes(context.row.status)
+    if (!partial && context.projection.reportType === "object") {
+      const section = await this.reportSection(projectId, id, "annexes_and_traceability")
+      return { partial: false, available: section.data !== null, data: section.data }
+    }
+    const receipts = await this.repository.findConfiguration(projectId, id)
+    const invocations = JSON.parse(receipts?.invocationReceipts ?? "[]") as InvocationReceipt[]
+    const runId = context.projection.runId ?? invocations[0]?.run_id
+    const unavailable = { partial, available: false, data: null }
+    if (!runId || !this.agents?.getAuditSnapshot) return unavailable
+    try {
+      const snapshot = await this.agents.getAuditSnapshot(runId)
+      if (snapshot.run_id !== runId) throw new Error("Unexpected audit identity")
+      // Do not proxy the full Blackboard: it contains findings, nested reports and details.
+      const inventory = Array.isArray(snapshot.evidence) ? snapshot.evidence : null
+      const evidence = (inventory ?? []).flatMap((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return []
+        const item = value as Record<string, unknown>
+        if (item.run_id !== runId || typeof item.id !== "string" || typeof item.agent_id !== "string" || typeof item.invocation_id !== "string") return []
+        return [{ id: item.id, kind: item.kind, source: item.source, content: item.content,
+          start_line: item.start_line, end_line: item.end_line, commit: item.commit, tool_call_id: item.tool_call_id,
+          provenance: { agent_id: item.agent_id, invocation_id: item.invocation_id } }]
+      })
+      return { partial, available: inventory !== null, data: { evidence_inventory: evidence,
+        executions: invocations.map((item) => ({ agent_id: item.agent_id, invocation_id: item.invocation_id })) } }
+    } catch (error) {
+      if (error instanceof AuditRunUnavailableError) return unavailable
+      throw new AuditEvidenceUnavailableError("Published audit evidence is temporarily unavailable")
+    }
   }
 
   async configuration(projectId: number, id: number) {
