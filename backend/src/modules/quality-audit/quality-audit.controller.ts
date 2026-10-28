@@ -4,8 +4,8 @@ import { errorResponses, objectResponse, branchInput } from "../../infrastructur
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
-import { AnalysisAlreadyRunningError, InvalidGitRequestError, ProjectNotFoundError, SyncInProgressError, WorkspaceMissingError } from "../project/project.service.js"
-import { AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
+import { AnalysisAlreadyRunningError, InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, SyncInProgressError, WorkspaceMissingError } from "../project/project.service.js"
+import { AuditEvidenceUnavailableError, AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
 import { auditReportSections } from "./audit-report-sections.js"
 
 const params = {
@@ -31,7 +31,7 @@ function failure(error: unknown) {
   if (error instanceof InvalidGitRequestError) return 400
   if (error instanceof AgentConfigurationError || error instanceof AnalysisAlreadyRunningError
     || error instanceof SyncInProgressError || error instanceof WorkspaceMissingError
-    || error instanceof UnknownExecutionTargetError || error instanceof AuditReportUnavailableError) return 422
+    || error instanceof UnknownExecutionTargetError || error instanceof AuditReportUnavailableError || error instanceof ProjectFileError) return 422
   throw error
 }
 
@@ -98,6 +98,33 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
   } }, async (request, reply) => {
     const { id, auditId, section } = request.params as { id: string, auditId: string, section: string }
     try { return await service.reportSection(Number(id), Number(auditId), section) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId/evidence", { schema: {
+    tags: ["Projects"], summary: "Read currently published audit evidence without running agents or building reports",
+    params: { ...params, required: ["id", "auditId"] },
+    response: { 200: objectResponse({ partial: { type: "boolean" }, available: { type: "boolean" }, data: {} }),
+      ...errorResponses([400, 404, 422, 503]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    reply.header("Cache-Control", "no-store")
+    try { return await service.evidence(Number(id), Number(auditId)) }
+    catch (error) { return reply.code(error instanceof AuditEvidenceUnavailableError ? 503 : failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.post("/api/projects/:id/audits/:auditId/file", { schema: {
+    tags: ["Projects"], summary: "Read a text file at the immutable audited commit without changing the checkout",
+    params: { ...params, required: ["id", "auditId"] },
+    body: { type: "object", additionalProperties: false, required: ["path"], properties: {
+      path: { type: "string", minLength: 1, maxLength: 1024 },
+    } },
+    response: { 200: objectResponse({ path: { type: "string" }, content: { type: "string" }, size: { type: "integer" }, commitHash: { type: "string" } }),
+      ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    reply.header("Cache-Control", "no-store")
+    try { return await service.file(Number(id), Number(auditId), (request.body as { path: string }).path) }
     catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 

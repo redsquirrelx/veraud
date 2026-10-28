@@ -8,6 +8,34 @@ import { executionRequest } from "./execution-request.js"
 import { AgentCatalogError } from "../../modules/agent-settings/agent-catalog.js"
 import { ModelAccessError } from "../../modules/agent-settings/model-access-error.js"
 
+test("snapshot reads only the existing live GET endpoint and validates audit identity", async () => {
+  const app = Fastify({ logger: false })
+  logger.configure(app.log)
+  const paths: string[] = []
+  let run = "a".repeat(32)
+  let status = 200
+  const server = createServer((request, response) => {
+    paths.push(`${request.method} ${request.url}`)
+    response.writeHead(status, { "content-type": "application/json" })
+    response.end(JSON.stringify({ run_id: run, evidence: [] }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== "string")
+    const client = new AgentServerClient(`http://127.0.0.1:${address.port}`)
+    assert.deepEqual(await client.getAuditSnapshot(run), { run_id: run, evidence: [] })
+    run = "wrong"
+    await assert.rejects(client.getAuditSnapshot("a".repeat(32)), /different run/)
+    status = 404
+    await assert.rejects(client.getAuditSnapshot("a".repeat(32)), AuditRunUnavailableError)
+    assert.ok(paths.every((path) => path === `GET /api/audits/${"a".repeat(32)}`))
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await app.close()
+  }
+})
+
 test("access verification distinguishes provider failures without exposing response bodies", async () => {
   const app = Fastify({ logger: false })
   logger.configure(app.log)

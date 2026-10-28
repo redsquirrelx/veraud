@@ -23,6 +23,8 @@ export interface AgentInvoker {
   runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>): Promise<Record<string, AgentInput>>
   /** Read an already-started audit; never starts/replays the POST. Null means active. */
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
+  /** Read published records without reconciling, generating a report or starting work. */
+  getAuditSnapshot?(runId: string): Promise<AgentInput>
 }
 
 /** What the pipeline needs: only the repository root. Stage inputs are
@@ -234,5 +236,16 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const document = await (await read(`${base}/report.docx`)).arrayBuffer()
     return { attributes, status: snapshot["status"], run_id: runId, report,
       blackboard: snapshot, docx_base64: Buffer.from(document).toString("base64") }
+  }
+
+  async getAuditSnapshot(runId: string): Promise<AgentInput> {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}`, {
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (response.status === 404) throw new AuditRunUnavailableError("The agent-server no longer retains this audit run")
+    if (!response.ok) throw new Error(`Audit snapshot returned HTTP ${response.status}`)
+    const snapshot = await response.json() as AgentInput
+    if (snapshot.run_id !== runId) throw new Error("Audit snapshot returned a different run")
+    return snapshot
   }
 }

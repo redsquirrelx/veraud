@@ -59,12 +59,16 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
        }
        return pending
      },
-     getAuditResult: async (runId, selected) => {
+      getAuditResult: async (runId, selected) => {
        assert.equal(runId, "b".repeat(32))
        assert.deepEqual(selected, attributes)
        reconciled()
-       return (await pending)["audit"] ?? null
-     },
+        return (await pending)["audit"] ?? null
+      },
+      getAuditSnapshot: async (runId) => ({ run_id: runId, status: "running", evidence: [{
+        id: "published-before-completion", run_id: runId, agent_id: agentType, invocation_id: "manager-live",
+        kind: "source", source: "main.ts", content: "export const value = 1", details: { private: "not-for-the-client" },
+      }] }),
   }) })
   auditResponseSerialization(app)
   const hash = "a".repeat(40)
@@ -225,6 +229,14 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     const callbackUrl = `/api/agent-executions/${executionId}/invocations`
     const send = (payload: object) => app.inject({ method: "POST", url: callbackUrl, payload })
     assert.equal((await send(receipt)).statusCode, 200)
+    const published = await app.inject({ url: `${url}/${executionId}/evidence` })
+    assert.equal(published.statusCode, 200, published.body)
+    assert.equal(published.json().partial, true)
+    assert.equal(published.json().available, true)
+    assert.equal(published.json().data.evidence_inventory[0].id, "published-before-completion")
+    assert.equal(published.json().data.executions[0].invocation_id, receipt.invocation_id)
+    assert.doesNotMatch(published.body, /not-for-the-client|api_key|docx_base64|details/)
+    assert.equal(dispatches, 1, "reading published records must not start a second audit")
     const child = { ...receipt, invocation_id: "child-live", parent_invocation_id: receipt.invocation_id, agent_id: "modularity",
       phase: "plan_assessment", phase_sequence: 1 }
     const socket = await app.injectWS("/ws")
