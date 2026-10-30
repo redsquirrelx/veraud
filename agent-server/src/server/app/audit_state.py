@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.blackboard.models import Assessment, Evidence, Finding
 from server.services.audit_diagnostics import ExecutionDiagnostic
 
-AuditStatus = Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
+AuditStatus = Literal["queued", "running", "cancelling", "completed", "partial", "failed", "cancelled"]
 
 
 class AuditState(BaseModel):
