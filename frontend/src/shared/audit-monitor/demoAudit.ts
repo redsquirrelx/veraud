@@ -2,6 +2,8 @@ import type { AuditStatusModel } from "./auditStatus.ts"
 
 /** Temporary UI preview. Remove this file and its import/use in LiveAuditMonitor to remove the demo. */
 export const demoAudit: AuditStatusModel = {
+  demo: true,
+  canCancel: true,
   id: -1,
   project: { id: -1, repositoryOwner: "DEMO", repositoryName: "DEMO" },
   branch: "demo",

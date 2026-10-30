@@ -123,6 +123,9 @@
 .audit-pipeline[data-state="failed"],
 .audit-agent[data-state="failed"] { --audit-accent: #dc2626; }
 
+:is(.audit-monitor-legend [data-state="cancelling"], .audit-status[data-state="cancelling"], .audit-disclosure[data-state="cancelling"], .audit-pipeline[data-state="cancelling"], .audit-agent[data-state="cancelling"]) { --audit-accent: var(--status-waiting-accent); }
+:is(.audit-monitor-legend [data-state="cancelled"], .audit-status[data-state="cancelled"], .audit-disclosure[data-state="cancelled"], .audit-pipeline[data-state="cancelled"], .audit-agent[data-state="cancelled"]) { --audit-accent: var(--color-text-muted); }
+
 .audit-pipeline-list {
   display: flex;
   flex-direction: column;

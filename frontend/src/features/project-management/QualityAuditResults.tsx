@@ -9,6 +9,8 @@ import { formatDateTime } from "../../shared/i18n/format.ts"
 import { AuditConfigurationDetails } from "./AuditConfigurationDetails.tsx"
 import { AuditEvidenceTab } from "./AuditEvidenceTab.tsx"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
+import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
+import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditReport.tsx"
 import { useAuditReportSection } from "./useAuditReportSection.ts"
 import { downloadQualityAuditReport, getQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
@@ -41,6 +43,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     { id: "evidence", label: tEvidence("tab") },
   ]
   const pending = audit !== null && ["Waiting", "Running"].includes(audit.executionStatus)
+  const cancellationRevision = useAuditCancellationRevision(projectId, auditId)
   const qualityResults = useAuditReportSection(projectId, auditId, "quality_results",
     !loading && !pending && audit?.reportAvailable === true && (activeTab === "findings" || activeTab === "evidence" || qualityResultsOpen), attempt)
 
@@ -59,7 +62,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     }
     void load()
     return () => controller.abort()
-  }, [projectId, auditId, attempt])
+  }, [projectId, auditId, attempt, cancellationRevision])
 
   async function download() {
     setDownloading(true)
@@ -80,6 +83,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     setAttempt((value) => value + 1)
   }
 
+  const auditStateLabel = useAuditStateLabel()
   const stateLabel = !pending && audit?.auditStatus ? evaluationLabels[audit.auditStatus] : undefined
   const executionLabel = audit ? statusLabelKey(executionStatusLabelKeys, audit.executionStatus) : undefined
   const executionDate = audit ? audit.startedAt ?? audit.finishedAt ?? null : null
@@ -97,7 +101,8 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
         ? <time dateTime={executionDate}>{formatDateTime(executionDate)}</time> : t("qualityAudits.report.notRecorded")}</dd></div>
       <div><dt>{t(pending ? "qualityAudits.report.fields.status" : "qualityAudits.results.finalStatus")}</dt><dd>
         <Badge tone={pending ? "info" : audit.auditStatus === "completed" ? "success" : audit.auditStatus === "partial" || audit.auditStatus === "failed" || audit.executionStatus === "Failed" ? "warning" : "info"}>
-          {stateLabel ? t(stateLabel) : executionLabel ? t(executionLabel) : audit.auditStatus ?? audit.executionStatus}
+          {audit.auditStatus === "cancelling" || audit.auditStatus === "cancelled" ? auditStateLabel(audit.auditStatus)
+            : stateLabel ? t(stateLabel) : executionLabel ? t(executionLabel) : audit.auditStatus ?? audit.executionStatus}
         </Badge>
       </dd></div>
       {audit.runId && <div><dt>{t("qualityAudits.runId.label")}</dt><dd><code>{audit.runId}</code></dd></div>}

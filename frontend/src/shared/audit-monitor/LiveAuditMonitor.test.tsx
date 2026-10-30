@@ -6,7 +6,9 @@ import { useAgentExecutions } from "../agent-monitor/useAgentExecutions.ts"
 import { listAgentSettings, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { LiveAuditMonitor } from "./LiveAuditMonitor.tsx"
 
-vi.mock("../agent-monitor/useAgentExecutions.ts", () => ({ useAgentExecutions: vi.fn() }))
+vi.mock("../agent-monitor/useAgentExecutions.ts", async (original) => ({
+  ...await original<typeof import("../agent-monitor/useAgentExecutions.ts")>(), useAgentExecutions: vi.fn(),
+}))
 vi.mock("../../infrastructure/http-client/httpClient.ts", async (original) => ({
   ...await original<typeof import("../../infrastructure/http-client/httpClient.ts")>(), listAgentSettings: vi.fn(),
 }))

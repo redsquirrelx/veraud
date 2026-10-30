@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ArrowRightIcon, Badge, Card, ChevronDownIcon, FolderIcon } from "../ui-kit/index.ts"
 import { AuditStatusView } from "./AuditStatusView.tsx"
-import { auditProgress, progressText, stateLabelKey, stateTone, type AuditStatusModel } from "./auditStatus.ts"
+import { auditProgress, progressText, stateTone, type AuditStatusModel } from "./auditStatus.ts"
+import { useAuditStateLabel } from "./monitorLabels.ts"
 import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
 import { AuditActions } from "./AuditActions.tsx"
@@ -20,6 +21,7 @@ export interface AuditStatusDisclosureProps {
  *  and swallows the toggle's own activation. */
 export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceLinks = false }: AuditStatusDisclosureProps) {
   const { t } = useTranslation("projects")
+  const stateLabel = useAuditStateLabel()
   const regionId = useId()
   const [expanded, toggleExpanded] = useExpansion([audit.id], defaultExpanded)
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
@@ -47,7 +49,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
             // name taken from the contents would read "Audit #40Completed…".
             aria-label={t("auditStatus.toggleLabel", {
               id: t("auditStatus.title", { id: audit.id }),
-              state: t(stateLabelKey(audit.state)),
+              state: stateLabel(audit.state),
               progress: progressText(t, auditProgress(audit)),
             })}
             onClick={toggleExpanded}
@@ -59,7 +61,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
               </span>
             </span>
             <span className="audit-disclosure-line">
-              <Badge tone={stateTone(audit.state)}>{t(stateLabelKey(audit.state))}</Badge>
+              <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
               <span className="label">{progressText(t, auditProgress(audit))}</span>
               {audit.reportAvailable && <Badge tone="neutral">{t("auditStatus.reportAvailable")}</Badge>}
             </span>

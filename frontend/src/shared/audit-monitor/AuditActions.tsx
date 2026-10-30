@@ -1,34 +1,68 @@
-import { useEffect, useRef, useState } from "react"
+import { useContext, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { Badge, Button, FolderIcon, Modal } from "../ui-kit/index.ts"
-import type { AuditStatusModel } from "./auditStatus.ts"
-import { useMonitorLabels } from "./monitorLabels.ts"
+import { auditStateFrom, isFinished, type AuditStatusModel } from "./auditStatus.ts"
+import { useAuditStateLabel, useMonitorLabels } from "./monitorLabels.ts"
+import { cancelQualityAudit, type AuditCancellationResult } from "../../infrastructure/http-client/httpClient.ts"
+import { AuditExecutionUpdateContext } from "../agent-monitor/useAgentExecutions.ts"
 import "./AuditActions.css"
 import { AuditCancelButton } from "./AuditCancelButton.tsx"
 
-/** Confirmation UI only: cancellation is not yet connected to the server. */
+/** Requests cancellation; only a server outcome can mark a real audit finished. */
 export function AuditActions({ audit }: { audit: AuditStatusModel }) {
   const { t } = useTranslation("projects")
   const labels = useMonitorLabels()
+  const stateLabel = useAuditStateLabel()
+  const updateAudit = useContext(AuditExecutionUpdateContext)
   const [open, setOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState(false)
+  const [response, setResponse] = useState<AuditCancellationResult | null>(null)
+  const inFlight = useRef(false)
   const content = useRef<HTMLDivElement>(null)
-  const active = audit.state === "running" || audit.state === "waiting"
+  const state = isFinished(audit.state) ? audit.state : response ? auditStateFrom(response.executionStatus, response.auditStatus) : audit.state
+  const active = state === "running" || state === "waiting" || state === "cancelling"
+  const pending = sending || state === "cancelling" || response !== null && active
+  const eligible = audit.demo || audit.canCancel && (audit.project?.id ?? 0) > 0 && audit.id > 0
   const identity = t("auditStatus.title", { id: audit.id })
+
+  async function confirmCancellation() {
+    if (inFlight.current || pending || !active || !eligible) return
+    if (audit.demo) { setOpen(false); return }
+    inFlight.current = true
+    setSending(true)
+    setError(false)
+    try {
+      const result = await cancelQualityAudit(audit.project!.id, audit.id)
+      updateAudit(result)
+      setResponse(result)
+    } catch {
+      setError(true)
+    } finally {
+      inFlight.current = false
+      setSending(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || !active) return
     const previous = document.activeElement as HTMLElement | null
+    const fallback = previous?.closest(".audit-disclosure")?.querySelector<HTMLButtonElement>(".audit-disclosure-toggle")
     content.current?.querySelector<HTMLButtonElement>("button")?.focus()
-    return () => previous?.focus()
+    return () => {
+      if (previous?.isConnected && !previous.matches(":disabled")) previous.focus()
+      else fallback?.focus()
+    }
   }, [open, active])
 
   if (!active && open) setOpen(false)
-  if (!active) return null
+  if (!active || !eligible) return null
 
   return <>
     <div className="audit-actions" role="group" aria-label={`${labels.actions} · ${identity}`}>
-      <AuditCancelButton onClick={() => setOpen(true)} />
+      {pending && <span className="audit-cancel-pending" role="status">{labels.cancelling}</span>}
+      <AuditCancelButton pending={pending} onClick={() => setOpen(true)} />
     </div>
     {open && createPortal(
       <div className="audit-cancel-modal" onKeyDown={(event) => {
@@ -56,7 +90,7 @@ export function AuditActions({ audit }: { audit: AuditStatusModel }) {
               <span className="audit-cancel-label">{labels.cancelTarget}</span>
               <div className="audit-cancel-identity">
                 <strong>{identity}</strong>
-                <Badge tone="neutral">{t(audit.state === "running" ? "auditStatus.states.running" : "auditStatus.states.waiting")}</Badge>
+                <Badge tone="neutral">{stateLabel(pending ? "cancelling" : state)}</Badge>
               </div>
               {audit.project && <p className="audit-cancel-repository">
                 <FolderIcon size={14} />
@@ -67,10 +101,13 @@ export function AuditActions({ audit }: { audit: AuditStatusModel }) {
               <h3>{labels.cancelConsequences}</h3>
               <p>{labels.cancelWarning}</p>
             </section>
-            <p className="audit-cancel-unavailable">{labels.cancelUnavailable}</p>
+            {audit.demo && <p className="audit-cancel-unavailable">{labels.cancelUnavailable}</p>}
+            {pending && <p className="audit-cancel-unavailable" role="status">{labels.cancelRequested}</p>}
+            {error && !pending && <p className="audit-cancel-error" role="alert">{labels.cancelError}</p>}
             <div className="audit-cancel-buttons">
-              <Button variant="secondary" onClick={() => setOpen(false)}>{labels.keepRunning}</Button>
-              <Button onClick={() => setOpen(false)}>{labels.confirmCancel}</Button>
+              <Button variant="secondary" onClick={() => setOpen(false)}>{pending ? labels.dismiss : labels.keepRunning}</Button>
+              <Button loading={sending} loadingText={labels.cancelling} disabled={pending}
+                onClick={() => void confirmCancellation()}>{pending ? labels.cancelling : error ? labels.retryCancel : labels.confirmCancel}</Button>
             </div>
           </div>
         </Modal>

@@ -11,7 +11,6 @@ import {
   pipelineLabelKey,
   pipelineProgress,
   progressText,
-  stateLabelKey,
   stateTone,
   type AuditAgentNode,
   type AuditPipelineRun,
@@ -20,7 +19,7 @@ import {
 } from "./auditStatus.ts"
 import "./AuditStatusView.css"
 import { useExpansion } from "./useExpansion.ts"
-import { useMonitorLabels } from "./monitorLabels.ts"
+import { useAuditStateLabel, useMonitorLabels } from "./monitorLabels.ts"
 import { AuditActions } from "./AuditActions.tsx"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
@@ -46,6 +45,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
   const { t } = useTranslation("projects")
   const { t: tEvidence } = useTranslation("auditEvidence")
   const labels = useMonitorLabels()
+  const stateLabel = useAuditStateLabel()
   const childrenId = useId()
   const detailsId = useId()
   const stateId = useId()
@@ -70,7 +70,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
             ? <PhaseDot key={`${agent.id}:${agent.phase}`} phase={agent.phase} />
             : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
           <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
-          <span id={stateId} className="audit-agent-state">{t(stateLabelKey(agent.state))}</span>
+          <span id={stateId} className="audit-agent-state">{stateLabel(agent.state)}</span>
           <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
         </button>
         <button className="audit-agent-details-toggle" type="button" aria-label={`${labels.details} · ${identity}`}
@@ -117,6 +117,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
 
 function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipelineRun, auditId: number, evidenceAudit?: AuditStatusModel }) {
   const { t } = useTranslation("projects")
+  const stateLabel = useAuditStateLabel()
   const agentsId = useId()
   // Pipelines start open: the agent runs are the point of the view. Folding is
   // for scanning an audit with many attributes, not a summary-first default.
@@ -148,7 +149,7 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
         aria-controls={agentsId}
         aria-label={t("auditStatus.pipelines.toggleLabel", {
           pipeline: name,
-          state: t(stateLabelKey(pipeline.state)),
+          state: stateLabel(pipeline.state),
           progress: progressText(t, progress),
         })}
         onClick={toggleExpanded}
@@ -163,7 +164,7 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
           </span>
         </span>
         <span className="audit-pipeline-line">
-          <Badge tone={stateTone(pipeline.state)}>{t(stateLabelKey(pipeline.state))}</Badge>
+          <Badge tone={stateTone(pipeline.state)}>{stateLabel(pipeline.state)}</Badge>
           <ProgressLabel progress={progress} />
         </span>
       </button>
@@ -204,6 +205,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
 }) {
   const { t } = useTranslation("projects")
   const hasRevision = audit.branch !== null || audit.commitHash !== null
+  const stateLabel = useAuditStateLabel()
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
 
   const content = (
@@ -211,7 +213,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
       {summary && <>
         <div className="audit-status-head">
           <span className="mono audit-status-id">{t("auditStatus.title", { id: audit.id })}</span>
-          <Badge tone={stateTone(audit.state)}>{t(stateLabelKey(audit.state))}</Badge>
+          <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
           <ProgressLabel progress={auditProgress(audit)} />
         </div>
         <div className="audit-status-meta">
