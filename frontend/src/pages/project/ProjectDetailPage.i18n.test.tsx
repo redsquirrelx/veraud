@@ -101,15 +101,17 @@ describe("ProjectDetailPage in Spanish", () => {
     expect(screen.getByRole("region", { name: "Resumen del proyecto" })).toBeDefined()
   })
 
-  it("retains the quality audit workspace under the translated audits navigation", async () => {
+  it("separates audit setup in Analysis from history in Audits in Spanish", async () => {
     await initializeI18n("es")
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByRole("heading", { name: "acme/Demo" })
-    await userEvent.click(screen.getByRole("button", { name: "Auditorías" }))
+    await userEvent.click(screen.getByRole("button", { name: "Análisis" }))
 
     expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeDefined()
+    await userEvent.click(screen.getByRole("button", { name: "Auditorías" }))
+    expect(screen.queryByRole("heading", { name: "Auditoría de calidad" })).toBeNull()
     expect(await screen.findByText("No hay auditorías registradas.")).toBeDefined()
     expect(screen.queryByText("Aún no hay análisis: elige una versión y pulsa Analizar")).toBeNull()
   })

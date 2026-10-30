@@ -229,6 +229,43 @@ describe("ProjectDetailPage", () => {
     }
   })
 
+  it("keeps distinct section icons and named destinations when the sidebar is collapsed", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+    await screen.findByRole("heading", { name: "acme/Demo" })
+
+    const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
+    const sections = within(navigation).getAllByRole("button")
+    expect(sections).toHaveLength(4)
+    const icons = sections.map((button) => {
+      const icon = button.querySelector("svg")!
+      expect(icon).toHaveAttribute("aria-hidden", "true")
+      expect(icon).toHaveAttribute("width", "16")
+      expect(icon).toHaveAttribute("height", "16")
+      return icon.innerHTML
+    })
+    expect(new Set(icons).size).toBe(sections.length)
+    for (const name of ["Home", "Settings", "Veraud"]) {
+      const globalIcon = screen.getByRole("link", { name }).querySelector("svg")!
+      expect(icons).not.toContain(globalIcon.innerHTML)
+    }
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    within(navigation).getAllByRole("button").forEach((button, index) => {
+      expect(button.querySelector("svg")).toBeVisible()
+      expect(button.querySelector("svg")!.innerHTML).toBe(icons[index])
+      expect(button.getAttribute("aria-label")).toBeTruthy()
+      expect(button).not.toHaveAttribute("title")
+    })
+    for (const button of within(navigation).getAllByRole("button")) {
+      await userEvent.hover(button)
+      expect(screen.getByRole("tooltip")).toHaveTextContent(button.getAttribute("aria-label")!)
+      await userEvent.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
+      await userEvent.unhover(button)
+    }
+  })
+
   it("shows the project header with sidebar", async () => {
     stubProjects()
     renderDetail("/projects/2")
@@ -465,12 +502,12 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
   })
 
-  it("shows quality audit status and its configuration entry independently of the file tree", async () => {
+  it("places audit setup in Analysis and keeps Audits for history", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
     // No executable agent is configured by this fixture; defaults must not
@@ -478,10 +515,23 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Disabled")
     expect(screen.queryByRole("checkbox", { name: "Maintainability" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Project audits" })).not.toBeInTheDocument()
     expect(screen.queryByRole("tree")).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: "Configure audit" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    expect(await screen.findByRole("heading", { name: "Project audits" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Start audit" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Configure audit" })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
   })
 
-  it("opens quality audits directly from the header Analyze button without starting an execution", async () => {
+  it("opens Analysis audit setup from the header without starting an execution", async () => {
     const executions: string[] = []
     stubFetch((url, init) => {
       if (init?.method === "POST" && (url.includes("/audits") || url.includes("/agent-executions"))) executions.push(url)
@@ -496,6 +546,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(analyze)
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Analysis" })).toHaveAttribute("aria-current", "page")
     expect(screen.queryByRole("menu")).not.toBeInTheDocument()
     expect(executions).toEqual([])
   })

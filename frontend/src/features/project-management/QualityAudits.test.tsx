@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { useState } from "react"
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
@@ -54,6 +55,118 @@ async function toggleAttribute(name: string) {
 }
 
 describe("project quality audits", () => {
+  const paginatedAudits = Array.from({ length: 21 }, (_, index) => ({
+    ...historicalSummary, id: 100 - index, reportAvailable: false,
+    createdAt: `2026-01-${String(index + 1).padStart(2, "0")}T12:00:00Z`,
+  }))
+
+  function showHistory() {
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+  }
+
+  it("orders history newest first and starts with five records per page", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue(paginatedAudits)
+    showHistory()
+    await screen.findAllByRole("article")
+    expect(screen.getAllByRole("article")).toHaveLength(5)
+    const controls = screen.getAllByRole("combobox", { name: "Audits per page" })
+    const articles = screen.getAllByRole("article")
+    expect(controls[0].compareDocumentPosition(articles[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(controls[1].compareDocumentPosition(articles[articles.length - 1]) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    const headings = screen.getAllByRole("article").map((article) => within(article).getByRole("heading").textContent)
+    expect(headings[0]).toContain("#80")
+    expect(headings[4]).toContain("#84")
+    expect(screen.getAllByRole("combobox", { name: "Audits per page" })).toHaveLength(2)
+    screen.getAllByRole("combobox", { name: "Audits per page" }).forEach((select) => expect(select).toHaveValue("5"))
+    expect(screen.getAllByText("Page 1 of 5")).toHaveLength(2)
+    screen.getAllByRole("button", { name: "Previous page" }).forEach((button) => expect(button).toBeDisabled())
+    await userEvent.click(screen.getAllByRole("button", { name: "Next page" })[0])
+    expect(screen.getAllByText("Page 2 of 5")).toHaveLength(2)
+    expect(within(screen.getAllByRole("article")[0]).getByRole("heading")).toHaveTextContent("#85")
+    await userEvent.click(screen.getAllByRole("button", { name: "Previous page" })[1])
+    expect(within(screen.getAllByRole("article")[0]).getByRole("heading")).toHaveTextContent("#80")
+  })
+
+  it.each([5, 10, 15, 20])("allows %s records per page and resets to the first page", async (size) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue(paginatedAudits)
+    showHistory()
+    await screen.findAllByRole("article")
+    await userEvent.click(screen.getAllByRole("button", { name: "Next page" })[0])
+    const selector = screen.getAllByRole("combobox", { name: "Audits per page" })[1]
+    expect(within(selector).getAllByRole("option").map((option) => option.textContent)).toEqual(["5", "10", "15", "20"])
+    await userEvent.selectOptions(selector, String(size))
+    expect(screen.getAllByRole("article")).toHaveLength(size)
+    expect(within(screen.getAllByRole("article")[0]).getByRole("heading")).toHaveTextContent("#80")
+    expect(screen.getAllByText(`Page 1 of ${Math.ceil(21 / size)}`)).toHaveLength(2)
+    screen.getAllByRole("combobox", { name: "Audits per page" }).forEach((select) => expect(select).toHaveValue(String(size)))
+  })
+
+  it("handles the final partial page and clamps the page after history shrinks", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValueOnce(paginatedAudits).mockResolvedValue([paginatedAudits[0]])
+    showHistory()
+    await screen.findAllByRole("article")
+    await userEvent.selectOptions(screen.getAllByRole("combobox", { name: "Audits per page" })[0], "20")
+    await userEvent.click(screen.getAllByRole("button", { name: "Next page" })[1])
+    expect(screen.getAllByRole("article")).toHaveLength(1)
+    screen.getAllByRole("button", { name: "Next page" }).forEach((button) => expect(button).toBeDisabled())
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(screen.queryAllByRole("navigation", { name: "Audit history pages" })).toHaveLength(0))
+    expect(screen.getAllByRole("article")).toHaveLength(1)
+    screen.getAllByRole("combobox", { name: "Audits per page" }).forEach((select) => expect(select).toHaveValue("20"))
+  })
+
+  it("does not show paging controls for an empty history", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    showHistory()
+    await screen.findByText("No audits recorded.")
+    expect(screen.queryByRole("combobox", { name: "Audits per page" })).toBeNull()
+    expect(screen.queryByRole("navigation", { name: "Audit history pages" })).toBeNull()
+  })
+
+  it("still blocks starting when a running audit is outside the visible page", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([
+      { ...paginatedAudits[0], executionStatus: "Running" }, ...paginatedAudits.slice(1),
+    ])
+    show()
+    await screen.findAllByRole("article")
+    expect(screen.getAllByRole("article")).toHaveLength(5)
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    expect(api.startQualityAudit).not.toHaveBeenCalled()
+  })
+
+  it("starts audits from the configuration view without rendering history", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="configuration" /></MemoryRouter>)
+    const start = screen.getByRole("button", { name: "Start audit" })
+    await waitFor(() => expect(start).toBeEnabled())
+    expect(screen.queryByRole("heading", { name: "Project audits" })).toBeNull()
+    await userEvent.click(start)
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"])
+  })
+
+  it("keeps history refresh and load errors available without setup controls", async () => {
+    vi.mocked(api.listQualityAudits).mockRejectedValueOnce(new Error("offline")).mockResolvedValue([])
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+    expect(await screen.findByRole("alert")).toBeVisible()
+    expect(screen.queryByRole("button", { name: "Start audit" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Configure audit" })).toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(api.listQualityAudits).toHaveBeenCalledTimes(2))
+  })
+
+  it("groups the audit count with the history title and places refresh in the header", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([historicalSummary])
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+    await screen.findByRole("article")
+    const title = screen.getByRole("heading", { name: "Project audits" })
+    expect(within(title.parentElement!).getByText("1").closest(".ui-badge")).toBeInTheDocument()
+    const header = title.closest(".quality-audit-heading")!
+    expect(within(header as HTMLElement).getByRole("button", { name: "Refresh" })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    await waitFor(() => expect(api.listQualityAudits).toHaveBeenCalledTimes(2))
+  })
+
   it("uses the same secondary button style for all audit history actions", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, configurationAvailable: true }])
     show()
@@ -228,7 +341,7 @@ describe("project quality audits", () => {
     expect(await screen.findByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
   })
 
-  it("reuses historical selections for the current revision without changing or restarting the original audit", async () => {
+  it.each([false, true])("reuses historical selections without changing the original audit (separate views: %s)", async (separateViews) => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "old-branch", commitHash: "b".repeat(40), attributes: ["maintainability"],
       executionStatus: "Completed", auditStatus: "partial", error: null, createdAt: "2026-10-17T10:00:00Z", finishedAt: null,
@@ -251,10 +364,17 @@ describe("project quality audits", () => {
         qualityAttributes: ["maintainability"], workflowIds: [], configured: false, configuration: null })),
     ])
     const user = userEvent.setup()
-    show()
+    const onConfigure = vi.fn()
+    function Workspace() {
+      const [view, setView] = useState<"all" | "history" | "configuration">(separateViews ? "history" : "all")
+      return <QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view={view}
+        onConfigure={() => { onConfigure(); setView(separateViews ? "configuration" : "all") }} />
+    }
+    render(<MemoryRouter><Workspace /></MemoryRouter>)
     const reuse = await screen.findByRole("button", { name: "Reuse configuration" })
     await waitFor(() => expect(reuse).toBeEnabled())
     await user.click(reuse)
+    await waitFor(() => expect(onConfigure).toHaveBeenCalledOnce())
     const drawer = within(await screen.findByRole("dialog", { name: "Configure audit" }))
     expect(drawer.getByRole("checkbox", { name: "Enable Maintainability" })).toBeChecked()
     expect(drawer.getByRole("checkbox", { name: "Enable Security" })).not.toBeChecked()

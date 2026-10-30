@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "react"
 import { Link } from "react-router-dom"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
-import { Accordion, Badge, Button, Card, Checkbox, Drawer } from "../../shared/ui-kit/index.ts"
+import { Accordion, Badge, Button, Card, Checkbox, Drawer, Pagination } from "../../shared/ui-kit/index.ts"
 import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
@@ -16,6 +16,7 @@ import type { ReusedAuditSelection } from "./reuseAuditSelection.ts"
 import { useAuditAgentCatalog } from "./auditAgentCatalog.ts"
 import { auditReadiness } from "./auditReadiness.ts"
 import { useAuditStartMessages } from "./auditStartMessages.ts"
+import { useAuditHistoryLabels } from "./auditHistoryLabels.ts"
 import { AuditAttributeConfiguration } from "./AuditAttributeConfiguration.tsx"
 import { auditDraftValues, type AuditAttributeDraft } from "./auditOperatingSettingsApi.ts"
 
@@ -62,15 +63,17 @@ function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAud
     : <span>{pending}</span>}</p>
 }
 
-export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayout = "plain", cardPadding = "default" }: {
+export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayout = "plain", cardPadding = "default", view = "all", onConfigure }: {
   projectId: number, branch: string | null, commitHash: string | null, canRun: boolean,
   cardLayout?: "plain" | "stack", cardPadding?: "default" | "responsive",
+  view?: "all" | "configuration" | "history", onConfigure?: () => void,
 }) {
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const attributeId = useId()
   const agentCatalog = useAuditAgentCatalog()
   const startMessages = useAuditStartMessages()
+  const historyLabels = useAuditHistoryLabels()
   // Defaults follow executable roots; explicit user selections remain authoritative
   // even if a later catalog refresh makes an agent unavailable.
   const [maintainabilityEnabled, setSelected] = useState<boolean | undefined>()
@@ -89,6 +92,19 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const invalidRequirements = functionalSelected && (requirements.length === 0 || requirements.length > 100
     || requirements.some((description) => description.length > 10000))
   const [audits, setAudits] = useState<QualityAuditSummary[]>([])
+  const [pageSize, setPageSize] = useState(5)
+  const [page, setPage] = useState(1)
+  const pageCount = Math.max(1, Math.ceil(audits.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const sortedAudits = [...audits].sort((left, right) => {
+    const leftDate = Date.parse(left.createdAt)
+    const rightDate = Date.parse(right.createdAt)
+    // Missing/invalid timestamps go last; IDs break ties deterministically.
+    const dateOrder = (Number.isNaN(rightDate) ? -Infinity : rightDate)
+      - (Number.isNaN(leftDate) ? -Infinity : leftDate)
+    return dateOrder || right.id - left.id
+  })
+  const visibleAudits = sortedAudits.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const [starting, setStarting] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [error, setError] = useState<QualityAuditError | null>(null)
@@ -184,6 +200,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     setExpandedAttributes({ maintainability, security: selection.security, functional_adequacy: selection.functionalAdequacy })
     setReuseNotice(selection.adjusted ? "adjusted" : "loaded")
     setConfigurationOpen(true)
+    onConfigure?.()
   }
 
   async function start() {
@@ -219,8 +236,17 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     finally { setDownloading(null) }
   }
 
+  const historyPagination = audits.length > 0 && <div className="quality-audit-pagination">
+    <label>{historyLabels.pageSize}
+      <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}>
+        {[5, 10, 15, 20].map((size) => <option key={size} value={size}>{formatNumber(size)}</option>)}
+      </select>
+    </label>
+    <Pagination page={currentPage} pageCount={pageCount} onChange={setPage} label={historyLabels.pagination} />
+  </div>
+
   return <div className="quality-audits">
-    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+    {view !== "history" && <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading">
         <div><h2>{t("qualityAudits.title")}</h2><p>{t("qualityAudits.description")}</p></div>
         <span className="quality-audit-revision mono">{branch ?? "—"} @ {commitHash?.slice(0, 7) ?? t("qualityAudits.revisionPending")}</span>
@@ -254,11 +280,16 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       {invalidMaintainability && <p role="status">{t("qualityAudits.configuration.maintainability.selectDimension")}</p>}
       {running && <p role="status">{t("qualityAudits.runningNotice")}</p>}
       {error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
-    </Card>
-    <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
-      <div className="quality-audit-heading"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
+    </Card>}
+    {view !== "configuration" && <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
+      <div className="quality-audit-heading">
+        <div className="quality-audit-history-title"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
+        {view === "history" && <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>}
+      </div>
+      {view === "history" && error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
+      {historyPagination}
       {audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
-      {audits.map((audit) => <article className="quality-audit-run" key={audit.id}>
+      {visibleAudits.map((audit) => <article className="quality-audit-run" key={audit.id}>
         <div className="quality-audit-run-heading">
         <h4>{audit.attributes?.map((attribute) => attributeLabelKeys[attribute] ? t(attributeLabelKeys[attribute]) : attribute).join(" + ") || t("auditStatus.pipelines.maintainability")} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
@@ -284,9 +315,10 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         </>}
         </div>
       </article>)}
-    </Card>
+      {historyPagination}
+    </Card>}
     <Drawer
-      open={configurationOpen}
+      open={configurationOpen && view !== "history"}
       title={t("qualityAudits.configuration.title")}
       description={t("qualityAudits.configuration.description")}
       onClose={() => setConfigurationOpen(false)}
