@@ -26,6 +26,7 @@ from ...infrastructure.llm.diagnostics import (
     retry_hint,
     transient,
 )
+from ..cancellation import check_cancellation
 from ..invocation_reporting import phase_node, report_invocation_usage
 from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
@@ -96,6 +97,7 @@ class InvestigationAgent:
             raise ValueError("Prompt overrides must name cognitive nodes.")
 
     async def run(self, tools: RepositoryToolset, request: AuditRequest | None = None) -> AuditResult:
+        check_cancellation()
         request = request or self.request_type()
         _unique(request.criteria, "criterion")
         if tools.budget_usage.tool_calls:
@@ -482,6 +484,7 @@ class InvestigationExecution:
     async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
         retry = 0
         while True:
+            self.timing.check_cancellation()
             if self.calls >= self.call_limit - reserved_calls or self.remaining_seconds() <= 0:
                 self.stop = "model_call_limit" if self.calls >= self.call_limit - reserved_calls else "time_limit"
                 return None
@@ -538,6 +541,7 @@ class InvestigationExecution:
                 self.stop = "time_limit"
                 return None
             token_budget = self.tools.token_budget
+            self.timing.check_cancellation()
             token_reservation = token_budget.reserve(reserve) if token_budget is not None else None
             if token_budget is not None and token_reservation is None:
                 if quota_reservation is not None:

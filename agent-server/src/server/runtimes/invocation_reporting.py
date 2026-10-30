@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from langchain_core.runnables import Runnable, RunnableConfig
 
 from ..config.logs import get_logger
+from .cancellation import check_cancellation
 
 logger = get_logger("invocation-reporting")
 _reporter = ContextVar("invocation_reporter", default=None)
@@ -59,7 +60,9 @@ async def report_invocation_phase(phase):
 def phase_node(name, operation):
     """Observe an existing graph node without changing its outputs or routes."""
     async def node(state, config: RunnableConfig):
+        check_cancellation()
         await report_invocation_phase(name)
+        check_cancellation()
         if isinstance(operation, Runnable):
             return await operation.ainvoke(state, config)
         result = operation(state)
@@ -69,6 +72,12 @@ def phase_node(name, operation):
 
 async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
     """Wrap actual execution, preserving results, exceptions and cancellation."""
+    try:
+        check_cancellation()
+    except asyncio.CancelledError:
+        if inspect.iscoroutine(operation):
+            operation.close()
+        raise
     if _reporter.get() is None:
         return await operation
     parent = _active.get()
@@ -80,6 +89,7 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
     began = False
     try:
         await _send(receipt)
+        check_cancellation()
         began = True
         result = await operation
         status = getattr(result, "status", None)
