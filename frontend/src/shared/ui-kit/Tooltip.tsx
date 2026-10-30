@@ -5,11 +5,12 @@ import "./Tooltip.css"
 interface TooltipProps {
   content: string
   disabled?: boolean
+  placement?: "left" | "right"
   children: (props: { "aria-describedby"?: string }) => ReactNode
 }
 
 /** A non-interactive label placed beside its trigger, outside clipping containers. */
-export function Tooltip({ content, disabled = false, children }: TooltipProps) {
+export function Tooltip({ content, disabled = false, placement = "right", children }: TooltipProps) {
   const id = useId()
   const trigger = useRef<HTMLSpanElement>(null)
   const bubble = useRef<HTMLSpanElement>(null)
@@ -60,10 +61,10 @@ export function Tooltip({ content, disabled = false, children }: TooltipProps) {
     const anchor = trigger.current.getBoundingClientRect()
     const tooltip = bubble.current.getBoundingClientRect()
     setPosition({
-      left: Math.max(8, Math.min(anchor.right + 8, window.innerWidth - tooltip.width - 8)),
+      left: Math.max(8, Math.min(placement === "left" ? anchor.left - tooltip.width - 8 : anchor.right + 8, window.innerWidth - tooltip.width - 8)),
       top: Math.max(8, Math.min(anchor.top + (anchor.height - tooltip.height) / 2, window.innerHeight - tooltip.height - 8)),
     })
-  }, [visible, content])
+  }, [visible, content, placement])
 
   return <span ref={trigger} className="ui-tooltip-trigger"
     onMouseEnter={show} onMouseLeave={scheduleClose}
