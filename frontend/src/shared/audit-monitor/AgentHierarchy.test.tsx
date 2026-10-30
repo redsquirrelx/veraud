@@ -1,4 +1,4 @@
-import { expect, it } from "vitest"
+import { beforeEach, expect, it } from "vitest"
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
@@ -6,6 +6,8 @@ import { AuditStatusView } from "./AuditStatusView.tsx"
 import type { AuditAgentRun, AuditStatusModel } from "./auditStatus.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { executionAudits } from "./executionAudits.ts"
+
+beforeEach(() => window.localStorage.clear())
 
 it("updates a restarted agent in place while preserving collapsed branches", async () => {
   const receipt = (invocation_id: string, agent_id: string, parent_invocation_id: string | null,
@@ -18,7 +20,7 @@ it("updates a restarted agent in place while preserving collapsed branches", asy
     invocations: [receipt("manager-1", "maintainability_manager", null), receipt("mod-1", "modularity", "manager-1"),
       receipt("boundary-1", "architecture_boundary", "mod-1")] }
   const view = (value: AgentExecution) => <MemoryRouter><AuditStatusView audit={executionAudits([value], [])[0]!} /></MemoryRouter>
-  const { rerender } = render(view(execution))
+  const { rerender, unmount } = render(view(execution))
   const coordinator = screen.getByRole("button", { name: "modularity run #mod-1" })
   const originalRow = coordinator.closest("li")
   await userEvent.click(coordinator)
@@ -40,6 +42,11 @@ it("updates a restarted agent in place while preserving collapsed branches", asy
   expect(screen.getByText("architecture_boundary run #boundary-1")).not.toBeVisible()
   expect(screen.queryByText("modularity run #mod-1")).toBeNull()
   expect(screen.queryByText("maintainability_manager run #manager-1")).toBeNull()
+  unmount()
+  render(view(execution))
+  expect(screen.getByRole("button", { name: "maintainability_manager run #manager-1" })).toHaveAttribute("aria-expanded", "true")
+  expect(screen.getByRole("button", { name: "modularity run #mod-1" })).toHaveAttribute("aria-expanded", "false")
+  expect(screen.getByText("architecture_boundary run #boundary-1")).not.toBeVisible()
 })
 
 it("renders manager, coordinators and investigators as independently collapsible branches", async () => {

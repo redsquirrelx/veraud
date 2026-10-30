@@ -20,6 +20,7 @@ import {
   type AuditStatusModel,
 } from "./auditStatus.ts"
 import "./AuditStatusView.css"
+import { useExpansion } from "./useExpansion.ts"
 
 /** Decorative: the badge beside it already carries the state as text. */
 function RunStateIcon({ state }: { state: AuditRunState }) {
@@ -55,12 +56,12 @@ function PhaseBadge({ phase }: { phase: string }) {
   </span>
 }
 
-function AgentRow({ node, primary = false, evidenceAudit }: { node: AuditAgentNode, primary?: boolean, evidenceAudit?: AuditStatusModel }) {
+function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditAgentNode, path: readonly (string | number)[], primary?: boolean, evidenceAudit?: AuditStatusModel }) {
   const { agent, children } = node
   const { t } = useTranslation("projects")
   const { t: tEvidence } = useTranslation("auditEvidence")
   const childrenId = useId()
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, toggleExpanded] = useExpansion(path)
   const expandable = primary || children.length > 0
   const Header = expandable ? "button" : "div"
 
@@ -70,7 +71,7 @@ function AgentRow({ node, primary = false, evidenceAudit }: { node: AuditAgentNo
         type={expandable ? "button" : undefined}
         aria-label={expandable ? t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id }) : undefined}
         aria-expanded={expandable ? expanded : undefined} aria-controls={expandable ? childrenId : undefined}
-        onClick={expandable ? () => setExpanded((value) => !value) : undefined}>
+        onClick={expandable ? toggleExpanded : undefined}>
         <span className={`audit-agent-icon audit-agent-icon-${agent.state}`} aria-hidden="true">
           <RunStateIcon state={agent.state} />
         </span>
@@ -96,18 +97,19 @@ function AgentRow({ node, primary = false, evidenceAudit }: { node: AuditAgentNo
         </Link>
       </div>}
       {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
-        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} evidenceAudit={evidenceAudit} />)}
+        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} path={[...path, child.agent.agentType]} evidenceAudit={evidenceAudit} />)}
       </ul>}
     </li>
   )
 }
 
-function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, evidenceAudit?: AuditStatusModel }) {
+function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipelineRun, auditId: number, evidenceAudit?: AuditStatusModel }) {
   const { t } = useTranslation("projects")
   const agentsId = useId()
   // Pipelines start open: the agent runs are the point of the view. Folding is
   // for scanning an audit with many attributes, not a summary-first default.
-  const [expanded, setExpanded] = useState(true)
+  const path = [auditId, pipeline.id]
+  const [expanded, toggleExpanded] = useExpansion(path)
   const labelKey = pipelineLabelKey(pipeline.id)
   const name = labelKey === null ? pipeline.id : t(labelKey)
   const progress = pipelineProgress(pipeline)
@@ -119,7 +121,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
   // headers for empty groups or historical rows without an identified root.
   if (tree.length > 0 && tree.every((node) => node.agent.agentType === rootType)) {
     return <ul className="audit-agent-list audit-root-list" data-state={pipeline.state}>
-      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} primary evidenceAudit={evidenceAudit} />)}
+      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} path={[...path, node.agent.agentType]} primary evidenceAudit={evidenceAudit} />)}
     </ul>
   }
 
@@ -137,7 +139,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
           state: t(stateLabelKey(pipeline.state)),
           progress: progressText(t, progress),
         })}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={toggleExpanded}
       >
         <span className="audit-pipeline-line">
           <span className="audit-pipeline-icon" aria-hidden="true">
@@ -166,7 +168,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
           ) : (
             <ul className="audit-agent-list">
               {tree.map((node) => (
-                <AgentRow key={node.agent.agentType} node={node} evidenceAudit={evidenceAudit} />
+                <AgentRow key={node.agent.agentType} node={node} path={[...path, node.agent.agentType]} evidenceAudit={evidenceAudit} />
               ))}
             </ul>
           )}
@@ -224,7 +226,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
       ) : (
         <div className="audit-pipeline-list">
           {audit.pipelines.map((pipeline) => (
-            <PipelineRow key={pipeline.id} pipeline={pipeline} evidenceAudit={evidenceLinks ? audit : undefined} />
+             <PipelineRow key={pipeline.id} pipeline={pipeline} auditId={audit.id} evidenceAudit={evidenceLinks ? audit : undefined} />
           ))}
         </div>
       )}

@@ -1,9 +1,10 @@
-import { useId, useState } from "react"
+import { useId } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ArrowRightIcon, Badge, Card, ChevronDownIcon, FolderIcon } from "../ui-kit/index.ts"
 import { AuditStatusView } from "./AuditStatusView.tsx"
 import { auditProgress, progressText, stateLabelKey, stateTone, type AuditStatusModel } from "./auditStatus.ts"
+import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
 
 export interface AuditStatusDisclosureProps {
@@ -19,7 +20,7 @@ export interface AuditStatusDisclosureProps {
 export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceLinks = false }: AuditStatusDisclosureProps) {
   const { t } = useTranslation("projects")
   const regionId = useId()
-  const [expanded, setExpanded] = useState(defaultExpanded)
+  const [expanded, toggleExpanded] = useExpansion([audit.id], defaultExpanded)
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
 
   return (
@@ -44,7 +45,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
               state: t(stateLabelKey(audit.state)),
               progress: progressText(t, auditProgress(audit)),
             })}
-            onClick={() => setExpanded((current) => !current)}
+            onClick={toggleExpanded}
           >
             <span className="audit-disclosure-line">
               <span className="mono audit-disclosure-id">{t("auditStatus.title", { id: audit.id })}</span>
