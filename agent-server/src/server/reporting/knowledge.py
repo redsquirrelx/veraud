@@ -6,6 +6,7 @@ from server.blackboard.models import Assessment, BlackboardRecord, Evidence, Fin
 from server.reporting.schemas import RecordReference, ReportFinding, ReportStatement
 
 AGENT_CATEGORIES = {
+    "code_comprehension": ("maintainability", "analysability"),
     "architecture_boundary": ("maintainability", "modularity"),
     "responsibility": ("maintainability", "modularity"),
     "dependency_impact": ("maintainability", "modularity"),

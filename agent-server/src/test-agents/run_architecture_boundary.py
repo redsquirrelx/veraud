@@ -82,7 +82,7 @@ async def run(args):
 
 
 async def run_audit(args, root, request, config, model, settings, *, tracing_backend: TracingBackend | None = None,
-                    agent_class=None, token_policy=None):
+                    agent_class=None, token_policy=None, result_formatter=None):
     # This standalone harness is also reused by the responsibility test runner.
     agent_class = agent_class if agent_class is not None else ArchitectureBoundaryAgent
     config = config.model_copy(update={"max_output_tokens": min(config.max_output_tokens, settings.max_tokens)})
@@ -110,7 +110,8 @@ async def run_audit(args, root, request, config, model, settings, *, tracing_bac
             provider=settings.provider,
             model=settings.name,
         )
-    print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+    print(result_formatter(result) if result_formatter is not None else
+        json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
 def main():

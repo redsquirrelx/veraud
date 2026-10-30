@@ -90,6 +90,17 @@ def test_backend_can_resolve_all_attribute_selections_into_valid_model_maps_and_
     assert project["run_url"] == "/api/pipelines/project-architecture/run"
 
 
+def test_code_comprehension_is_discoverable_without_claiming_workflow_or_direct_execution(client):
+    detail = client.get("/api/agents/catalog/code_comprehension").json()
+    assert detail["name"] == "CodeComprehensionAgent"
+    assert detail["execution_modes"] == ["internal"]
+    assert detail["parent_ids"] == detail["workflow_ids"] == []
+    assert detail["quality_attributes"] == ["maintainability"]
+    assert "representations" in detail["input_schema"]["properties"]
+    assert "comprehension_assessments" in detail["output_schema"]["properties"]
+    assert "code_comprehension" not in client.get("/api/agents").json()
+
+
 def test_quality_contexts_are_explicit_for_hierarchies_shared_reports_and_non_audit_workflows(client):
     catalog = client.get("/api/agents/catalog").json()
     agents = {item["agent_id"]: item for item in catalog["agents"]}

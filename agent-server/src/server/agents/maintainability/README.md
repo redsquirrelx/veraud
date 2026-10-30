@@ -5,6 +5,8 @@ Agents are grouped by their place in the audit hierarchy:
 ```text
 maintainability/
 ├── manager/
+├── analysability/
+│   └── code_comprehension/  # Standalone investigator; no coordinator yet.
 ├── modularity/
 │   ├── coordinator/
 │   ├── responsibility/

@@ -30,6 +30,7 @@ class AgentConfigSpec:
 
 
 AGENT_CONFIGS = {
+    "code_comprehension": AgentConfigSpec("maintainability.analysability.code_comprehension", "CodeComprehensionConfig", "CodeComprehensionRequest", "investigator"),
     "architecture_boundary": AgentConfigSpec("maintainability.modularity.architecture_boundary", "BoundaryConfig", "AuditRequest", "investigator", InvestigationConfig),
     "responsibility": AgentConfigSpec("maintainability.modularity.responsibility", "ResponsibilityConfig", "ResponsibilityRequest", "investigator", InvestigationConfig),
     "dependency_impact": AgentConfigSpec("maintainability.modularity.dependency_impact", "DependencyImpactConfig", "DependencyImpactRequest", "investigator"),

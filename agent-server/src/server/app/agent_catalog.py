@@ -131,6 +131,12 @@ def _definitions(service):
                 investigator.capability.capability, config=child, workflows=["quality-audit"], attributes=["maintainability"], parents=[identifier],
                 request=investigator.request_class, result=investigator.result_class)
 
+    add("code_comprehension", "CodeComprehensionAgent", "investigator", ["internal"],
+        "Standalone snapshot-bound analysability investigator; no analysability coordinator is implemented yet.",
+        config="code_comprehension", attributes=["maintainability"],
+        request=_symbol("maintainability.analysability.code_comprehension.schemas", "CodeComprehensionRequest"),
+        result=_symbol("maintainability.analysability.code_comprehension.schemas", "CodeComprehensionResult"))
+
     # Existing supervisor components are discoverable, not new standalone routes.
     security_components = (
         ("sast_scanner", "SASTScannerAgent", False, "Static source pattern scanner."),
