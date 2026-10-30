@@ -184,6 +184,7 @@ export interface AgentInvocation {
 }
 
 export interface AgentExecution {
+  cancellationRequestedAt?: string | null
   invocations?: AgentInvocation[]
   monitorContext?: {
     project: { id: number, repositoryOwner: string, repositoryName: string } | null
@@ -207,6 +208,39 @@ export interface AgentExecution {
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
+}
+
+export interface AuditCancellationResult {
+  id: number
+  executionStatus: string
+  auditStatus: string | null
+  cancellationRequestedAt?: string | null
+  runId?: string | null
+  finishedAt: string | null
+  error: string | null
+}
+
+const cancellationRequests = new Map<string, Promise<AuditCancellationResult>>()
+
+export function cancelQualityAudit(projectId: number, auditId: number): Promise<AuditCancellationResult> {
+  if (!Number.isInteger(projectId) || !Number.isInteger(auditId) || projectId <= 0 || auditId <= 0) {
+    return Promise.reject(new Error("Only persisted project audits can be cancelled"))
+  }
+  const path = `/api/projects/${projectId}/audits/${auditId}/cancel`
+  const pending = cancellationRequests.get(path)
+  if (pending) return pending
+  const request = requestJson<AuditCancellationResult>(path, "Could not request audit cancellation", {
+    method: "POST", signal: AbortSignal.timeout(15000),
+  }).then((result) => {
+    if (result.id !== auditId) throw new Error("Cancellation response belongs to another audit")
+    if (!["Waiting", "Running", "Completed", "Failed"].includes(result.executionStatus)
+      || (result.auditStatus !== null && typeof result.auditStatus !== "string")) {
+      throw new Error("Invalid cancellation response")
+    }
+    return result
+  }).finally(() => { cancellationRequests.delete(path) })
+  cancellationRequests.set(path, request)
+  return request
 }
 
 export interface ProjectArchitectureRequest {
