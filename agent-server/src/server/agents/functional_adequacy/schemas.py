@@ -29,7 +29,7 @@ class FunctionalAdequacyInput(BaseModel):
     """Datos recibidos por el agente."""
 
     requirements: list[FunctionalRequirement] = Field(
-        min_length=1
+        default_factory=list
     )
     code_fragments: list[CodeFragment] = Field(
         default_factory=list

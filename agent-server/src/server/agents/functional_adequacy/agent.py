@@ -134,6 +134,9 @@ class FunctionalAdequacyAgent(
         input_data = state["input_data"]
         fragments = input_data.code_fragments
 
+        if not input_data.requirements:
+            return {"candidates": {}}
+
         if not fragments:
             return {
                 "candidates": {

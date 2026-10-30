@@ -54,3 +54,46 @@ def test_functional_adequacy_runs_through_execution_service():
     assert result.fulfilled_requirements == 0
     assert result.results[0].status == "evidencia_insuficiente"
     assert result.score == 0.0
+
+def test_functional_adequacy_accepts_missing_requirements():
+    service = AgentExecutionService()
+
+    config = ExecutionConfig(
+        model=ModelConfig(
+            provider="gemini",
+            name="gemini-3.1-flash-lite",
+        ),
+        timeout_seconds=60,
+    )
+
+    payload = {
+        "code_fragments": [
+            {
+                "fragment_id": "CODE-001",
+                "file_path": "example.py",
+                "code": "def login(): return True",
+            }
+        ],
+    }
+
+    async def unexpected_generate(*args, **kwargs):
+        raise AssertionError(
+            "No debe invocarse el LLM cuando no existen requisitos"
+        )
+
+    with patch(
+        "server.agents.functional_adequacy.agent.traced_generate",
+        new=unexpected_generate,
+    ):
+        result = asyncio.run(
+            service.run(
+                agent_type="functional_adequacy",
+                config=config,
+                payload=payload,
+            )
+        )
+
+    assert result.total_requirements == 0
+    assert result.fulfilled_requirements == 0
+    assert result.results == []
+    assert result.score == 0.0

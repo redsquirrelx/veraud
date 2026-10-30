@@ -25,7 +25,20 @@ def make_input(requirements, fragments):
         "requirements": requirements,
         "code_fragments": fragments,
     })
+    def test_allows_missing_requirements():
+    data = FunctionalAdequacyInput.model_validate({
+        "code_fragments": [],
+    })
 
+    assert data.requirements == []
+
+def test_allows_empty_requirements():
+    data = FunctionalAdequacyInput.model_validate({
+        "requirements": [],
+        "code_fragments": [],
+    })
+
+    assert data.requirements == []
 
 def test_rejects_duplicate_requirement_ids():
     with pytest.raises(ValueError):
@@ -36,7 +49,6 @@ def test_rejects_duplicate_requirement_ids():
             ],
             [],
         )
-
 
 def test_sbert_retrieves_expected_fragments():
     data = make_input(
@@ -79,7 +91,6 @@ def test_sbert_retrieves_expected_fragments():
 
     assert candidates["REQ-001"][0].fragment_id == "CODE-001"
     assert candidates["REQ-002"][0].fragment_id == "CODE-002"
-
 
 def test_full_execution_and_coverage():
     data = make_input(
