@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ArrowRightIcon, Badge, Card, CheckIcon, ChevronDownIcon, CrossIcon, FolderIcon, GridIcon, ShieldIcon, Spinner } from "../ui-kit/index.ts"
+import { ArrowRightIcon, Badge, Card, ChevronDownIcon, DotsIcon, FolderIcon, GridIcon, ShieldIcon } from "../ui-kit/index.ts"
 import { formatDateTime } from "../i18n/format.ts"
 import { AgentTokenUsage } from "../agent-monitor/AgentTokenUsage.tsx"
 import type projects from "../i18n/locales/en/projects.json"
@@ -16,89 +16,100 @@ import {
   type AuditAgentNode,
   type AuditPipelineRun,
   type AuditProgress,
-  type AuditRunState,
   type AuditStatusModel,
 } from "./auditStatus.ts"
 import "./AuditStatusView.css"
 import { useExpansion } from "./useExpansion.ts"
-
-/** Decorative: the badge beside it already carries the state as text. */
-function RunStateIcon({ state }: { state: AuditRunState }) {
-  if (state === "completed") {
-    return <CheckIcon size={14} />
-  }
-  if (state === "failed") {
-    return <CrossIcon size={14} />
-  }
-  if (state === "running") {
-    return <Spinner size={12} />
-  }
-  return <span className={`audit-run-dot audit-run-dot-${state}`} />
-}
+import { useMonitorLabels } from "./monitorLabels.ts"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
   const { t } = useTranslation("projects")
   return <span className="label audit-progress">{progressText(t, progress)}</span>
 }
 
-function PhaseBadge({ phase }: { phase: string }) {
+function PhaseDot({ phase }: { phase: string }) {
   const { t } = useTranslation("projects")
   const [highlighted, setHighlighted] = useState(true)
   useEffect(() => {
     const timer = setTimeout(() => setHighlighted(false), 240)
     return () => clearTimeout(timer)
   }, [])
-  return <span className="audit-agent-phase" data-highlighted={highlighted}>
-    <Badge tone="neutral" highlighted={highlighted}>
-      {t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
-        { defaultValue: phase.replaceAll("_", " ") })}
-    </Badge>
-  </span>
+  const label = t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
+    { defaultValue: phase.replaceAll("_", " ") })
+  return <span className="audit-agent-phase" data-phase={phase} data-highlighted={highlighted}
+    role="img" aria-label={label} title={label} />
 }
 
 function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditAgentNode, path: readonly (string | number)[], primary?: boolean, evidenceAudit?: AuditStatusModel }) {
   const { agent, children } = node
   const { t } = useTranslation("projects")
   const { t: tEvidence } = useTranslation("auditEvidence")
+  const labels = useMonitorLabels()
   const childrenId = useId()
+  const detailsId = useId()
+  const stateId = useId()
   const [expanded, toggleExpanded] = useExpansion(path)
-  const expandable = primary || children.length > 0
-  const Header = expandable ? "button" : "div"
+  const [detailsExpanded, toggleDetails] = useExpansion([...path, "$details"], false)
+  const identity = t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id })
+  const leaf = !primary && children.length === 0
+  const contentExpanded = expanded && (!leaf || detailsExpanded)
+
+  function toggleOwnDetails() {
+    if (!expanded) toggleExpanded()
+    if (expanded || !detailsExpanded) toggleDetails()
+  }
 
   return (
     <li className={`audit-agent${primary ? " audit-agent-root" : ""}`} data-state={agent.state}>
-      <Header className={`audit-agent-head${expandable ? " audit-agent-toggle" : ""}`}
-        type={expandable ? "button" : undefined}
-        aria-label={expandable ? t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id }) : undefined}
-        aria-expanded={expandable ? expanded : undefined} aria-controls={expandable ? childrenId : undefined}
-        onClick={expandable ? toggleExpanded : undefined}>
-        <span className={`audit-agent-icon audit-agent-icon-${agent.state}`} aria-hidden="true">
-          <RunStateIcon state={agent.state} />
-        </span>
-        <span className="mono audit-agent-type">
-          {t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id })}
-        </span>
-        {expandable && <span>
-          <span className="audit-pipeline-chevron" data-expanded={expanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
-        </span>}
-        <Badge tone={stateTone(agent.state)}>{t(stateLabelKey(agent.state))}</Badge>
-        {agent.state === "running" && agent.phase && <PhaseBadge key={`${agent.id}:${agent.phase}`} phase={agent.phase} />}
-      </Header>
-      <div className="audit-agent-meta">
-        {agent.startedAt && <span className="label">{t("auditStatus.agents.startedAt", { date: formatDateTime(agent.startedAt) })}</span>}
-        {agent.finishedAt && <span className="label">{t("auditStatus.agents.finishedAt", { date: formatDateTime(agent.finishedAt) })}</span>}
+      <div className="audit-agent-head">
+        <button className="audit-agent-toggle" type="button" aria-label={identity} aria-describedby={stateId}
+          title={leaf ? labels.details : labels.branch}
+          aria-expanded={contentExpanded} aria-controls={childrenId} onClick={leaf ? toggleOwnDetails : toggleExpanded}>
+          {agent.state === "running" && agent.phase
+            ? <PhaseDot key={`${agent.id}:${agent.phase}`} phase={agent.phase} />
+            : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
+          <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
+          <span id={stateId} className="audit-agent-state">{t(stateLabelKey(agent.state))}</span>
+          <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
+        </button>
+        <button className="audit-agent-details-toggle" type="button" aria-label={`${labels.details} · ${identity}`}
+          title={labels.details} aria-expanded={expanded && detailsExpanded} aria-controls={detailsId}
+          onClick={toggleOwnDetails}><DotsIcon size={14} /></button>
       </div>
-      <AgentTokenUsage execution={agent} />
-      {agent.error && <p role="alert" className="audit-agent-error">{agent.error}</p>}
-      {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
-        <Link className="ui-button ui-button-secondary"
-          to={`/projects/${evidenceAudit.project.id}/audits/${evidenceAudit.id}/evidence/${encodeURIComponent(agent.id)}?${new URLSearchParams({ agent: agent.agentType, name: agent.name ?? agent.agentType })}`}>
-          {tEvidence("view")}
-        </Link>
-      </div>}
-      {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
-        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} path={[...path, child.agent.agentType]} evidenceAudit={evidenceAudit} />)}
-      </ul>}
+      <div id={childrenId} className="audit-agent-content" hidden={!contentExpanded}>
+        <div id={detailsId} className="audit-agent-details" hidden={!detailsExpanded}>
+          <section className="audit-agent-detail-section audit-agent-meta" aria-label={labels.execution}>
+            <h4>{labels.execution}</h4>
+            <p className="mono audit-agent-identity">{identity}</p>
+          </section>
+          <section className="audit-agent-detail-section" aria-label={labels.dates}>
+            <h4>{labels.dates}</h4>
+            <dl className="audit-agent-dates">
+              <div><dt>{labels.started}</dt><dd>{agent.startedAt
+                ? <time dateTime={agent.startedAt}>{formatDateTime(agent.startedAt)}</time> : labels.notRecorded}</dd></div>
+              <div><dt>{labels.finished}</dt><dd>{agent.finishedAt
+                ? <time dateTime={agent.finishedAt}>{formatDateTime(agent.finishedAt)}</time> : labels.notRecorded}</dd></div>
+            </dl>
+          </section>
+          <section className="audit-agent-detail-section" aria-label={labels.tokens}>
+            <h4>{labels.tokens}</h4>
+            <AgentTokenUsage execution={agent} />
+          </section>
+          {agent.error && <section className="audit-agent-detail-section" aria-label={labels.error}>
+            <h4>{labels.error}</h4>
+            <p role="alert" className="audit-agent-error">{agent.error}</p>
+          </section>}
+          {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
+            <Link className="ui-button ui-button-secondary"
+              to={`/projects/${evidenceAudit.project.id}/audits/${evidenceAudit.id}/evidence/${encodeURIComponent(agent.id)}?${new URLSearchParams({ agent: agent.agentType, name: agent.name ?? agent.agentType })}`}>
+              {tEvidence("view")}
+            </Link>
+          </div>}
+        </div>
+        {children.length > 0 && <ul className="audit-agent-list audit-agent-children">
+          {children.map((child) => <AgentRow key={child.agent.agentType} node={child} path={[...path, child.agent.agentType]} evidenceAudit={evidenceAudit} />)}
+        </ul>}
+      </div>
     </li>
   )
 }

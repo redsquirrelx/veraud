@@ -38,7 +38,7 @@ it("updates a restarted agent in place while preserving collapsed branches", asy
   const nextCoordinator = screen.getByRole("button", { name: "modularity run #mod-2" })
   expect(nextCoordinator.closest("li")).toBe(originalRow)
   expect(nextCoordinator).toHaveAttribute("aria-expanded", "false")
-  expect(within(originalRow!).getByText("12 tokens")).toBeVisible()
+   expect(within(originalRow!).getByText("12 tokens")).not.toBeVisible()
   expect(screen.getByText("architecture_boundary run #boundary-1")).not.toBeVisible()
   expect(screen.queryByText("modularity run #mod-1")).toBeNull()
   expect(screen.queryByText("maintainability_manager run #manager-1")).toBeNull()
@@ -61,10 +61,10 @@ it("renders manager, coordinators and investigators as independently collapsible
   expect(screen.getAllByText("maintainability_manager run #manager")).toHaveLength(1)
   const manager = screen.getByText("maintainability_manager run #manager").closest("li")!
   const modularity = within(manager).getByText("modularity run #modularity").closest("li")!
-  expect(within(modularity).getByText("boundary run #boundary")).toBeVisible()
+   expect(within(modularity).getByText("boundary", { selector: ".audit-agent-type" })).toBeVisible()
   await userEvent.click(within(modularity).getByRole("button", { name: "modularity run #modularity" }))
   expect(within(modularity).getByText("boundary run #boundary")).not.toBeVisible()
-  expect(within(manager).getByText("reuse-investigator run #reuse-investigator")).toBeVisible()
+   expect(within(manager).getByText("reuse-investigator", { selector: ".audit-agent-type" })).toBeVisible()
   await userEvent.click(within(manager).getByRole("button", { name: "maintainability_manager run #manager" }))
   expect(within(manager).getByText("reusability run #reusability")).not.toBeVisible()
 })
@@ -81,7 +81,7 @@ it("uses the root as the group header before children arrive and for security", 
   expect(header).toHaveAttribute("aria-expanded", "true")
   await userEvent.click(header)
   expect(header).toHaveAttribute("aria-expanded", "false")
-  expect(screen.getByText("12 tokens")).toBeVisible()
+   expect(screen.getByText("12 tokens")).not.toBeVisible()
   rerender(<MemoryRouter><AuditStatusView audit={{ ...model, pipelines: [{ id: "security", state: "running",
     agents: [{ ...root, agentType: "security" }] }] }} /></MemoryRouter>)
   expect(screen.queryByText("Security")).toBeNull()

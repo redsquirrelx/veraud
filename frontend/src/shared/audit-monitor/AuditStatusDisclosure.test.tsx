@@ -109,7 +109,7 @@ describe("AuditStatusDisclosure", () => {
   it("keeps folded agents mounted but out of the accessibility tree", () => {
     show(completed, false)
 
-    const agent = screen.getByText("security_scanner run #114", { selector: ".audit-agent-type" })
+    const agent = screen.getByText("security_scanner", { selector: ".audit-agent-type" })
 
     expect(detail().contains(agent)).toBe(true)
     expect(detail()).toHaveAttribute("inert")
