@@ -15,6 +15,7 @@
 }
 
 .project-sidebar-navigation .app-nav a { min-height: 32px; }
+.project-sidebar-navigation .app-nav .ui-tooltip-trigger > a { flex: 1; }
 
 .project-sidebar-section-title {
   border-top: var(--border-width) solid var(--color-border);
@@ -66,6 +67,7 @@
   .project-page .ui-sidebar-collapsed .ui-sidebar-top { flex-direction: row; justify-content: space-between; }
   .project-page .ui-sidebar-nav,
   .project-sidebar-navigation .app-nav { flex-direction: row; flex-wrap: wrap; }
+  .project-page .ui-sidebar-nav > .ui-tooltip-trigger { width: auto; }
   .project-sidebar-section-title { padding: 0.5rem 0 0; }
   .project-page .ui-sidebar-footer { padding-top: 0.25rem; }
   .project-sidebar-footer { flex-direction: row; align-items: center; flex-wrap: wrap; }

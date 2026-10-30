@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom"
 import { FolderIcon } from "../../shared/ui-kit/index.ts"
@@ -44,8 +44,15 @@ describe("ProjectSidebar", () => {
     unmount()
     renderSidebar()
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeDefined()
-    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("title", "Home")
-    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute("title", "Files")
+    await user.hover(screen.getByRole("link", { name: "Home" }))
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Home")
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
+    await user.unhover(screen.getByRole("link", { name: "Home" }))
+    await user.hover(screen.getByRole("button", { name: "Files" }))
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Files")
+    await user.unhover(screen.getByRole("button", { name: "Files" }))
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
     expect(screen.getByLabelText("Backend: Online")).toHaveAttribute("title", "Backend: Online")
     const docs = screen.getByRole("button", { name: "API docs" })
     docs.focus()
