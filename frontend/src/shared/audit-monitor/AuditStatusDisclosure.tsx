@@ -6,6 +6,7 @@ import { AuditStatusView } from "./AuditStatusView.tsx"
 import { auditProgress, progressText, stateLabelKey, stateTone, type AuditStatusModel } from "./auditStatus.ts"
 import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
+import { AuditActions } from "./AuditActions.tsx"
 
 export interface AuditStatusDisclosureProps {
   audit: AuditStatusModel
@@ -27,12 +28,16 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
     <Card>
       <div className="audit-disclosure" data-state={audit.state}>
         <div className="audit-disclosure-head">
-          {audit.project && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
+          <div className="audit-disclosure-actions">
+          {audit.project && audit.project.id <= 0 && <span className="audit-status-project"><span className="mono">{repository}</span></span>}
+          {audit.project && audit.project.id > 0 && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
             aria-label={t("auditStatus.openProject", { repository })}>
             <FolderIcon size={13} />
             <span className="mono">{repository}</span>
             <ArrowRightIcon size={12} />
           </Link>}
+          <AuditActions audit={audit} />
+          </div>
           <button
             type="button"
             className="audit-disclosure-toggle"
@@ -69,7 +74,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
         >
           <div className="audit-disclosure-detail-inner">
             {/* No summary: the row above already carries the identity. */}
-            <AuditStatusView audit={audit} bare summary={false} evidenceLinks={evidenceLinks} />
+            <AuditStatusView audit={audit} bare summary={false} evidenceLinks={evidenceLinks} actions={false} />
           </div>
         </div>
       </div>

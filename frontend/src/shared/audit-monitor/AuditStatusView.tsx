@@ -21,6 +21,7 @@ import {
 import "./AuditStatusView.css"
 import { useExpansion } from "./useExpansion.ts"
 import { useMonitorLabels } from "./monitorLabels.ts"
+import { AuditActions } from "./AuditActions.tsx"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
   const { t } = useTranslation("projects")
@@ -194,11 +195,12 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
  *  nothing, so any caller can drive it with live or fixture data.
  *  `bare` drops the card surface and `summary` drops the header, so a caller
  *  that renders its own summary shows the identity once instead of twice. */
-export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false }: {
+export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false, actions = true }: {
   audit: AuditStatusModel
   bare?: boolean
   summary?: boolean
   evidenceLinks?: boolean
+  actions?: boolean
 }) {
   const { t } = useTranslation("projects")
   const hasRevision = audit.branch !== null || audit.commitHash !== null
@@ -213,12 +215,14 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
           <ProgressLabel progress={auditProgress(audit)} />
         </div>
         <div className="audit-status-meta">
-          {audit.project && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
+          {audit.project && audit.project.id <= 0 && <span className="audit-status-project"><span className="mono">{repository}</span></span>}
+          {audit.project && audit.project.id > 0 && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
             aria-label={t("auditStatus.openProject", { repository })}>
             <FolderIcon size={13} />
             <span className="mono">{repository}</span>
             <ArrowRightIcon size={12} />
           </Link>}
+          {actions && <AuditActions audit={audit} />}
           {hasRevision ? (
             <span className="mono audit-status-revision">
               {t("auditStatus.revision", { branch: audit.branch ?? "—", hash: audit.commitHash?.slice(0, 7) ?? "—" })}
@@ -232,6 +236,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
         </div>
       </>}
       {audit.error && <p role="alert" className="audit-status-error">{audit.error}</p>}
+      {!summary && actions && <AuditActions audit={audit} />}
       {audit.pipelines.length === 0 ? (
         <p className="label">{t("auditStatus.pipelines.empty")}</p>
       ) : (

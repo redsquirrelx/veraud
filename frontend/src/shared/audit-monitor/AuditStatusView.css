@@ -42,6 +42,8 @@
 }
 
 .audit-status-project {
+  width: fit-content;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
