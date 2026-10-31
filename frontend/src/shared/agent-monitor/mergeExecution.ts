@@ -8,6 +8,9 @@ export function mergeInvocations(previous: AgentInvocation[] = [], incoming: Age
     const count = (a: number | null | undefined, b: number | null) =>
       a == null ? b : b == null ? a : Math.max(a, b)
     merged.set(item.invocation_id, { ...lifecycle,
+      ...((old?.error_detail !== undefined || item.error_detail !== undefined) ? {
+        error_detail: old?.error_detail ?? (old && old.status !== "running" && old.status !== item.status ? null : item.error_detail) ?? null,
+      } : {}),
       ...((item.phase !== undefined || old?.phase !== undefined) ? { phase: lifecycle.status !== "running" ? null : (old?.phase_sequence ?? 0) > (item.phase_sequence ?? 0)
         ? old?.phase ?? null : item.phase ?? old?.phase ?? null,
         phase_sequence: Math.max(old?.phase_sequence ?? 0, item.phase_sequence ?? 0) } : {}),
@@ -29,6 +32,7 @@ export function mergeExecution(previous: AgentExecution | null | undefined, inco
     configuration: incoming.configuration ?? previous.configuration ?? null,
     monitorContext: incoming.monitorContext ?? previous.monitorContext,
     invocations: mergeInvocations(previous.invocations, incoming.invocations),
+    errorDetail: previous.errorDetail ?? lifecycle.errorDetail ?? null,
     result: lifecycle.result ?? previous.result ?? incoming.result,
     inputTokens: count(previous.inputTokens, incoming.inputTokens),
     outputTokens: count(previous.outputTokens, incoming.outputTokens),

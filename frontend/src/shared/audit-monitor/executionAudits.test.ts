@@ -15,6 +15,33 @@ function agent(agentType: string, qualityAttributes: string[], workflowIds = ["q
 }
 
 describe("executionAudits", () => {
+  it("retains root and child incident provenance when compact report traces omit metadata", () => {
+    const detail = { agentId: "responsibility", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
+      code: "execution_timeout", exceptionType: "TimeoutError", message: "The child timed out." }
+    const invocation = { run_id: "audit", started_at: "2026-10-30T11:00:00Z", finished_at: "2026-10-30T12:01:00Z",
+      input_tokens: 8, output_tokens: 2, error: null }
+    const [audit] = executionAudits([{ ...execution, status: "Completed", errorDetail: detail, invocations: [
+      { ...invocation, invocation_id: "root", parent_invocation_id: null, agent_id: "maintainability_manager", status: "partial" },
+      { ...invocation, invocation_id: "child", parent_invocation_id: "root", agent_id: "responsibility", status: "failed", error_detail: detail },
+    ], result: JSON.stringify({ status: "partial", attributes: ["maintainability"], report: { annexes_and_traceability: { executions: [
+      { invocation_id: "child", agent_id: "responsibility", status: "failed", error_detail: null },
+    ] } } }) }], [])
+    expect(audit?.errorDetail).toEqual(detail)
+    const tree = agentTree(audit!.pipelines[0]!.agents)
+    expect(tree[0]!.agent.errorDetail).toEqual(detail)
+    expect(tree[0]!.children[0]!.agent.errorDetail).toEqual(detail)
+    expect(tree[0]!.children[0]!.agent.finishedAt).not.toBe(detail.occurredAt)
+  })
+
+  it("normalizes retained incident fields without guessing legacy exception types or dates", () => {
+    const [audit] = executionAudits([{ ...execution, status: "Failed", result: JSON.stringify({
+      error_detail: { agent_id: "security", invocation_id: "child", occurred_at: "2026-10-30T12:00:00Z",
+        code: "execution_failed", exception_type: "ValueError", message: "Safe message" },
+    }) }], [])
+    expect(audit?.errorDetail).toMatchObject({ agentId: "security", invocationId: "child", exceptionType: "ValueError" })
+    const [legacy] = executionAudits([{ ...execution, status: "Failed", error: "TimeoutError: legacy text" }], [])
+    expect(legacy?.errorDetail).toBeNull()
+  })
   it("distinguishes a persisted request from confirmed cancellation, including compact events", () => {
     const pending = { ...execution, cancellationRequestedAt: "2026-10-30T12:00:00Z", interruptionReason: "cancellation_requested" }
     const [requested] = executionAudits([pending], [])

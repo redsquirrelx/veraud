@@ -1,7 +1,8 @@
-import { ApiError, backendHttpUrl, requestJson } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, backendHttpUrl, requestJson, type ExecutionErrorDetail } from "../../infrastructure/http-client/httpClient.ts"
 import type { AuditReportSection } from "./qualityAuditReport.ts"
 
 export interface QualityAuditSummary {
+  errorDetail?: ExecutionErrorDetail | null
   cancellationRequestedAt?: string | null
   id: number
   runId?: string | null

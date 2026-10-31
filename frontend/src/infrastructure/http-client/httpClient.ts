@@ -1,3 +1,6 @@
+import type { ExecutionErrorDetail } from "./executionErrorDetail.ts"
+export type { ExecutionErrorDetail } from "./executionErrorDetail.ts"
+
 export class ApiError extends Error {
   status: number
   messageSource?: "server" | "client"
@@ -169,6 +172,7 @@ export async function listProjectFiles(id: number): Promise<GitTree> {
 }
 
 export interface AgentInvocation {
+  error_detail?: ExecutionErrorDetail | null
   phase?: string | null
   phase_sequence?: number
   invocation_id: string
@@ -184,6 +188,7 @@ export interface AgentInvocation {
 }
 
 export interface AgentExecution {
+  errorDetail?: ExecutionErrorDetail | null
   cancellationRequestedAt?: string | null
   invocations?: AgentInvocation[]
   monitorContext?: {
@@ -211,6 +216,7 @@ export interface AgentExecution {
 }
 
 export interface AuditCancellationResult {
+  errorDetail?: ExecutionErrorDetail | null
   id: number
   executionStatus: string
   auditStatus: string | null
