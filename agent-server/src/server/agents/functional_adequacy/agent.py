@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 from functools import lru_cache
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
 from sentence_transformers import SentenceTransformer, util
@@ -23,6 +23,7 @@ logger = get_logger("functional-adequacy-agent")
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 TOP_K = 5
+AuditMode = Literal["requirements_based", "exploratory"]
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -81,6 +82,7 @@ def _parse_json_response(response: object) -> dict[str, Any]:
 
 class _FunctionalState(TypedDict, total=False):
     input_data: FunctionalAdequacyInput
+    audit_mode: AuditMode
     candidates: dict[str, list[CodeEvidence]]
     results: list[RequirementResult]
     output: FunctionalAdequacyOutput
@@ -118,13 +120,22 @@ class FunctionalAdequacyAgent(
     async def _prepare(self, state: _FunctionalState) -> dict:
         input_data = state["input_data"]
 
+        # Seleccionar el modo según la disponibilidad de requisitos.
+        audit_mode: AuditMode = (
+            "requirements_based"
+            if input_data.requirements
+            else "exploratory"
+        )
+
         logger.info(
-            "Preparing %d requirements and %d fragments",
+            "Preparing audit mode=%s with %d requirements and %d fragments",
+            audit_mode,
             len(input_data.requirements),
             len(input_data.code_fragments),
         )
 
         return {
+            "audit_mode": audit_mode,
             "candidates": {},
             "results": [],
         }

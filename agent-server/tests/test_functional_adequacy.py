@@ -25,12 +25,15 @@ def make_input(requirements, fragments):
         "requirements": requirements,
         "code_fragments": fragments,
     })
-    def test_allows_missing_requirements():
+
+
+def test_allows_missing_requirements():
     data = FunctionalAdequacyInput.model_validate({
         "code_fragments": [],
     })
 
     assert data.requirements == []
+
 
 def test_allows_empty_requirements():
     data = FunctionalAdequacyInput.model_validate({
@@ -39,6 +42,41 @@ def test_allows_empty_requirements():
     })
 
     assert data.requirements == []
+
+
+def test_prepare_selects_requirements_based_mode():
+    agent = build_agent()
+
+    data = make_input(
+        [{"requirement_id": "REQ-001", "description": "User authentication"}],
+        [],
+    )
+
+    result = asyncio.run(
+        agent._prepare({"input_data": data})
+    )
+
+    assert result["audit_mode"] == "requirements_based"
+
+
+def test_prepare_selects_exploratory_mode_without_requirements():
+    agent = build_agent()
+
+    data = FunctionalAdequacyInput.model_validate({
+        "code_fragments": [
+            {
+                "fragment_id": "CODE-001",
+                "file_path": "auth.py",
+                "code": "def authenticate_user(): return True",
+            }
+        ]
+    })
+
+    result = asyncio.run(
+        agent._prepare({"input_data": data})
+    )
+
+    assert result["audit_mode"] == "exploratory"
 
 def test_rejects_duplicate_requirement_ids():
     with pytest.raises(ValueError):
