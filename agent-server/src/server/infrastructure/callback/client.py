@@ -43,7 +43,7 @@ class CallbackClient:
         """Close the run with its outcome."""
         return await self._post(
             f"/api/agent-executions/{execution_id}/completion",
-            outcome.model_dump(by_alias=True),
+            outcome.model_dump(mode="json", by_alias=True),
         )
 
     async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
@@ -53,7 +53,7 @@ class CallbackClient:
         )
 
     async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
-        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json"))
+        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json", by_alias=True))
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:

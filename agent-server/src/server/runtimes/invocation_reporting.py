@@ -9,6 +9,11 @@ from datetime import UTC, datetime
 from langchain_core.runnables import Runnable, RunnableConfig
 
 from ..config.logs import get_logger
+from ..services.execution_error_details import (
+    capture_execution_errors,
+    exception_error_detail,
+    result_error_detail,
+)
 from .cancellation import check_cancellation
 
 logger = get_logger("invocation-reporting")
@@ -27,6 +32,8 @@ def invocation_reporting(reporter):
 
 
 async def _send(receipt):
+    if _reporter.get() is None:
+        return
     try:
         await _reporter.get()(dict(receipt))
     except Exception as error:  # noqa: BLE001 - telemetry must not fail agent work
@@ -78,8 +85,6 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         if inspect.iscoroutine(operation):
             operation.close()
         raise
-    if _reporter.get() is None:
-        return await operation
     parent = _active.get()
     receipt = {"agent_id": agent_id, "invocation_id": invocation_id, "run_id": run_id,
         "parent_invocation_id": parent[0]["invocation_id"] if parent else None,
@@ -91,17 +96,25 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         await _send(receipt)
         check_cancellation()
         began = True
-        result = await operation
+        with capture_execution_errors() as children:
+            result = await operation
         status = getattr(result, "status", None)
         receipt["status"] = "completed" if status in {"complete", "completed"} else (
             status if status in {"partial", "failed", "cancelled", "timeout"} else "partial")
+        detail = result_error_detail(result, agent_id=agent_id, invocation_id=invocation_id, children=children)
+        if detail is not None:
+            receipt["error_detail"] = detail.model_dump(mode="json", by_alias=True)
+            receipt["error"] = detail.message
         return result
     except BaseException as error:
         if not began and hasattr(operation, "close"):
             operation.close()
         receipt["status"] = "cancelled" if isinstance(error, asyncio.CancelledError) else (
             "timeout" if isinstance(error, TimeoutError) else "failed")
-        receipt["error"] = type(error).__name__
+        receipt["error"] = None if isinstance(error, asyncio.CancelledError) else type(error).__name__
+        if not isinstance(error, asyncio.CancelledError):
+            detail = exception_error_detail(error, agent_id=agent_id, invocation_id=invocation_id)
+            receipt["error_detail"] = detail.model_dump(mode="json", by_alias=True)
         raise
     finally:
         receipt["finished_at"] = datetime.now(UTC).isoformat()
