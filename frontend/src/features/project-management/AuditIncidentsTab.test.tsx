@@ -7,6 +7,7 @@ import { changeLanguage } from "../../shared/i18n/index.ts"
 import { QualityAuditResults } from "./QualityAuditResults.tsx"
 import { AuditIncidentsTab } from "./AuditIncidentsTab.tsx"
 import { getQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { hiddenErrorMessage, publicErrorMessages } from "../../infrastructure/http-client/publicErrors.ts"
 
 vi.mock("../../infrastructure/http-client/httpClient.ts", async (original) => ({
   ...await original<typeof import("../../infrastructure/http-client/httpClient.ts")>(), getAgentExecution: vi.fn(),
@@ -58,11 +59,11 @@ it("adds Incidents after Evidence, deduplicates inherited causes, sorts chronolo
   expect(within(panel).queryByText("#early")).not.toBeInTheDocument()
   expect(within(panel).queryByText("No registrado")).not.toBeInTheDocument()
   await userEvent.click(within(articles[0]).getByRole("button", { name: /Ver error/ }))
-  expect(screen.getByRole("dialog")).toHaveTextContent("Early child incident")
+  expect(screen.getByRole("dialog")).toHaveTextContent(publicErrorMessages.execution_timeout)
   expect(screen.getByRole("dialog").querySelector("time")).toHaveAttribute("datetime", earlier.occurredAt)
   await userEvent.keyboard("{Escape}")
   await userEvent.click(within(articles[2]).getByRole("button", { name: /Ver error/ }))
-  expect(screen.getByRole("dialog")).toHaveTextContent("Legacy error")
+  expect(screen.getByRole("dialog")).toHaveTextContent(hiddenErrorMessage)
   expect(screen.getByRole("dialog").querySelector("time")).toBeNull()
 })
 
@@ -112,7 +113,7 @@ it("shows recorded root and child errors even when cancellation is confirmed", a
   expect(articles).toHaveLength(2)
   expect(screen.queryByText("Cancellation cleanup failed")).not.toBeInTheDocument()
   await userEvent.click(within(articles.find((article) => article.textContent?.includes("cancelled-agent"))!).getByRole("button", { name: /Ver error/ }))
-  expect(screen.getByRole("dialog")).toHaveTextContent("CancelledError")
+  expect(screen.getByRole("dialog")).toHaveTextContent(hiddenErrorMessage)
   expect(screen.getByRole("dialog").querySelector("time")).toBeNull()
 })
 

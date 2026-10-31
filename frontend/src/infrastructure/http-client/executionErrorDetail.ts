@@ -1,3 +1,5 @@
+import { publicErrorCode, publicErrorMessages, publicExceptionType, publicIdentifier } from "./publicErrors.ts"
+
 /** Incident metadata supplied by the server; lifecycle dates are not substitutes. */
 export interface ExecutionErrorDetail {
   agentId: string | null
@@ -15,7 +17,8 @@ export function readExecutionErrorDetail(value: unknown): ExecutionErrorDetail |
   if (typeof item.code !== "string" || !item.code.trim() || typeof item.message !== "string" || !item.message.trim()) return null
   const text = (value: unknown) => typeof value === "string" && value.trim() ? value : null
   const date = text(item.occurredAt ?? item.occurred_at)
-  return { agentId: text(item.agentId ?? item.agent_id), invocationId: text(item.invocationId ?? item.invocation_id),
+  const code = publicErrorCode(item.code)
+  return { agentId: publicIdentifier(text(item.agentId ?? item.agent_id)), invocationId: publicIdentifier(text(item.invocationId ?? item.invocation_id)),
     occurredAt: date && Number.isFinite(Date.parse(date)) ? date : null,
-    code: item.code, exceptionType: text(item.exceptionType ?? item.exception_type), message: item.message }
+    code, exceptionType: publicExceptionType(text(item.exceptionType ?? item.exception_type)), message: publicErrorMessages[code] }
 }

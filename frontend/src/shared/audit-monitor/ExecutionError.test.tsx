@@ -6,6 +6,7 @@ import { changeLanguage } from "../i18n/index.ts"
 import { AuditStatusView } from "./AuditStatusView.tsx"
 import { demoAudit } from "./demoAudit.ts"
 import { AuditStatusDisclosure } from "./AuditStatusDisclosure.tsx"
+import { hiddenErrorMessage } from "../../infrastructure/http-client/publicErrors.ts"
 
 beforeEach(async () => {
   window.localStorage.clear()
@@ -80,7 +81,7 @@ it("shows unknown incident fields for legacy messages rather than inferring date
   expect(within(modal).getByText("Fecha del incidente").parentElement).toHaveTextContent("No registrado")
   expect(within(modal).getByText("Tipo de error").parentElement).toHaveTextContent("No registrado")
   expect(within(modal).getByText("Componente o agente afectado").parentElement).toHaveTextContent("Auditoría #-2")
-  expect(within(modal).getByText("Legacy TimeoutError")).toBeVisible()
+  expect(within(modal).getByText(hiddenErrorMessage)).toBeVisible()
   expect(modal.querySelector("time")).toBeNull()
 })
 

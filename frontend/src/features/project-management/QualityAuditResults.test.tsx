@@ -87,7 +87,7 @@ describe("dedicated audit results", () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole("tab", { name: "Hallazgos" }))
     await user.click(screen.getByRole("button", { name: "Reintentar" }))
-    expect(await screen.findByRole("alert")).toHaveTextContent("Servicio de resultados no disponible")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Error details withheld because their safety could not be verified.")
     await user.click(screen.getByRole("button", { name: "Reintentar" }))
     expect(await within(screen.getByRole("tabpanel", { name: "Hallazgos" })).findByText("No se identificaron hallazgos en esta auditoría")).toBeVisible()
     await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledTimes(3))
@@ -323,7 +323,7 @@ describe("dedicated audit results", () => {
   it("shows failed audits even when no report was produced", async () => {
     vi.mocked(api.getQualityAudit).mockResolvedValue({ ...audit, executionStatus: "Failed", auditStatus: "failed", reportAvailable: false, error: "Audit stopped" })
     show()
-    expect(await screen.findByRole("alert")).toHaveTextContent("Audit stopped")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Error details withheld because their safety could not be verified.")
     expect(screen.getByText("This audit did not produce a report.")).toBeInTheDocument()
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
     expect(api.getQualityAuditReportSection).not.toHaveBeenCalled()

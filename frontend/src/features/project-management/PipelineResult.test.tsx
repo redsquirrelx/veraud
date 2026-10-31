@@ -40,7 +40,7 @@ describe("PipelineRunStatus", () => {
     render(<PipelineRunStatus execution={execution({ status: "Failed", error: "boom", result: null })} />)
     expect(screen.getByText("Failed")).toBeDefined()
     expect(screen.getByText("semantic_validation run #12")).toBeDefined()
-    expect(screen.getByText("boom")).toBeDefined()
+    expect(screen.getByText("Error details withheld because their safety could not be verified.")).toBeDefined()
   })
 })
 
@@ -338,7 +338,7 @@ describe("StageStatusView", () => {
     expect(screen.getByText("Architecture")).toBeDefined()
     expect(screen.getByText("failed")).toBeDefined()
     expect(screen.getByText("call_limit")).toBeDefined()
-    expect(screen.getByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(screen.getByText("Error details withheld because their safety could not be verified.", { exact: false })).toBeDefined()
     expect(screen.getByText("Snapshot capped.")).toBeDefined()
   })
 

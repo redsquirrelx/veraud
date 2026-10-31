@@ -159,7 +159,7 @@ describe("AuditStatusDisclosure", () => {
 
     expect(screen.queryByText("The security pipeline could not be started.")).toBeNull()
     await userEvent.click(screen.getByText("View error"))
-    expect(screen.getByText("The security pipeline could not be started.")).toBeVisible()
+    expect(screen.getByText("Error details withheld because their safety could not be verified.")).toBeVisible()
   })
 })
 

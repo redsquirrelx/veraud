@@ -5,6 +5,7 @@ import { useMonitorLabels } from "./monitorLabels.ts"
 import { formatDateTime } from "../i18n/format.ts"
 import { readExecutionErrorDetail, type ExecutionErrorDetail } from "../../infrastructure/http-client/executionErrorDetail.ts"
 import "./ExecutionError.css"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 
 export function ExecutionErrorIndicator({ inherited = false }: { inherited?: boolean }) {
   const labels = useMonitorLabels()
@@ -56,7 +57,7 @@ export function ExecutionError({ error, detail, identity }: { error?: string | n
           <div><dt>{labels.errorType}</dt><dd>{incident
             ? <><code>{incident.code}</code>{incident.exceptionType && <span> · {incident.exceptionType}</span>}</>
             : labels.errorNotRecorded}</dd></div>
-          <div><dt>{labels.recordedMessage}</dt><dd><pre className="execution-error-message">{incident?.message ?? error ?? labels.errorNotRecorded}</pre></dd></div>
+          <div><dt>{labels.recordedMessage}</dt><dd><pre className="execution-error-message">{incident?.message ?? publicErrorText(error) ?? labels.errorNotRecorded}</pre></dd></div>
         </dl>
         <div className="execution-error-footer"><Button variant="secondary" onClick={() => setOpen(false)}>{labels.dismiss}</Button></div>
       </div>

@@ -1,6 +1,7 @@
 import type { AgentExecution, ExecutionErrorDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { readExecutionErrorDetail } from "../../infrastructure/http-client/executionErrorDetail.ts"
 import type { QualityAuditSummary } from "./qualityAuditApi.ts"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 
 export interface AuditIncident {
   id: string
@@ -16,7 +17,7 @@ export function auditIncidents(execution: AgentExecution, audit: QualityAuditSum
   const incidents = new Map<string, AuditIncident>()
   function add(owner: string, agentId: string | null, invocationId: string | null, raw: unknown, error: string | null | undefined) {
     const detail = readExecutionErrorDetail(raw)
-    const message = detail?.message ?? error?.trim()
+    const message = detail?.message ?? publicErrorText(error)
     if (!message) return
     const sourceAgent = detail ? detail.agentId : agentId
     const sourceInvocation = detail ? detail.invocationId : invocationId

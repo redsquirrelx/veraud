@@ -105,7 +105,7 @@ it("keeps errors in their own section and preserves missing-date information", a
   const errors = within(row).getByRole("region", { name: "Execution error" })
   expect(screen.queryByText("Provider unavailable")).toBeNull()
   await userEvent.click(within(errors).getByText("View error"))
-  expect(screen.getByRole("dialog")).toHaveTextContent("Provider unavailable")
+  expect(screen.getByRole("dialog")).toHaveTextContent("Error details withheld because their safety could not be verified.")
   expect(within(within(row).getByRole("region", { name: "Timeline" })).getAllByText("Not recorded")).toHaveLength(2)
 })
 

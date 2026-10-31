@@ -17,7 +17,7 @@ function agent(agentType: string, qualityAttributes: string[], workflowIds = ["q
 describe("executionAudits", () => {
   it("retains root and child incident provenance when compact report traces omit metadata", () => {
     const detail = { agentId: "responsibility", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
-      code: "execution_timeout", exceptionType: "TimeoutError", message: "The child timed out." }
+      code: "execution_timeout", exceptionType: "TimeoutError", message: "The execution exceeded its allowed time." }
     const invocation = { run_id: "audit", started_at: "2026-10-30T11:00:00Z", finished_at: "2026-10-30T12:01:00Z",
       input_tokens: 8, output_tokens: 2, error: null }
     const [audit] = executionAudits([{ ...execution, status: "Completed", errorDetail: detail, invocations: [

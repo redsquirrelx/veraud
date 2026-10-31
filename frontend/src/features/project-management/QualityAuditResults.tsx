@@ -17,6 +17,7 @@ import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditRep
 import { useAuditReportSection } from "./useAuditReportSection.ts"
 import { downloadQualityAuditReport, getQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 
 type ResultsError = { key: ParseKeys<"projects"> } | { detail: string }
 const evaluationLabels: Record<string, ParseKeys<"projects">> = {
@@ -126,7 +127,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     </div>
     {pending && <p role="status">{t("qualityAudits.results.unfinished")}</p>}
     {!loading && error && <div role="alert">
-      <p>{"detail" in error ? `${t("qualityAudits.results.loadFailed")} ${error.detail}` : t(error.key)}</p>
+      <p>{"detail" in error ? `${t("qualityAudits.results.loadFailed")} ${publicErrorText(error.detail)}` : t(error.key)}</p>
       <Button variant="secondary" onClick={retry}>{t("qualityAudits.results.retry")}</Button>
     </div>}
     <div role="tabpanel" id={`${tabsId}-panel-general`} aria-labelledby={`${tabsId}-tab-general`} hidden={activeTab !== "general"} tabIndex={0}>
@@ -136,7 +137,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
           <AuditConfigurationDetails projectId={projectId} auditId={auditId} available={audit.configurationAvailable === true} />
           {!pending && audit.reportAvailable && <Button variant="secondary" disabled={downloading} onClick={() => void download()}>{downloading ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>}
         </div>
-        {audit.error && <p role="alert">{audit.error}</p>}
+        {audit.error && <p role="alert">{publicErrorText(audit.error)}</p>}
         {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
       </>}
     </>}
