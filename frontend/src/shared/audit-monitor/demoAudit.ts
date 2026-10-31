@@ -1,32 +1,32 @@
 import type { AuditStatusModel } from "./auditStatus.ts"
 
-/** Temporary UI preview. Remove this file and its import/use in LiveAuditMonitor to remove the demo. */
+/** Isolated failed UI preview; no real execution. Remove this file and its import/use in LiveAuditMonitor to remove the demo. */
 export const demoAudit: AuditStatusModel = {
   demo: true,
-  canCancel: true,
-  id: -1,
+  canCancel: false,
+  id: -2,
   project: { id: -1, repositoryOwner: "DEMO", repositoryName: "DEMO" },
   branch: "demo",
   commitHash: null,
-  state: "running",
-  error: null,
+  state: "failed",
+  error: "Ejemplo DEMO: la auditoría no pudo completarse porque falló el agente de seguridad. No se ha realizado ninguna petición real.",
   createdAt: "2026-10-29T12:00:00Z",
-  finishedAt: null,
+  finishedAt: "2026-10-29T12:02:00Z",
   reportAvailable: false,
   pipelines: [{
     id: "security",
-    state: "running",
+    state: "failed",
     agents: [{
-      id: "demo-security",
+      id: "demo-failed-security",
       agentType: "security",
       name: "DEMO",
-      state: "running",
-      phase: "investigate",
+      state: "failed",
+      phase: null,
       inputTokens: 0,
       outputTokens: 0,
       startedAt: "2026-10-29T12:00:00Z",
-      finishedAt: null,
-      error: null,
+      finishedAt: "2026-10-29T12:02:00Z",
+      error: "Ejemplo DEMO: se agotó el tiempo de espera del proveedor durante el análisis de seguridad (TimeoutError).",
     }],
   }],
 }
