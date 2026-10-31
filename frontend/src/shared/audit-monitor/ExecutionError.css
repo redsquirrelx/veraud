@@ -1,0 +1,26 @@
+.execution-error-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.execution-error { margin-block: var(--space-2); min-width: 0; }
+.execution-error-message {
+  margin-block: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  max-height: 240px;
+  overflow: auto;
+}

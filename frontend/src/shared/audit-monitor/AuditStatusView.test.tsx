@@ -205,7 +205,7 @@ describe("AuditStatusView", () => {
     expect(within(row).getByText("9,840")).toBeVisible()
   })
 
-  it("surfaces audit and agent errors as alerts at their own level", async () => {
+  it("reveals audit and agent errors on demand at their own level", async () => {
     const region = show({
       ...audit,
       state: "failed",
@@ -222,11 +222,15 @@ describe("AuditStatusView", () => {
       }],
     })
 
-    expect(within(region).getByText("The security pipeline could not be started.")).toBeInTheDocument()
-    expect(within(region).getByText("Model-call limit reached.")).toBeInTheDocument()
-    expect(screen.getAllByRole("alert")).toHaveLength(1)
+    expect(screen.queryByText("The security pipeline could not be started.")).toBeNull()
+    expect(screen.queryByText("Model-call limit reached.")).toBeNull()
+    await userEvent.click(screen.getAllByText("View error")[0])
+    expect(screen.getByText("The security pipeline could not be started.")).toBeVisible()
+    await userEvent.keyboard("{Escape}")
     await userEvent.click(within(region).getByRole("button", { name: /^Execution details/ }))
-    expect(screen.getAllByRole("alert")).toHaveLength(2)
+    expect(screen.queryByText("Model-call limit reached.")).toBeNull()
+    await userEvent.click(screen.getAllByText("View error")[1])
+    expect(screen.getByText("Model-call limit reached.")).toBeVisible()
     expect(within(part(region, ".audit-status-head")).getByText("Failed")).toBeInTheDocument()
     expect(within(part(region, ".audit-pipeline-head")).getByText("Failed")).toBeInTheDocument()
     expect(within(part(region, ".audit-agent-head")).getByText("Failed")).toBeInTheDocument()
@@ -390,6 +394,7 @@ describe("AuditStatusView Spanish", () => {
     expect(within(region).getByText("Ejecución de security_scanner #121")).toBeInTheDocument()
     expect(within(region).getByText("3000 tokens")).toBeInTheDocument()
     expect(within(region).getByText("Desglose de tokens")).toBeInTheDocument()
-    expect(within(region).getByText("El pipeline de seguridad no pudo iniciarse.")).toBeInTheDocument()
+    await userEvent.click(within(region).getByRole("button", { name: /Ver error/ }))
+    expect(screen.getByRole("dialog", { name: "Error de ejecución" })).toHaveTextContent("El pipeline de seguridad no pudo iniciarse.")
   })
 })

@@ -103,7 +103,9 @@ it("keeps errors in their own section and preserves missing-date information", a
   await userEvent.click(screen.getByRole("button", { name: "Execution details · responsibility run #investigator-1" }))
   const row = screen.getByRole("button", { name: "responsibility run #investigator-1" }).closest("li")!
   const errors = within(row).getByRole("region", { name: "Execution error" })
-  expect(within(errors).getByRole("alert")).toHaveTextContent("Provider unavailable")
+  expect(screen.queryByText("Provider unavailable")).toBeNull()
+  await userEvent.click(within(errors).getByText("View error"))
+  expect(screen.getByRole("dialog")).toHaveTextContent("Provider unavailable")
   expect(within(within(row).getByRole("region", { name: "Timeline" })).getAllByText("Not recorded")).toHaveLength(2)
 })
 

@@ -152,13 +152,14 @@ describe("AuditStatusDisclosure", () => {
   it("surfaces an audit error only once the audit is opened", async () => {
     const toggle = show({ ...completed, state: "failed", error: "The security pipeline could not be started." }, false)
 
-    // Rendered but hidden, so a failed audit only announces its problem once read.
-    expect(detail().textContent).toContain("The security pipeline could not be started.")
+    expect(screen.queryByText("The security pipeline could not be started.")).toBeNull()
     expect(screen.queryByRole("alert")).toBeNull()
 
     await userEvent.click(toggle)
 
-    expect(screen.getByRole("alert")).toHaveTextContent("The security pipeline could not be started.")
+    expect(screen.queryByText("The security pipeline could not be started.")).toBeNull()
+    await userEvent.click(screen.getByText("View error"))
+    expect(screen.getByText("The security pipeline could not be started.")).toBeVisible()
   })
 })
 

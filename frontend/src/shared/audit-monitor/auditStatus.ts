@@ -88,14 +88,15 @@ export function isFinished(state: AuditRunState): boolean {
   return state === "completed" || state === "partial" || state === "failed" || state === "cancelled"
 }
 
-export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" {
+export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" | "danger" {
+  if (state === "failed") return "danger"
   if (state === "completed") {
     return "success"
   }
   if (state === "running") {
     return "info"
   }
-  if (state === "partial" || state === "failed" || state === "cancelling") {
+  if (state === "partial" || state === "cancelling") {
     return "warning"
   }
   return "neutral"

@@ -21,6 +21,8 @@ import "./AuditStatusView.css"
 import { useExpansion } from "./useExpansion.ts"
 import { useAuditStateLabel, useMonitorLabels } from "./monitorLabels.ts"
 import { AuditActions } from "./AuditActions.tsx"
+import { ExecutionError, ExecutionErrorIndicator } from "./ExecutionError.tsx"
+import { agentHasError, auditHasError, pipelineHasError } from "./executionErrors.ts"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
   const { t } = useTranslation("projects")
@@ -71,6 +73,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
             : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
           <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
           <span id={stateId} className="audit-agent-state">{stateLabel(agent.state)}</span>
+          {agentHasError(node) && <ExecutionErrorIndicator />}
           <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
         </button>
         <button className="audit-agent-details-toggle" type="button" aria-label={`${labels.details} · ${identity}`}
@@ -96,9 +99,9 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
             <h4>{labels.tokens}</h4>
             <AgentTokenUsage execution={agent} />
           </section>
-          {agent.error && <section className="audit-agent-detail-section" aria-label={labels.error}>
+          {agent.error?.trim() && <section className="audit-agent-detail-section" aria-label={labels.error}>
             <h4>{labels.error}</h4>
-            <p role="alert" className="audit-agent-error">{agent.error}</p>
+            <ExecutionError error={agent.error} />
           </section>}
           {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
             <Link className="ui-button ui-button-secondary"
@@ -165,6 +168,7 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
         </span>
         <span className="audit-pipeline-line">
           <Badge tone={stateTone(pipeline.state)}>{stateLabel(pipeline.state)}</Badge>
+          {pipelineHasError(pipeline) && <ExecutionErrorIndicator />}
           <ProgressLabel progress={progress} />
         </span>
       </button>
@@ -214,6 +218,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
         <div className="audit-status-head">
           <span className="mono audit-status-id">{t("auditStatus.title", { id: audit.id })}</span>
           <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
+          {auditHasError(audit) && <ExecutionErrorIndicator />}
           <ProgressLabel progress={auditProgress(audit)} />
         </div>
         <div className="audit-status-meta">
@@ -237,7 +242,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
           {audit.reportAvailable && <Badge tone="neutral">{t("auditStatus.reportAvailable")}</Badge>}
         </div>
       </>}
-      {audit.error && <p role="alert" className="audit-status-error">{audit.error}</p>}
+      {audit.error?.trim() && <ExecutionError error={audit.error} />}
       {!summary && actions && <AuditActions audit={audit} />}
       {audit.pipelines.length === 0 ? (
         <p className="label">{t("auditStatus.pipelines.empty")}</p>
