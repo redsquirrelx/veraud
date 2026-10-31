@@ -251,6 +251,8 @@ class RepositoryToolset:
     ) -> RepositoryToolResponse:
         """Measure charged requests without storing argument or response content."""
         with self._lock:
+            if self.timing is not None:
+                self.timing.check_cancellation()
             before = self._tool_calls
             started = monotonic()
             self._last_cache_hit = False

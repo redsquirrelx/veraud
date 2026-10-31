@@ -25,6 +25,7 @@ function artifacts(row: AuditRow): AuditArtifacts | null {
 }
 
 type SummaryRow = Pick<AuditRow, "id" | "agentType" | "evaluationId" | "status" | "error" | "createdAt" | "startedAt" | "finishedAt" | "configurationSnapshot"> & {
+  cancellationRequestedAt?: Date | null
   evaluation: { projectVersion: { branch: string | null, commitHash: string | null } } | null
 }
 
@@ -39,7 +40,8 @@ function summary(row: SummaryRow, result: Partial<Pick<AuditArtifacts, "run_id" 
     attributes: configuration?.attributes ?? result?.attributes ?? [row.agentType === "maintainability_manager" ? "maintainability" : row.agentType],
     configurationAvailable: configuration !== null,
     executionStatus: row.status,
-    auditStatus: result?.status ?? null,
+    auditStatus: row.cancellationRequestedAt && ["Waiting", "Running"].includes(row.status) ? "cancelling" : result?.status ?? null,
+    cancellationRequestedAt: row.cancellationRequestedAt ?? null,
     error: row.error,
     createdAt: row.createdAt,
     startedAt: row.startedAt,
@@ -58,6 +60,12 @@ function savedConfiguration(row: { configurationSnapshot: string | null }): Audi
 export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
     private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">) {}
+
+  async cancel(projectId: number, id: number) {
+    if (!await this.repository.findSummary(projectId, id)) throw new AuditNotFoundError("Audit not found for this project")
+    await this.executions.cancelQualityAudit(id)
+    return this.detail(projectId, id)
+  }
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     if (!attributes.length || new Set(attributes).size !== attributes.length

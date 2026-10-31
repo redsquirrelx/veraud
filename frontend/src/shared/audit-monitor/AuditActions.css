@@ -1,0 +1,41 @@
+.audit-actions { display: inline-flex; align-items: center; flex-shrink: 0; gap: var(--space-2); }
+.audit-cancel-pending { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.audit-cancel-error { color: var(--status-danger-text); background: var(--status-danger-bg); border-radius: var(--radius-control); padding: var(--space-3); }
+.audit-status-project.audit-cancel-button:disabled { cursor: default; opacity: 0.7; }
+.audit-status-project.audit-cancel-button {
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border-color: #c44040;
+  background: #d95353;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--motion-hover) ease, border-color var(--motion-hover) ease;
+}
+.audit-status-project.audit-cancel-button:hover { background: #c44040; color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .audit-status-project.audit-cancel-button { transition: none; }
+}
+.audit-cancel-modal { font-family: var(--font-sans); font-size: var(--font-size-sm); line-height: var(--line-height-body); color: var(--color-text); }
+.audit-cancel-modal .ui-modal { gap: var(--space-4); }
+.audit-cancel-modal .ui-modal-head { padding-bottom: var(--space-3); border-bottom: var(--border-width) solid var(--color-border); }
+.audit-cancel-confirmation { display: grid; gap: var(--space-4); width: 100%; min-width: 0; }
+.audit-cancel-confirmation p { margin: 0; overflow-wrap: anywhere; }
+.audit-cancel-target { display: grid; gap: var(--space-2); padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-recessed); min-width: 0; }
+.audit-cancel-label { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.audit-cancel-identity { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
+.audit-cancel-identity strong { font-weight: var(--font-weight-semibold); }
+.audit-cancel-repository { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-xs); min-width: 0; }
+.audit-cancel-repository svg { flex-shrink: 0; }
+.audit-cancel-repository .mono { min-width: 0; overflow-wrap: anywhere; }
+.audit-cancel-warning { display: grid; gap: var(--space-1); padding: var(--space-3); border-left: 3px solid var(--status-danger-border); border-radius: var(--radius-control); background: var(--status-danger-bg); color: var(--status-danger-text); }
+.audit-cancel-warning h3 { margin: 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+.audit-cancel-unavailable { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.audit-cancel-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
+.audit-cancel-buttons .ui-button-primary:disabled { background: var(--color-surface-recessed); border-color: var(--color-border-control); color: var(--color-text-secondary); }
+@media (max-width: 420px) {
+  .audit-cancel-buttons { flex-direction: column; align-items: stretch; }
+}

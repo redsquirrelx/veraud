@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
@@ -68,6 +68,55 @@ function openPanel(name: string) {
 }
 
 describe("AuditStatusDrawer", () => {
+  it("keeps the current width as its minimum and allows a bounded keyboard expansion", async () => {
+    show([])
+    await userEvent.click(screen.getByRole("button", { name: "0 audits" }))
+    const resize = screen.getByRole("separator", { name: "Audit panel width" })
+    expect(resize).toHaveAttribute("aria-valuemin", "420")
+    expect(resize).toHaveAttribute("aria-valuemax", "560")
+    expect(resize).toHaveAttribute("aria-valuenow", "420")
+    expect(resize).toHaveAttribute("aria-controls", panelElement().id)
+    resize.focus()
+    await userEvent.keyboard("{ArrowRight}")
+    expect(resize).toHaveAttribute("aria-valuenow", "420")
+    await userEvent.keyboard("{ArrowLeft}")
+    expect(resize).toHaveAttribute("aria-valuenow", "440")
+    expect(document.querySelector<HTMLElement>(".audit-drawer")!.style.getPropertyValue("--audit-drawer-requested-width")).toBe("440px")
+    await userEvent.keyboard("{End}{ArrowLeft}")
+    expect(resize).toHaveAttribute("aria-valuenow", "560")
+    await userEvent.keyboard("{Home}")
+    expect(resize).toHaveAttribute("aria-valuenow", "420")
+  })
+
+  it("resizes with the pointer, clamps both ends and retains the width when reopened", async () => {
+    show([])
+    const user = userEvent.setup()
+    const trigger = screen.getByRole("button", { name: "0 audits" })
+    await user.click(trigger)
+    const resize = screen.getByRole("separator", { name: "Audit panel width" })
+    const capture = vi.fn()
+    const release = vi.fn()
+    Object.defineProperty(resize, "setPointerCapture", { value: capture })
+    Object.defineProperty(resize, "releasePointerCapture", { value: release })
+    await user.pointer({ target: resize, keys: "[MouseLeft>]", coords: { clientX: 600 } })
+    await user.pointer({ target: resize, coords: { clientX: 530 } })
+    expect(resize).toHaveAttribute("aria-valuenow", "490")
+    await user.pointer({ target: resize, coords: { clientX: 100 } })
+    expect(resize).toHaveAttribute("aria-valuenow", "560")
+    await user.pointer({ target: resize, coords: { clientX: 800 } })
+    expect(resize).toHaveAttribute("aria-valuenow", "420")
+    await user.pointer({ target: resize, coords: { clientX: 520 } })
+    await user.pointer({ keys: "[/MouseLeft]" })
+    expect(capture).toHaveBeenCalled()
+    expect(release).toHaveBeenCalled()
+    expect(resize).toHaveAttribute("aria-valuenow", "500")
+    await user.pointer({ target: resize, coords: { clientX: 400 } })
+    expect(resize).toHaveAttribute("aria-valuenow", "500")
+    await user.click(screen.getByRole("button", { name: "Close" }))
+    await user.click(trigger)
+    expect(screen.getByRole("separator", { name: "Audit panel width" })).toHaveAttribute("aria-valuenow", "500")
+  })
+
   it("starts closed and keeps the panel out of the accessibility tree", () => {
     show([running, completed])
     const trigger = screen.getByRole("button", { name: "2 audits" })

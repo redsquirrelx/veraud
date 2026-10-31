@@ -127,3 +127,6 @@
   display: inline-flex;
   flex-shrink: 0;
 }
+
+.ui-sidebar-nav > .ui-tooltip-trigger { width: 100%; }
+.ui-sidebar-nav .ui-tooltip-trigger > .ui-sidebar-item { width: 100%; }

@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { backendWsUrl, getAgentExecution, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { mergeExecution, mergeInvocations } from "./mergeExecution.ts"
-import { AgentExecutionsContext } from "./useAgentExecutions.ts"
+import { AgentExecutionsContext, AuditExecutionUpdateContext } from "./useAgentExecutions.ts"
+import type { AuditCancellationResult } from "../../infrastructure/http-client/httpClient.ts"
 
 interface AgentExecutionEvent {
   type: string
@@ -23,6 +24,22 @@ function isAgentEvent(data: unknown): data is AgentExecutionEvent {
 
 export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children: ReactNode; retryMs?: number }) {
   const [executions, setExecutions] = useState<AgentExecution[]>([])
+  const updateAudit = useCallback((audit: AuditCancellationResult) => {
+    setExecutions((current) => current.map((execution) => {
+      if (execution.id !== audit.id) return execution
+      let result: Record<string, unknown> = {}
+      try {
+        const parsed: unknown = JSON.parse(execution.result ?? "{}")
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as typeof result
+      } catch { /* Retain the live metadata. */ }
+      return mergeExecution(execution, { ...execution, status: audit.executionStatus, error: audit.error,
+        finishedAt: audit.finishedAt, cancellationRequestedAt: audit.cancellationRequestedAt,
+        interruptionReason: audit.auditStatus === "cancelled" ? "cancelled"
+          : audit.cancellationRequestedAt && ["Waiting", "Running"].includes(audit.executionStatus) ? "cancellation_requested" : null,
+        result: JSON.stringify({ ...result, status: audit.auditStatus, run_id: audit.runId ?? result.run_id }),
+      })
+    }))
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -137,5 +154,7 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     }
   }, [retryMs])
 
-  return <AgentExecutionsContext.Provider value={executions}>{children}</AgentExecutionsContext.Provider>
+  return <AuditExecutionUpdateContext.Provider value={updateAudit}>
+    <AgentExecutionsContext.Provider value={executions}>{children}</AgentExecutionsContext.Provider>
+  </AuditExecutionUpdateContext.Provider>
 }

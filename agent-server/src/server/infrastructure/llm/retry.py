@@ -111,9 +111,13 @@ class RequestPacer:
         self.next_allowed = 0.0
 
     async def wait(self) -> float:
+        from ...runtimes.cancellation import check_cancellation
+
+        check_cancellation()
         delay = max(0.0, self.next_allowed - time.monotonic())
         if delay:
             await asyncio.sleep(delay)
+        check_cancellation()
         return delay
 
     def completed_attempt(self):

@@ -6,7 +6,9 @@ import { useAgentExecutions } from "../agent-monitor/useAgentExecutions.ts"
 import { listAgentSettings, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { LiveAuditMonitor } from "./LiveAuditMonitor.tsx"
 
-vi.mock("../agent-monitor/useAgentExecutions.ts", () => ({ useAgentExecutions: vi.fn() }))
+vi.mock("../agent-monitor/useAgentExecutions.ts", async (original) => ({
+  ...await original<typeof import("../agent-monitor/useAgentExecutions.ts")>(), useAgentExecutions: vi.fn(),
+}))
 vi.mock("../../infrastructure/http-client/httpClient.ts", async (original) => ({
   ...await original<typeof import("../../infrastructure/http-client/httpClient.ts")>(), listAgentSettings: vi.fn(),
 }))
@@ -20,10 +22,16 @@ it("drives the shared drawer with live rows, preserves direct executions and upd
   vi.mocked(listAgentSettings).mockResolvedValue([{ agentType: "dummy", qualityAttributes: [], workflowIds: [], configured: false, configuration: null }])
   const { rerender, container } = render(<MemoryRouter><LiveAuditMonitor /></MemoryRouter>)
   await waitFor(() => expect(listAgentSettings).toHaveBeenCalledOnce())
-  await user.click(screen.getByRole("button", { name: "1 audit" }))
+  await user.click(screen.getByRole("button", { name: "2 audits" }))
   const panel = screen.getByRole("region", { name: "Audit statuses" })
   expect(within(panel).getByText("dummy run #17")).toBeInTheDocument()
   expect(within(panel).queryByRole("link")).toBeNull()
+  expect(within(panel).getByText("DEMO/DEMO")).toBeVisible()
+  const demoActions = within(panel).getByRole("group", { name: "Audit actions · Audit #-1" })
+  await user.click(within(demoActions).getByRole("button", { name: "Cancel audit" }))
+  expect(screen.getByRole("dialog", { name: "Cancel audit?" })).toBeVisible()
+  await user.keyboard("{Escape}")
+  expect(panel).toHaveAttribute("aria-hidden", "false")
   expect(container.querySelector(".agent-menu")).toBeNull()
   vi.mocked(useAgentExecutions).mockReturnValue([{ ...execution, status: "Failed", error: "Selected model unavailable" }])
   rerender(<MemoryRouter><LiveAuditMonitor /></MemoryRouter>)

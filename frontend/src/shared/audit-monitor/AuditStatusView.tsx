@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-import { ArrowRightIcon, Badge, Card, CheckIcon, ChevronDownIcon, CrossIcon, FolderIcon, GridIcon, ShieldIcon, Spinner } from "../ui-kit/index.ts"
+import { ArrowRightIcon, Badge, Card, ChevronDownIcon, DotsIcon, FolderIcon, GridIcon, ShieldIcon } from "../ui-kit/index.ts"
 import { formatDateTime } from "../i18n/format.ts"
 import { AgentTokenUsage } from "../agent-monitor/AgentTokenUsage.tsx"
 import type projects from "../i18n/locales/en/projects.json"
@@ -11,103 +11,118 @@ import {
   pipelineLabelKey,
   pipelineProgress,
   progressText,
-  stateLabelKey,
   stateTone,
   type AuditAgentNode,
   type AuditPipelineRun,
   type AuditProgress,
-  type AuditRunState,
   type AuditStatusModel,
 } from "./auditStatus.ts"
 import "./AuditStatusView.css"
-
-/** Decorative: the badge beside it already carries the state as text. */
-function RunStateIcon({ state }: { state: AuditRunState }) {
-  if (state === "completed") {
-    return <CheckIcon size={14} />
-  }
-  if (state === "failed") {
-    return <CrossIcon size={14} />
-  }
-  if (state === "running") {
-    return <Spinner size={12} />
-  }
-  return <span className={`audit-run-dot audit-run-dot-${state}`} />
-}
+import { useExpansion } from "./useExpansion.ts"
+import { useAuditStateLabel, useMonitorLabels } from "./monitorLabels.ts"
+import { AuditActions } from "./AuditActions.tsx"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
   const { t } = useTranslation("projects")
   return <span className="label audit-progress">{progressText(t, progress)}</span>
 }
 
-function PhaseBadge({ phase }: { phase: string }) {
+function PhaseDot({ phase }: { phase: string }) {
   const { t } = useTranslation("projects")
   const [highlighted, setHighlighted] = useState(true)
   useEffect(() => {
     const timer = setTimeout(() => setHighlighted(false), 240)
     return () => clearTimeout(timer)
   }, [])
-  return <span className="audit-agent-phase" data-highlighted={highlighted}>
-    <Badge tone="neutral" highlighted={highlighted}>
-      {t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
-        { defaultValue: phase.replaceAll("_", " ") })}
-    </Badge>
-  </span>
+  const label = t(`auditStatus.phases.${phase}` as `auditStatus.phases.${keyof typeof projects.auditStatus.phases}`,
+    { defaultValue: phase.replaceAll("_", " ") })
+  return <span className="audit-agent-phase" data-phase={phase} data-highlighted={highlighted}
+    role="img" aria-label={label} title={label} />
 }
 
-function AgentRow({ node, primary = false, evidenceAudit }: { node: AuditAgentNode, primary?: boolean, evidenceAudit?: AuditStatusModel }) {
+function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditAgentNode, path: readonly (string | number)[], primary?: boolean, evidenceAudit?: AuditStatusModel }) {
   const { agent, children } = node
   const { t } = useTranslation("projects")
   const { t: tEvidence } = useTranslation("auditEvidence")
+  const labels = useMonitorLabels()
+  const stateLabel = useAuditStateLabel()
   const childrenId = useId()
-  const [expanded, setExpanded] = useState(true)
-  const expandable = primary || children.length > 0
-  const Header = expandable ? "button" : "div"
+  const detailsId = useId()
+  const stateId = useId()
+  const [expanded, toggleExpanded] = useExpansion(path)
+  const [detailsExpanded, toggleDetails] = useExpansion([...path, "$details"], false)
+  const identity = t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id })
+  const leaf = !primary && children.length === 0
+  const contentExpanded = expanded && (!leaf || detailsExpanded)
+
+  function toggleOwnDetails() {
+    if (!expanded) toggleExpanded()
+    if (expanded || !detailsExpanded) toggleDetails()
+  }
 
   return (
     <li className={`audit-agent${primary ? " audit-agent-root" : ""}`} data-state={agent.state}>
-      <Header className={`audit-agent-head${expandable ? " audit-agent-toggle" : ""}`}
-        type={expandable ? "button" : undefined}
-        aria-label={expandable ? t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id }) : undefined}
-        aria-expanded={expandable ? expanded : undefined} aria-controls={expandable ? childrenId : undefined}
-        onClick={expandable ? () => setExpanded((value) => !value) : undefined}>
-        <span className={`audit-agent-icon audit-agent-icon-${agent.state}`} aria-hidden="true">
-          <RunStateIcon state={agent.state} />
-        </span>
-        <span className="mono audit-agent-type">
-          {t("auditStatus.agents.title", { agentType: agent.agentType, id: agent.id })}
-        </span>
-        {expandable && <span>
-          <span className="audit-pipeline-chevron" data-expanded={expanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
-        </span>}
-        <Badge tone={stateTone(agent.state)}>{t(stateLabelKey(agent.state))}</Badge>
-        {agent.state === "running" && agent.phase && <PhaseBadge key={`${agent.id}:${agent.phase}`} phase={agent.phase} />}
-      </Header>
-      <div className="audit-agent-meta">
-        {agent.startedAt && <span className="label">{t("auditStatus.agents.startedAt", { date: formatDateTime(agent.startedAt) })}</span>}
-        {agent.finishedAt && <span className="label">{t("auditStatus.agents.finishedAt", { date: formatDateTime(agent.finishedAt) })}</span>}
+      <div className="audit-agent-head">
+        <button className="audit-agent-toggle" type="button" aria-label={identity} aria-describedby={stateId}
+          title={leaf ? labels.details : labels.branch}
+          aria-expanded={contentExpanded} aria-controls={childrenId} onClick={leaf ? toggleOwnDetails : toggleExpanded}>
+          {agent.state === "running" && agent.phase
+            ? <PhaseDot key={`${agent.id}:${agent.phase}`} phase={agent.phase} />
+            : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
+          <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
+          <span id={stateId} className="audit-agent-state">{stateLabel(agent.state)}</span>
+          <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
+        </button>
+        <button className="audit-agent-details-toggle" type="button" aria-label={`${labels.details} · ${identity}`}
+          title={labels.details} aria-expanded={expanded && detailsExpanded} aria-controls={detailsId}
+          onClick={toggleOwnDetails}><DotsIcon size={14} /></button>
       </div>
-      <AgentTokenUsage execution={agent} />
-      {agent.error && <p role="alert" className="audit-agent-error">{agent.error}</p>}
-      {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
-        <Link className="ui-button ui-button-secondary"
-          to={`/projects/${evidenceAudit.project.id}/audits/${evidenceAudit.id}/evidence/${encodeURIComponent(agent.id)}?${new URLSearchParams({ agent: agent.agentType, name: agent.name ?? agent.agentType })}`}>
-          {tEvidence("view")}
-        </Link>
-      </div>}
-      {expandable && <ul id={childrenId} className="audit-agent-list audit-agent-children" hidden={!expanded}>
-        {children.map((child) => <AgentRow key={child.agent.agentType} node={child} evidenceAudit={evidenceAudit} />)}
-      </ul>}
+      <div id={childrenId} className="audit-agent-content" hidden={!contentExpanded}>
+        <div id={detailsId} className="audit-agent-details" hidden={!detailsExpanded}>
+          <section className="audit-agent-detail-section audit-agent-meta" aria-label={labels.execution}>
+            <h4>{labels.execution}</h4>
+            <p className="mono audit-agent-identity">{identity}</p>
+          </section>
+          <section className="audit-agent-detail-section" aria-label={labels.dates}>
+            <h4>{labels.dates}</h4>
+            <dl className="audit-agent-dates">
+              <div><dt>{labels.started}</dt><dd>{agent.startedAt
+                ? <time dateTime={agent.startedAt}>{formatDateTime(agent.startedAt)}</time> : labels.notRecorded}</dd></div>
+              <div><dt>{labels.finished}</dt><dd>{agent.finishedAt
+                ? <time dateTime={agent.finishedAt}>{formatDateTime(agent.finishedAt)}</time> : labels.notRecorded}</dd></div>
+            </dl>
+          </section>
+          <section className="audit-agent-detail-section" aria-label={labels.tokens}>
+            <h4>{labels.tokens}</h4>
+            <AgentTokenUsage execution={agent} />
+          </section>
+          {agent.error && <section className="audit-agent-detail-section" aria-label={labels.error}>
+            <h4>{labels.error}</h4>
+            <p role="alert" className="audit-agent-error">{agent.error}</p>
+          </section>}
+          {evidenceAudit?.project && agent.role === "investigator" && <div className="audit-agent-actions">
+            <Link className="ui-button ui-button-secondary"
+              to={`/projects/${evidenceAudit.project.id}/audits/${evidenceAudit.id}/evidence/${encodeURIComponent(agent.id)}?${new URLSearchParams({ agent: agent.agentType, name: agent.name ?? agent.agentType })}`}>
+              {tEvidence("view")}
+            </Link>
+          </div>}
+        </div>
+        {children.length > 0 && <ul className="audit-agent-list audit-agent-children">
+          {children.map((child) => <AgentRow key={child.agent.agentType} node={child} path={[...path, child.agent.agentType]} evidenceAudit={evidenceAudit} />)}
+        </ul>}
+      </div>
     </li>
   )
 }
 
-function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, evidenceAudit?: AuditStatusModel }) {
+function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipelineRun, auditId: number, evidenceAudit?: AuditStatusModel }) {
   const { t } = useTranslation("projects")
+  const stateLabel = useAuditStateLabel()
   const agentsId = useId()
   // Pipelines start open: the agent runs are the point of the view. Folding is
   // for scanning an audit with many attributes, not a summary-first default.
-  const [expanded, setExpanded] = useState(true)
+  const path = [auditId, pipeline.id]
+  const [expanded, toggleExpanded] = useExpansion(path)
   const labelKey = pipelineLabelKey(pipeline.id)
   const name = labelKey === null ? pipeline.id : t(labelKey)
   const progress = pipelineProgress(pipeline)
@@ -119,7 +134,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
   // headers for empty groups or historical rows without an identified root.
   if (tree.length > 0 && tree.every((node) => node.agent.agentType === rootType)) {
     return <ul className="audit-agent-list audit-root-list" data-state={pipeline.state}>
-      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} primary evidenceAudit={evidenceAudit} />)}
+      {tree.map((node) => <AgentRow key={node.agent.agentType} node={node} path={[...path, node.agent.agentType]} primary evidenceAudit={evidenceAudit} />)}
     </ul>
   }
 
@@ -134,10 +149,10 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
         aria-controls={agentsId}
         aria-label={t("auditStatus.pipelines.toggleLabel", {
           pipeline: name,
-          state: t(stateLabelKey(pipeline.state)),
+          state: stateLabel(pipeline.state),
           progress: progressText(t, progress),
         })}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={toggleExpanded}
       >
         <span className="audit-pipeline-line">
           <span className="audit-pipeline-icon" aria-hidden="true">
@@ -149,7 +164,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
           </span>
         </span>
         <span className="audit-pipeline-line">
-          <Badge tone={stateTone(pipeline.state)}>{t(stateLabelKey(pipeline.state))}</Badge>
+          <Badge tone={stateTone(pipeline.state)}>{stateLabel(pipeline.state)}</Badge>
           <ProgressLabel progress={progress} />
         </span>
       </button>
@@ -166,7 +181,7 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
           ) : (
             <ul className="audit-agent-list">
               {tree.map((node) => (
-                <AgentRow key={node.agent.agentType} node={node} evidenceAudit={evidenceAudit} />
+                <AgentRow key={node.agent.agentType} node={node} path={[...path, node.agent.agentType]} evidenceAudit={evidenceAudit} />
               ))}
             </ul>
           )}
@@ -181,14 +196,16 @@ function PipelineRow({ pipeline, evidenceAudit }: { pipeline: AuditPipelineRun, 
  *  nothing, so any caller can drive it with live or fixture data.
  *  `bare` drops the card surface and `summary` drops the header, so a caller
  *  that renders its own summary shows the identity once instead of twice. */
-export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false }: {
+export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false, actions = true }: {
   audit: AuditStatusModel
   bare?: boolean
   summary?: boolean
   evidenceLinks?: boolean
+  actions?: boolean
 }) {
   const { t } = useTranslation("projects")
   const hasRevision = audit.branch !== null || audit.commitHash !== null
+  const stateLabel = useAuditStateLabel()
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
 
   const content = (
@@ -196,16 +213,18 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
       {summary && <>
         <div className="audit-status-head">
           <span className="mono audit-status-id">{t("auditStatus.title", { id: audit.id })}</span>
-          <Badge tone={stateTone(audit.state)}>{t(stateLabelKey(audit.state))}</Badge>
+          <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
           <ProgressLabel progress={auditProgress(audit)} />
         </div>
         <div className="audit-status-meta">
-          {audit.project && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
+          {audit.project && audit.project.id <= 0 && <span className="audit-status-project"><span className="mono">{repository}</span></span>}
+          {audit.project && audit.project.id > 0 && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
             aria-label={t("auditStatus.openProject", { repository })}>
             <FolderIcon size={13} />
             <span className="mono">{repository}</span>
             <ArrowRightIcon size={12} />
           </Link>}
+          {actions && <AuditActions audit={audit} />}
           {hasRevision ? (
             <span className="mono audit-status-revision">
               {t("auditStatus.revision", { branch: audit.branch ?? "—", hash: audit.commitHash?.slice(0, 7) ?? "—" })}
@@ -219,12 +238,13 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
         </div>
       </>}
       {audit.error && <p role="alert" className="audit-status-error">{audit.error}</p>}
+      {!summary && actions && <AuditActions audit={audit} />}
       {audit.pipelines.length === 0 ? (
         <p className="label">{t("auditStatus.pipelines.empty")}</p>
       ) : (
         <div className="audit-pipeline-list">
           {audit.pipelines.map((pipeline) => (
-            <PipelineRow key={pipeline.id} pipeline={pipeline} evidenceAudit={evidenceLinks ? audit : undefined} />
+             <PipelineRow key={pipeline.id} pipeline={pipeline} auditId={audit.id} evidenceAudit={evidenceLinks ? audit : undefined} />
           ))}
         </div>
       )}

@@ -13,12 +13,24 @@ function resultOf(execution: AgentExecution): RecordValue {
   catch { return {} }
 }
 
+function evaluationOutcome(execution: AgentExecution, result: RecordValue): string | null {
+  const terminal = ["Completed", "Failed"].includes(execution.status)
+  if (terminal && execution.interruptionReason === "cancelled") return "cancelled"
+  if (!terminal && (execution.cancellationRequestedAt || execution.interruptionReason === "cancellation_requested")) return "cancelling"
+  const status = text(result.status)
+  // Compact terminal events can arrive before their HTTP report. An old
+  // pending projection must not overrule the confirmed execution lifecycle.
+  return terminal && ["queued", "running", "cancelling"].includes(status ?? "") ? null : status
+}
+
 function combined(states: AuditRunState[]): AuditRunState {
   if (!states.length) return "unknown"
+  if (states.includes("cancelling")) return "cancelling"
   if (states.includes("running")) return "running"
   if (states.includes("waiting")) return "waiting"
   if (states.includes("failed")) return "failed"
   if (states.includes("partial")) return "partial"
+  if (states.includes("cancelled")) return "cancelled"
   return states.every((state) => state === "completed") ? "completed" : "unknown"
 }
 
@@ -78,7 +90,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
       const workflows = metadata?.workflowIds ?? execution.monitorContext?.workflowIds ?? []
       const quality = execution.monitorContext?.evaluationType === "QualityAudit" || selected.length > 0 || (execution.invocations?.length ?? 0) > 0
       if (quality) {
-        const status = text(result.status)
+        const status = evaluationOutcome(execution, result)
         if (status) outcomes.push(status)
         reportAvailable ||= Object.keys(report).length > 0
         for (const attribute of selected) if (!pipelines.has(attribute)) pipelines.set(attribute, new Map())
@@ -150,16 +162,18 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
           role: metadata?.role, name: metadata?.name,
           configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
           interruptionReason: execution.interruptionReason,
-          state: auditStateFrom(execution.status, quality ? text(result.status) : null),
+           state: auditStateFrom(execution.status, quality ? evaluationOutcome(execution, result) : null),
           inputTokens: execution.inputTokens, outputTokens: execution.outputTokens,
           startedAt: execution.startedAt, finishedAt: execution.finishedAt, error: execution.error })
       }
     }
     const executionState = combined(group.map((item) => auditStateFrom(item.status, null)))
     const visible = latestAgents(pipelines)
-    const outcome = outcomes.includes("failed") ? "failed" : outcomes.includes("partial") ? "partial"
+    const outcome = outcomes.includes("cancelled") ? "cancelled" : outcomes.includes("cancelling") ? "cancelling"
+      : outcomes.includes("failed") ? "failed" : outcomes.includes("partial") ? "partial"
       : outcomes.length > 0 && outcomes.every((state) => state === "completed") ? "completed" : null
     return {
+      canCancel: context?.evaluationType === "QualityAudit" && (context.project?.id ?? 0) > 0,
       id: first.id, project: context?.project ?? null, branch: context?.branch ?? null, commitHash: context?.commitHash ?? null,
       state: outcome ? auditStateFrom("", outcome) : executionState,
       error: group.find((item) => item.error)?.error ?? null,

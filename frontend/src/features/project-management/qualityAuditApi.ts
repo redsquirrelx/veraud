@@ -2,6 +2,7 @@ import { ApiError, backendHttpUrl, requestJson } from "../../infrastructure/http
 import type { AuditReportSection } from "./qualityAuditReport.ts"
 
 export interface QualityAuditSummary {
+  cancellationRequestedAt?: string | null
   id: number
   runId?: string | null
   evaluationId: number

@@ -136,9 +136,12 @@ def global_quota_store():
 
 
 async def acquire_global(scope, limits, tokens, *, on_wait=None):
+    from ...runtimes.cancellation import check_cancellation
+
     store = global_quota_store()
     last_wait = None
     while True:
+        check_cancellation()
         reservation, delays = store.acquire(scope, limits, tokens)
         if reservation is not None:
             return reservation
@@ -178,8 +181,12 @@ def acquire_global_sync(scope, limits, tokens):
 
 async def quota_generate(model, prompt, operation, *, max_output_tokens=None):
     """Provider-adapter boundary: every retry/probe/direct call acquires a slot."""
+    from ...runtimes.cancellation import check_cancellation
+
+    check_cancellation()
     limit = model.settings.max_tokens if max_output_tokens is None else max_output_tokens
     reservation = await acquire_global(model_quota_scope(model), ProviderRateLimits(), math.ceil(len(str(prompt)) * 0.5) + limit)
+    check_cancellation()
     response = await operation()
     actual = reported_tokens(response)
     if actual is not None:

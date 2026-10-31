@@ -101,6 +101,8 @@ export async function buildApp(options: BuildAppOptions) {
     agentSettingsService,
   )
   const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir, agentExecutionService)
+  app.addHook("onReady", async () => { await agentExecutionService.resumeAuditCancellations() })
+  app.addHook("onClose", async () => { await agentExecutionService.stopAuditCancellations() })
   const aiProviderRepository = new AiProviderRepository(db)
   await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
   const aiProviderService = new AiProviderService(aiProviderRepository)

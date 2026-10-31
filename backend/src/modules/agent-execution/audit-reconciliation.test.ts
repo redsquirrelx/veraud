@@ -16,6 +16,7 @@ function harness(agents: AgentInvoker) {
   const events: string[] = []
   const unused = async (): Promise<never> => { throw new Error("Unexpected store operation during reconciliation") }
   const store = {
+    requestAuditCancellation: unused, pendingAuditCancellations: async () => [], claimAuditDispatch: async () => true,
     recordInvocation: unused, create: unused, updateUsage: unused,
     patchResult: unused, createExecutionsForProject: unused,
     findById: async () => row,

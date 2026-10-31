@@ -1,7 +1,7 @@
 .audit-disclosure {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* The repository sits on its own row. Beside the toggle it would win the width
@@ -11,24 +11,28 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.4rem;
+  gap: var(--space-1-5);
   min-width: 0;
 }
+
+.audit-disclosure-actions { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.audit-disclosure-actions > .audit-actions { margin-left: auto; }
 
 .audit-disclosure-toggle {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.3rem;
+  gap: var(--space-1);
   align-self: stretch;
   min-width: 0;
-  padding: 0.15rem 0.25rem;
+  padding: var(--space-0-5) var(--space-1);
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-control);
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
+  transition: background-color var(--motion-hover) ease;
   cursor: pointer;
 }
 
@@ -37,7 +41,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
+  gap: var(--space-1-5) var(--space-2);
   width: 100%;
   min-width: 0;
 }
@@ -45,6 +49,8 @@
 .audit-disclosure-toggle:hover {
   background: var(--color-surface-hover);
 }
+
+.audit-disclosure-toggle:active { background: var(--color-surface-active); }
 
 .audit-disclosure-toggle:focus-visible {
   outline: var(--focus-width) solid var(--color-focus);
@@ -54,8 +60,8 @@
 .audit-disclosure-id {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -96,7 +102,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .audit-disclosure-detail,
-  .audit-disclosure-chevron {
+  .audit-disclosure-chevron,
+  .audit-disclosure-toggle {
     transition: none;
   }
 }

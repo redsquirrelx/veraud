@@ -1,11 +1,12 @@
 .audit-status {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
+  font-family: var(--font-sans);
+  line-height: var(--line-height-body);
 }
 
 .audit-agent-actions { display: flex; justify-content: flex-end; }
-.audit-agent-actions .ui-button { font-size: var(--font-size-xs); }
 
 .audit-status-head,
 .audit-status-meta,
@@ -19,20 +20,20 @@
 }
 
 .audit-status-id {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
 /* Slate-600 on the tinted surfaces clears AA comfortably; slate-500 did not. */
 .audit-status-meta,
 .audit-agent-meta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-description);
 }
 
 .audit-status-revision {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -41,16 +42,18 @@
 }
 
 .audit-status-project {
+  width: fit-content;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
   max-width: 100%;
-  padding: 2px 6px;
-  background: var(--status-info-bg);
-  border: var(--border-width) solid var(--status-info-border);
+  padding: var(--space-0-5) var(--space-1-5);
+  background: var(--color-selection-soft);
+  border: var(--border-width) solid var(--color-border-control);
   border-radius: var(--radius-control);
-  color: var(--status-info-text);
+  color: var(--color-brand);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   text-decoration: none;
@@ -67,7 +70,8 @@
 }
 
 .audit-status-project:hover {
-  background: var(--status-info-bg);
+  background: var(--color-surface-hover);
+  color: var(--color-brand-hover);
 }
 
 .audit-status-project:focus-visible {
@@ -89,30 +93,38 @@
 /* One accent colour per state, shared by every level of this module — audit,
    pipeline, agent and the drawer's disclosure — so nesting and consecutive
    audits read at a glance instead of blending into the card. */
+.audit-monitor-legend [data-state="completed"],
 .audit-status[data-state="completed"],
 .audit-disclosure[data-state="completed"],
 .audit-pipeline[data-state="completed"],
 .audit-agent[data-state="completed"] { --audit-accent: var(--status-success-accent); }
 
+.audit-monitor-legend [data-state="running"],
 .audit-status[data-state="running"],
 .audit-disclosure[data-state="running"],
 .audit-pipeline[data-state="running"],
 .audit-agent[data-state="running"] { --audit-accent: var(--status-running-accent); }
 
+.audit-monitor-legend [data-state="waiting"],
 .audit-status[data-state="waiting"],
 .audit-disclosure[data-state="waiting"],
 .audit-pipeline[data-state="waiting"],
 .audit-agent[data-state="waiting"] { --audit-accent: var(--status-waiting-accent); }
 
+.audit-monitor-legend [data-state="partial"],
 .audit-status[data-state="partial"],
 .audit-disclosure[data-state="partial"],
 .audit-pipeline[data-state="partial"],
-.audit-agent[data-state="partial"] { --audit-accent: var(--status-partial-accent); }
+.audit-agent[data-state="partial"] { --audit-accent: #d4b49b; }
 
+.audit-monitor-legend [data-state="failed"],
 .audit-status[data-state="failed"],
 .audit-disclosure[data-state="failed"],
 .audit-pipeline[data-state="failed"],
-.audit-agent[data-state="failed"] { --audit-accent: var(--status-failed-accent); }
+.audit-agent[data-state="failed"] { --audit-accent: #dc2626; }
+
+:is(.audit-monitor-legend [data-state="cancelling"], .audit-status[data-state="cancelling"], .audit-disclosure[data-state="cancelling"], .audit-pipeline[data-state="cancelling"], .audit-agent[data-state="cancelling"]) { --audit-accent: var(--status-waiting-accent); }
+:is(.audit-monitor-legend [data-state="cancelled"], .audit-status[data-state="cancelled"], .audit-disclosure[data-state="cancelled"], .audit-pipeline[data-state="cancelled"], .audit-agent[data-state="cancelled"]) { --audit-accent: var(--color-text-muted); }
 
 .audit-pipeline-list {
   display: flex;
@@ -123,12 +135,12 @@
 .audit-pipeline {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.55rem;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
   background: var(--color-surface-recessed);
-  border: var(--border-width) solid var(--color-border-hover);
-  border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
-  border-radius: 0.375rem;
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--space-1) solid var(--audit-accent, var(--status-waiting-accent));
+  border-radius: var(--radius-surface);
 }
 
 .audit-pipeline-head {
@@ -144,13 +156,15 @@
   color: inherit;
   font: inherit;
   text-align: left;
+  border-radius: var(--radius-control);
+  transition: background-color var(--motion-hover) ease;
   cursor: pointer;
 }
 
 .audit-pipeline-head:focus-visible {
   outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
 }
 
 /* Identity on one line, state on the next. Nothing wraps, so the row does not
@@ -173,8 +187,8 @@
 .audit-pipeline-name {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,18 +246,19 @@
 .audit-agent {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.45rem 0.55rem;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1-5);
   background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border-hover);
-  border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
-  border-radius: 0.25rem;
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--space-1) solid var(--audit-accent, var(--status-waiting-accent));
+  border-radius: var(--radius-control);
+  transition: border-left-color 1200ms ease-out;
 }
 
 .audit-agent-type {
   min-width: 0;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,28 +266,36 @@
 }
 
 .audit-agent-children {
-  margin-top: 0.5rem;
-  padding-left: 0.5rem;
-  border-left: var(--border-width) solid var(--color-border-hover);
+  margin-top: var(--space-1);
+  padding-left: var(--space-1);
+  border-left: var(--border-width) solid var(--color-border);
 }
 
 .audit-agent-children[hidden] { display: none; }
 
 .audit-agent-toggle {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   font: inherit;
   color: inherit;
   padding: 0;
   background: transparent;
   border: 0;
+  border-radius: var(--radius-control);
+  transition: background-color var(--motion-hover) ease;
   cursor: pointer;
 }
 
-.audit-agent-root { padding: 0.65rem; border-color: var(--color-text-muted); }
+.audit-agent-root { padding: var(--space-1-5); }
 .audit-agent-toggle .audit-agent-type { flex: 1; }
 
 .audit-agent-toggle:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 2px; }
+.audit-agent-toggle:hover, .audit-pipeline-head:hover { background: var(--color-surface-hover); }
+.audit-agent-toggle:active, .audit-pipeline-head:active { background: var(--color-surface-active); }
 
 .audit-agent-icon {
   display: inline-flex;
@@ -290,4 +313,88 @@
   height: 8px;
   border-radius: 50%;
   background: var(--audit-accent, var(--status-waiting-accent));
+}
+
+.audit-agent-head { flex-wrap: nowrap; gap: var(--space-0-5); }
+.audit-agent-state { font-size: var(--font-size-2xs); color: var(--color-text-secondary); white-space: nowrap; }
+.audit-agent-content[hidden], .audit-agent-details[hidden] { display: none; }
+.audit-agent-details { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) 0 var(--space-1); }
+.audit-agent-detail-section {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-recessed);
+  font-size: var(--font-size-xs);
+}
+.audit-agent-detail-section h4 {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+.audit-agent-identity { margin: 0; overflow-wrap: anywhere; color: var(--color-text-secondary); }
+.audit-agent-dates { display: grid; gap: var(--space-1-5); margin: 0; }
+.audit-agent-dates > div { display: grid; grid-template-columns: minmax(3.5rem, 0.45fr) minmax(0, 1fr); gap: var(--space-2); }
+.audit-agent-dates dt { color: var(--color-text-description); }
+.audit-agent-dates dd { margin: 0; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.audit-agent-detail-section .agent-token-usage { margin-top: 0; gap: var(--space-2); font-size: var(--font-size-xs); }
+.audit-agent-detail-section .agent-token-summary { color: var(--color-text); font-weight: var(--font-weight-semibold); }
+.audit-agent-detail-section .agent-token-breakdown { padding-top: var(--space-1-5); border-top: var(--border-width) solid var(--color-border); }
+.audit-agent-detail-section .agent-token-breakdown dl { grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 0; }
+.audit-agent-detail-section .agent-token-breakdown dt { overflow-wrap: anywhere; }
+.audit-agent-detail-section .audit-agent-error { overflow-wrap: anywhere; }
+.audit-agent-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: var(--icon-size-sm);
+  min-height: var(--icon-size-sm);
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  font: inherit;
+  transition: background-color var(--motion-hover) ease, color var(--motion-hover) ease;
+  cursor: pointer;
+}
+.audit-agent-details-toggle:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.audit-agent-details-toggle:active, .audit-agent-details-toggle[aria-expanded="true"] { background: var(--color-surface-active); color: var(--color-text); }
+.audit-agent-details-toggle:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 2px; }
+
+.audit-agent-phase {
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-text-muted);
+  transition: background-color 1200ms ease-out, box-shadow 1200ms ease-out;
+}
+.audit-agent-phase[data-phase] { background-color: var(--status-info-accent); }
+.audit-agent-phase[data-phase="plan_investigation"] { background-color: #7c3aed; }
+.audit-agent-phase[data-phase="investigate"] { background-color: #0284c7; }
+.audit-agent-phase[data-phase="evaluate_evidence"] { background-color: #d97706; }
+.audit-agent-phase[data-phase="review_findings"] { background-color: #dc2626; }
+.audit-agent-phase[data-phase="finalize"] { background-color: var(--status-success-accent); }
+.audit-agent-phase[data-highlighted="true"] { box-shadow: var(--shadow-highlight); animation: audit-phase-ignite 240ms ease-out; }
+@keyframes audit-phase-ignite {
+  from { box-shadow: var(--shadow-highlight-rest); }
+  to { box-shadow: var(--shadow-highlight); }
+}
+
+.audit-monitor-legend { display: flex; flex-direction: column; gap: var(--space-1-5); padding-bottom: var(--space-2); border-bottom: var(--border-width) solid var(--color-border); font-family: var(--font-sans); line-height: var(--line-height-body); }
+.audit-monitor-legend ul { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); list-style: none; margin: var(--space-0-5) 0 0; padding: 0; }
+.audit-monitor-legend li { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--font-size-2xs); color: var(--color-text-secondary); }
+.audit-legend-state { height: var(--space-3); border-left: 3px solid var(--audit-accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-agent, .audit-agent-phase, .audit-agent-toggle, .audit-agent-details-toggle, .audit-pipeline-head { transition: none; }
+  .audit-agent-phase[data-highlighted="true"] { animation: none; box-shadow: none; }
 }

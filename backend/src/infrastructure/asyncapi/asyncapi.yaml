@@ -314,6 +314,12 @@ components:
             - string
             - "null"
           description: Machine-readable interruption cause.
+        cancellationRequestedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Persisted request; does not confirm the audit has stopped.
         createdAt:
           type: string
           format: date-time

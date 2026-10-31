@@ -49,6 +49,10 @@ export interface AgentExecutionEvents {
 
 export class AgentExecutionService {
   private log = logger.withTag("agent-execution")
+  private cancellationWorkers = new Map<number, Promise<void>>()
+  private cancellationTimers = new Map<number, ReturnType<typeof setTimeout>>()
+  private forwardedCancellations = new Set<number>()
+  private cancellationShutdown = false
 
   constructor(
     private executions: AgentExecutionStore,
@@ -58,6 +62,104 @@ export class AgentExecutionService {
     private workspaceDir: string,
     private settings: AgentSettingsService,
   ) {}
+
+  /** Persist first: callbacks and restart recovery can deliver the request later. */
+  async cancelQualityAudit(id: number): Promise<StoredAgentExecution> {
+    await this.require(id)
+    const execution = await this.executions.requestAuditCancellation(id)
+    if (execution.cancellationRequestedAt && !this.isTerminal(execution)) {
+      this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(execution) })
+      this.queueAuditCancellation(id)
+    }
+    return execution
+  }
+
+  async resumeAuditCancellations(): Promise<void> {
+    for (const id of await this.executions.pendingAuditCancellations()) this.queueAuditCancellation(id)
+  }
+
+  async stopAuditCancellations(): Promise<void> {
+    this.cancellationShutdown = true
+    for (const timer of this.cancellationTimers.values()) clearTimeout(timer)
+    this.cancellationTimers.clear()
+    await Promise.all(this.cancellationWorkers.values())
+  }
+
+  private isTerminal(execution: StoredAgentExecution): boolean {
+    return execution.status === "Completed" || execution.status === "Failed"
+  }
+
+  private auditRunId(execution: StoredAgentExecution): string | undefined {
+    let result: { run_id?: unknown } = {}
+    try { result = JSON.parse(execution.result ?? "{}") as typeof result } catch { /* Receipts retain the identity too. */ }
+    return typeof result.run_id === "string" && result.run_id ? result.run_id : execution.invocations?.[0]?.run_id
+  }
+
+  private queueAuditCancellation(id: number): void {
+    if (this.cancellationShutdown || this.cancellationWorkers.has(id) || this.cancellationTimers.has(id)) return
+    const retry = () => {
+      if (this.cancellationShutdown) return
+      const timer = setTimeout(() => {
+        this.cancellationTimers.delete(id)
+        this.queueAuditCancellation(id)
+      }, 1000)
+      timer.unref()
+      this.cancellationTimers.set(id, timer)
+    }
+    const worker = this.processAuditCancellation(id).then((pending) => {
+      if (pending) retry()
+      else this.forwardedCancellations.delete(id)
+    }).catch(() => {
+      // Network failure is not proof of cancellation or of agent failure.
+      this.log.info(`Execution ${id}: cancellation pending; retrying agent-server communication`)
+      retry()
+    }).finally(() => { this.cancellationWorkers.delete(id) })
+    this.cancellationWorkers.set(id, worker)
+  }
+
+  private async processAuditCancellation(id: number): Promise<boolean> {
+    const execution = await this.require(id)
+    if (this.cancellationShutdown || this.isTerminal(execution) || !execution.cancellationRequestedAt) return false
+    const runId = this.auditRunId(execution)
+    if (!execution.dispatchStartedAt && !runId && !execution.startedAt) {
+      // The persisted dispatch claim cannot succeed after this request. No
+      // remote work exists, so local cancellation is already confirmed.
+      await this.closeCancelledAudit(execution)
+      return false
+    }
+    if (!runId || !this.agents.cancelAudit || !this.agents.getAuditSnapshot) return true
+    if (!this.forwardedCancellations.has(id)) {
+      await this.agents.cancelAudit(runId)
+      this.forwardedCancellations.add(id)
+    }
+    if (this.cancellationShutdown) return false
+    const snapshot = await this.agents.getAuditSnapshot(runId)
+    if (this.cancellationShutdown) return false
+    if (snapshot.run_id !== runId) throw new Error("Cancellation snapshot belongs to another audit")
+    if (snapshot.status === "cancelled") {
+      await this.closeCancelledAudit(execution, snapshot)
+      return false
+    }
+    if (["completed", "partial", "failed"].includes(String(snapshot.status)) && this.agents.getAuditResult) {
+      let attributes: string[] = []
+      try { attributes = (JSON.parse(execution.result ?? "{}") as { attributes?: string[] }).attributes ?? [] } catch { /* Original result remains opaque. */ }
+      const audit = await this.agents.getAuditResult(runId, attributes)
+      if (this.cancellationShutdown) return false
+      if (audit) { await this.closeAudit(id, audit); return false }
+    }
+    return true
+  }
+
+  private async closeCancelledAudit(execution: StoredAgentExecution, snapshot?: AgentInput): Promise<void> {
+    let retained: AgentInput = {}
+    try { retained = JSON.parse(execution.result ?? "{}") as AgentInput } catch { /* Preserve valid metadata when available. */ }
+    await this.close(execution.id, {
+      // Completed denotes delivery, not successful audit coverage, as elsewhere.
+      status: "Completed", result: JSON.stringify({ ...retained, status: "cancelled",
+        ...(snapshot ? { run_id: snapshot.run_id, blackboard: snapshot } : {}) }),
+      error: null, inputTokens: null, outputTokens: null, interruptionReason: "cancelled",
+    })
+  }
 
   /**
    * Registers an invocation on behalf of an agent and starts it.
@@ -168,16 +270,34 @@ export class AgentExecutionService {
 
   private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {
     const recoveryDeadline = Date.now() + QUALITY_AUDIT_INVOKE_TIMEOUT_MS
+    let posted = false
     try {
       if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
+      if (!await this.executions.claimAuditDispatch(execution.id)) {
+        this.queueAuditCancellation(execution.id)
+        return
+      }
       const input = await this.targets.resolve(execution.evaluationId)
       await this.markRunning(execution.id)
+      const current = await this.require(execution.id)
+      if (this.isTerminal(current) || current.cancellationRequestedAt) {
+        if (!this.isTerminal(current) && !this.auditRunId(current)) await this.closeCancelledAudit(current)
+        else this.queueAuditCancellation(execution.id)
+        return
+      }
+      posted = true
       const payload = await this.agents.runPipelineByName("quality-audit", {
         ...options,
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
       }, { [execution.agentType]: execution.id }, configs)
       await this.closeAudit(execution.id, payload["audit"])
     } catch (error) {
+      const current = await this.require(execution.id)
+      if (current.cancellationRequestedAt && !this.isTerminal(current)) {
+        if (!posted && !this.auditRunId(current)) await this.closeCancelledAudit(current)
+        else this.queueAuditCancellation(execution.id)
+        return
+      }
       if (error instanceof AgentTransportError && error.outcomeUncertain) {
         try {
           await this.reconcileAudit(execution.id, attributes, recoveryDeadline)
@@ -343,7 +463,9 @@ export class AgentExecutionService {
     const existing = await this.require(id)
     if (existing.status === "Completed" || existing.status === "Failed") return existing
 
-    return this.executions.markRunning(id, runId)
+    const execution = await this.executions.markRunning(id, runId)
+    if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
+    return execution
   }
 
   async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
@@ -365,6 +487,11 @@ export class AgentExecutionService {
       return existing
     }
 
+    if (existing.cancellationRequestedAt && completion.status === "Failed") {
+      this.queueAuditCancellation(id)
+      return existing
+    }
+
     if (completion.status === "Failed" && !completion.error) {
       throw new InvalidCompletionError("status Failed requires an error message")
     }
@@ -374,7 +501,9 @@ export class AgentExecutionService {
 
   async recordInvocation(id: number, receipt: import("./invocationReceipt.js").InvocationReceipt): Promise<StoredAgentExecution> {
     await this.require(id)
-    return this.executions.recordInvocation(id, receipt)
+    const execution = await this.executions.recordInvocation(id, receipt)
+    if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
+    return execution
   }
 
   async findById(id: number): Promise<StoredAgentExecution> {
@@ -439,6 +568,7 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
+    cancellationRequestedAt: execution.cancellationRequestedAt ?? null,
   }
 }
 

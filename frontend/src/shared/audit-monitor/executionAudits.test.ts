@@ -15,6 +15,31 @@ function agent(agentType: string, qualityAttributes: string[], workflowIds = ["q
 }
 
 describe("executionAudits", () => {
+  it("distinguishes a persisted request from confirmed cancellation, including compact events", () => {
+    const pending = { ...execution, cancellationRequestedAt: "2026-10-30T12:00:00Z", interruptionReason: "cancellation_requested" }
+    const [requested] = executionAudits([pending], [])
+    expect(requested).toMatchObject({ state: "cancelling", canCancel: true, finishedAt: null })
+    const [cancelled] = executionAudits([{ ...pending, status: "Completed", result: null, interruptionReason: "cancelled",
+      finishedAt: "2026-10-30T12:01:00Z" }], [])
+    expect(cancelled).toMatchObject({ state: "cancelled", finishedAt: "2026-10-30T12:01:00Z" })
+    expect(cancelled!.pipelines[0]!.agents[0]).toMatchObject({ state: "cancelled", inputTokens: 100 })
+    const [completed] = executionAudits([{ ...pending, status: "Completed", interruptionReason: null,
+      result: '{"status":"completed"}' }], [])
+    expect(completed!.state).toBe("completed")
+    expect(auditStateFrom("Completed", "cancelled")).toBe("cancelled")
+    expect(auditStateFrom("Running", "cancelling")).toBe("cancelling")
+    const [terminalEvent] = executionAudits([{ ...pending, status: "Completed", interruptionReason: null,
+      result: '{"status":"cancelling"}' }], [])
+    expect(terminalEvent!.state).toBe("completed")
+    expect(auditStateFrom("Completed", "cancelling")).toBe("completed")
+  })
+
+  it("does not offer audit cancellation for architecture pipelines or direct executions", () => {
+    const [analysis] = executionAudits([{ ...execution, monitorContext: { ...execution.monitorContext!, evaluationType: "Analysis" } }], [])
+    expect(analysis!.canCancel).toBe(false)
+    const [direct] = executionAudits([{ ...execution, evaluationId: null, monitorContext: undefined }], [])
+    expect(direct!.canCancel).toBe(false)
+  })
   it("renders live invocations before a report and reconciles final receipts by invocation id", () => {
     const invocations: NonNullable<AgentExecution["invocations"]> = [
       { invocation_id: "manager", parent_invocation_id: null, agent_id: "maintainability_manager", run_id: "audit",

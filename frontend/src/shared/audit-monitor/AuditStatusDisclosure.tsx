@@ -1,10 +1,13 @@
-import { useId, useState } from "react"
+import { useId } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ArrowRightIcon, Badge, Card, ChevronDownIcon, FolderIcon } from "../ui-kit/index.ts"
 import { AuditStatusView } from "./AuditStatusView.tsx"
-import { auditProgress, progressText, stateLabelKey, stateTone, type AuditStatusModel } from "./auditStatus.ts"
+import { auditProgress, progressText, stateTone, type AuditStatusModel } from "./auditStatus.ts"
+import { useAuditStateLabel } from "./monitorLabels.ts"
+import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
+import { AuditActions } from "./AuditActions.tsx"
 
 export interface AuditStatusDisclosureProps {
   audit: AuditStatusModel
@@ -18,20 +21,25 @@ export interface AuditStatusDisclosureProps {
  *  and swallows the toggle's own activation. */
 export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceLinks = false }: AuditStatusDisclosureProps) {
   const { t } = useTranslation("projects")
+  const stateLabel = useAuditStateLabel()
   const regionId = useId()
-  const [expanded, setExpanded] = useState(defaultExpanded)
+  const [expanded, toggleExpanded] = useExpansion([audit.id], defaultExpanded)
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
 
   return (
     <Card>
       <div className="audit-disclosure" data-state={audit.state}>
         <div className="audit-disclosure-head">
-          {audit.project && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
+          <div className="audit-disclosure-actions">
+          {audit.project && audit.project.id <= 0 && <span className="audit-status-project"><span className="mono">{repository}</span></span>}
+          {audit.project && audit.project.id > 0 && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
             aria-label={t("auditStatus.openProject", { repository })}>
             <FolderIcon size={13} />
             <span className="mono">{repository}</span>
             <ArrowRightIcon size={12} />
           </Link>}
+          <AuditActions audit={audit} />
+          </div>
           <button
             type="button"
             className="audit-disclosure-toggle"
@@ -41,10 +49,10 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
             // name taken from the contents would read "Audit #40Completed…".
             aria-label={t("auditStatus.toggleLabel", {
               id: t("auditStatus.title", { id: audit.id }),
-              state: t(stateLabelKey(audit.state)),
+              state: stateLabel(audit.state),
               progress: progressText(t, auditProgress(audit)),
             })}
-            onClick={() => setExpanded((current) => !current)}
+            onClick={toggleExpanded}
           >
             <span className="audit-disclosure-line">
               <span className="mono audit-disclosure-id">{t("auditStatus.title", { id: audit.id })}</span>
@@ -53,7 +61,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
               </span>
             </span>
             <span className="audit-disclosure-line">
-              <Badge tone={stateTone(audit.state)}>{t(stateLabelKey(audit.state))}</Badge>
+              <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
               <span className="label">{progressText(t, auditProgress(audit))}</span>
               {audit.reportAvailable && <Badge tone="neutral">{t("auditStatus.reportAvailable")}</Badge>}
             </span>
@@ -68,7 +76,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
         >
           <div className="audit-disclosure-detail-inner">
             {/* No summary: the row above already carries the identity. */}
-            <AuditStatusView audit={audit} bare summary={false} evidenceLinks={evidenceLinks} />
+            <AuditStatusView audit={audit} bare summary={false} evidenceLinks={evidenceLinks} actions={false} />
           </div>
         </div>
       </div>
