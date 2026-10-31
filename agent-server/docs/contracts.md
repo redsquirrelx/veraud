@@ -46,6 +46,10 @@ optional and is not authorization unless the backend separately implements it.
 
 ### Structured execution errors
 
+Public descriptions are reconstructed from host-owned error codes; raw/historical
+messages are not trusted. See [execution error privacy](../../backend/docs/execution-error-privacy.md)
+for callback, persistence, event, logging and UI protection with code references.
+
 Completion callbacks optionally carry `errorDetail`; invocation receipts and audit
 state/snapshots carry `error_detail`. Callback detail objects use `agentId`,
 `invocationId`, `occurredAt` (UTC ISO 8601), `code`, `exceptionType` and `message`.

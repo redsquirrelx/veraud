@@ -17,7 +17,9 @@ historical messages or execution completion dates.
 - Backend dispatch failures record `backend_dispatch_failed`, backend identity and detection
   time with a safe description. Unconfirmed audit outcomes use `audit_outcome_unconfirmed`;
   this is a communication incident, not evidence of agent failure.
-- Existing `error` messages and Completed/delivery and cancellation semantics are unchanged.
+- Completed/delivery and cancellation semantics are unchanged. Public error text is
+  now controlled; unverifiable historical descriptions are withheld. See
+  [execution error privacy](execution-error-privacy.md) for the policy and code references.
 - Legacy rows remain null; partial coverage or cancellation alone does not synthesize an error.
 
 Apply before deploying code that queries the new column, from `backend/`:
