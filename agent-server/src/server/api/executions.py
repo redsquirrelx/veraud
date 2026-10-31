@@ -97,7 +97,7 @@ def _http_error(
     Returns the exception instead of raising it so each handler stays a single
     line. `from None` is applied at the call site to drop the domain traceback.
     """
-    text = detail or str(error) or type(error).__name__
+    text = "Agent execution timed out" if status == TIMED_OUT else "Agent request could not be completed."
 
     logger.warning(
         "Agent request failed agent_type=%r status=%d error=%s",

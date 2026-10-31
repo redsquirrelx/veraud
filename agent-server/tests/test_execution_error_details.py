@@ -71,7 +71,7 @@ def test_handled_child_failure_propagates_without_relabelling_the_parent():
         with invocation_reporting(send):
             await observe_invocation(parent(), agent_id="manager", invocation_id="parent", run_id="audit")
         terminal = [receipt for receipt in receipts if receipt["finished_at"]]
-        assert terminal[0]["error_detail"]["message"] == "Respuesta inválida."
+        assert terminal[0]["error_detail"]["message"] == "The received response did not satisfy the expected contract."
         assert terminal[1]["error_detail"] == terminal[0]["error_detail"]
         assert terminal[1]["status"] == "partial"
 

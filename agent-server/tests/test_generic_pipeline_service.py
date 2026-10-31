@@ -208,9 +208,9 @@ class TestGenericFailure:
         else:  # pragma: no cover
             raise AssertionError("expected RuntimeError")
         completes = {c[1]: (c[2], c[3]) for c in sink.calls if c[0] == "complete"}
-        assert completes[11][0] == "Failed" and "RuntimeError" in (completes[11][1] or "")
+        assert completes[11][0] == "Failed" and completes[11][1] == "An agent could not complete its execution."
         assert "boom" not in (completes[11][1] or "")
-        assert completes[12][0] == "Failed" and "Skipped" in (completes[12][1] or "")
+        assert completes[12][0] == "Failed" and completes[12][1] == "Error details withheld because their safety could not be verified."
 
     def test_timeout_fails_open_rows(self):
         async def slow(input_data):

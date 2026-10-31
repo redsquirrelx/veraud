@@ -230,7 +230,7 @@ def test_absolute_audit_deadline_expires_even_while_all_work_is_waiting_for_quot
             done, _ = await asyncio.wait({task}, timeout=0.6)
             assert done, "Quota admission bypassed the audit's absolute deadline"
             assert service.get(state.run_id).status == "failed"
-            assert service.get(state.run_id).error == "Audit timed out."
+            assert service.get(state.run_id).error == "The execution exceeded its allowed time."
             assert service.snapshot(state.run_id).evidence  # Initial audit context survives timeout.
         finally:
             await service.aclose()
@@ -262,7 +262,7 @@ def test_terminal_results_and_errors_are_recorded_and_clients_closed(audit_envir
         assert stored.status == expected
         assert "private-key" not in stored.model_dump_json()
         if outcome == "error":
-            assert stored.error == "Audit failed (RuntimeError)."
+            assert stored.error == "An agent could not complete its execution."
         if expected == "failed":
             assert stored.error_detail.agent_id == "maintainability_manager"
             assert stored.error_detail.invocation_id == state.invocation_id
@@ -339,7 +339,7 @@ def test_timeout_is_recorded_and_releases_clients(audit_environment, monkeypatch
         service = AuditService(MemoryBlackboard())
         state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(timeout_seconds=1), "dummy")
         await service._tasks[state.run_id]
-        assert service.get(state.run_id).error == "Audit timed out."
+        assert service.get(state.run_id).error == "The execution exceeded its allowed time."
         assert service.get(state.run_id).status == "failed"
         assert service.get(state.run_id).error_detail.code == "execution_timeout"
         assert service.get(state.run_id).error_detail.exception_type == "TimeoutError"

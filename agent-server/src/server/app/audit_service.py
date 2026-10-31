@@ -62,6 +62,7 @@ from ..config import tracing
 from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
+from ..contracts.public_errors import public_error_text
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
 from ..infrastructure.llm.resources import close_model_clients
 from ..runtimes.cancellation import (
@@ -342,7 +343,8 @@ class AuditService:
         self._timings.pop(run_id, None)
 
     def _update(self, run_id: str, status: AuditStatus, error: str | None = None, error_detail=None) -> None:
-        self._states[run_id] = self._states[run_id].model_copy(update={"status": status, "error": error,
+        self._states[run_id] = self._states[run_id].model_copy(update={"status": status,
+            "error": error_detail.message if error_detail is not None and error is not None else public_error_text(error),
             "error_detail": error_detail})
         if status in {"completed", "partial", "failed", "cancelled"}:
             publish_audit_outcome(self.blackboard,

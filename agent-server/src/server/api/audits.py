@@ -19,6 +19,7 @@ from ..app.audit_configuration import category_type, validate_category
 from ..app.audit_options import AuditExecutionOptions
 from ..app.audit_service import AuditService, AuditSnapshot, AuditState
 from ..app.errors import InvalidConfigError
+from ..contracts.public_errors import public_error_fields, public_error_text
 
 router = APIRouter(prefix="/api/audits", tags=["Audits"])
 
@@ -29,7 +30,7 @@ async def audit_configuration_schema(attribute: str):
     try:
         return {"schema": category_type(attribute).model_json_schema(), "level": "developer"}
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
+        raise HTTPException(status_code=422, detail=public_error_text(str(error))) from None
 
 
 @router.post("/configuration/{attribute}/validate")
@@ -38,7 +39,7 @@ async def validate_audit_configuration(attribute: str, body: dict):
     try:
         return {"values": validate_category(attribute, body)}
     except (ValidationError, ValueError) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
+        raise HTTPException(status_code=422, detail=public_error_text(str(error))) from None
 
 
 class StartAuditRequest(AuditExecutionOptions):
@@ -103,7 +104,7 @@ async def start_audit(body: StartAuditRequest, response: Response, service: Serv
             functional_requirements=body.functional_requirements, attribute_options=body.attribute_options,
             functional_config=body.functional_config)
     except (InvalidConfigError, FileNotFoundError) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from None
+        raise HTTPException(status_code=422, detail=public_error_text(str(error))) from None
     response.headers["Location"] = f"/api/audits/{state.run_id}"
     return state
 
@@ -132,7 +133,7 @@ async def get_audit(run_id: str, response: Response, service: ServiceDep) -> Aud
     if state is None:
         raise HTTPException(status_code=404, detail="Audit not found.")
     response.headers["Cache-Control"] = "no-store"
-    return state
+    return AuditSnapshot.model_validate(public_error_fields(state.model_dump(mode="json")))
 
 
 @router.get("/{run_id}/report", response_model=SoftwareAuditReport,
@@ -146,7 +147,7 @@ async def get_audit_report(run_id: str, response: Response, service: ServiceDep)
         raise HTTPException(status_code=404, detail="Audit not found.")
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Report-Generation-ID"] = report.annexes_and_traceability.generation.generation_id
-    return report
+    return SoftwareAuditReport.model_validate(public_error_fields(report.model_dump(mode="json")))
 
 
 @router.get("/{run_id}/report.docx", response_class=Response,

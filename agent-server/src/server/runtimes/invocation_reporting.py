@@ -115,6 +115,7 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         if not isinstance(error, asyncio.CancelledError):
             detail = exception_error_detail(error, agent_id=agent_id, invocation_id=invocation_id)
             receipt["error_detail"] = detail.model_dump(mode="json", by_alias=True)
+            receipt["error"] = detail.message
         raise
     finally:
         receipt["finished_at"] = datetime.now(UTC).isoformat()
