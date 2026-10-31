@@ -263,6 +263,13 @@ def test_terminal_results_and_errors_are_recorded_and_clients_closed(audit_envir
         assert "private-key" not in stored.model_dump_json()
         if outcome == "error":
             assert stored.error == "Audit failed (RuntimeError)."
+        if expected == "failed":
+            assert stored.error_detail.agent_id == "maintainability_manager"
+            assert stored.error_detail.invocation_id == state.invocation_id
+            assert stored.error_detail.occurred_at is not None
+            assert service.snapshot(state.run_id).error_detail == stored.error_detail
+        else:
+            assert stored.error_detail is None
         await service.aclose()
 
     asyncio.run(execute())
@@ -334,6 +341,8 @@ def test_timeout_is_recorded_and_releases_clients(audit_environment, monkeypatch
         await service._tasks[state.run_id]
         assert service.get(state.run_id).error == "Audit timed out."
         assert service.get(state.run_id).status == "failed"
+        assert service.get(state.run_id).error_detail.code == "execution_timeout"
+        assert service.get(state.run_id).error_detail.exception_type == "TimeoutError"
         await service.aclose()
 
     asyncio.run(execute())

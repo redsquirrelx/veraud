@@ -44,6 +44,21 @@ Backend-created execution IDs are only updated, never created, by the callback c
 callback transport failure must not discard successful agent work. `X-Agent-Secret` remains
 optional and is not authorization unless the backend separately implements it.
 
+### Structured execution errors
+
+Completion callbacks optionally carry `errorDetail`; invocation receipts and audit
+state/snapshots carry `error_detail`. Callback detail objects use `agentId`,
+`invocationId`, `occurredAt` (UTC ISO 8601), `code`, `exceptionType` and `message`.
+Identity and incident time belong to the original failing child, not a parent
+forwarding its failure. A parent exposes the first captured child incident as a
+representative cause; individual child receipts remain available separately.
+Generic exceptions produce safe host-defined descriptions, never raw provider text.
+Failed/timeout results without an exception also produce an incident; partial
+coverage and requested cancellation alone do not. Existing `error` fields and
+execution status semantics are preserved. Legacy payloads need not contain details.
+Agent-server keeps audit state in memory; durable storage and monitor projections
+require backend support for the new optional fields before end-to-end rollout.
+
 ## `quality-audit` artifact and reconciliation
 
 The project audit endpoint and `quality-audit` pipeline accept optional

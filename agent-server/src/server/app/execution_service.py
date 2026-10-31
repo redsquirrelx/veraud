@@ -20,6 +20,11 @@ from server.infrastructure.llm.factory import build_model as _build_model
 from server.infrastructure.llm.resources import close_model_clients
 from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
 from server.runtimes.direct import BaseAgent
+from server.services.execution_error_details import (
+    capture_execution_errors,
+    exception_error_detail,
+    result_error_detail,
+)
 
 from ..agents.functional_adequacy.agent import FunctionalAdequacyAgent
 from ..config import tracing
@@ -227,24 +232,28 @@ class AgentExecutionService:
         try:
             await self._mark_running(callbacks, execution_id)
 
-            result = await self._tracing.wrap_stage(
-                asyncio.wait_for(agent.run(agent_input), timeout),
-                name=agent_type,
-                model=agent.model.settings.name,
-                timeout_seconds=timeout,
-            )
+            with capture_execution_errors() as incidents:
+                result = await self._tracing.wrap_stage(
+                    asyncio.wait_for(agent.run(agent_input), timeout),
+                    name=agent_type,
+                    model=agent.model.settings.name,
+                    timeout_seconds=timeout,
+                )
 
-            await self._report(callbacks, execution_id, result, reporting_model.usage.model_dump())
+            detail = result_error_detail(result, agent_id=agent_type, children=incidents)
+            await self._report(callbacks, execution_id, result, reporting_model.usage.model_dump(), detail)
 
             return result
 
-        except TimeoutError:
+        except TimeoutError as error:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
-            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s", reporting_model.usage.model_dump())
+            detail = exception_error_detail(error, agent_id=agent_type)
+            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s", reporting_model.usage.model_dump(), detail)
             raise
         except Exception as error:  # noqa: BLE001 - Report failures without leaking provider credentials.
             message = f"Agent execution failed ({type(error).__name__}); check model access and agent input"
-            await self._report_failure(callbacks, execution_id, message, reporting_model.usage.model_dump())
+            detail = exception_error_detail(error, agent_id=agent_type)
+            await self._report_failure(callbacks, execution_id, message, reporting_model.usage.model_dump(), detail)
             raise InvalidConfigError(message) from None
         finally:
             if callbacks is not None:
@@ -280,6 +289,7 @@ class AgentExecutionService:
         execution_id: int | None,
         result: BaseModel,
         usage: dict | None = None,
+        error_detail=None,
     ) -> None:
         """Close the row with the agent's output, serialized.
 
@@ -291,7 +301,7 @@ class AgentExecutionService:
 
         await callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Completed", result=result.model_dump_json(), **(usage or {})),
+            ExecutionOutcome(status="Completed", result=result.model_dump_json(), error_detail=error_detail, **(usage or {})),
         )
 
     async def _report_failure(
@@ -300,13 +310,14 @@ class AgentExecutionService:
         execution_id: int | None,
         error: str,
         usage: dict | None = None,
+        error_detail=None,
     ) -> None:
         if callbacks is None or execution_id is None:
             return
 
         await callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Failed", error=error, **(usage or {})),
+            ExecutionOutcome(status="Failed", error=error, error_detail=error_detail, **(usage or {})),
         )
 
 

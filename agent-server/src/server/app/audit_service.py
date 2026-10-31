@@ -73,6 +73,11 @@ from ..runtimes.invocation_reporting import observe_invocation
 from ..runtimes.repository.shared_tokens import SharedTokenBudget
 from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from ..runtimes.repository.tools import RepositoryToolset as RepositoryToolset  # noqa: PLC0414 - test compatibility
+from ..services.execution_error_details import (
+    capture_execution_errors,
+    exception_error_detail,
+    result_error_detail,
+)
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,
@@ -336,8 +341,9 @@ class AuditService:
             self._update(run_id, "cancelled")
         self._timings.pop(run_id, None)
 
-    def _update(self, run_id: str, status: AuditStatus, error: str | None = None) -> None:
-        self._states[run_id] = self._states[run_id].model_copy(update={"status": status, "error": error})
+    def _update(self, run_id: str, status: AuditStatus, error: str | None = None, error_detail=None) -> None:
+        self._states[run_id] = self._states[run_id].model_copy(update={"status": status, "error": error,
+            "error_detail": error_detail})
         if status in {"completed", "partial", "failed", "cancelled"}:
             publish_audit_outcome(self.blackboard,
                 AuditIdentity(run_id=run_id, invocation_id=self._states[run_id].invocation_id), status)
@@ -409,19 +415,25 @@ class AuditService:
                     agent_id="maintainability_manager", invocation_id=identity.invocation_id, run_id=identity.run_id)
 
         try:
-            result = await within_deadline(run(), timing)
+            with capture_execution_errors() as incidents:
+                result = await within_deadline(run(), timing)
             if timing.publication_allowed:
-                self._update(identity.run_id, "completed" if result.status == "complete" else result.status)
+                detail = result_error_detail(result, agent_id=audit_root(attributes),
+                    invocation_id=identity.invocation_id, children=incidents)
+                self._update(identity.run_id, "completed" if result.status == "complete" else result.status,
+                    detail.message if detail else None, detail)
         except asyncio.CancelledError:
             signal = self._cancellations[identity.run_id]
             signal.request()
             self._update(identity.run_id, "cancelling")
             raise
-        except TimeoutError:
-            self._update(identity.run_id, "failed", "Audit timed out.")
+        except TimeoutError as error:
+            detail = exception_error_detail(error, agent_id=audit_root(attributes), invocation_id=identity.invocation_id)
+            self._update(identity.run_id, "failed", "Audit timed out.", detail)
         except Exception as error:  # noqa: BLE001 - keep task errors and provider secrets out of HTTP responses
             logger.error("Audit %s failed (%s)", identity.run_id, type(error).__name__)
-            self._update(identity.run_id, "failed", f"Audit failed ({type(error).__name__}).")
+            detail = exception_error_detail(error, agent_id=audit_root(attributes), invocation_id=identity.invocation_id)
+            self._update(identity.run_id, "failed", f"Audit failed ({type(error).__name__}).", detail)
         finally:
             try:
                 if clients:
@@ -497,6 +509,7 @@ class AuditService:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001 - retain the sibling result and safe failure provenance
+                detail = exception_error_detail(error, agent_id=agent_id, invocation_id=child.invocation_id)
                 self.blackboard.publish_assessment(Assessment(agent_id=agent_id, run_id=identity.run_id,
                     invocation_id=child.invocation_id, repository_id=snapshot.repository.name,
                     snapshot_hash=snapshot.repository.snapshot_hash, commit=snapshot.repository.commit,
@@ -504,7 +517,8 @@ class AuditService:
                     targets=tuple(getattr(selected_request, "targets", ())),
                     quality_attribute=attribute, status="failed", termination_reason="attribute_execution_failed",
                     limitations=(f"El análisis de {attribute} terminó con {type(error).__name__}.",),
-                    details={"quality_attribute": attribute, "execution_error_type": type(error).__name__}))
+                    details={"quality_attribute": attribute, "execution_error_type": type(error).__name__,
+                        "error_detail": detail.model_dump(mode="json", by_alias=True)}))
                 return "failed"
 
         operations = []

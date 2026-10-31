@@ -208,7 +208,8 @@ class TestGenericFailure:
         else:  # pragma: no cover
             raise AssertionError("expected RuntimeError")
         completes = {c[1]: (c[2], c[3]) for c in sink.calls if c[0] == "complete"}
-        assert completes[11][0] == "Failed" and "boom" in (completes[11][1] or "")
+        assert completes[11][0] == "Failed" and "RuntimeError" in (completes[11][1] or "")
+        assert "boom" not in (completes[11][1] or "")
         assert completes[12][0] == "Failed" and "Skipped" in (completes[12][1] or "")
 
     def test_timeout_fails_open_rows(self):
