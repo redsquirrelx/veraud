@@ -1,3 +1,5 @@
+import { publicErrorCode, publicErrorMessages, publicExceptionType, publicIdentifier } from "../../infrastructure/security/public-errors.js"
+
 /** Incident provenance is supplied by its source, never inferred from error text. */
 export interface ExecutionErrorDetail {
   agentId: string | null
@@ -36,8 +38,9 @@ export function readExecutionErrorDetail(value: unknown): ExecutionErrorDetail |
     || !(occurredAt === null || typeof occurredAt === "string" && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/i.test(occurredAt) && Number.isFinite(Date.parse(occurredAt)))
     || typeof item.code !== "string" || !item.code.trim() || item.code.length > 128
     || typeof item.message !== "string" || !item.message.trim() || item.message.length > 2000) return null
-  return { agentId: agentId as string | null, invocationId: invocationId as string | null,
-    occurredAt: occurredAt as string | null, code: item.code, exceptionType: exceptionType as string | null, message: item.message }
+  const code = publicErrorCode(item.code)
+  return { agentId: publicIdentifier(agentId as string | null), invocationId: publicIdentifier(invocationId as string | null),
+    occurredAt: occurredAt as string | null, code, exceptionType: publicExceptionType(exceptionType), message: publicErrorMessages[code] }
 }
 
 export function storedExecutionErrorDetail(value: string | null | undefined): ExecutionErrorDetail | null {

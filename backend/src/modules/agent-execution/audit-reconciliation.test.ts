@@ -7,6 +7,7 @@ import type { AgentTargetResolver } from "../../infrastructure/agent-target/agen
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentExecutionStore, StoredAgentExecution } from "./agent-execution.repository.js"
 import { AgentExecutionService } from "./agent-execution.service.js"
+import { publicErrorMessages } from "../../infrastructure/security/public-errors.js"
 
 function harness(agents: AgentInvoker) {
   let row: StoredAgentExecution = { id: 1, evaluationId: 1, agentType: "security", status: "Running",
@@ -75,7 +76,7 @@ test("audit delivery and reconciliation retain the child's structured incident i
   logger.configure(app.log)
   try {
     const detail = { agentId: "investigator", invocationId: "child", occurredAt: "2026-10-30T12:00:00.000Z",
-      code: "execution_timeout", exceptionType: "TimeoutError", message: "The child timed out." }
+      code: "execution_timeout", exceptionType: "TimeoutError", message: publicErrorMessages.execution_timeout }
     const audit = { run_id: "existing-run", status: "partial", report: { status: "partial" }, docx_base64: "UEs=", error_detail: detail }
     for (const recover of [false, true]) {
       const { service, row } = harness({ run: async () => ({}), getAuditResult: async () => audit,
@@ -107,12 +108,12 @@ test("dispatch preserves the run identity when recovery is unavailable, instead 
       getAuditResult: async () => { throw new AuditRunUnavailableError() } })
     await service["dispatchQualityAudit"](row(), {}, "a".repeat(40), ["security"], {})
     assert.equal(row().status, "Failed")
-    assert.match(row().error!, /outcome could not be recovered/)
+    assert.equal(row().error, publicErrorMessages.audit_outcome_unconfirmed)
     assert.doesNotMatch(row().error!, /fetch failed/)
     assert.equal(row().interruptionReason, "audit_outcome_unconfirmed")
     assert.equal(row().errorDetail?.code, "audit_outcome_unconfirmed")
     assert.equal(row().errorDetail?.agentId, "backend")
-    assert.match(row().errorDetail!.message, /not confirmed/)
+    assert.match(row().errorDetail!.message, /not a confirmed/)
     assert.equal(JSON.parse(row().result!)["run_id"], "existing-run")
   } finally { await app.close() }
 })
@@ -128,6 +129,23 @@ test("a connection refused before dispatch fails promptly without polling a none
     await service["dispatchQualityAudit"](row(), {}, "a".repeat(40), ["security"], {})
     assert.equal(row().status, "Failed")
     assert.equal(queried, false)
-    assert.match(row().error!, /ECONNREFUSED/)
+    assert.equal(row().error, publicErrorMessages.backend_dispatch_failed)
+  } finally { await app.close() }
+})
+
+test("dispatch logs never include exception payloads or connection credentials", async () => {
+  const messages: string[] = []
+  const app = Fastify({ logger: { level: "info", stream: { write: (line: string) => { messages.push(line) } } } })
+  logger.configure(app.log)
+  try {
+    const secrets = ["sk-proj-fake-key-only-for-tests", "password=fake-password-731",
+      "Authorization: Bearer fake-bearer-942", "https://fake-user:fake-pass@provider.invalid?api_key=fake-query-315"]
+    for (const secret of secrets) {
+      const { service, row } = harness({ run: async () => ({}), runPipelineByName: async () => { throw new Error(secret) } })
+      await service["dispatchQualityAudit"](row(), {}, "a".repeat(40), ["security"], {})
+      assert.equal(row().error, publicErrorMessages.backend_dispatch_failed)
+      assert.ok(!JSON.stringify(row()).includes(secret))
+      assert.ok(messages.every((line) => !line.includes(secret)))
+    }
   } finally { await app.close() }
 })

@@ -240,7 +240,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
     assert.equal(closed.statusCode, 200)
     assert.equal(closed.json().status, "Failed")
-    assert.equal(closed.json().error, "Error code: 401")
+    assert.equal(closed.json().error, "Error details withheld because their safety could not be verified.")
     assert.equal(closed.json().result, null)
   })
 
@@ -450,7 +450,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
     const row = await waitForStatus(db, id, "Failed")
 
-    assert.match(row.error ?? "", /timed out/)
+    assert.equal(row.error, "Error details withheld because their safety could not be verified.")
     assert.equal(row.result, null)
   })
 
@@ -473,7 +473,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
 
     const row = await waitForStatus(db, opened.json().id, "Failed")
 
-    assert.match(row.error ?? "", /ECONNREFUSED/)
+    assert.equal(row.error, "The backend could not dispatch or finalize the execution.")
     const detail = JSON.parse(row.errorDetail!)
     assert.equal(detail.agentId, "backend")
     assert.equal(detail.invocationId, null)
@@ -507,7 +507,7 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     const row = await waitForStatus(db, opened.json().id, "Failed")
 
     assert.equal(called, false)
-    assert.match(row.error ?? "", /no local checkout/)
+    assert.equal(row.error, "The backend could not dispatch or finalize the execution.")
   })
 
   it("422s when the evaluation does not exist", async () => {
@@ -647,7 +647,7 @@ it("422s when the agent type is not registered", async () => {
     const row = await waitForStatus(db, opened.json().id, "Failed")
 
     assert.equal(called, false)
-    assert.match(row.error ?? "", /No local checkout/)
+    assert.equal(row.error, "The backend could not dispatch or finalize the execution.")
   })
 
   it("422s a direct run with an unknown agent type", async () => {

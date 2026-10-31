@@ -129,7 +129,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
   async run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig): Promise<AgentInput> {
     const url = `${this.baseUrl}/api/agents/run`
 
-    this.log.info(`Invoking ${agentType} for execution ${executionId} at ${url}`)
+    this.log.info(`Invoking ${agentType} for execution ${executionId}`)
 
     let response: Response
 
@@ -177,7 +177,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const url = `${this.baseUrl}/api/pipelines/${encodeURIComponent(pipeline)}/run`
 
     this.log.info(
-      `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")} at ${url}`,
+      `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")}`,
     )
 
     const qualityAudit = pipeline === "quality-audit"

@@ -3,7 +3,8 @@ import type { AgentSettingsRepository, AgentConfiguration } from "../agent-setti
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 import type { InvocationReceipt } from "./invocationReceipt.js"
-import { storedExecutionErrorDetail, type ExecutionErrorDetail } from "./execution-error-detail.js"
+import { readExecutionErrorDetail, storedExecutionErrorDetail, type ExecutionErrorDetail } from "./execution-error-detail.js"
+import { publicErrorText, publicErrorResult } from "../../infrastructure/security/public-errors.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -124,10 +125,12 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
+    receipt = { ...receipt, error: publicErrorText(receipt.error), error_detail: readExecutionErrorDetail(receipt.error_detail) }
     return this.db.$transaction(async (tx) => {
       const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
       if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
-      const receipts = JSON.parse(execution.invocationReceipts) as InvocationReceipt[]
+      const receipts = (JSON.parse(execution.invocationReceipts) as InvocationReceipt[]).map((item) => ({ ...item,
+        error: publicErrorText(item.error), error_detail: readExecutionErrorDetail(item.error_detail) }))
       let runId: string | undefined
       try { runId = (JSON.parse(execution.result ?? "{}") as { run_id?: string }).run_id } catch { /* Historical opaque result. */ }
       if ((runId && runId !== receipt.run_id) || receipts.some((item) => item.run_id !== receipt.run_id)) {
@@ -152,7 +155,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       if (previous?.status !== undefined && previous.status !== "running") return this.toStored(execution)
       const count = (a: number | null | undefined, b: number | null) => a == null ? b : b == null ? a : Math.max(a, b)
       const updated = { ...receipt, started_at: previous?.started_at ?? receipt.started_at,
-        error_detail: previous?.error_detail ?? receipt.error_detail ?? null,
+        error_detail: readExecutionErrorDetail(previous?.error_detail) ?? receipt.error_detail ?? null,
         phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
           ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
         phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
@@ -203,9 +206,10 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         where: { id },
         data: {
           status: data.status,
-          result: data.result,
-          error: data.error,
-          errorDetail: existing.errorDetail ?? (data.errorDetail ? JSON.stringify(data.errorDetail) : null),
+          result: publicErrorResult(data.result),
+          error: publicErrorText(data.error),
+          errorDetail: (() => { const detail = storedExecutionErrorDetail(existing.errorDetail) ?? readExecutionErrorDetail(data.errorDetail)
+            return detail ? JSON.stringify(detail) : null })(),
           ...(data.inputTokens === null ? {} : { inputTokens: Math.max(existing.inputTokens ?? 0, data.inputTokens) }),
           ...(data.outputTokens === null ? {} : { outputTokens: Math.max(existing.outputTokens ?? 0, data.outputTokens) }),
           ...(data.estimatedTokens == null ? {} : { estimatedTokens: Math.max(existing.estimatedTokens ?? 0, data.estimatedTokens) }),
@@ -268,7 +272,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   async patchResult(id: number, result: string): Promise<StoredAgentExecution> {
     const execution = await this.db.agentExecution.update({
       where: { id },
-      data: { result },
+      data: { result: publicErrorResult(result) },
     })
 
     return this.toStored(execution)
@@ -346,12 +350,13 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     if (configuration) delete configuration.auditConfiguration
     return {
       id: execution.id,
-      invocations: JSON.parse(execution.invocationReceipts ?? "[]") as InvocationReceipt[],
+      invocations: (JSON.parse(execution.invocationReceipts ?? "[]") as InvocationReceipt[]).map((receipt) => ({ ...receipt,
+        error: publicErrorText(receipt.error), error_detail: readExecutionErrorDetail(receipt.error_detail) })),
       evaluationId: execution.evaluationId,
       agentType: execution.agentType,
       status: execution.status as AgentExecutionStatus,
-      result: execution.result,
-      error: execution.error,
+      result: publicErrorResult(execution.result),
+      error: publicErrorText(execution.error),
       errorDetail: storedExecutionErrorDetail(execution.errorDetail),
       inputTokens: execution.inputTokens,
       outputTokens: execution.outputTokens,

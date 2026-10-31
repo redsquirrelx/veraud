@@ -273,7 +273,7 @@ test("audit cancellation posts to the existing run and treats cancelling as acti
 test("reconciliation reads only the existing run and downloads artifacts only after termination", async () => {
   let state = "running"
   const detail = { agentId: "security", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
-    code: "execution_failed", exceptionType: null, message: "The security execution failed." }
+    code: "execution_failed", exceptionType: null, message: "The execution failed. Additional internal details are not public." }
   const paths: string[] = []
   const server = createServer((request, response) => {
     assert.equal(request.method, "GET", "reconciliation must never replay an execution")

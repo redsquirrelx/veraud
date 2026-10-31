@@ -12,6 +12,7 @@ import type { ProjectArchitectureAnalysisRequest } from "../project/project.serv
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import { invocationEvents } from "./invocationReceipt.js"
 import { readExecutionErrorDetail, executionErrorEvent } from "./execution-error-detail.js"
+import { publicErrorCode, publicErrorMessages } from "../../infrastructure/security/public-errors.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -455,8 +456,8 @@ export class AgentExecutionService {
         }),
       )
       this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(patched) })
-    } catch (error) {
-      this.log.error(`Could not attach the diagram to execution ${architecture?.id}: ${error}`)
+    } catch {
+      this.log.error(`Could not attach the diagram to execution ${architecture?.id}`)
     }
   }
 
@@ -527,28 +528,26 @@ export class AgentExecutionService {
   /** Records a failure without letting the recording itself throw: the row is
    *  the only trace of this run, so an error while writing it must not silence
    *  the one that caused it. */
-  private async fail(id: number, message: string, interruptionReason?: string, cause?: unknown): Promise<void> {
+  private async fail(id: number, _message: string, interruptionReason?: string, cause?: unknown): Promise<void> {
     const occurredAt = new Date().toISOString()
-    this.log.error(`Execution ${id} failed: ${message}`)
+    this.log.error(`Execution ${id} failed (${interruptionReason ?? "backend_dispatch_failed"})`)
 
     try {
       const retained = interruptionReason === "audit_outcome_unconfirmed" ? await this.require(id) : null
       await this.close(id, {
         status: "Failed",
         result: retained?.result ?? null,
-        error: message.slice(0, 2000),
+        error: publicErrorMessages[publicErrorCode(interruptionReason ?? "backend_dispatch_failed")],
         errorDetail: { agentId: "backend", invocationId: null, occurredAt,
           code: interruptionReason ?? "backend_dispatch_failed",
           exceptionType: cause instanceof Error ? cause.name.slice(0, 128) : null,
-          message: interruptionReason === "audit_outcome_unconfirmed"
-            ? "Communication was interrupted and the audit outcome could not be confirmed; agent failure is not confirmed."
-            : "The backend could not dispatch or finalize the execution. Check agent-server availability and the execution configuration." },
+          message: publicErrorMessages[publicErrorCode(interruptionReason ?? "backend_dispatch_failed")] },
         inputTokens: null,
         outputTokens: null,
         ...(interruptionReason ? { interruptionReason } : {}),
       })
-    } catch (error) {
-      this.log.error(`Could not record the failure of execution ${id}: ${error}`)
+    } catch {
+      this.log.error(`Could not record the failure of execution ${id}`)
     }
   }
 

@@ -6,6 +6,7 @@ import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
 import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
 import { storedExecutionErrorDetail } from "../agent-execution/execution-error-detail.js"
+import { publicErrorText, publicErrorFields } from "../../infrastructure/security/public-errors.js"
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 
 export class AuditNotFoundError extends Error {}
@@ -44,7 +45,7 @@ function summary(row: SummaryRow, result: Partial<Pick<AuditArtifacts, "run_id" 
     executionStatus: row.status,
     auditStatus: row.cancellationRequestedAt && ["Waiting", "Running"].includes(row.status) ? "cancelling" : result?.status ?? null,
     cancellationRequestedAt: row.cancellationRequestedAt ?? null,
-    error: row.error,
+    error: publicErrorText(row.error),
     errorDetail: storedExecutionErrorDetail(row.errorDetail),
     createdAt: row.createdAt,
     startedAt: row.startedAt,
@@ -128,11 +129,11 @@ export class QualityAuditService {
     const row = await this.repository.findReportSection(projectId, id, section as AuditReportSection)
     if (!row) throw new AuditNotFoundError("Audit not found for this project")
     if (row.reportType !== "object") throw new AuditReportUnavailableError("The audit report is not available yet")
-    return { section, data: JSON.parse(row.data ?? "null") as unknown }
+    return { section, data: publicErrorFields(JSON.parse(row.data ?? "null")) }
   }
 
   async report(projectId: number, id: number) {
-    return (await this.requireArtifacts(projectId, id)).report
+    return publicErrorFields((await this.requireArtifacts(projectId, id)).report)
   }
 
   async file(projectId: number, id: number, path: string) {

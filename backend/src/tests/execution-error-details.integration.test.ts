@@ -11,10 +11,11 @@ import { auditResponseSerialization } from "./helpers/responseSerializationAudit
 import { AgentExecutionRepository } from "../modules/agent-execution/agent-execution.repository.js"
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
 import type { ExecutionErrorDetail } from "../modules/agent-execution/execution-error-detail.js"
+import { hiddenErrorMessage, publicErrorMessages } from "../infrastructure/security/public-errors.js"
 
 const detail: ExecutionErrorDetail = { agentId: "investigator", invocationId: "child",
   occurredAt: "2026-10-30T12:01:00.000Z", code: "execution_timeout", exceptionType: "TimeoutError",
-  message: "The investigator exceeded its execution deadline." }
+  message: publicErrorMessages.execution_timeout }
 
 async function setup() {
   const base = process.platform === "win32" && process.env.LOCALAPPDATA
@@ -103,9 +104,52 @@ test("structured errors survive callbacks, projections, stale updates and databa
       const response = await h.app.inject({ method: "POST", url, payload: { status: "Failed", error: "legacy" } })
       assert.equal(response.statusCode, 200)
       assert.equal(response.json().errorDetail, null)
-      assert.equal(response.json().error, "legacy")
+      assert.equal(response.json().error, hiddenErrorMessage)
       const stored = await h.db.agentExecution.findUniqueOrThrow({ where: { id: row.id } })
       assert.equal(stored.errorDetail, null)
+    })
+
+    await t.test("secrets cannot cross callbacks, storage, events or historical read projections", async () => {
+      const secrets = ["sk-proj-fake-key-only-for-tests", "password=fake-password-731",
+        "Authorization: Bearer fake-bearer-942", "https://fake-user:fake-pass@provider.invalid?api_key=fake-query-315"]
+      const socket = await h.app.injectWS("/ws")
+      const events: string[] = []
+      socket.on("message", (message) => events.push(String(message)))
+      try {
+        for (const secret of secrets) {
+          const childRow = await h.create()
+          const childResponse = await h.app.inject({ method: "POST", url: `/api/agent-executions/${childRow.id}/invocations`, payload: {
+            invocation_id: "child", parent_invocation_id: null, agent_id: "investigator", run_id: "b".repeat(32), status: "failed",
+            started_at: "2026-10-30T12:00:00Z", finished_at: "2026-10-30T12:02:00Z", input_tokens: 9, output_tokens: 2,
+            error: secret, error_detail: { ...detail, message: secret },
+          } })
+          assert.equal(childResponse.statusCode, 200, childResponse.body)
+          assert.ok(!childResponse.body.includes(secret))
+          const storedChild = await h.db.agentExecution.findUniqueOrThrow({ where: { id: childRow.id } })
+          assert.ok(!storedChild.invocationReceipts.includes(secret))
+          const row = await h.create()
+          const response = await h.app.inject({ method: "POST", url: `/api/agent-executions/${row.id}/completion`, payload: {
+            status: "Failed", error: secret, errorDetail: { ...detail, message: secret },
+            result: JSON.stringify({ error: secret, nested: { failure: { code: "unknown", summary: secret } } }),
+          } })
+          assert.equal(response.statusCode, 200, response.body)
+          assert.ok(!response.body.includes(secret))
+          const stored = await h.db.agentExecution.findUniqueOrThrow({ where: { id: row.id } })
+          assert.ok(!JSON.stringify(stored).includes(secret))
+          // Simulate an old row written before the policy. Do not rewrite the database on reads.
+          await h.db.agentExecution.update({ where: { id: row.id }, data: { error: secret,
+            errorDetail: JSON.stringify({ ...detail, message: secret }), result: JSON.stringify({ error: secret }) } })
+          for (const url of [`/api/agent-executions/${row.id}`, `/api/agent-executions/${row.id}?monitor=true`,
+            `/api/projects/${h.project.id}/audits/${row.id}`, `/api/projects/${h.project.id}/audits`]) {
+            const read = await h.app.inject(url)
+            assert.equal(read.statusCode, 200)
+            assert.ok(!read.body.includes(secret), url)
+          }
+        }
+        for (let attempt = 0; events.length < secrets.length * 2 && attempt < 30; attempt++) await new Promise((resolve) => setTimeout(resolve, 10))
+        assert.ok(events.length >= secrets.length * 2)
+        for (const secret of secrets) assert.ok(events.every((event) => !event.includes(secret)))
+      } finally { socket.terminate() }
     })
   } finally { await h.app.close(); await h.db.$disconnect() }
   const restarted = await buildApp(h.options)
