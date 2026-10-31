@@ -8,6 +8,8 @@ import { Badge, Button, Card, Spinner } from "../../shared/ui-kit/index.ts"
 import { formatDateTime } from "../../shared/i18n/format.ts"
 import { AuditConfigurationDetails } from "./AuditConfigurationDetails.tsx"
 import { AuditEvidenceTab } from "./AuditEvidenceTab.tsx"
+import { AuditIncidentsTab } from "./AuditIncidentsTab.tsx"
+import { useAuditIncidentLabels } from "./auditIncidentLabels.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
@@ -25,6 +27,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const { t: tEvidence } = useTranslation("auditEvidence")
+  const incidentLabels = useAuditIncidentLabels()
   const [audit, setAudit] = useState<QualityAuditSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ResultsError | null>(null)
@@ -32,7 +35,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const [downloading, setDownloading] = useState(false)
   const [search, setSearch] = useSearchParams()
   const requestedTab = search.get("tab")
-  const activeTab = requestedTab === "findings" || requestedTab === "evidence" ? requestedTab : "general"
+  const activeTab = requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" ? requestedTab : "general"
   const requestedEvidenceId = search.get("evidence") || undefined
   const [evidenceVisited, setEvidenceVisited] = useState(false)
   const [qualityResultsOpen, setQualityResultsOpen] = useState(false)
@@ -41,6 +44,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     { id: "general", label: t("qualityAudits.results.generalTab") },
     { id: "findings", label: t("qualityAudits.results.findingsTab") },
     { id: "evidence", label: tEvidence("tab") },
+    { id: "incidents", label: incidentLabels.tab },
   ]
   const pending = audit !== null && ["Waiting", "Running"].includes(audit.executionStatus)
   const cancellationRevision = useAuditCancellationRevision(projectId, auditId)
@@ -149,6 +153,11 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
         revision={attempt} findings={qualityResults} onAuditChange={setAudit} requestedEvidenceId={requestedEvidenceId}
         onClearEvidenceTarget={() => setSearch((previous) => { const next = new URLSearchParams(previous); next.delete("evidence"); return next }, { replace: true })}
         onEvidenceSelect={(id) => setSearch((previous) => { const next = new URLSearchParams(previous); next.set("tab", "evidence"); next.set("evidence", id); return next })} />}
+    </div>
+    <div role="tabpanel" id={`${tabsId}-panel-incidents`} aria-labelledby={`${tabsId}-tab-incidents`} hidden={activeTab !== "incidents"} tabIndex={0}>
+      {loading && activeTab === "incidents" && <Spinner />}
+      {audit && <AuditIncidentsTab key={`${projectId}-${auditId}`} projectId={projectId} audit={audit}
+        active={!loading && activeTab === "incidents"} revision={attempt} />}
     </div>
     {!loading && <div><Button variant="secondary" onClick={retry}>{tCommon("ui.refresh")}</Button></div>}
   </Card></AuditEvidenceNavigation.Provider>
