@@ -474,6 +474,13 @@ async function start(options: { invoker?: AgentInvoker; withCheckout?: boolean }
     const row = await waitForStatus(db, opened.json().id, "Failed")
 
     assert.match(row.error ?? "", /ECONNREFUSED/)
+    const detail = JSON.parse(row.errorDetail!)
+    assert.equal(detail.agentId, "backend")
+    assert.equal(detail.invocationId, null)
+    assert.equal(detail.code, "backend_dispatch_failed")
+    assert.equal(detail.exceptionType, "Error")
+    assert.ok(Number.isFinite(Date.parse(detail.occurredAt)))
+    assert.doesNotMatch(detail.message, /ECONNREFUSED/)
     assert.equal(row.result, null)
     assert.notEqual(row.finishedAt, null)
   })

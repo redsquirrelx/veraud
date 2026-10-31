@@ -5,6 +5,7 @@ import { InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, type Pr
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
 import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
+import { storedExecutionErrorDetail } from "../agent-execution/execution-error-detail.js"
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 
 export class AuditNotFoundError extends Error {}
@@ -25,6 +26,7 @@ function artifacts(row: AuditRow): AuditArtifacts | null {
 }
 
 type SummaryRow = Pick<AuditRow, "id" | "agentType" | "evaluationId" | "status" | "error" | "createdAt" | "startedAt" | "finishedAt" | "configurationSnapshot"> & {
+  errorDetail?: string | null
   cancellationRequestedAt?: Date | null
   evaluation: { projectVersion: { branch: string | null, commitHash: string | null } } | null
 }
@@ -43,6 +45,7 @@ function summary(row: SummaryRow, result: Partial<Pick<AuditArtifacts, "run_id" 
     auditStatus: row.cancellationRequestedAt && ["Waiting", "Running"].includes(row.status) ? "cancelling" : result?.status ?? null,
     cancellationRequestedAt: row.cancellationRequestedAt ?? null,
     error: row.error,
+    errorDetail: storedExecutionErrorDetail(row.errorDetail),
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,

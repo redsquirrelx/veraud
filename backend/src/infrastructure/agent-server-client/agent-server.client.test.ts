@@ -272,6 +272,8 @@ test("audit cancellation posts to the existing run and treats cancelling as acti
 
 test("reconciliation reads only the existing run and downloads artifacts only after termination", async () => {
   let state = "running"
+  const detail = { agentId: "security", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
+    code: "execution_failed", exceptionType: null, message: "The security execution failed." }
   const paths: string[] = []
   const server = createServer((request, response) => {
     assert.equal(request.method, "GET", "reconciliation must never replay an execution")
@@ -280,7 +282,7 @@ test("reconciliation reads only the existing run and downloads artifacts only af
     response.setHeader("content-type", "application/json")
     if (request.url?.endsWith("report.docx")) response.end("PK-document")
     else if (request.url?.endsWith("report")) response.end(JSON.stringify({ identification: { status: "partial" } }))
-    else response.end(JSON.stringify({ run_id: "run-1", status: state }))
+    else response.end(JSON.stringify({ run_id: "run-1", status: state, error_detail: detail }))
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   try {
@@ -292,6 +294,7 @@ test("reconciliation reads only the existing run and downloads artifacts only af
     state = "partial"
     const result = await client.getAuditResult("run-1", ["security"])
     assert.equal(result?.["status"], "partial")
+    assert.deepEqual(result?.["error_detail"], detail)
     assert.equal(result?.["docx_base64"], Buffer.from("PK-document").toString("base64"))
     assert.deepEqual(result?.["attributes"], ["security"])
     state = "missing"

@@ -11,6 +11,7 @@ import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import { invocationEvents } from "./invocationReceipt.js"
+import { readExecutionErrorDetail, executionErrorEvent } from "./execution-error-detail.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -302,11 +303,11 @@ export class AgentExecutionService {
         try {
           await this.reconcileAudit(execution.id, attributes, recoveryDeadline)
         } catch (recoveryError) {
-          await this.fail(execution.id, recoveryError instanceof Error ? recoveryError.message : "Audit outcome could not be confirmed", "audit_outcome_unconfirmed")
+          await this.fail(execution.id, recoveryError instanceof Error ? recoveryError.message : "Audit outcome could not be confirmed", "audit_outcome_unconfirmed", recoveryError)
         }
         return
       }
-      await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
     }
   }
 
@@ -317,6 +318,7 @@ export class AgentExecutionService {
     // Completion describes delivery, independently of the report's quality status.
     await this.close(id, {
       status: "Completed", result: JSON.stringify(audit), error: null,
+      errorDetail: readExecutionErrorDetail(audit["error_detail"]),
       inputTokens: null, outputTokens: null,
       interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
     })
@@ -365,7 +367,7 @@ export class AgentExecutionService {
       await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
       // The agent never got far enough to report for itself.
-      await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
     }
   }
 
@@ -377,7 +379,7 @@ export class AgentExecutionService {
 
       await this.agents.run(execution.agentType, input, execution.id, config)
     } catch (error) {
-      await this.fail(execution.id, error instanceof Error ? error.message : String(error))
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
     }
   }
 
@@ -408,7 +410,7 @@ export class AgentExecutionService {
       await this.attachDiagram(executions["architecture"], payload)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      for (const execution of Object.values(executions)) await this.fail(execution.id, message)
+      for (const execution of Object.values(executions)) await this.fail(execution.id, message, undefined, error)
     }
   }
 
@@ -496,6 +498,10 @@ export class AgentExecutionService {
       throw new InvalidCompletionError("status Failed requires an error message")
     }
 
+    if (completion.errorDetail != null && !readExecutionErrorDetail(completion.errorDetail)) {
+      throw new InvalidCompletionError("Invalid structured execution error")
+    }
+
     return this.executions.complete(id, completion)
   }
 
@@ -521,7 +527,8 @@ export class AgentExecutionService {
   /** Records a failure without letting the recording itself throw: the row is
    *  the only trace of this run, so an error while writing it must not silence
    *  the one that caused it. */
-  private async fail(id: number, message: string, interruptionReason?: string): Promise<void> {
+  private async fail(id: number, message: string, interruptionReason?: string, cause?: unknown): Promise<void> {
+    const occurredAt = new Date().toISOString()
     this.log.error(`Execution ${id} failed: ${message}`)
 
     try {
@@ -530,6 +537,12 @@ export class AgentExecutionService {
         status: "Failed",
         result: retained?.result ?? null,
         error: message.slice(0, 2000),
+        errorDetail: { agentId: "backend", invocationId: null, occurredAt,
+          code: interruptionReason ?? "backend_dispatch_failed",
+          exceptionType: cause instanceof Error ? cause.name.slice(0, 128) : null,
+          message: interruptionReason === "audit_outcome_unconfirmed"
+            ? "Communication was interrupted and the audit outcome could not be confirmed; agent failure is not confirmed."
+            : "The backend could not dispatch or finalize the execution. Check agent-server availability and the execution configuration." },
         inputTokens: null,
         outputTokens: null,
         ...(interruptionReason ? { interruptionReason } : {}),
@@ -561,6 +574,7 @@ function toEvent(execution: StoredAgentExecution): AgentExecutionEvent["executio
     // avoid broadcasting source inventories and binary base64 to every client.
     result: [MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE].includes(execution.agentType) ? null : execution.result,
     error: execution.error,
+    errorDetail: executionErrorEvent(execution.errorDetail),
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
     estimatedTokens: execution.estimatedTokens,

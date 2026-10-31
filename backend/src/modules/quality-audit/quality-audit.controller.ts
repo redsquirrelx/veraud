@@ -4,6 +4,7 @@ import { errorResponses, objectResponse, branchInput } from "../../infrastructur
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
+import { executionErrorDetailSchema } from "../agent-execution/execution-error-detail.js"
 import { AnalysisAlreadyRunningError, InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, SyncInProgressError, WorkspaceMissingError } from "../project/project.service.js"
 import { AuditEvidenceUnavailableError, AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
 import { auditReportSections } from "./audit-report-sections.js"
@@ -21,6 +22,7 @@ const summary = objectResponse({
   attributes: { type: "array", items: { type: "string" } },
   executionStatus: { type: "string" }, auditStatus: { type: ["string", "null"] }, runId: { type: ["string", "null"] },
   error: { type: ["string", "null"] }, createdAt: { type: "string", format: "date-time" },
+  errorDetail: executionErrorDetailSchema,
   startedAt: { type: ["string", "null"], format: "date-time" },
   finishedAt: { type: ["string", "null"], format: "date-time" }, reportAvailable: { type: "boolean" },
   configurationAvailable: { type: "boolean" },

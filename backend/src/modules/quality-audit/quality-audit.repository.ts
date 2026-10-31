@@ -30,7 +30,7 @@ export class QualityAuditRepository {
       this.db.agentExecution.findFirst({
         where: { id: executionId, evaluation: { type: "QualityAudit", projectVersion: { projectId } } },
         select: { id: true, agentType: true, evaluationId: true, status: true, error: true, createdAt: true, startedAt: true, finishedAt: true,
-          cancellationRequestedAt: true,
+          cancellationRequestedAt: true, errorDetail: true,
           configurationSnapshot: true, evaluation: { select: { projectVersion: { select: { branch: true, commitHash: true } } } } },
       }),
       this.db.$queryRaw<Array<{ runId: string | null, attributes: string | null, auditStatus: string | null, reportType: string | null }>>`

@@ -70,6 +70,25 @@ test("transient reconciliation errors preserve Running; recovery has a finite de
   } finally { await app.close() }
 })
 
+test("audit delivery and reconciliation retain the child's structured incident independently of Completed status", async () => {
+  const app = Fastify({ logger: false })
+  logger.configure(app.log)
+  try {
+    const detail = { agentId: "investigator", invocationId: "child", occurredAt: "2026-10-30T12:00:00.000Z",
+      code: "execution_timeout", exceptionType: "TimeoutError", message: "The child timed out." }
+    const audit = { run_id: "existing-run", status: "partial", report: { status: "partial" }, docx_base64: "UEs=", error_detail: detail }
+    for (const recover of [false, true]) {
+      const { service, row } = harness({ run: async () => ({}), getAuditResult: async () => audit,
+        runPipelineByName: async () => ({ audit }) })
+      if (recover) await service["reconcileAudit"](1, ["security"], Date.now() + 1000)
+      else await service["dispatchQualityAudit"](row(), {}, "a".repeat(40), ["security"], {})
+      assert.equal(row().status, "Completed")
+      assert.equal(row().interruptionReason, "partial")
+      assert.deepEqual(row().errorDetail, detail)
+    }
+  } finally { await app.close() }
+})
+
 test("a missing retained run terminates recovery explicitly instead of waiting forever", async () => {
   const app = Fastify({ logger: false })
   logger.configure(app.log)
@@ -91,6 +110,9 @@ test("dispatch preserves the run identity when recovery is unavailable, instead 
     assert.match(row().error!, /outcome could not be recovered/)
     assert.doesNotMatch(row().error!, /fetch failed/)
     assert.equal(row().interruptionReason, "audit_outcome_unconfirmed")
+    assert.equal(row().errorDetail?.code, "audit_outcome_unconfirmed")
+    assert.equal(row().errorDetail?.agentId, "backend")
+    assert.match(row().errorDetail!.message, /not confirmed/)
     assert.equal(JSON.parse(row().result!)["run_id"], "existing-run")
   } finally { await app.close() }
 })

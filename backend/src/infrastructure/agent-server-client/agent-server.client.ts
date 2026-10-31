@@ -1,5 +1,6 @@
 import { logger } from "../../config/logger.js"
 import { executionRequest } from "./execution-request.js"
+import { readExecutionErrorDetail } from "../../modules/agent-execution/execution-error-detail.js"
 import type { AgentRunConfig, ModelAccessVerifier } from "../../modules/agent-settings/agent-configuration.js"
 import { ModelAccessError, type ModelAccessErrorCode } from "../../modules/agent-settings/model-access-error.js"
 import { AgentCatalogError, parseAgentCatalog, type AgentCatalog, type AgentCatalogSource } from "../../modules/agent-settings/agent-catalog.js"
@@ -236,6 +237,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const report = await (await read(`${base}/report`)).json() as AgentInput
     const document = await (await read(`${base}/report.docx`)).arrayBuffer()
     return { attributes, status: snapshot["status"], run_id: runId, report,
+      error_detail: readExecutionErrorDetail(snapshot["error_detail"]),
       blackboard: snapshot, docx_base64: Buffer.from(document).toString("base64") }
   }
 

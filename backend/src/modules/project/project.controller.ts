@@ -380,6 +380,7 @@ function toExecution(execution: StoredAgentExecution) {
     status: execution.status,
     result: execution.result,
     error: execution.error,
+    errorDetail: execution.errorDetail ?? null,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
     estimatedTokens: execution.estimatedTokens,

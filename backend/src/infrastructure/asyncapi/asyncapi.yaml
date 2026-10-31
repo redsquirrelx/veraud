@@ -270,6 +270,47 @@ components:
                   - string
                   - "null"
                 maxLength: 2000
+              error_detail:
+                anyOf:
+                  - type: "null"
+                  - type: object
+                    additionalProperties: false
+                    required:
+                      - agentId
+                      - invocationId
+                      - occurredAt
+                      - code
+                      - exceptionType
+                      - message
+                    properties:
+                      agentId:
+                        type:
+                          - string
+                          - "null"
+                        maxLength: 128
+                      invocationId:
+                        type:
+                          - string
+                          - "null"
+                        maxLength: 128
+                      occurredAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      code:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                      exceptionType:
+                        type:
+                          - string
+                          - "null"
+                        maxLength: 128
+                      message:
+                        type: string
+                        minLength: 1
+                        maxLength: 2000
         id:
           type: integer
           description: Execution identifier.
@@ -294,6 +335,47 @@ components:
             - string
             - "null"
           description: Failure message.
+        errorDetail:
+          anyOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required:
+                - agentId
+                - invocationId
+                - occurredAt
+                - code
+                - exceptionType
+                - message
+              properties:
+                agentId:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 128
+                invocationId:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 128
+                occurredAt:
+                  type:
+                    - string
+                    - "null"
+                  format: date-time
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                exceptionType:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 128
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
         inputTokens:
           type:
             - integer
