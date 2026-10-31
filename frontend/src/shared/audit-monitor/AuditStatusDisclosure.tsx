@@ -9,7 +9,7 @@ import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
 import { AuditActions } from "./AuditActions.tsx"
 import { ExecutionErrorIndicator } from "./ExecutionError.tsx"
-import { auditHasError } from "./executionErrors.ts"
+import { auditHasError, auditErrorIsInherited } from "./executionErrors.ts"
 
 export interface AuditStatusDisclosureProps {
   audit: AuditStatusModel
@@ -64,7 +64,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
             </span>
             <span className="audit-disclosure-line">
               <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
-              {auditHasError(audit) && <ExecutionErrorIndicator />}
+              {auditHasError(audit) && <ExecutionErrorIndicator inherited={auditErrorIsInherited(audit)} />}
               <span className="label">{progressText(t, auditProgress(audit))}</span>
               {audit.reportAvailable && <Badge tone="neutral">{t("auditStatus.reportAvailable")}</Badge>}
             </span>

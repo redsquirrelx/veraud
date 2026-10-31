@@ -14,6 +14,9 @@ const labels = {
     details: "Execution details", branch: "Execution and children", states: "Execution states", phases: "Graph phases", noPhase: "No active phase",
     execution: "Execution", dates: "Timeline", started: "Started", finished: "Finished", notRecorded: "Not recorded",
     tokens: "Token usage", error: "Execution error", viewError: "View error",
+    affectedComponent: "Affected component or agent", incidentDate: "Incident date", errorType: "Error type",
+    recordedMessage: "Recorded message", errorNotRecorded: "Not recorded", errorContext: "Viewed from",
+    descendantError: "An execution in this branch has an error",
     resize: "Audit panel width", resizeHint: "Drag to resize, or use Left/Right arrows. Home: minimum; End: maximum.",
   },
   es: {
@@ -27,6 +30,9 @@ const labels = {
     details: "Detalles de ejecución", branch: "Ejecución e hijos", states: "Estados de ejecución", phases: "Fases del grafo", noPhase: "Sin fase activa",
     execution: "Ejecución", dates: "Fechas", started: "Inicio", finished: "Fin", notRecorded: "Sin registro",
     tokens: "Consumo de tokens", error: "Error de ejecución", viewError: "Ver error",
+    affectedComponent: "Componente o agente afectado", incidentDate: "Fecha del incidente", errorType: "Tipo de error",
+    recordedMessage: "Mensaje registrado", errorNotRecorded: "No registrado", errorContext: "Consultado desde",
+    descendantError: "Una ejecución de esta rama presenta un error",
     resize: "Ancho del panel de auditorías", resizeHint: "Arrastra para ajustar o usa las flechas izquierda/derecha. Inicio: mínimo; Fin: máximo.",
   },
 }

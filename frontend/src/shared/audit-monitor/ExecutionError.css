@@ -12,15 +12,38 @@
   font-weight: 700;
 }
 .execution-error { margin-block: var(--space-2); min-width: 0; }
+.execution-error-modal {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+}
+.execution-error-modal .ui-modal { gap: var(--space-4); max-height: calc(100dvh - var(--space-8)); overflow-y: auto; }
+.execution-error-modal .ui-modal-head { padding-bottom: var(--space-3); border-bottom: var(--border-width) solid var(--color-border); }
+.execution-error-content { min-width: 0; width: 100%; }
+.execution-error-context { margin: 0; font-size: var(--font-size-xs); color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.execution-error-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-block: var(--space-4); }
+.execution-error-fields > div { min-width: 0; }
+.execution-error-fields > div:first-child,
+.execution-error-fields > div:last-child { grid-column: 1 / -1; }
+.execution-error-fields > div:first-child { padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-recessed); }
+.execution-error-fields dt { color: var(--color-text-secondary); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); margin-bottom: var(--space-1); }
+.execution-error-fields dd { margin: 0; overflow-wrap: anywhere; }
+.execution-error-fields code { font-family: var(--font-mono); font-size: var(--font-size-xs); }
+.execution-error-footer { display: flex; justify-content: flex-end; padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); }
 .execution-error-message {
-  margin-block: var(--space-2);
+  margin: 0;
   padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-control);
-  background: var(--status-danger-bg);
-  color: var(--status-danger-text);
+  background: var(--color-surface-recessed);
+  color: var(--color-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
   max-height: 240px;
   overflow: auto;
+}
+@media (max-width: 420px) {
+  .execution-error-fields { grid-template-columns: minmax(0, 1fr); }
 }
