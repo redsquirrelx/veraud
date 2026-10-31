@@ -137,7 +137,7 @@ describe("dedicated audit results", () => {
     show()
     await screen.findByRole("region", { name: "Findings summary" })
     expect(screen.getByRole("tab", { name: "General Overview" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getAllByRole("tab")).toHaveLength(3)
+    expect(screen.getAllByRole("tab")).toHaveLength(4)
     expect(api.getQualityAuditReportSection).toHaveBeenCalledOnce()
     await user.click(screen.getByRole("tab", { name: "Findings" }))
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))
