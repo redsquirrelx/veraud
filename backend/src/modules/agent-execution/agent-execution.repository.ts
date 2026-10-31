@@ -3,6 +3,7 @@ import type { AgentSettingsRepository, AgentConfiguration } from "../agent-setti
 import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE } from "../agent-settings/agent-types.js"
 import { AgentConfigurationError, type PreparedAgentConfiguration } from "../agent-settings/agent-configuration.js"
 import type { InvocationReceipt } from "./invocationReceipt.js"
+import { storedExecutionErrorDetail, type ExecutionErrorDetail } from "./execution-error-detail.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -30,6 +31,7 @@ export interface NewAgentExecution {
 }
 
 export interface AgentExecutionCompletion {
+  errorDetail?: ExecutionErrorDetail | null
   status: AgentExecutionStatus
   result: string | null
   error: string | null
@@ -47,6 +49,7 @@ export interface AgentExecutionUsage {
 }
 
 export interface StoredAgentExecution {
+  errorDetail?: ExecutionErrorDetail | null
   invocations?: InvocationReceipt[]
   monitorContext?: {
     project: { id: number, repositoryOwner: string, repositoryName: string } | null
@@ -149,6 +152,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       if (previous?.status !== undefined && previous.status !== "running") return this.toStored(execution)
       const count = (a: number | null | undefined, b: number | null) => a == null ? b : b == null ? a : Math.max(a, b)
       const updated = { ...receipt, started_at: previous?.started_at ?? receipt.started_at,
+        error_detail: previous?.error_detail ?? receipt.error_detail ?? null,
         phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
           ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
         phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
@@ -201,6 +205,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
           status: data.status,
           result: data.result,
           error: data.error,
+          errorDetail: existing.errorDetail ?? (data.errorDetail ? JSON.stringify(data.errorDetail) : null),
           ...(data.inputTokens === null ? {} : { inputTokens: Math.max(existing.inputTokens ?? 0, data.inputTokens) }),
           ...(data.outputTokens === null ? {} : { outputTokens: Math.max(existing.outputTokens ?? 0, data.outputTokens) }),
           ...(data.estimatedTokens == null ? {} : { estimatedTokens: Math.max(existing.estimatedTokens ?? 0, data.estimatedTokens) }),
@@ -316,6 +321,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   }
 
   private toStored(execution: {
+    errorDetail?: string | null
     id: number
     evaluationId: number | null
     agentType: string
@@ -346,6 +352,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       status: execution.status as AgentExecutionStatus,
       result: execution.result,
       error: execution.error,
+      errorDetail: storedExecutionErrorDetail(execution.errorDetail),
       inputTokens: execution.inputTokens,
       outputTokens: execution.outputTokens,
       estimatedTokens: execution.estimatedTokens,

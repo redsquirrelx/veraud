@@ -1,3 +1,5 @@
+import { executionErrorDetailSchema, executionErrorEvent, type ExecutionErrorDetail } from "./execution-error-detail.js"
+
 export const invocationReceiptSchema = {
   type: "object", additionalProperties: false,
   required: ["invocation_id", "parent_invocation_id", "agent_id", "run_id", "status", "started_at", "finished_at", "input_tokens", "output_tokens", "error"],
@@ -14,10 +16,12 @@ export const invocationReceiptSchema = {
     input_tokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
     output_tokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
     error: { type: ["string", "null"], maxLength: 2000 },
+    error_detail: executionErrorDetailSchema,
   },
 } as const
 
 export interface InvocationReceipt {
+  error_detail?: ExecutionErrorDetail | null
   phase?: string | null
   phase_sequence?: number
   invocation_id: string
@@ -34,5 +38,6 @@ export interface InvocationReceipt {
 
 export function invocationEvents(receipts: InvocationReceipt[] = []) {
   return receipts.map((receipt) => ({ ...receipt, started_at: new Date(receipt.started_at),
+    error_detail: executionErrorEvent(receipt.error_detail),
     finished_at: receipt.finished_at === null ? null : new Date(receipt.finished_at) }))
 }
