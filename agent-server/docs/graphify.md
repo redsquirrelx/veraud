@@ -33,8 +33,9 @@ output. Cancellation is propagated after stopping the extraction process tree.
 
 The output directory must not already exist or overlap the snapshot. The caller
 owns artifact retention and cleanup, including partial artifacts after failure.
-Only local AST extraction is supported at this stage: there are no LLM calls,
-new HTTP endpoints or automatic changes to audit execution, budgets or evidence.
+Only local AST extraction is supported: there are no LLM calls or automatic
+changes to audit execution, budgets or evidence. The adapter itself is local;
+the project graph API below schedules it independently of audit execution.
 This is process isolation, not an OS security sandbox; use trusted snapshots and
 the service's existing filesystem/access policies.
 
@@ -55,6 +56,38 @@ result = await RepositoryStructureService().extract_structure(
     Path("/snapshots/project"), Path("/artifacts/new-run")
 )
 ```
+
+## Background project extraction
+
+`POST /api/graphs` accepts a backend-owned task/project ID, branch, full commit
+hash, workspace checkout path and callback capability token, returning `202`
+without waiting. `GraphJobs` bounds background work and reports compact lifecycle
+callbacks through `CallbackClient.graph_task`, never the agent execution routes.
+`GraphExtractionService` creates an isolated Git snapshot for that exact commit,
+runs the existing structure service, and atomically publishes artifacts under
+`appdata/graphs/<project_id>/<commit_hash>/<task_id>/`. Dirty files and checkout
+switches do not change the selected snapshot. Snapshots are removed after use.
+
+`DELETE /api/graphs/:task_id` requires the matching `X-Graph-Token` and cancels
+active work. `GET /api/graphs/:project_id/:commit/:task_id/artifact` serves only
+published artifacts. Backend proxies downloads and checks the task's outcome.
+Root paths and Graphify deadlines are developer environment settings, not
+agent configuration. See [the backend integration contract](../../backend/docs/project-graph.md)
+for configuration, callback authentication, persistence, migration and restart
+semantics. This is a single-process background executor, not a durable job queue.
+
+On Windows, Uvicorn reload workers may use `SelectorEventLoop`, which cannot
+launch asyncio subprocess transports. Snapshot Git commands, Graphify and process
+tree termination share `infrastructure.process.create_process`: native asyncio
+where supported, otherwise process creation in a worker thread with nonblocking
+polling and cancellation cleanup. This preserves `dev` hot reload without
+blocking the API or disabling extraction deadlines. Regression tests exercise a
+real Git snapshot and Graphify under the Windows selector loop.
+
+Failed jobs log the task ID, last phase, public error code and exception **type**.
+Raw exception messages, repository contents, callback tokens and provider secrets
+are not logged by this diagnostic. The frontend shows a service description for
+`graph.extract`; a missing Git command is expected for this task kind.
 
 ### Try a local directory
 

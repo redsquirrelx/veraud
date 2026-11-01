@@ -23,6 +23,7 @@ which is why config/tracing.py passes them across explicitly.
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # agent-server/src/server/config -> up four is the repo root.
@@ -69,6 +70,19 @@ class TracingSettings(_FromEnvFile):
     @property
     def tag_list(self) -> list[str]:
         return [tag.strip() for tag in self.langsmith_tags.split(",") if tag.strip()]
+
+
+class GraphSettings(_FromEnvFile):
+    """Deterministic extraction limits; independent of model credentials."""
+
+    graphs_root: str = ""
+    graph_timeout_seconds: float = Field(default=480, gt=0, le=540)
+    graph_max_pending: int = Field(default=8, ge=1, le=64)
+
+
+def resolve_graphs_root() -> Path:
+    configured = GraphSettings().graphs_root.strip()
+    return Path(configured).expanduser().resolve() if configured else resolve_workspace_root().parent / "graphs"
 
 
 @lru_cache(maxsize=1)

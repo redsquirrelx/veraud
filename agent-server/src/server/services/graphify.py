@@ -13,6 +13,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Literal
 
+from server.infrastructure.process import create_process
+
 
 class GraphifyError(RuntimeError):
     """Safe failure details, without CLI output, source paths or credentials."""
@@ -89,7 +91,7 @@ class GraphifyAdapter:
         )
         started = monotonic()
         try:
-            process = await asyncio.create_subprocess_exec(
+            process = await create_process(
                 sys.executable,
                 "-I",
                 "-m",
@@ -131,13 +133,13 @@ class GraphifyAdapter:
         return GraphifyResult(graph_file=graph_file, elapsed_seconds=monotonic() - started)
 
     @staticmethod
-    async def _stop(process: asyncio.subprocess.Process) -> None:
+    async def _stop(process) -> None:
         """Stop the extraction tree, including AST worker processes."""
         if process.returncode is None:
             if os.name == "nt":
                 system_root = os.environ.get("SystemRoot", r"C:\Windows")
                 try:
-                    killer = await asyncio.create_subprocess_exec(
+                    killer = await create_process(
                         str(Path(system_root) / "System32" / "taskkill.exe"),
                         "/PID", str(process.pid), "/T", "/F",
                         stdout=subprocess.DEVNULL,

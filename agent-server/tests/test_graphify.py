@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from server.infrastructure.process import create_process
 from server.services.graphify import GraphifyAdapter, GraphifyError
 
 
@@ -155,3 +156,22 @@ def test_stop_reaps_real_process():
                 await process.wait()
 
     asyncio.run(run())
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Uvicorn reload event loop")
+def test_stop_reaps_process_on_windows_selector_loop():
+    async def run():
+        process = await create_process(
+            sys.executable, "-I", "-c", "import time; time.sleep(60)",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+        try:
+            await asyncio.wait_for(GraphifyAdapter._stop(process), timeout=10)
+            assert process.returncode is not None
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+
+    with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+        runner.run(run())
