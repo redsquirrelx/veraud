@@ -568,7 +568,7 @@ describe("ProjectDetailPage", () => {
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail(direct ? "/projects/2/audits/8" : "/projects/2/audits")
-    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View results" }))
+    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View details" }))
     expect(await screen.findByRole("heading", { name: "Audit results · #8" })).toBeInTheDocument()
     expect(await screen.findByText("Saved audit result")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
