@@ -38,6 +38,9 @@ class CallbackSink:
     async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
         return CallbackResult(acknowledged=False, error="invocation reporting unavailable")
 
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return CallbackResult(acknowledged=False, error="event reporting unavailable")
+
 
 class BackendCallbackSink(CallbackSink):
     """Production sink: forwards to the backend over HTTP."""
@@ -59,6 +62,9 @@ class BackendCallbackSink(CallbackSink):
 
     async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
         return await self._client.invocation(execution_id, receipt)
+
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return await self._client.events(execution_id, events)
 
 
 class NoOpCallbackSink(CallbackSink):

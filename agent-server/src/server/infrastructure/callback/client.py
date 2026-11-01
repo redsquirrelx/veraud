@@ -56,6 +56,9 @@ class CallbackClient:
     async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
         return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json", by_alias=True))
 
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return await self._post(f"/api/agent-executions/{execution_id}/events", {"events": events})
+
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()

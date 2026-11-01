@@ -63,6 +63,7 @@ from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
 from ..contracts.public_errors import public_error_text
+from ..infrastructure.execution_events import capture_event_recorder, record_execution
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
 from ..infrastructure.llm.resources import close_model_clients
 from ..runtimes.cancellation import (
@@ -97,6 +98,7 @@ class AuditService:
     def __init__(self, blackboard: Blackboard):
         self.blackboard = blackboard
         self._states: dict[str, AuditState] = {}
+        self._event_recorders = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._timings: dict[str, ActiveDeadline] = {}
         self._cancellations: dict[str, AuditCancellation] = {}
@@ -343,6 +345,8 @@ class AuditService:
         self._timings.pop(run_id, None)
 
     def _update(self, run_id: str, status: AuditStatus, error: str | None = None, error_detail=None) -> None:
+        if self._states[run_id].status != status and run_id in self._event_recorders:
+            self._event_recorders[run_id]("audit.state_changed", status=status, action_id=self._states[run_id].invocation_id)
         self._states[run_id] = self._states[run_id].model_copy(update={"status": status,
             "error": error_detail.message if error_detail is not None and error is not None else public_error_text(error),
             "error_detail": error_detail})
@@ -350,12 +354,15 @@ class AuditService:
             publish_audit_outcome(self.blackboard,
                 AuditIdentity(run_id=run_id, invocation_id=self._states[run_id].invocation_id), status)
 
+    @record_execution
     async def _execute(self, identity: AuditIdentity, root: Path, request: MaintainabilityRequest | SecurityAuditRequest,
                        limits: MaintainabilityConfig | SecurityAuditConfig | FunctionalAdequacyConfig, settings: ModelSettings, credentials: ModelCredentials,
                        total_tokens: int, model_selections=None, *, security_request=None, security_limits=None,
                        attributes=None, functional_requirements=None, functional_limits=None, output_overrides=None) -> None:
         model = None
         clients = {}
+        self._event_recorders[identity.run_id] = capture_event_recorder({"run_id": identity.run_id,
+            "invocation_id": identity.invocation_id, "agent_id": "quality_audit"})
         self._update(identity.run_id, "running")
         timing = ActiveDeadline(limits.timeout_seconds, wall_deadline=monotonic() + limits.max_wall_time_seconds,
             cancellation_grace_seconds=limits.cancellation_grace_seconds,

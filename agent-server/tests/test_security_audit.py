@@ -127,7 +127,10 @@ def test_security_retains_original_provider_validation_failure_for_skipped_remed
         assert all("max_tokens: extra_forbidden" in item["diagnostic"] for item in errors)
         assert "PRIVATE-PROVIDER-INPUT" not in str(snapshot)
         assert "RuntimeError" not in str(snapshot)
-        assert any("max_tokens: extra_forbidden" in item for item in snapshot["execution_issues"][0]["diagnostics"])
+        # Detailed internal receipts above remain useful; the public issue follows
+        # the existing controlled-message policy rather than leaking diagnostics.
+        assert snapshot["execution_issues"][0]["diagnostics"] == []
+        assert snapshot["execution_issues"][0]["termination_reason"] == "execution_failed"
 
 
 def test_security_scanners_publish_portable_candidates_without_claiming_verification(audit_environment):
@@ -346,7 +349,7 @@ def test_paginated_security_scans_can_exceed_200_calls_and_publish_a_preflight_p
         assert coverage["pending_ranges"] == ([] if complete else [{"start_line": 201, "end_line": 241}])
         if not complete:
             assert assessment["termination_reason"] == "tool_call_limit"
-            assert any("mínimo previsto para el alcance 241" in item for item in snapshot["execution_issues"][0]["diagnostics"])
+            assert snapshot["execution_issues"][0]["diagnostics"] == []
 
 
 @pytest.mark.parametrize("overrides", [{"max_scan_files": 501}, {"max_model_calls": 101}, {"max_tool_calls": 10001},
@@ -525,8 +528,8 @@ def test_security_read_errors_expose_real_tool_cause_and_resource_usage(audit_en
         assert not coverage["complete"]
         assert coverage["pending_ranges"][0]["start_line"] == error["start_line"]
         issue = snapshot["execution_issues"][0]
-        assert issue["termination_reason"] == reason
-        assert any(f"code={code}" in item and "main.py:" in item for item in issue["diagnostics"])
+        assert issue["termination_reason"] == "execution_failed"
+        assert issue["diagnostics"] == []
         assert content not in str(error)
 
 
