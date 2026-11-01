@@ -30,6 +30,7 @@ import { registerQualityAuditRoutes } from "./modules/quality-audit/quality-audi
 import { AgentExecutionRepository } from "./modules/agent-execution/agent-execution.repository.js"
 import { AgentExecutionService } from "./modules/agent-execution/agent-execution.service.js"
 import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-execution.controller.js"
+import { ExecutionEventRepository, registerExecutionEventRoutes } from "./modules/agent-execution/execution-events.js"
 import { AiProviderRepository } from "./modules/ai-provider/ai-provider.repository.js"
 import { AiProviderService, SEEDED_AI_PROVIDERS } from "./modules/ai-provider/ai-provider.service.js"
 import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.controller.js"
@@ -126,6 +127,7 @@ export async function buildApp(options: BuildAppOptions) {
   registerTaskRoutes(app, taskService)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
+  registerExecutionEventRoutes(app, new ExecutionEventRepository(db))
 
   app.get("/status", { logLevel: "silent", schema: {
     tags: ["Status"], summary: "Get backend and agent-server availability",
