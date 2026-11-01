@@ -13,10 +13,12 @@ interface ProjectHeaderProps {
   analysis: AnalysisAction
   syncing: boolean
   onSync: () => void
-  onAudit: () => void
+  onExtractGraph: () => void
+  graphRunning: boolean
+  canExtractGraph: boolean
 }
 
-export function ProjectHeader({ project, versionSelector, showVersionSelector = true, analysis, syncing, onSync, onAudit }: ProjectHeaderProps) {
+export function ProjectHeader({ project, versionSelector, showVersionSelector = true, analysis, syncing, onSync, onExtractGraph, graphRunning, canExtractGraph }: ProjectHeaderProps) {
   const { t } = useTranslation("projects")
   const statusKey = projectStatusLabelKey(project.status)
   return <header className="project-context-header" aria-label={t("detail.contextLabel")}>
@@ -31,8 +33,8 @@ export function ProjectHeader({ project, versionSelector, showVersionSelector = 
         <VersionLocation selection={versionSelector.selection} />
       </div>
       <div className="project-context-actions" role="group" aria-label={t("detail.actionsLabel")}>
-        <Button variant="secondary" onClick={onSync} disabled={syncing || analysis.analyzing} loading={syncing} loadingText={t("detail.syncing")}>{t("detail.syncLabel")}</Button>
-        <Button onClick={onAudit}>{t("analyze.label")}</Button>
+        <Button variant="secondary" onClick={onSync} disabled={syncing || analysis.analyzing || graphRunning} loading={syncing} loadingText={t("detail.syncing")}>{t("detail.syncLabel")}</Button>
+        <Button onClick={onExtractGraph} disabled={!canExtractGraph || graphRunning} loading={graphRunning} loadingText={t("analyze.label")}>{t("analyze.label")}</Button>
       </div>
     </div>
     {showVersionSelector && <div className="project-context-controls">

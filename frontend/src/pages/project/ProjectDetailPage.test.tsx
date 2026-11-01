@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
@@ -48,12 +48,24 @@ const gitTree = { files: ["src/index.ts", "README.md"], taskId: 6 }
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    return handler(String(input), init)
+    const url = String(input)
+    if (/\/audits\?limit=/.test(url)) {
+      const response = await handler(url.split("?")[0], init)
+      if (!response.ok) return response
+      const rows = await response.json()
+      const query = new URL(url, "http://localhost").searchParams
+      const limit = Number(query.get("limit"))
+      const offset = Number(query.get("offset"))
+      return new Response(JSON.stringify({ items: rows.slice(offset, offset + limit), total: rows.length, limit, offset,
+        hasRunning: rows.some((row: { executionStatus?: string }) => ["Waiting", "Running"].includes(row.executionStatus ?? "")) }), { status: 200 })
+    }
+    return handler(url, init)
   }) as typeof fetch
   globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 }
 
 function gitResponse(url: string, init?: RequestInit): Response | null {
+  if (url.includes("/graph?") && init?.method !== "POST") return new Response("null", { status: 200 })
   if (url.includes("/git/branches")) {
     return new Response(JSON.stringify(gitBranches), { status: 200 })
   }
@@ -84,6 +96,7 @@ function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] })
   let release = () => {}
   const seen: string[] = []
   stubFetch((url, init) => {
+    if (url.endsWith("/audits")) return new Response("[]", { status: 200 })
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
@@ -117,6 +130,28 @@ function renderDetail(entry: string) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("shows an empty structural graph in its own section, separate from audit setup", async () => {
+    stubProjects()
+    renderDetail("/projects/2/graph")
+
+    const graph = await screen.findByRole("region", { name: "Structural graph" })
+    expect(within(graph).getByRole("heading", { name: "Structural graph" })).toBeVisible()
+    expect(within(graph).getByText("Analyze the project to load the structural graph for the selected branch and commit.")).toBeVisible()
+    await waitFor(() => expect(within(graph).getByText("main")).toBeVisible())
+    expect(await within(graph).findByText("aaaaaaa")).toHaveAttribute("title", "a".repeat(40))
+    expect(within(graph).queryByRole("img")).toBeNull()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("heading", { name: "Quality audit" })).toBeNull()
+    expect(within(screen.getByLabelText("Project context")).getByRole("tab", { name: "Git" })).toBeVisible()
+
+    for (const section of ["Analysis", "Audits", "Overview", "Files"]) {
+      await userEvent.click(screen.getByRole("button", { name: section }))
+      expect(screen.queryByRole("region", { name: "Structural graph" })).toBeNull()
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Structural graph" }))
+    expect(await screen.findByRole("region", { name: "Structural graph" })).toBeVisible()
+  })
+
   it("renders historical evidence and findings inside project details without reading the working copy", async () => {
     const auditRequests: string[] = []
     const fileRequests: string[] = []
@@ -189,6 +224,7 @@ describe("ProjectDetailPage", () => {
     })
     renderDetail("/projects/2/audits/41")
     expect(await screen.findByRole("heading", { name: "Audit report · #41" })).toBeVisible()
+    expect(screen.queryByRole("region", { name: "Structural graph" })).toBeNull()
     expect(within(screen.getByLabelText("Project context")).queryByRole("tablist")).toBeNull()
     expect(screen.getByRole("button", { name: "Sync" })).toBeVisible()
     await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
@@ -218,7 +254,7 @@ describe("ProjectDetailPage", () => {
     expect(controls.getByText("HTTPS")).toBeDefined()
     await waitFor(() => expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled())
     const branch = controls.getByRole("button", { name: "main" })
-    for (const section of ["Audits", "Files", "Overview"]) {
+    for (const section of ["Structural graph", "Audits", "Files", "Overview"]) {
       await userEvent.click(screen.getByRole("button", { name: section }))
       expect(screen.getByLabelText("Project context")).toBe(header)
       expect(controls.getByRole("tab", { name: "Git" })).toBeVisible()
@@ -244,7 +280,7 @@ describe("ProjectDetailPage", () => {
 
     const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
     const sections = within(navigation).getAllByRole("button")
-    expect(sections).toHaveLength(4)
+    expect(sections).toHaveLength(5)
     const icons = sections.map((button) => {
       const icon = button.querySelector("svg")!
       expect(icon).toHaveAttribute("aria-hidden", "true")
@@ -539,9 +575,16 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
   })
 
-  it("opens Analysis audit setup from the header without starting an execution", async () => {
+  it("starts an independent graph Task from the header without invoking auditors", async () => {
     const executions: string[] = []
+    const extractions: unknown[] = []
+    const graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Running", phase: "extracting", graphAvailable: false, error: null }
     stubFetch((url, init) => {
+      if (url.endsWith("/graph") && init?.method === "POST") {
+        extractions.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify(graph), { status: 202 })
+      }
+      if (url.includes("/graph?")) return new Response(JSON.stringify(extractions.length ? graph : null), { status: 200 })
       if (init?.method === "POST" && (url.includes("/audits") || url.includes("/agent-executions"))) executions.push(url)
       if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings") || url.endsWith("/api/projects/2/audits")) {
         return new Response("[]", { status: 200 })
@@ -551,12 +594,116 @@ describe("ProjectDetailPage", () => {
     renderDetail("/projects/2")
     const analyze = await screen.findByRole("button", { name: "Analyze" })
     expect(analyze).not.toHaveAttribute("aria-haspopup")
+    await waitFor(() => expect(analyze).toBeEnabled())
     await userEvent.click(analyze)
-    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Analysis" })).toHaveAttribute("aria-current", "page")
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Quality audit" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeDisabled()
+    expect(extractions).toEqual([{ branch: "main", commitHash: "a".repeat(40) }])
     expect(screen.queryByRole("menu")).not.toBeInTheDocument()
     expect(executions).toEqual([])
+  })
+
+  it("reuses saved graphs, regenerates explicitly, retries descriptive failures and confirms completion once", async () => {
+    const posts: unknown[] = []
+    const sockets: EventTarget[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    let graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Succeded", phase: "completed", graphAvailable: true, previousGraphTaskId: null as number | null, error: null as string | null }
+    stubFetch((url, init) => {
+      if (url.includes("/graph?")) return new Response(JSON.stringify(graph), { status: 200 })
+      if (url.endsWith("/graph") && init?.method === "POST") {
+        posts.push(JSON.parse(String(init.body)))
+        graph = { ...graph, taskId: 81 + posts.length, status: "Running", phase: "extracting", graphAvailable: false, error: null }
+        return new Response(JSON.stringify(graph), { status: 202 })
+      }
+      if (url.includes("/api/tasks/active")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    async function notify() {
+      await act(async () => {
+        for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+          task: { id: graph.taskId, projectId: 2, kind: "graph.extract", status: graph.status, command: null, description: "Graphify", exitCode: null } }) }))
+      })
+    }
+    renderDetail("/projects/2/graph")
+    expect(await screen.findByRole("button", { name: "Regenerate graph" })).toBeEnabled()
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/81/artifact"))
+    const success = "The graph for aaaaaaa was generated and saved successfully."
+    expect(screen.queryByText(success)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
+    expect(posts).toEqual([])
+    await userEvent.click(screen.getByRole("button", { name: "Regenerate graph" }))
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeVisible()
+    expect(posts).toEqual([{ branch: "main", commitHash: "a".repeat(40), regenerate: true }])
+    graph = { ...graph, status: "Failed", phase: "failed", error: "timeout", previousGraphTaskId: 81 }
+    await notify()
+    expect(await screen.findByRole("alert")).toHaveTextContent("Graph extraction exceeded its time limit")
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/81/artifact"))
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeVisible()
+    expect(posts).toHaveLength(2)
+    graph = { ...graph, status: "Succeded", phase: "completed", graphAvailable: true, error: null }
+    await notify()
+    expect(await screen.findByText(success)).toBeVisible()
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/83/artifact"))
+    await notify()
+    expect(screen.getAllByText(success)).toHaveLength(1)
+  })
+
+  it.each(["Succeded", "Failed"])("locks revision controls and audit start for project graph tasks until %s", async (terminalStatus) => {
+    const sockets: EventTarget[] = []
+    const dispatched: string[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    stubFetch((url, init) => {
+      if (url.endsWith("/api/agent-settings")) return new Response(JSON.stringify([{ agentType: "security", qualityAttributes: ["security"], workflowIds: [],
+        configured: true, configuration: null, availability: "available", requiresModel: true }]), { status: 200 })
+      if (url.includes("/api/audit-settings/")) return new Response(JSON.stringify({ schema: { type: "object", properties: {} }, values: {} }), { status: 200 })
+      if (url.includes("/api/tasks/active") || url.endsWith("/audits")) {
+        if (init?.method === "POST") dispatched.push(url)
+        return new Response("[]", { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    async function notify(status: string, projectId = 2) {
+      await act(async () => {
+        for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+          task: { id: projectId * 100, projectId, kind: "graph.extract", status, command: null, description: "Graphify", exitCode: null } }) }))
+      })
+    }
+    renderDetail("/projects/2/analysis")
+    const audit = await screen.findByRole("button", { name: "Start audit" })
+    await waitFor(() => expect(audit).toBeEnabled())
+    await notify("Running", 3)
+    expect(audit).toBeEnabled()
+    await notify("Queued")
+    expect(audit).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeDisabled()
+    await userEvent.click(audit)
+    expect(dispatched).toEqual([])
+    await notify("Running")
+    expect(audit).toBeDisabled()
+    await notify(terminalStatus)
+    await waitFor(() => expect(audit).toBeEnabled())
+    expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeEnabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeEnabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeEnabled()
   })
 
   it.each([false, true])("opens dedicated audit results and keeps the Audits sidebar selected (direct: %s)", async (direct) => {
@@ -814,7 +961,30 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText("Snapshot capped.")).toBeDefined()
   })
 
-  it("allows opening audit setup during sync but prevents starting an audit", async () => {
+  it("keeps graph extraction enabled after a completed sync task arrives over WebSocket", async () => {
+    const sockets: EventTarget[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    stubProjects()
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    renderDetail("/projects/2")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze).toBeEnabled())
+    await act(async () => {
+      for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+        task: { id: 91, projectId: 2, kind: "pull", status: "Running", command: null, description: "Syncing", exitCode: null } }) }))
+    })
+    expect(analyze).toBeDisabled()
+    await act(async () => {
+      for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+        task: { id: 91, projectId: 2, kind: "pull", status: "Succeded", command: null, description: "Synced", exitCode: 0 } }) }))
+    })
+    await waitFor(() => expect(analyze).toBeEnabled())
+  })
+
+  it("prevents starting graph extraction during sync while audit setup remains separate", async () => {
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
@@ -833,8 +1003,8 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
-    expect(screen.getByRole("button", { name: "Analyze" })).toBeEnabled()
-    await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled()
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeVisible()
     expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
   })

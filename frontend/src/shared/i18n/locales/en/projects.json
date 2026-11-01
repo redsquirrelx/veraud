@@ -64,6 +64,11 @@
       "loadAnalyzed": "Could not load analyzed versions"
     }
   },
+  "structuralGraph": {
+    "title": "Structural graph",
+    "empty": "Analyze the project to load the structural graph for the selected branch and commit.",
+    "noSelection": "Not selected"
+  },
   "analyze": {
     "audit": {
       "label": "Quality audit",

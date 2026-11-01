@@ -14,6 +14,7 @@ const TASK_STATUS_LABEL_KEYS: Record<string, ParseKeys<"tasks">> = {
 
 export function TaskMenu({ tasks }: { tasks: ActiveTask[] }) {
   const { t } = useTranslation("tasks")
+  const { t: graphT } = useTranslation("graph")
   const id = useId()
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(() => new Set())
   const [expanded, setExpanded] = useState(false)
@@ -80,7 +81,9 @@ export function TaskMenu({ tasks }: { tasks: ActiveTask[] }) {
                 className="task-row task-row-toggle"
                 aria-expanded={expandedTasks.has(task.id)}
                 aria-controls={`${id}-command-${task.id}`}
-                aria-label={t(expandedTasks.has(task.id) ? "menu.hideCommandFor" : "menu.showCommandFor", { name: task.description ?? `${task.repositoryOwner}/${task.repositoryName}` })}
+                aria-label={task.kind === "graph.extract"
+                  ? graphT(expandedTasks.has(task.id) ? "hideTaskDetails" : "showTaskDetails", { name: task.description ?? "Graphify" })
+                  : t(expandedTasks.has(task.id) ? "menu.hideCommandFor" : "menu.showCommandFor", { name: task.description ?? `${task.repositoryOwner}/${task.repositoryName}` })}
                 onClick={() => setExpandedTasks((current) => {
                   const next = new Set(current)
                   if (next.has(task.id)) next.delete(task.id)
@@ -106,8 +109,9 @@ export function TaskMenu({ tasks }: { tasks: ActiveTask[] }) {
               <div id={`${id}-command-${task.id}`} className="task-command-detail" data-expanded={expandedTasks.has(task.id)} aria-hidden={!expandedTasks.has(task.id)} inert={!expandedTasks.has(task.id)}>
                 <div className="task-command-inner">
                   <div className="task-command-content">
-                    <span className="label">{t("menu.command")}</span>
-                    {task.command ? <pre className="task-command"><code>{task.command}</code></pre> : <span className="task-command-unavailable">{t("menu.commandUnavailable")}</span>}
+                    <span className="label">{task.kind === "graph.extract" ? graphT("taskService") : t("menu.command")}</span>
+                    {task.kind === "graph.extract" ? <><pre className="task-command"><code>graph.extract</code></pre><span className="task-service-description">{graphT("taskDetails")}</span></>
+                      : task.command ? <pre className="task-command"><code>{task.command}</code></pre> : <span className="task-command-unavailable">{t("menu.commandUnavailable")}</span>}
                   </div>
                 </div>
               </div>

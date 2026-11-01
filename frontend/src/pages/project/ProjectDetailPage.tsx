@@ -23,13 +23,16 @@ import {
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
-import { ProjectOverviewIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
+import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
+import { useProjectGraph } from "../../features/project-management/useProjectGraph.ts"
+import { projectGraphArtifactUrl } from "../../features/project-management/projectGraphApi.ts"
+import { graphErrorMessageKey } from "../../features/project-management/graphMessages.ts"
 import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
 import { QualityAuditResults } from "../../features/project-management/QualityAuditResults.tsx"
 import { AuditAgentEvidence } from "../../features/project-management/AuditAgentEvidence.tsx"
@@ -42,6 +45,7 @@ import "./ProjectDetailPage.css"
 
 const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
   { id: "overview", labelKey: "detail.sections.overview", icon: <ProjectOverviewIcon /> },
+  { id: "graph", labelKey: "structuralGraph.title", icon: <ProjectGraphIcon /> },
   { id: "analysis", labelKey: "detail.sections.analysis", icon: <ProjectAnalysisIcon /> },
   { id: "audits", labelKey: "detail.sections.audits", icon: <ProjectAuditsIcon /> },
   { id: "files", labelKey: "detail.sections.files", icon: <FolderIcon /> },
@@ -52,6 +56,7 @@ const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
 export function ProjectDetailPage() {
   const { id, section, auditId, invocationId } = useParams()
   const { t } = useTranslation("projects")
+  const { t: graphT } = useTranslation("graph")
   const navigate = useNavigate()
   const activeSection = auditId !== undefined ? "audits" : section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
@@ -95,11 +100,22 @@ export function ProjectDetailPage() {
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
+  const graphExtraction = useProjectGraph(project?.id ?? null, activeBranch, activeHash, liveTasks)
+  const graphActive = graphExtraction.running || liveTasks.some((task) => task.projectId === project?.id
+    && task.kind === "graph.extract" && (task.status === "Queued" || task.status === "Running"))
+  const graphArtifactTaskId = graphExtraction.graph?.graphAvailable ? graphExtraction.graph.taskId : graphExtraction.graph?.previousGraphTaskId ?? null
+  const notifiedGraphTasks = useRef(new Set<number>())
+  useEffect(() => {
+    const taskId = graphExtraction.completedTaskId
+    if (taskId === null || notifiedGraphTasks.current.has(taskId)) return
+    notifiedGraphTasks.current.add(taskId)
+    pushToast("success", graphT("success", { commit: graphExtraction.graph?.commitHash.slice(0, 7) ?? "" }))
+  }, [graphExtraction.completedTaskId, graphExtraction.graph?.commitHash, graphT, pushToast])
   // Sync and analysis exclude each other: a sync rewrites the checkout the
   // pipeline reads. Local clicks flip immediately; a sync started elsewhere
   // shows up through the live tasks and through the backend 422.
-  const syncActive = syncing || isSyncActive(liveTasks, project?.id ?? null)
-  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits && !syncActive
+  const syncActive = syncing || isSyncActive(liveTasks.filter((task) => task.status === "Queued" || task.status === "Running"), project?.id ?? null)
+  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits && !syncActive && !graphActive
 
   function openFile(path: string) {
     const root = project?.repositoryName ?? ""
@@ -275,8 +291,11 @@ export function ProjectDetailPage() {
               analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
               syncing={syncActive}
               onSync={() => void handleSync()}
-               onAudit={() => void navigate(`/projects/${id}/analysis`)}
+               onExtractGraph={() => { void graphExtraction.start(); void navigate(`/projects/${id}/graph`) }}
+                graphRunning={graphActive}
+               canExtractGraph={canAnalyze}
               versionSelector={{
+                disabled: graphActive,
                 selection: gitSelection,
                 mode: versionMode,
                 onModeChange: handleModeChange,
@@ -291,7 +310,7 @@ export function ProjectDetailPage() {
               }}
             />
             <div className="project-body">
-            {activeSection === "overview" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
+             {activeSection === "overview" && <Card className="project-body-card project-overview-card" layout="stack" gap="sm" align="stretch">
               <section className="project-overview" aria-label={t("detail.overview.regionLabel")}>
                 <h2>{t("detail.overview.title")}</h2>
                 <div className="project-dates-row">
@@ -361,6 +380,29 @@ export function ProjectDetailPage() {
                 </div>
               </Card>
             )}
+             {activeSection === "graph" && auditId === undefined && (
+               <Card className="project-body-card project-overview-card project-overview-summary" layout="stack" gap="sm" align="stretch">
+                 <section className="project-structural-graph" aria-label={t("structuralGraph.title")}>
+                   <h2 className="audit-title">{t("structuralGraph.title")}</h2>
+                   <div className="audit-status-row">
+                     <span className="label">{t("version.branchLabel")}</span>
+                     <Badge tone="neutral">{activeBranch ?? t("structuralGraph.noSelection")}</Badge>
+                     <span className="label">{t("version.commitLabel")}</span>
+                     <Badge tone="neutral"><span className="mono" title={activeHash ?? undefined}>{activeHash?.slice(0, 7) ?? t("structuralGraph.noSelection")}</span></Badge>
+                   </div>
+                    <div className="project-structural-graph-empty">
+                      <p className="label">{graphT("independent")}</p>
+                      {graphExtraction.running && <Spinner />}
+                       {graphExtraction.graph !== null ? <p role={graphExtraction.graph.status === "Failed" ? "alert" : "status"}>{graphT(graphExtraction.graph.status === "Failed" ? graphErrorMessageKey(graphExtraction.graph.error) : graphExtraction.graph.phase)}</p>
+                        : !graphExtraction.starting && <p className="label">{t("structuralGraph.empty")}</p>}
+                      {graphExtraction.error !== null && <p role="alert">{graphT(graphExtraction.error)}</p>}
+                       {graphArtifactTaskId !== null && <a href={projectGraphArtifactUrl(project.id, graphArtifactTaskId)} download="graph.json">{graphT("download")}</a>}
+                       {graphArtifactTaskId !== null && graphExtraction.graph?.status !== "Failed" && <Button variant="secondary" onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("regenerate")}</Button>}
+                       {(graphExtraction.graph?.status === "Failed" || graphExtraction.error !== null) && <Button onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("retry")}</Button>}
+                   </div>
+                 </section>
+               </Card>
+             )}
              {(activeSection === "analysis" || activeSection === "audits") && auditId === undefined && (
                <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash}
                  canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default"
