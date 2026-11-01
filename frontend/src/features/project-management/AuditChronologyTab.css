@@ -1,14 +1,43 @@
 .audit-chronology { display: grid; gap: var(--space-2); color: var(--color-text); min-width: 0; }
 .audit-chronology p { margin: 0; }
-.audit-chronology-demo { padding: var(--space-2); border: var(--border-width) dashed var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-recessed); color: var(--color-text-secondary); font-size: var(--font-size-xs); }
 .audit-chronology-order { color: var(--color-text-secondary); font-size: var(--font-size-xs); }
 .audit-chronology-scroll { overflow-x: auto; min-width: 0; }
 .audit-chronology-scroll:focus-visible { outline: var(--border-width) solid var(--color-focus); outline-offset: var(--space-1); }
-.audit-chronology-list { display: grid; gap: var(--space-1); list-style: none; margin: 0; padding: 0; min-width: 82rem; }
-.audit-chronology-columns, .audit-chronology-row { display: grid; grid-template-columns: minmax(48rem, 1fr) 7rem 12rem 12rem; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
-.audit-chronology-columns { min-width: 82rem; box-sizing: border-box; color: var(--color-text-secondary); font-size: var(--font-size-xs); }
-.audit-chronology-row { border: var(--border-width) solid var(--color-border); border-left: var(--space-1) solid var(--audit-accent, var(--status-waiting-accent)); border-radius: var(--radius-control); background: var(--color-surface-recessed); }
+.audit-chronology-groups, .audit-chronology-list { display: grid; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.audit-chronology-more { display: flex; justify-content: center; padding-top: var(--space-2); }
+.audit-chronology-groups > li, .audit-chronology-event { animation: audit-chronology-enter 220ms ease-out; }
+@keyframes audit-chronology-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .audit-chronology-groups > li, .audit-chronology-event { animation: none; }
+}
+.audit-chronology-group { border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); padding: var(--space-2); }
+.audit-chronology-group > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.audit-chronology-group > summary::before { content: "▸"; }
+.audit-chronology-group[open] > summary::before { content: "▾"; }
+.audit-chronology-group > summary .audit-chronology-path { flex: 1; }
+.audit-chronology-group > summary:focus-visible { outline: var(--border-width) solid var(--color-focus); outline-offset: var(--space-1); }
+.audit-chronology-columns, .audit-chronology-row { display: grid; grid-template-columns: minmax(20rem, 1fr) 7rem 12rem; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+.audit-chronology-columns { box-sizing: border-box; color: var(--color-text-secondary); font-size: var(--font-size-xs); }
+.audit-chronology-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; border: var(--border-width) solid var(--color-border); border-left: var(--space-1) solid var(--audit-accent, var(--status-waiting-accent)); border-radius: var(--radius-control); background: var(--color-surface-recessed); }
+.audit-chronology-row:hover { border-color: var(--color-border-control); }
+.audit-chronology-row:focus-visible { outline: var(--border-width) solid var(--color-focus); outline-offset: var(--space-1); }
 .audit-chronology-identity { min-width: 0; white-space: nowrap; }
 .audit-chronology-path { display: block; white-space: nowrap; font-size: var(--font-size-xs); }
 .audit-chronology-date { color: var(--color-text-secondary); font-size: var(--font-size-xs); white-space: nowrap; }
 .audit-chronology-state { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--font-size-xs); white-space: nowrap; }
+.audit-chronology-description { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-2); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.audit-chronology-description > strong { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-chronology-metrics { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
+.audit-chronology-metrics > div { display: flex; gap: var(--space-1); white-space: nowrap; }
+.audit-chronology-metrics dd, .audit-chronology-references dd { margin: 0; }
+.audit-event-modal .ui-modal { max-width: 46rem; max-height: calc(100dvh - 2rem); }
+.audit-event-modal-content { width: 100%; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; display: grid; gap: var(--space-3); }
+.audit-event-modal-fields { display: grid; gap: var(--space-2); margin: 0; font-size: var(--font-size-xs); }
+.audit-event-modal-fields > div { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr); gap: var(--space-2); }
+.audit-event-modal-fields dt { color: var(--color-text-secondary); }
+.audit-event-modal-fields dd { margin: 0; white-space: pre-wrap; }
+.audit-event-description-details { display: grid; gap: var(--space-2); font-size: var(--font-size-xs); }
+.audit-event-description-details p, .audit-event-description-details h3 { margin: 0; }
