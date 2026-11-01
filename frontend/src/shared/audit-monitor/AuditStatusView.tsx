@@ -7,6 +7,7 @@ import { AgentTokenUsage } from "../agent-monitor/AgentTokenUsage.tsx"
 import type projects from "../i18n/locales/en/projects.json"
 import {
   auditProgress,
+  auditAgentName,
   agentTree,
   pipelineLabelKey,
   pipelineProgress,
@@ -71,7 +72,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
           {agent.state === "running" && agent.phase
             ? <PhaseDot key={`${agent.id}:${agent.phase}`} phase={agent.phase} />
             : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
-          <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
+          <span className="mono audit-agent-type" title={auditAgentName(agent)}>{auditAgentName(agent)}</span>
           <span id={stateId} className="audit-agent-state">{stateLabel(agent.state)}</span>
           {agentHasError(node) && <ExecutionErrorIndicator inherited={agentErrorIsInherited(node)} />}
           <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>

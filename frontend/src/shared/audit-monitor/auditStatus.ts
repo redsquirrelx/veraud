@@ -26,6 +26,10 @@ export interface AuditAgentRun {
   error: string | null
 }
 
+export function auditAgentName(agent: Pick<AuditAgentRun, "name" | "agentType">): string {
+  return agent.name ?? agent.agentType
+}
+
 /** One quality attribute (maintainability, security, …) inside the audit. */
 export interface AuditPipelineRun {
   id: string
