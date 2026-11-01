@@ -315,7 +315,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
           <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
           <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
             available={audit.configurationAvailable === true} catalog={agentCatalog} disabled={starting} onReuse={reuseConfiguration} />
-          {["Completed", "Failed", "Cancelled"].includes(audit.executionStatus) && <Link className="ui-button ui-button-secondary" to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewResults")}</Link>}
+          <Link className="ui-button ui-button-secondary" to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewDetails")}</Link>
         {audit.reportAvailable && <>
           <Button variant="secondary" disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>
         </>}

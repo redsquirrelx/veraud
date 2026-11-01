@@ -12,7 +12,7 @@ import { AuditIncidentsTab } from "./AuditIncidentsTab.tsx"
 import { useAuditIncidentLabels } from "./auditIncidentLabels.ts"
 import { AuditChronologyTab } from "./AuditChronologyTab.tsx"
 import { useAuditChronologyLabels } from "./auditChronologyLabels.ts"
-import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
+import { executionStatusLabelKeys, statusLabelKey, isQualityAuditActive } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditReport.tsx"
@@ -51,26 +51,32 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     { id: "incidents", label: incidentLabels.tab },
     { id: "chronology", label: chronologyLabels.tab },
   ]
-  const pending = audit !== null && ["Waiting", "Running"].includes(audit.executionStatus)
+  const pending = audit !== null && isQualityAuditActive(audit)
   const cancellationRevision = useAuditCancellationRevision(projectId, auditId)
   const qualityResults = useAuditReportSection(projectId, auditId, "quality_results",
     !loading && !pending && audit?.reportAvailable === true && (activeTab === "findings" || activeTab === "evidence" || qualityResultsOpen), attempt)
 
   useEffect(() => {
     const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let live = false
     async function load() {
       try {
         const row = await getQualityAudit(projectId, auditId, controller.signal)
         if (controller.signal.aborted) return
         setAudit(row)
+        setError(null)
+        live = isQualityAuditActive(row)
+        if (live) timer = setTimeout(() => void load(), 3000)
       } catch (cause) {
         if (!controller.signal.aborted) setError(cause instanceof ApiError && cause.status === 404
           ? { key: "qualityAudits.results.notFound" } : cause instanceof ApiError && cause.messageSource !== "client"
-            ? { detail: cause.message } : { key: "qualityAudits.results.loadFailed" })
+             ? { detail: cause.message } : { key: "qualityAudits.results.loadFailed" })
+        if (!controller.signal.aborted && live) timer = setTimeout(() => void load(), 5000)
       } finally { if (!controller.signal.aborted) setLoading(false) }
     }
     void load()
-    return () => controller.abort()
+    return () => { controller.abort(); clearTimeout(timer) }
   }, [projectId, auditId, attempt, cancellationRevision])
 
   async function download() {
@@ -165,7 +171,9 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
         active={!loading && activeTab === "incidents"} revision={attempt} />}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-chronology`} aria-labelledby={`${tabsId}-tab-chronology`} hidden={activeTab !== "chronology"} tabIndex={0}>
-      <AuditChronologyTab active={!loading && activeTab === "chronology"} />
+      {loading && activeTab === "chronology" && <Spinner />}
+      {audit && <AuditChronologyTab key={`${projectId}-${auditId}`} audit={audit} revision={attempt}
+        active={!loading && activeTab === "chronology"} />}
     </div>
     {!loading && <div><Button variant="secondary" onClick={retry}>{tCommon("ui.refresh")}</Button></div>}
   </Card></AuditEvidenceNavigation.Provider>

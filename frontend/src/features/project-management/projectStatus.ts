@@ -80,3 +80,6 @@ export const semanticLegendLabelKeys: Record<string, ParseKeys<"projects">> = {
 export function statusLabelKey(keys: Record<string, ParseKeys<"projects">>, status: string): ParseKeys<"projects"> | null {
   return keys[status] ?? null
 }
+export function isQualityAuditActive(audit: { executionStatus: string }) {
+  return ["waiting", "running", "cancelling"].includes(audit.executionStatus.toLowerCase())
+}

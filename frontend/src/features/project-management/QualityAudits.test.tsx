@@ -198,12 +198,12 @@ describe("project quality audits", () => {
   it("uses the same secondary button style for all audit history actions", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, configurationAvailable: true }])
     show()
-    await screen.findByRole("link", { name: "View results" })
+    await screen.findByRole("link", { name: "View details" })
     const history = within(screen.getByRole("article"))
     for (const name of ["View configuration", "Reuse configuration", "Download Word report"]) {
       expect(history.getByRole("button", { name })).toHaveClass("ui-button-secondary")
     }
-    expect(history.getByRole("link", { name: "View results" })).toHaveClass("ui-button-secondary")
+    expect(history.getByRole("link", { name: "View details" })).toHaveClass("ui-button-secondary")
     expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("ui-button-secondary")
     expect(screen.getByRole("button", { name: "Start audit" })).toHaveClass("ui-button-primary")
   })
@@ -366,7 +366,7 @@ describe("project quality audits", () => {
       executionStatus, auditStatus: executionStatus === "Failed" ? "failed" : "partial", error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false }])
     show()
-    expect(await screen.findByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(await screen.findByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
   })
 
   it.each([false, true])("reuses historical selections without changing the original audit (separate views: %s)", async (separateViews) => {
@@ -685,7 +685,7 @@ describe("project quality audits", () => {
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     expect(await screen.findByText("bdeb6efb73bd45fe9cb193f54710cf60")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.queryByRole("heading", { name: "Audit report · #8" })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Download Word report" }))
     expect(api.downloadQualityAuditReport).toHaveBeenCalledWith(5, 8)
@@ -732,7 +732,7 @@ describe("project quality audits", () => {
     expect(screen.getByRole("link", { name: "View Blackboard" })).toHaveClass("ui-button", "ui-button-secondary")
     // A running audit has no report yet, so no extra request is made for it.
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
-    expect(screen.queryByRole("link", { name: "View results" })).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/9")
   })
 
   it("waits for the run id while the audit is starting", async () => {
@@ -743,6 +743,7 @@ describe("project quality audits", () => {
     }])
     show()
     expect(await screen.findByText("Initializing…")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/10")
   })
 
   it("translates history links without changing selections, requirements, or API activity", async () => {
@@ -757,14 +758,14 @@ describe("project quality audits", () => {
     await toggleAttribute("Functional adequacy")
     const requirements = screen.getByRole("textbox", { name: "Functional requirements" })
     await userEvent.type(requirements, "Requirement one.\nRequirement two.")
-    expect(screen.getByRole("link", { name: "View results" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledTimes(1))
     const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
 
     await changeLanguage("es")
 
     expect(screen.getByRole("heading", { name: "Auditoría de calidad" })).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Ver resultados" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "Ver detalles" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.getByRole("heading", { name: "Auditorías del proyecto" })).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Adecuación funcional" })).toHaveTextContent("Activado")
     expect(screen.getByRole("textbox", { name: "Requisitos funcionales" })).toHaveValue("Requirement one.\nRequirement two.")

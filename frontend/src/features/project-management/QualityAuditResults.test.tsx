@@ -21,6 +21,22 @@ afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en"
 function show() { render(<MemoryRouter><QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" /></MemoryRouter>) }
 
 describe("dedicated audit results", () => {
+  it("refreshes active audit metadata automatically and stops after completion", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(api.getQualityAudit).mockResolvedValueOnce({ ...audit, executionStatus: "Running", auditStatus: null, reportAvailable: false, finishedAt: null })
+        .mockResolvedValue({ ...audit, reportAvailable: false })
+      await act(async () => { show() })
+      expect(screen.getByText("The audit has not finished yet")).toBeVisible()
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+      expect(api.getQualityAudit).toHaveBeenCalledTimes(2)
+      expect(screen.queryByText("The audit has not finished yet")).toBeNull()
+      expect(screen.getByText("Final status")).toBeVisible()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(api.getQualityAudit).toHaveBeenCalledTimes(2)
+    } finally { cleanup(); vi.useRealTimers() }
+  })
+
   it("shows the explicit empty result while retaining metadata and the zero-count summary", async () => {
     await changeLanguage("es")
     vi.mocked(api.getQualityAudit).mockResolvedValue({ ...audit, auditStatus: "completed" })
