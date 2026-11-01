@@ -1,11 +1,12 @@
 import type { ParseKeys, TFunction } from "i18next"
-import type { AgentConfiguration } from "../../infrastructure/http-client/httpClient.ts"
+import type { AgentConfiguration, ExecutionErrorDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { formatNumber } from "../i18n/format.ts"
 
 /** Lifecycle of an audit, of one of its pipelines, or of a single agent run. */
-export type AuditRunState = "waiting" | "running" | "completed" | "partial" | "failed" | "unknown"
+export type AuditRunState = "waiting" | "running" | "cancelling" | "cancelled" | "completed" | "partial" | "failed" | "unknown"
 
 export interface AuditAgentRun {
+  errorDetail?: ExecutionErrorDetail | null
   role?: string
   name?: string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
@@ -25,6 +26,10 @@ export interface AuditAgentRun {
   error: string | null
 }
 
+export function auditAgentName(agent: Pick<AuditAgentRun, "name" | "agentType">): string {
+  return agent.name ?? agent.agentType
+}
+
 /** One quality attribute (maintainability, security, …) inside the audit. */
 export interface AuditPipelineRun {
   id: string
@@ -40,6 +45,9 @@ export interface AuditProjectRef {
 }
 
 export interface AuditStatusModel {
+  errorDetail?: ExecutionErrorDetail | null
+  canCancel?: boolean
+  demo?: boolean
   id: number
   project: AuditProjectRef | null
   branch: string | null
@@ -60,6 +68,9 @@ export interface AuditProgress {
 /** Evaluation outcome wins over execution completion. Missing or unsupported
  * states remain explicitly unknown rather than claiming success or queueing. */
 export function auditStateFrom(executionStatus: string, auditStatus: string | null): AuditRunState {
+  if (auditStatus === "cancelled" || executionStatus === "cancelled") return "cancelled"
+  if ((auditStatus === "cancelling" && !["Completed", "completed", "Failed", "failed"].includes(executionStatus))
+    || executionStatus === "cancelling") return "cancelling"
   if (auditStatus === "partial") {
     return "partial"
   }
@@ -80,23 +91,24 @@ export function auditStateFrom(executionStatus: string, auditStatus: string | nu
 }
 
 export function isFinished(state: AuditRunState): boolean {
-  return state === "completed" || state === "partial" || state === "failed"
+  return state === "completed" || state === "partial" || state === "failed" || state === "cancelled"
 }
 
-export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" {
+export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" | "danger" {
+  if (state === "failed") return "danger"
   if (state === "completed") {
     return "success"
   }
   if (state === "running") {
     return "info"
   }
-  if (state === "partial" || state === "failed") {
+  if (state === "partial" || state === "cancelling") {
     return "warning"
   }
   return "neutral"
 }
 
-const stateLabelKeys: Record<AuditRunState, ParseKeys<"projects">> = {
+const stateLabelKeys: Record<Exclude<AuditRunState, "cancelling" | "cancelled">, ParseKeys<"projects">> = {
   waiting: "auditStatus.states.waiting",
   running: "auditStatus.states.running",
   completed: "auditStatus.states.completed",
@@ -105,7 +117,7 @@ const stateLabelKeys: Record<AuditRunState, ParseKeys<"projects">> = {
   unknown: "auditStatus.agents.notReported",
 }
 
-export function stateLabelKey(state: AuditRunState): ParseKeys<"projects"> {
+export function stateLabelKey(state: Exclude<AuditRunState, "cancelling" | "cancelled">): ParseKeys<"projects"> {
   return stateLabelKeys[state]
 }
 

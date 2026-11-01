@@ -61,6 +61,25 @@ def toolset(checkout, *, budget=None, limits=None):
     return RepositoryToolset(context, workspace_root=workspace, limits=limits)
 
 
+def test_execution_history_includes_uncharged_tool_rejections(checkout, tmp_path):
+    from server.infrastructure.execution_event_buffer import ExecutionEventBuffer
+    from server.infrastructure.execution_events import execution_event_scope
+
+    tools = toolset(checkout)
+    journal = ExecutionEventBuffer()
+    with execution_event_scope(1, buffer=journal):
+        tools.execute("list_files", {}, tool_call_id="first")
+        tools.execute("list_files", {}, tool_call_id="first")  # Duplicate ID is rejected before charging.
+        tools.execute("sk-fake-secret", {"password": "private"}, tool_call_id="invalid")
+    events = [event for _, _, event in journal.pending() if event["kind"] == "tool.finished"]
+    assert len(events) == 3
+    assert [event["status"] for event in events] == ["completed", "rejected", "rejected"]
+    assert events[-1]["name"] == "unknown_tool"
+    assert events[0]["sourceId"] == events[1]["sourceId"] == "first"
+    assert events[0]["actionId"] != events[1]["actionId"]
+    assert "private" not in str(events) and "sk-fake-secret" not in str(events)
+
+
 def test_descendants_share_actual_retrieval_usage_without_static_budget_division(checkout):
     def read(child):
         return child.execute("get_source_excerpt", {"path": "src/main.py", "start_line": 1, "end_line": 2}, tool_call_id="read")

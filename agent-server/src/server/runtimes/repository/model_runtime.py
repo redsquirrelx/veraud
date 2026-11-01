@@ -20,6 +20,7 @@ from server.infrastructure.llm.retry import (
 )
 from server.infrastructure.llm.usage import extract_text, response_usage
 
+from ...infrastructure.execution_events import provider_event, record_action
 from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
 from .timing import ActiveDeadline, within_deadline
 
@@ -70,6 +71,7 @@ class ModelGateway:
         self.remaining_seconds = remaining_seconds
         self.on_usage = on_usage
 
+    @record_action("model", name="model_gateway")
     async def __call__(self, prompt):
         if self.stopped:
             raise RuntimeError("Provider unavailable after a terminal failure.")
@@ -105,6 +107,7 @@ class ModelGateway:
         last_http_status = None
 
         def emit(event, **values):
+            provider_event(event, values)
             if self.on_event is not None:
                 self.on_event(event, {"call": call_number, **values})
 

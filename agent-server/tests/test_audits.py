@@ -15,6 +15,113 @@ from server.infrastructure.tracing import NoOpTracingBackend
 from server.main import app
 
 
+def test_http_cancellation_retains_evidence_and_does_not_cancel_sibling(audit_environment, monkeypatch):
+    entered = asyncio.Event()
+    runs = []
+
+    class Manager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, tools, request):
+            runs.append(tools)
+            entered.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
+    with TestClient(app) as client:
+        first = client.post("/api/audits", json={"repository_path": str(audit_environment.root)}).json()
+        client.portal.call(entered.wait)
+        entered.clear()
+        second = client.post("/api/audits", json={"repository_path": str(audit_environment.root)}).json()
+        client.portal.call(entered.wait)
+        before = client.get(f"/api/audits/{first['run_id']}").json()["evidence"]
+        response = client.post(f"/api/audits/{first['run_id']}/cancel")
+        assert response.status_code == 202
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["location"] == f"/api/audits/{first['run_id']}"
+        assert response.json()["status"] == "cancelled"
+        assert client.get(f"/api/audits/{second['run_id']}").json()["status"] == "running"
+        after = client.get(f"/api/audits/{first['run_id']}").json()["evidence"]
+        assert before and all(item in after for item in before)
+        assert client.post(f"/api/audits/{first['run_id']}/cancel").json()["status"] == "cancelled"
+        assert client.post("/api/audits/missing/cancel").status_code == 404
+
+
+def test_cancellation_before_first_task_turn_prevents_repository_and_model_work(audit_environment, monkeypatch):
+    from server.agents.maintainability.manager import MaintainabilityRequest
+    from server.app.execution_config import ExecutionConfig
+
+    analyze = AsyncMock()
+    monkeypatch.setattr(audit_service, "RepositoryAnalysisService", lambda: SimpleNamespace(analyze=analyze))
+
+    async def execute():
+        service = AuditService(MemoryBlackboard())
+        state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(), "offline")
+        await service.cancel(state.run_id)
+        assert service.get(state.run_id).status == "cancelled"
+        assert not service._tasks and not service._cancellations
+        analyze.assert_not_awaited()
+        audit_environment.factory.assert_not_called()
+        await service.aclose()
+
+    asyncio.run(execute())
+
+
+def test_late_work_stays_cancelling_and_cannot_start_new_stages(audit_environment, monkeypatch):
+    from server.agents.maintainability.manager import (
+        MaintainabilityConfig,
+        MaintainabilityRequest,
+    )
+    from server.app.execution_config import ExecutionConfig
+
+    limits = MaintainabilityConfig(cancellation_grace_seconds=0.01)
+    monkeypatch.setattr(audit_service, "MaintainabilityConfig", lambda: limits)
+    entered, stopping, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    attempts = []
+
+    class Manager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, tools, request):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                stopping.set()
+                await release.wait()  # Simulate a provider taking time to stop.
+                with tools.timing.stage("must_not_start"):
+                    attempts.append("started")
+
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
+
+    async def execute():
+        service = AuditService(MemoryBlackboard())
+        state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(), "offline")
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            await service.cancel(state.run_id)
+            assert stopping.is_set()
+            assert service.get(state.run_id).status == "cancelling"
+            await service.cancel(state.run_id)  # Must not cancel late cleanup a second time.
+            assert service.get(state.run_id).status == "cancelling"
+            assert any(item.status == "cancellation_pending" for item in service.snapshot(state.run_id).activity)
+            release.set()
+            for _ in range(100):
+                if service.get(state.run_id).status == "cancelled":
+                    break
+                await asyncio.sleep(0)
+            assert service.get(state.run_id).status == "cancelled"
+            assert not attempts
+            assert service.snapshot(state.run_id).evidence
+        finally:
+            release.set()
+            await service.aclose()
+
+    asyncio.run(execute())
+
+
 @pytest.fixture
 def audit_environment(tmp_path, monkeypatch):
     root = tmp_path / "checkout"
@@ -123,7 +230,7 @@ def test_absolute_audit_deadline_expires_even_while_all_work_is_waiting_for_quot
             done, _ = await asyncio.wait({task}, timeout=0.6)
             assert done, "Quota admission bypassed the audit's absolute deadline"
             assert service.get(state.run_id).status == "failed"
-            assert service.get(state.run_id).error == "Audit timed out."
+            assert service.get(state.run_id).error == "The execution exceeded its allowed time."
             assert service.snapshot(state.run_id).evidence  # Initial audit context survives timeout.
         finally:
             await service.aclose()
@@ -155,7 +262,14 @@ def test_terminal_results_and_errors_are_recorded_and_clients_closed(audit_envir
         assert stored.status == expected
         assert "private-key" not in stored.model_dump_json()
         if outcome == "error":
-            assert stored.error == "Audit failed (RuntimeError)."
+            assert stored.error == "An agent could not complete its execution."
+        if expected == "failed":
+            assert stored.error_detail.agent_id == "maintainability_manager"
+            assert stored.error_detail.invocation_id == state.invocation_id
+            assert stored.error_detail.occurred_at is not None
+            assert service.snapshot(state.run_id).error_detail == stored.error_detail
+        else:
+            assert stored.error_detail is None
         await service.aclose()
 
     asyncio.run(execute())
@@ -225,8 +339,10 @@ def test_timeout_is_recorded_and_releases_clients(audit_environment, monkeypatch
         service = AuditService(MemoryBlackboard())
         state = service.start(str(audit_environment.root), MaintainabilityRequest(), ExecutionConfig(timeout_seconds=1), "dummy")
         await service._tasks[state.run_id]
-        assert service.get(state.run_id).error == "Audit timed out."
+        assert service.get(state.run_id).error == "The execution exceeded its allowed time."
         assert service.get(state.run_id).status == "failed"
+        assert service.get(state.run_id).error_detail.code == "execution_timeout"
+        assert service.get(state.run_id).error_detail.exception_type == "TimeoutError"
         await service.aclose()
 
     asyncio.run(execute())

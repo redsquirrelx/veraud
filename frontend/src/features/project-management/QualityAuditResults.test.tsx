@@ -21,6 +21,22 @@ afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en"
 function show() { render(<MemoryRouter><QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" /></MemoryRouter>) }
 
 describe("dedicated audit results", () => {
+  it("refreshes active audit metadata automatically and stops after completion", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(api.getQualityAudit).mockResolvedValueOnce({ ...audit, executionStatus: "Running", auditStatus: null, reportAvailable: false, finishedAt: null })
+        .mockResolvedValue({ ...audit, reportAvailable: false })
+      await act(async () => { show() })
+      expect(screen.getByText("The audit has not finished yet")).toBeVisible()
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+      expect(api.getQualityAudit).toHaveBeenCalledTimes(2)
+      expect(screen.queryByText("The audit has not finished yet")).toBeNull()
+      expect(screen.getByText("Final status")).toBeVisible()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+      expect(api.getQualityAudit).toHaveBeenCalledTimes(2)
+    } finally { cleanup(); vi.useRealTimers() }
+  })
+
   it("shows the explicit empty result while retaining metadata and the zero-count summary", async () => {
     await changeLanguage("es")
     vi.mocked(api.getQualityAudit).mockResolvedValue({ ...audit, auditStatus: "completed" })
@@ -87,7 +103,7 @@ describe("dedicated audit results", () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole("tab", { name: "Hallazgos" }))
     await user.click(screen.getByRole("button", { name: "Reintentar" }))
-    expect(await screen.findByRole("alert")).toHaveTextContent("Servicio de resultados no disponible")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Error details withheld because their safety could not be verified.")
     await user.click(screen.getByRole("button", { name: "Reintentar" }))
     expect(await within(screen.getByRole("tabpanel", { name: "Hallazgos" })).findByText("No se identificaron hallazgos en esta auditoría")).toBeVisible()
     await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledTimes(3))
@@ -137,7 +153,7 @@ describe("dedicated audit results", () => {
     show()
     await screen.findByRole("region", { name: "Findings summary" })
     expect(screen.getByRole("tab", { name: "General Overview" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getAllByRole("tab")).toHaveLength(3)
+    expect(screen.getAllByRole("tab")).toHaveLength(5)
     expect(api.getQualityAuditReportSection).toHaveBeenCalledOnce()
     await user.click(screen.getByRole("tab", { name: "Findings" }))
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))
@@ -323,7 +339,7 @@ describe("dedicated audit results", () => {
   it("shows failed audits even when no report was produced", async () => {
     vi.mocked(api.getQualityAudit).mockResolvedValue({ ...audit, executionStatus: "Failed", auditStatus: "failed", reportAvailable: false, error: "Audit stopped" })
     show()
-    expect(await screen.findByRole("alert")).toHaveTextContent("Audit stopped")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Error details withheld because their safety could not be verified.")
     expect(screen.getByText("This audit did not produce a report.")).toBeInTheDocument()
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
     expect(api.getQualityAuditReportSection).not.toHaveBeenCalled()

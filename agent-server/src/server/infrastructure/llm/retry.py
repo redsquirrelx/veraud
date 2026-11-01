@@ -9,6 +9,8 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
+from ..execution_events import action_event, record_event
+
 
 def http_status(error: Exception) -> int | None:
     response = getattr(error, "response", None)
@@ -111,9 +113,14 @@ class RequestPacer:
         self.next_allowed = 0.0
 
     async def wait(self) -> float:
+        from ...runtimes.cancellation import check_cancellation
+
+        check_cancellation()
         delay = max(0.0, self.next_allowed - time.monotonic())
         if delay:
-            await asyncio.sleep(delay)
+            with action_event("wait", name="provider_pacing"):
+                await asyncio.sleep(delay)
+        check_cancellation()
         return delay
 
     def completed_attempt(self):
@@ -123,4 +130,6 @@ class RequestPacer:
     def cooldown(self, error: Exception, retry_index: int) -> float:
         delay = max(retry_after(error), min(120.0, self.backoff * 2 ** min(retry_index, 10)))
         self.next_allowed = max(self.next_allowed, time.monotonic() + delay)
+        record_event("provider.retry", name="provider_backoff", metadata={"retry": retry_index + 1,
+            "delay_seconds": delay, "http_status": http_status(error)})
         return delay

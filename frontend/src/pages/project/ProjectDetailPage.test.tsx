@@ -5,6 +5,8 @@ import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
+import { formatDate } from "../../shared/i18n/format.ts"
+import { hiddenErrorMessage } from "../../infrastructure/http-client/publicErrors.ts"
 
 vi.mock("../../shared/ui-kit/MermaidDiagram.tsx", () => ({
   MermaidDiagram: ({ chart, label }: { chart: string; label: string }) => (
@@ -156,7 +158,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: "F-1 — Recorded responsibility finding" }))
     expect(await screen.findByRole("dialog", { name: "Recorded responsibility finding" })).toHaveTextContent("Historical finding details")
     expect(fileRequests).toEqual([])
-  })
+  }, 15000)
 
   it("embeds configured executed-agent evidence in the audit results tab while keeping the project context", async () => {
     const commit = "a".repeat(40)
@@ -229,6 +231,43 @@ describe("ProjectDetailPage", () => {
     }
   })
 
+  it("keeps distinct section icons and named destinations when the sidebar is collapsed", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+    await screen.findByRole("heading", { name: "acme/Demo" })
+
+    const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
+    const sections = within(navigation).getAllByRole("button")
+    expect(sections).toHaveLength(4)
+    const icons = sections.map((button) => {
+      const icon = button.querySelector("svg")!
+      expect(icon).toHaveAttribute("aria-hidden", "true")
+      expect(icon).toHaveAttribute("width", "16")
+      expect(icon).toHaveAttribute("height", "16")
+      return icon.innerHTML
+    })
+    expect(new Set(icons).size).toBe(sections.length)
+    for (const name of ["Home", "Settings", "Veraud"]) {
+      const globalIcon = screen.getByRole("link", { name }).querySelector("svg")!
+      expect(icons).not.toContain(globalIcon.innerHTML)
+    }
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    within(navigation).getAllByRole("button").forEach((button, index) => {
+      expect(button.querySelector("svg")).toBeVisible()
+      expect(button.querySelector("svg")!.innerHTML).toBe(icons[index])
+      expect(button.getAttribute("aria-label")).toBeTruthy()
+      expect(button).not.toHaveAttribute("title")
+    })
+    for (const button of within(navigation).getAllByRole("button")) {
+      await userEvent.hover(button)
+      expect(screen.getByRole("tooltip")).toHaveTextContent(button.getAttribute("aria-label")!)
+      await userEvent.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
+      await userEvent.unhover(button)
+    }
+  })
+
   it("shows the project header with sidebar", async () => {
     stubProjects()
     renderDetail("/projects/2")
@@ -237,7 +276,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByText("READY")).toBeDefined()
     expect(screen.getByText("HTTPS")).toBeDefined()
     expect(screen.getByText("Project")).toBeDefined()
-    expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
+    expect(screen.getByText(`Last synced ${formatDate("2026-01-02")}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
 
     const link = screen.getByRole("link", { name: "Open on GitHub" })
@@ -290,7 +329,7 @@ describe("ProjectDetailPage", () => {
     const callsBefore = branchCalls
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
-    expect(await screen.findByText(`Last synced ${new Date("2026-02-02").toLocaleDateString()}`)).toBeDefined()
+    expect(await screen.findByText(`Last synced ${formatDate("2026-02-02")}`)).toBeDefined()
     expect(await screen.findByText("Project acme/Demo synced")).toBeDefined()
     expect(branchCalls).toBeGreaterThan(callsBefore)
   })
@@ -465,21 +504,36 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
   })
 
-  it("shows quality audit status and its configuration entry independently of the file tree", async () => {
+  it("places audit setup in Analysis and keeps Audits for history", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
-    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
+    // No executable agent is configured by this fixture; defaults must not
+    // silently select an unavailable audit scope.
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Disabled")
     expect(screen.queryByRole("checkbox", { name: "Maintainability" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Project audits" })).not.toBeInTheDocument()
     expect(screen.queryByRole("tree")).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: "Configure audit" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    expect(await screen.findByRole("heading", { name: "Project audits" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Start audit" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Configure audit" })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
   })
 
-  it("opens quality audits directly from the header Analyze button without starting an execution", async () => {
+  it("opens Analysis audit setup from the header without starting an execution", async () => {
     const executions: string[] = []
     stubFetch((url, init) => {
       if (init?.method === "POST" && (url.includes("/audits") || url.includes("/agent-executions"))) executions.push(url)
@@ -494,6 +548,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(analyze)
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Analysis" })).toHaveAttribute("aria-current", "page")
     expect(screen.queryByRole("menu")).not.toBeInTheDocument()
     expect(executions).toEqual([])
   })
@@ -513,7 +568,7 @@ describe("ProjectDetailPage", () => {
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail(direct ? "/projects/2/audits/8" : "/projects/2/audits")
-    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View results" }))
+    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View details" }))
     expect(await screen.findByRole("heading", { name: "Audit results · #8" })).toBeInTheDocument()
     expect(await screen.findByText("Saved audit result")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
@@ -548,7 +603,7 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
   })
 
-  it("analyzes the applied version and shows the run in audits", async () => {
+  it("shows a stored pipeline and its captured configuration in Analysis", async () => {
     const seen: Array<{ url: string, body: unknown }> = []
     const waiting = (id: number, agentType: string, configuration: unknown = null) => ({
       id,
@@ -573,31 +628,27 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: { ...waiting(23, "semantic_validation"), configuration: captured },
-          },
-        }), { status: 201 })
+      if (init?.method === "POST" && url.endsWith("/architecture")) {
+        seen.push({ url, body: JSON.parse(String(init.body)) as unknown })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([{ id: 9, branch: "main", commitHash: "a".repeat(40),
+          evaluationId: 7, derivedStatus: "Waiting", executions: [waiting(21, "orientation"), waiting(22, "architecture"),
+            { ...waiting(23, "semantic_validation"), configuration: captured }] }]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify({ ...waiting(23, "semantic_validation"), configuration: captured }), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ aaaaaaa · Waiting" }))
 
-    expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+    expect(seen).toEqual([])
 
     // The run shows in the header card spinner.
     expect(await screen.findByText("Analyzing the project")).toBeDefined()
@@ -605,17 +656,17 @@ describe("ProjectDetailPage", () => {
     // Sync stays disabled while the pipeline reads the checkout.
     expect(screen.getByRole("button", { name: "Sync" }).hasAttribute("disabled")).toBe(true)
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // The semantic_validation row finishes last, so it is the tracked run.
     expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
-    expect(screen.getAllByText("Waiting")).toHaveLength(3)
+    expect(within(screen.getByRole("heading", { name: "Quality audit" }).closest<HTMLElement>(".project-body")!).getAllByText("Waiting")).toHaveLength(3)
     expect(screen.getByRole("heading", { name: "Configuration used" })).toBeDefined()
     expect(screen.getByText("captured-model")).toBeDefined()
     expect(screen.getByText("captured-credential (#2)")).toBeDefined()
   })
 
-  it("starts the project-architecture pipeline from the Analyze menu tracking validation", async () => {
+  it("restores the last validation run without starting another pipeline", async () => {
     const seen: Array<{ url: string, body: unknown }> = []
     const waiting = (id: number, agentType: string) => ({
       id,
@@ -634,37 +685,20 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
+      if (init?.method === "POST" && url.endsWith("/architecture")) {
         seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    renderDetail("/projects/2")
+    window.localStorage.setItem("analysis.lastExecution.2", "23")
+    renderDetail("/projects/2/analysis")
 
-    await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
-    expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
-
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
-
-    // The semantic_validation row finishes last, so it is the tracked run.
     expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
-    expect(screen.getAllByText("Waiting")).toHaveLength(3)
+    expect(seen).toEqual([])
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
   })
 
   it("renders parsed orientation content once its run completes", async () => {    const orientationResult = JSON.stringify({
@@ -701,16 +735,8 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: completedOrientation,
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/21")) {
+        return new Response(JSON.stringify(completedOrientation), { status: 200 })
       }
       if (url.includes("/api/projects/2/versions")) {
         return new Response(JSON.stringify([{
@@ -730,18 +756,11 @@ describe("ProjectDetailPage", () => {
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    // A previous test may have left a tracked run behind; start clean so the
-    // menu is enabled and nothing restores mid-test.
-    window.localStorage.removeItem("analysis.lastExecution.2")
+    window.localStorage.setItem("analysis.lastExecution.2", "21")
     // Open the analysis section directly: result cards render there.
     renderDetail("/projects/2/analysis")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
     expect(await screen.findByText("orientation run #21")).toBeDefined()
     expect(await screen.findByText("Orientation")).toBeDefined()
     expect(await screen.findByText("A command-line tool.")).toBeDefined()
@@ -771,37 +790,25 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: completed(21, "orientation", null),
-            architecture: completed(22, "architecture", failedArchitecture),
-            semantic_validation: completed(23, "semantic_validation", null),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/22")) {
+        return new Response(JSON.stringify(completed(22, "architecture", failedArchitecture)), { status: 200 })
       }
       if (url.includes("/api/projects/2/versions")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    window.localStorage.removeItem("analysis.lastExecution.2")
+    window.localStorage.setItem("analysis.lastExecution.2", "22")
     renderDetail("/projects/2/analysis")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
     expect(await screen.findByText("call_limit")).toBeDefined()
-    expect(await screen.findByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(screen.getByText(hiddenErrorMessage)).toBeVisible()
+    expect(screen.queryByText("Model-call limit reached.", { exact: false })).not.toBeInTheDocument()
     expect(await screen.findByText("Snapshot capped.")).toBeDefined()
   })
 
-  it("disables Analyze while a sync is running", async () => {
+  it("allows opening audit setup during sync but prevents starting an audit", async () => {
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
@@ -820,7 +827,10 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true))
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeEnabled()
+    await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
+    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
   })
 
   it("checks out an analyzed version and shows its stored run", async () => {
@@ -872,12 +882,12 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText(`(HEAD detached at ${"b".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
     expect(seen[0]).toContain("b".repeat(40))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // The architect carries the final verdict, so a version with both rows
     // shows the architect run.
     expect(await screen.findByText("architect run #31")).toBeDefined()
-    expect(screen.getAllByText("Completed").length).toBe(2)
+    expect(within(screen.getByRole("heading", { name: "Quality audit" }).closest<HTMLElement>(".project-body")!).getAllByText("Completed")).toHaveLength(2)
 
     // A second pick moves the detached checkout without re-attaching first.
     await userEvent.click(screen.getByRole("button", { name: "Overview" }))
@@ -888,7 +898,7 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText(`(HEAD detached at ${"c".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
     expect(seen[1]).toContain("c".repeat(40))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // A version with only the analyzer row falls back to it.
     expect(await screen.findByText("analyzer run #22")).toBeDefined()
@@ -929,7 +939,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
     await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByText("analyzer run #21")).toBeDefined()
     expect(screen.queryByText("Analysis completed")).toBeNull()
@@ -977,7 +987,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByText("A command-line tool.")).toBeDefined()
     expect(screen.queryByText("Analyzing")).toBeNull()
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByText("orientation run #21")).toBeDefined()
   })
@@ -1000,29 +1010,18 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
         return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
+    window.localStorage.setItem("analysis.lastExecution.2", "23")
     renderDetail("/projects/2")
 
-    await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+    await screen.findByText("Analyzing the project")
 
     const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {

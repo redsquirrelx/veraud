@@ -1,5 +1,6 @@
 import { logger } from "../../config/logger.js"
 import { executionRequest } from "./execution-request.js"
+import { readExecutionErrorDetail } from "../../modules/agent-execution/execution-error-detail.js"
 import type { AgentRunConfig, ModelAccessVerifier } from "../../modules/agent-settings/agent-configuration.js"
 import { ModelAccessError, type ModelAccessErrorCode } from "../../modules/agent-settings/model-access-error.js"
 import { AgentCatalogError, parseAgentCatalog, type AgentCatalog, type AgentCatalogSource } from "../../modules/agent-settings/agent-catalog.js"
@@ -25,6 +26,7 @@ export interface AgentInvoker {
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
   /** Read published records without reconciling, generating a report or starting work. */
   getAuditSnapshot?(runId: string): Promise<AgentInput>
+  cancelAudit?(runId: string): Promise<AgentInput>
 }
 
 /** What the pipeline needs: only the repository root. Stage inputs are
@@ -127,7 +129,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
   async run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig): Promise<AgentInput> {
     const url = `${this.baseUrl}/api/agents/run`
 
-    this.log.info(`Invoking ${agentType} for execution ${executionId} at ${url}`)
+    this.log.info(`Invoking ${agentType} for execution ${executionId}`)
 
     let response: Response
 
@@ -175,7 +177,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const url = `${this.baseUrl}/api/pipelines/${encodeURIComponent(pipeline)}/run`
 
     this.log.info(
-      `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")} at ${url}`,
+      `Invoking ${pipeline} pipeline for executions ${Object.values(executionIds).join("/")}`,
     )
 
     const qualityAudit = pipeline === "quality-audit"
@@ -228,13 +230,14 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     }
     const snapshot = await (await read(base)).json() as AgentInput
     if (snapshot["run_id"] !== runId) throw new Error("Audit reconciliation returned a different run")
-    if (["queued", "running"].includes(String(snapshot["status"]))) return null
+    if (["queued", "running", "cancelling"].includes(String(snapshot["status"]))) return null
     if (!["completed", "partial", "failed", "cancelled"].includes(String(snapshot["status"]))) {
       throw new Error("Audit reconciliation returned an invalid state")
     }
     const report = await (await read(`${base}/report`)).json() as AgentInput
     const document = await (await read(`${base}/report.docx`)).arrayBuffer()
     return { attributes, status: snapshot["status"], run_id: runId, report,
+      error_detail: readExecutionErrorDetail(snapshot["error_detail"]),
       blackboard: snapshot, docx_base64: Buffer.from(document).toString("base64") }
   }
 
@@ -247,5 +250,18 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const snapshot = await response.json() as AgentInput
     if (snapshot.run_id !== runId) throw new Error("Audit snapshot returned a different run")
     return snapshot
+  }
+
+  async cancelAudit(runId: string): Promise<AgentInput> {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST", signal: AbortSignal.timeout(10_000),
+    })
+    if (response.status === 404) throw new AuditRunUnavailableError("The agent-server no longer retains this audit run")
+    if (!response.ok) throw new AgentInvocationError(`Audit cancellation returned HTTP ${response.status}`, response.status)
+    const state = await response.json() as AgentInput
+    if (state.run_id !== runId || !["queued", "running", "cancelling", "cancelled", "completed", "partial", "failed"].includes(String(state.status))) {
+      throw new AgentInvocationError("Agent-server returned an invalid audit cancellation state")
+    }
+    return state
   }
 }

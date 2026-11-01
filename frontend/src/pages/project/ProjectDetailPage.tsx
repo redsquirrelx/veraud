@@ -23,6 +23,7 @@ import {
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
+import { ProjectOverviewIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
@@ -40,9 +41,9 @@ import { formatDate, formatNumber } from "../../shared/i18n/format.ts"
 import "./ProjectDetailPage.css"
 
 const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
-  { id: "overview", labelKey: "detail.sections.overview", icon: <FolderIcon /> },
-  { id: "analysis", labelKey: "detail.sections.analysis", icon: <FolderIcon /> },
-  { id: "audits", labelKey: "detail.sections.audits", icon: <FolderIcon /> },
+  { id: "overview", labelKey: "detail.sections.overview", icon: <ProjectOverviewIcon /> },
+  { id: "analysis", labelKey: "detail.sections.analysis", icon: <ProjectAnalysisIcon /> },
+  { id: "audits", labelKey: "detail.sections.audits", icon: <ProjectAuditsIcon /> },
   { id: "files", labelKey: "detail.sections.files", icon: <FolderIcon /> },
 ]
 
@@ -249,16 +250,6 @@ export function ProjectDetailPage() {
     },
   }
 
-  const runStatuses = (
-    <>
-      {analyzerExec !== null && <PipelineRunStatus execution={analyzerExec} />}
-      {architectExec !== null && <PipelineRunStatus execution={architectExec} />}
-      {orientationExec !== null && <PipelineRunStatus execution={orientationExec} />}
-      {projectArchitectureExec !== null && <PipelineRunStatus execution={projectArchitectureExec} />}
-      {semanticValidationExec !== null && <PipelineRunStatus execution={semanticValidationExec} />}
-    </>
-  )
-
   if (section !== undefined && !VALID_SECTIONS.has(section)) {
     return <Navigate to={`/projects/${id}/overview`} replace />
   }
@@ -283,7 +274,7 @@ export function ProjectDetailPage() {
               analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
               syncing={syncActive}
               onSync={() => void handleSync()}
-              onAudit={() => void navigate(`/projects/${id}/audits`)}
+               onAudit={() => void navigate(`/projects/${id}/analysis`)}
               versionSelector={{
                 selection: gitSelection,
                 mode: versionMode,
@@ -369,7 +360,13 @@ export function ProjectDetailPage() {
                 </div>
               </Card>
             )}
-            {activeSection === "analysis" && analysis.execution !== null && (
+             {(activeSection === "analysis" || activeSection === "audits") && auditId === undefined && (
+               <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash}
+                 canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default"
+                 view={activeSection === "analysis" ? "configuration" : "history"}
+                 onConfigure={() => void navigate(`/projects/${id}/analysis`)} />
+             )}
+             {activeSection === "analysis" && analysis.execution !== null && (
               <>
                 {analyzerExec !== null && (
                   <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
@@ -439,18 +436,14 @@ export function ProjectDetailPage() {
                 />
               </Card>
             )}
-            {activeSection === "audits" && auditId === undefined && (
-              <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash} canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default" />
-            )}
             {auditId !== undefined && (invocationId !== undefined
               ? <AuditAgentEvidence projectId={project.id} auditId={Number(auditId)} invocationId={invocationId} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />
               : <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />)}
-            {activeSection === "audits" && auditId === undefined && (
+             {activeSection === "analysis" && auditId === undefined && (
               analysis.execution === null ? (
                 null
               ) : (
                 <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
-                  {runStatuses}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link className="ui-button ui-button-secondary" to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>
@@ -469,7 +462,7 @@ export function ProjectDetailPage() {
                 </Card>
               )
             )}
-            {auditId === undefined && analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
+             {auditId === undefined && activeSection !== "audits" && analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
              <Link className="ui-button ui-button-secondary" to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}

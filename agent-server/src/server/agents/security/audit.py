@@ -15,6 +15,7 @@ from server.contracts.audit import AuditRequest, Criterion
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
 from ...config.token_budget import token_budget_exceeded
+from ...infrastructure.execution_events import observe_components
 from ...infrastructure.llm.chat import prepare_chat_model
 from ...infrastructure.llm.diagnostics import provider_diagnostic
 from ...runtimes.investigation.provider import (
@@ -75,6 +76,11 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     calls = 0
     policy = SecurityConfig()
     supervisor = SecuritySupervisorAgent(config=policy)
+    observe_components(supervisor, {
+        "sast_agent": "sast_scanner", "secret_agent": "secret_scanner", "sca_agent": "sca_dependency",
+        "enrichment_agent": "knowledge_enrichment", "dast_agent": "dast_sandbox",
+        "remediation_agent": "remediation_synthesizer", "validator_agent": "patch_validator", "verifier_agent": "security_verifier",
+    })
     # This adapter uses only the selected, managed provider. Never consult an
     # ambient OPENAI_API_KEY through the legacy synchronous remediation path.
     supervisor.remediation_agent.api_key = None

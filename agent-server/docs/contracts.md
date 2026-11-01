@@ -17,6 +17,7 @@ Implementation owners are listed in [`architecture.md`](architecture.md).
 | `GET /api/pipelines` | Names remain `functional-adequacy`, `project-architecture`, `quality-audit` |
 | `POST /api/pipelines/{name}/run` | Preserve `input`, `config`, `stage_configs`, `execution_ids`, `timeout_seconds` and stage-keyed result |
 | `POST /api/audits` | Accepted asynchronous lifecycle remains HTTP 202; do not change validation-before-acceptance order |
+| `POST /api/audits/{run_id}/cancel` | HTTP 202, idempotent; rejects new audit work before requesting task cancellation. Returns `cancelling` while owned work/cleanup remains, then `cancelled`; terminal runs are unchanged, unknown runs return 404. Evidence and usage already recorded are retained. |
 | `GET /api/audits/{run_id}` | Current lifecycle and Blackboard snapshot; terminal states are completed, partial, failed or cancelled |
 | `GET /api/audits/{run_id}/report[.docx]` | Canonical report and DOCX; generations remain separately retrievable |
 | `POST /api/audits/reports/from-snapshot[.docx]` | Offline deterministic report from same-run evidence/findings/assessments; does not import into active Blackboard |
@@ -42,6 +43,25 @@ safe domain errors and do not return exception/provider payloads containing secr
 Backend-created execution IDs are only updated, never created, by the callback client. A
 callback transport failure must not discard successful agent work. `X-Agent-Secret` remains
 optional and is not authorization unless the backend separately implements it.
+
+### Structured execution errors
+
+Public descriptions are reconstructed from host-owned error codes; raw/historical
+messages are not trusted. See [execution error privacy](../../backend/docs/execution-error-privacy.md)
+for callback, persistence, event, logging and UI protection with code references.
+
+Completion callbacks optionally carry `errorDetail`; invocation receipts and audit
+state/snapshots carry `error_detail`. Callback detail objects use `agentId`,
+`invocationId`, `occurredAt` (UTC ISO 8601), `code`, `exceptionType` and `message`.
+Identity and incident time belong to the original failing child, not a parent
+forwarding its failure. A parent exposes the first captured child incident as a
+representative cause; individual child receipts remain available separately.
+Generic exceptions produce safe host-defined descriptions, never raw provider text.
+Failed/timeout results without an exception also produce an incident; partial
+coverage and requested cancellation alone do not. Existing `error` fields and
+execution status semantics are preserved. Legacy payloads need not contain details.
+Agent-server keeps audit state in memory; durable storage and monitor projections
+require backend support for the new optional fields before end-to-end rollout.
 
 ## `quality-audit` artifact and reconciliation
 

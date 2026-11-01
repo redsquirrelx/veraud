@@ -19,9 +19,14 @@ from server.app.execution_config import ExecutionConfig
 from server.app.pipeline_contracts import PipelineDefinition
 from server.app.pipeline_registry import default_pipeline_registry
 from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
+from server.services.execution_error_details import (
+    exception_error_detail,
+    result_error_detail,
+)
 
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
+from ..infrastructure.execution_events import bind_execution, record_execution
 from .callback_port import CallbackSink, default_callback_sink
 from .errors import InvalidConfigError
 from .usage_reporting import report_progress
@@ -65,6 +70,7 @@ class GenericReportingHooks:
         self.partial_results: dict[int, BaseModel] = {}
 
     async def on_stage_start(self, stage: str) -> None:
+        bind_execution(self._ids[stage])
         if stage in self.started or stage in self.completed:
             return
         await self._mark_running(self._ids[stage])
@@ -104,22 +110,22 @@ class GenericReportingHooks:
         )
         self.completed.add(stage)
 
-    async def close_failed(self, error: str) -> None:
+    async def close_failed(self, error: str, error_detail=None) -> None:
         """Close whatever the failure left unfinished."""
         pending = [name for name in self._order if name not in self.completed]
         for index, name in enumerate(pending):
             if index == 0:
-                await self._report_failure(self._ids[name], error)
+                await self._report_failure(self._ids[name], error, error_detail)
             else:
                 await self._report_failure(
-                    self._ids[name], f"Skipped: {pending[0]} failed ({error})"
+                    self._ids[name], f"Skipped: {pending[0]} failed ({error})", error_detail
                 )
 
-    async def fail_open(self, error: str) -> None:
+    async def fail_open(self, error: str, error_detail=None) -> None:
         for name in self._order:
             execution_id = self._ids[name]
             if execution_id in self.open_rows:
-                await self._report_failure(execution_id, error)
+                await self._report_failure(execution_id, error, error_detail)
 
     async def _mark_running(self, execution_id: int) -> None:
         if self._callbacks is None:
@@ -132,17 +138,20 @@ class GenericReportingHooks:
             return
         await self._callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Completed", result=result.model_dump_json(), **self.usage(execution_id)),
+            ExecutionOutcome(status="Completed", result=result.model_dump_json(),
+                error_detail=result_error_detail(result,
+                    agent_id=next((name for name, value in self._ids.items() if value == execution_id), None)),
+                **self.usage(execution_id)),
         )
         self.open_rows.discard(execution_id)
 
-    async def _report_failure(self, execution_id: int, error: str) -> None:
+    async def _report_failure(self, execution_id: int, error: str, error_detail=None) -> None:
         if self._callbacks is None:
             return
         await self._callbacks.complete(
             execution_id,
             ExecutionOutcome(
-                status="Failed", error=error,
+                status="Failed", error=error, error_detail=error_detail,
                 result=self.partial_results[execution_id].model_dump_json()
                 if execution_id in self.partial_results else None,
                 **self.usage(execution_id),
@@ -226,6 +235,7 @@ class GenericPipelineService:
                     logger.warning("Pipeline %r resource cleanup failed (%s)", pipeline_name, type(error).__name__)
 
 
+    @record_execution
     async def _execute_prepared(
         self, definition, pipeline_name, parsed, agents, ctx, config, stage_configs,
         execution_ids, stages, timeout_seconds,
@@ -262,14 +272,16 @@ class GenericPipelineService:
                 name=pipeline_name,
                 timeout_seconds=timeout_seconds,
             )
-        except TimeoutError:
+        except TimeoutError as error:
             logger.error("Pipeline %r timed out after %ss", pipeline_name, timeout_seconds)
             if hooks is not None:
-                await hooks.fail_open(f"Pipeline timed out after {timeout_seconds}s")
+                detail = exception_error_detail(error, agent_id=pipeline_name)
+                await hooks.fail_open(f"Pipeline timed out after {timeout_seconds}s", detail)
             raise
         except Exception as error:
             if hooks is not None:
-                await hooks.close_failed(str(error) or type(error).__name__)
+                detail = exception_error_detail(error, agent_id=pipeline_name)
+                await hooks.close_failed(detail.message, detail)
             raise
         finally:
             if callbacks is not None:

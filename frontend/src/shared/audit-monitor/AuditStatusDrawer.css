@@ -1,10 +1,12 @@
 /* Full-viewport layer that never captures events on its own, so the view
    behind stays interactive while the tab and the panel overlay it. */
 .audit-drawer {
-  --audit-drawer-panel-width: 420px;
+  --audit-drawer-panel-width: min(var(--audit-drawer-requested-width, 420px), 100vw);
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-sticky);
+  font-family: var(--font-sans);
+  line-height: var(--line-height-body);
   overflow: hidden;
   pointer-events: none;
 }
@@ -30,25 +32,30 @@
 .audit-drawer-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-shrink: 0;
   padding: 0.85rem 0.3rem;
-  background: var(--status-info-bg);
-  border: var(--border-width) solid var(--status-info-border);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-control);
   border-right: none;
-  border-radius: 0.5rem 0 0 0.5rem;
-  box-shadow: var(--shadow-audit-drawer-trigger);
-  color: var(--status-info-text);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text-secondary);
+  font-family: inherit;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   writing-mode: vertical-rl;
+  transition: background-color var(--motion-hover) ease, color var(--motion-hover) ease;
   cursor: pointer;
 }
 
-.audit-drawer-trigger:hover,
-.audit-drawer-trigger[aria-expanded="true"] {
-  background: var(--status-info-bg);
+.audit-drawer-trigger:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
+
+.audit-drawer-trigger:active,
+.audit-drawer-trigger[aria-expanded="true"] { background: var(--color-surface-active); color: var(--color-text); }
 
 .audit-drawer-trigger:focus-visible {
   outline: var(--focus-width) solid var(--color-focus);
@@ -63,9 +70,9 @@
 .audit-drawer-trigger-active {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--status-info-accent);
-  box-shadow: 0 0 0 2px var(--status-info-bg);
+  box-shadow: 0 0 0 var(--focus-width) var(--color-surface);
 }
 
 .audit-drawer-panel {
@@ -74,9 +81,9 @@
   flex-direction: column;
   align-self: stretch;
   width: var(--audit-drawer-panel-width);
-  background: var(--color-surface-recessed);
-  border-left: var(--border-width) solid var(--color-text-muted);
-  box-shadow: var(--shadow-audit-drawer);
+  background: var(--color-surface);
+  border-left: var(--border-width) solid var(--color-border-control);
+  box-shadow: var(--shadow-drawer);
   visibility: hidden;
   /* Visibility waits for the slide-out, so the panel does not vanish early. */
   transition: visibility 0s linear 250ms;
@@ -95,17 +102,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
   flex-shrink: 0;
-  padding: 0.75rem 1rem;
-  border-bottom: var(--border-width) solid var(--color-border-control);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) solid var(--color-border);
   background: var(--color-surface);
 }
 
 .audit-drawer-header h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
@@ -114,18 +121,20 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
   padding: 0;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-description);
+  font: inherit;
+  transition: background-color var(--motion-hover) ease, color var(--motion-hover) ease;
   cursor: pointer;
 }
 
 .audit-drawer-close:hover {
-  background: var(--color-surface-recessed);
+  background: var(--color-surface-hover);
   color: var(--color-text);
 }
 
@@ -134,35 +143,58 @@
   outline-offset: 2px;
 }
 
+.audit-drawer-close:active { background: var(--color-surface-active); }
+
 .audit-drawer-body {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.75rem;
-}
-
-/* White audit cards on a recessed slate field: the stock surface border would be
-   invisible here, so each audit gets a stronger edge plus its state accent. */
-.audit-drawer-body .ui-card {
-  border-color: var(--color-border-hover);
-  box-shadow: var(--shadow-audit-card);
+  padding: var(--space-3);
 }
 
 .audit-drawer-body .audit-disclosure {
-  border-left: 4px solid var(--audit-accent, var(--status-waiting-accent));
-  padding-left: 8px;
+  border-left: var(--space-1) solid var(--audit-accent, var(--status-waiting-accent));
+  padding-left: var(--space-2);
 }
+
+.audit-drawer-resize {
+  position: absolute;
+  inset: 0 auto 0 -4px;
+  width: var(--space-2);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.audit-drawer-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: var(--space-1);
+  height: var(--space-10);
+  border-radius: var(--radius-pill);
+  background: var(--color-border-control);
+  transform: translateY(-50%);
+  transition: background-color var(--motion-hover) ease;
+}
+.audit-drawer-resize:hover::after,
+.audit-drawer-resize:focus-visible::after { background: var(--color-brand); }
+.audit-drawer-resize:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: 2px; }
 
 @media (max-width: 600px) {
   .audit-drawer { --audit-drawer-panel-width: 100vw; }
   .audit-drawer-panel { border-left: none; }
+  .audit-drawer-resize { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .audit-drawer-shell,
-  .audit-drawer-panel { transition: none; }
+  .audit-drawer-panel,
+  .audit-drawer-trigger,
+  .audit-drawer-close,
+  .audit-drawer-resize::after { transition: none; }
 }

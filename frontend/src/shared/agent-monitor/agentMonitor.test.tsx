@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { useContext, type ReactNode } from "react"
 import { AgentExecutionsProvider } from "./agentMonitor.tsx"
-import { useAgentExecutions } from "./useAgentExecutions.ts"
+import { AuditExecutionUpdateContext, useAgentExecutions } from "./useAgentExecutions.ts"
 
 const realWebSocket = globalThis.WebSocket
 const realFetch = globalThis.fetch
@@ -71,6 +71,24 @@ beforeEach(() => {
 })
 
 describe("AgentExecutionsProvider", () => {
+  it("merges cancellation responses and terminal events without reopening a confirmed audit", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    const { result } = renderHook(() => ({ executions: useAgentExecutions(), update: useContext(AuditExecutionUpdateContext) }), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: { ...opened, status: "Running" } }))
+    await waitFor(() => expect(result.current.executions).toHaveLength(1))
+    const requested = { id: 11, executionStatus: "Running", auditStatus: "cancelling", cancellationRequestedAt: "2026-10-30T12:00:00Z", finishedAt: null, error: null }
+    act(() => result.current.update(requested))
+    expect(result.current.executions[0]?.cancellationRequestedAt).toBe(requested.cancellationRequestedAt)
+    expect(result.current.executions[0]?.status).toBe("Running")
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: {
+      ...opened, status: "Completed", interruptionReason: "cancelled", finishedAt: "2026-10-30T12:01:00Z",
+      cancellationRequestedAt: requested.cancellationRequestedAt,
+    } }))
+    act(() => result.current.update(requested))
+    expect(result.current.executions[0]?.status).toBe("Completed")
+    expect(result.current.executions[0]?.interruptionReason).toBe("cancelled")
+    expect(result.current.executions[0]?.finishedAt).toBe("2026-10-30T12:01:00Z")
+  })
   it("keeps live children and terminal usage when a stale hydration response arrives", async () => {
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
     let resolveInitial!: (response: Response) => void

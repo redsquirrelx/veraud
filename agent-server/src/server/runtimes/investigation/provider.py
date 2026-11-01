@@ -92,6 +92,9 @@ class ProviderPacer(RequestPacer):
         return delays
 
     async def acquire(self, tokens, *, on_wait=None):
+        from ..cancellation import check_cancellation
+
+        check_cancellation()
         if self.scope is not None:
             # Global admission replaces local RPM/TPM counters; the existing
             # invocation pacer still owns its independent minimum spacing.
@@ -103,9 +106,11 @@ class ProviderPacer(RequestPacer):
                 self.completed_attempt()
                 return reservation
         while True:
+            check_cancellation()
             # Only checking/reserving capacity is serialized. A sleeping request
             # must not hold up smaller requests that fit the available TPM.
             async with self.lock:
+                check_cancellation()
                 notification = self.changed
                 now = self.clock()
                 delays = self.quota_delay(tokens, now)

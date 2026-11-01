@@ -1,0 +1,11 @@
+.audit-incidents { display: grid; gap: var(--space-3); color: var(--color-text); }
+.audit-incidents > p, .audit-incident p { margin: 0; }
+.audit-incidents-list { display: grid; gap: var(--space-2); list-style: none; padding: 0; margin: 0; }
+.audit-incident { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-recessed); min-width: 0; overflow-wrap: anywhere; }
+.audit-incident-identity { display: grid; gap: var(--space-1); min-width: 0; }
+.audit-incident-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-xs); }
+.audit-incident-identity strong { font-weight: var(--font-weight-semibold); }
+.audit-incident .execution-error { margin: 0; }
+@media (max-width: 720px) {
+  .audit-incident { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); }
+}

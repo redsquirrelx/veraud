@@ -5,6 +5,8 @@ import { InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, type Pr
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
 import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
+import { storedExecutionErrorDetail } from "../agent-execution/execution-error-detail.js"
+import { publicErrorText, publicErrorFields } from "../../infrastructure/security/public-errors.js"
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 
 export class AuditNotFoundError extends Error {}
@@ -25,6 +27,8 @@ function artifacts(row: AuditRow): AuditArtifacts | null {
 }
 
 type SummaryRow = Pick<AuditRow, "id" | "agentType" | "evaluationId" | "status" | "error" | "createdAt" | "startedAt" | "finishedAt" | "configurationSnapshot"> & {
+  errorDetail?: string | null
+  cancellationRequestedAt?: Date | null
   evaluation: { projectVersion: { branch: string | null, commitHash: string | null } } | null
 }
 
@@ -39,8 +43,10 @@ function summary(row: SummaryRow, result: Partial<Pick<AuditArtifacts, "run_id" 
     attributes: configuration?.attributes ?? result?.attributes ?? [row.agentType === "maintainability_manager" ? "maintainability" : row.agentType],
     configurationAvailable: configuration !== null,
     executionStatus: row.status,
-    auditStatus: result?.status ?? null,
-    error: row.error,
+    auditStatus: row.cancellationRequestedAt && ["Waiting", "Running"].includes(row.status) ? "cancelling" : result?.status ?? null,
+    cancellationRequestedAt: row.cancellationRequestedAt ?? null,
+    error: publicErrorText(row.error),
+    errorDetail: storedExecutionErrorDetail(row.errorDetail),
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
@@ -58,6 +64,12 @@ function savedConfiguration(row: { configurationSnapshot: string | null }): Audi
 export class QualityAuditService {
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
     private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">) {}
+
+  async cancel(projectId: number, id: number) {
+    if (!await this.repository.findSummary(projectId, id)) throw new AuditNotFoundError("Audit not found for this project")
+    await this.executions.cancelQualityAudit(id)
+    return this.detail(projectId, id)
+  }
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
     if (!attributes.length || new Set(attributes).size !== attributes.length
@@ -117,11 +129,11 @@ export class QualityAuditService {
     const row = await this.repository.findReportSection(projectId, id, section as AuditReportSection)
     if (!row) throw new AuditNotFoundError("Audit not found for this project")
     if (row.reportType !== "object") throw new AuditReportUnavailableError("The audit report is not available yet")
-    return { section, data: JSON.parse(row.data ?? "null") as unknown }
+    return { section, data: publicErrorFields(JSON.parse(row.data ?? "null")) }
   }
 
   async report(projectId: number, id: number) {
-    return (await this.requireArtifacts(projectId, id)).report
+    return publicErrorFields((await this.requireArtifacts(projectId, id)).report)
   }
 
   async file(projectId: number, id: number, path: string) {

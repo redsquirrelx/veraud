@@ -103,6 +103,37 @@ def test_single_agent_reports_live_usage_and_final_counts(fail):
     final = next(event[2] for event in sink.events if event[0] == "complete")
     assert (final.input_tokens, final.output_tokens) == (200, 40)
     assert final.status == ("Failed" if fail else "Completed")
+    if fail:
+        assert final.error_detail.agent_id == "test"
+        assert final.error_detail.exception_type == "ValueError"
+        assert final.error_detail.occurred_at is not None
+        assert "agent failed" not in final.error_detail.message
+    else:
+        assert final.error_detail is None
+
+
+def test_failed_direct_result_reports_incident_without_changing_delivery_semantics():
+    sink = Recorder()
+
+    class FailedOutput(BaseModel):
+        status: str = "failed"
+
+    class Agent:
+        model = Model()
+        input_schema = Output
+
+        async def run(self, payload):
+            await self.model.generate("first")
+            return FailedOutput()
+
+    service = AgentExecutionService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
+    service.build_agent = lambda *args: (Agent(), 60)
+    asyncio.run(service.run("test", ExecutionConfig(), {}, execution_id=42))
+    final = next(event[2] for event in sink.events if event[0] == "complete")
+    assert final.status == "Completed"  # Successful delivery is not successful audit coverage.
+    assert final.error_detail.agent_id == "test"
+    assert final.error_detail.code == "execution_failed"
+    assert (final.input_tokens, final.output_tokens) == (100, 20)
 
 
 def test_direct_execution_closes_the_model_client_after_completion(monkeypatch):

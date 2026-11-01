@@ -19,6 +19,7 @@ vi.mock("../../features/project-management/qualityAuditApi.ts", () => ({
   readAuditSourceFile: () => Promise.reject(new Error("Historical file unavailable in this fixture")),
 }))
 beforeEach(() => {
+  window.localStorage.clear()
   vi.mocked(getQualityAudit).mockResolvedValue({ id: 41, evaluationId: 1, branch: "main", commitHash: "audited-commit",
     attributes: ["maintainability"], executionStatus: "Completed", auditStatus: "completed", error: null,
     createdAt: "2026-10-20", finishedAt: null, reportAvailable: true })
@@ -68,6 +69,9 @@ it("opens registered evidence in the main area while preserving the open audit m
   show()
   await userEvent.click(screen.getByRole("button", { name: "1 audit" }))
   const panel = screen.getByRole("region", { name: "Audit statuses" })
+  for (const button of within(panel).getAllByRole("button", { name: /^Execution details · (responsibility|architecture_boundary)/ })) {
+    await userEvent.click(button)
+  }
   const links = within(panel).getAllByRole("link", { name: "View evidence" })
   expect(links).toHaveLength(2)
   await userEvent.click(links[0])
@@ -95,6 +99,7 @@ it("translates the registered evidence and action into Spanish", async () => {
   await initializeI18n("es")
   show()
   await userEvent.click(screen.getByRole("button", { name: "1 auditoría" }))
+  await userEvent.click(screen.getByRole("button", { name: /^Detalles de ejecución · Ejecución de responsibility/ }))
   await userEvent.click(screen.getAllByRole("link", { name: "Ver evidencias" })[0])
   expect(screen.getByRole("heading", { name: "Evidencias del agente" })).toBeVisible()
   expect(await screen.findByRole("heading", { name: "Evidencias registradas (1)" })).toBeVisible()

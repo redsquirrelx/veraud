@@ -3,6 +3,7 @@ import { listAgentSettings, type AgentSettings } from "../../infrastructure/http
 import { useAgentExecutions } from "../agent-monitor/useAgentExecutions.ts"
 import { AuditStatusDrawer } from "./AuditStatusDrawer.tsx"
 import { executionAudits } from "./executionAudits.ts"
+import { demoAudit } from "./demoAudit.ts"
 
 /** Uses the existing restored WebSocket feed; the drawer remains presentational. */
 export function LiveAuditMonitor() {
@@ -17,5 +18,5 @@ export function LiveAuditMonitor() {
     }).catch(() => { /* HTTP execution context remains usable while catalog loading is unavailable. */ })
     return () => controller.abort()
   }, [hasExecutions])
-  return <AuditStatusDrawer audits={executionAudits(executions, catalog)} />
+  return <AuditStatusDrawer audits={[...executionAudits(executions, catalog), demoAudit]} />
 }

@@ -111,9 +111,11 @@ it("supports keyboard navigation and Spanish translations for the new tab and ag
   await screen.findByRole("heading", { name: "Informe de auditoría · #41" })
   screen.getByRole("tab", { name: "Resumen General" }).focus()
   await userEvent.keyboard("{End}")
+  expect(screen.getByRole("tab", { name: "Cronología" })).toHaveFocus()
+  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}")
   expect(screen.getByRole("tab", { name: "Evidencias" })).toHaveFocus()
   expect(await screen.findByRole("combobox", { name: "Agente ejecutado" })).toBeVisible()
-  await userEvent.keyboard("{ArrowRight}")
+  await userEvent.keyboard("{Home}")
   expect(screen.getByRole("tab", { name: "Resumen General" })).toHaveFocus()
 })
 

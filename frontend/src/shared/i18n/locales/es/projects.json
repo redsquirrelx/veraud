@@ -79,7 +79,7 @@
     }
   },
   "qualityAudits": {
-    "viewResults": "Ver resultados",
+    "viewDetails": "Ver detalles",
     "findingsList": {
       "pageRange": "Hallazgos {{start}}–{{end}} de {{total}} · {{order}}",
       "perPage": "Hallazgos por página", "sortOrder": "Orden de severidad",

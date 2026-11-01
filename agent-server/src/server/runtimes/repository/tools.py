@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from config.agents.tools import ToolLimits
 
+from ...infrastructure.execution_events import action_event
 from ...services.repository_analysis import RepositoryQueryService
 from ...services.repository_analysis.context import create_identifier
 from ...services.repository_analysis.schemas import QueryPage
@@ -249,8 +250,21 @@ class RepositoryToolset:
     def execute(
         self, name: str, arguments: dict[str, Any], *, tool_call_id: str
     ) -> RepositoryToolResponse:
+        """Journal every attempted tool action, including uncharged rejections."""
+        safe_name = name if isinstance(name, str) and name in TOOL_SCHEMAS else "unknown_tool"
+        with action_event("tool", name=safe_name, source_id=tool_call_id) as event:
+            response = self._execute_measured(name, arguments, tool_call_id=tool_call_id)
+            event["status"] = "completed" if response.status == "ok" else "rejected"
+            event["metadata"] = {"cache_hit": self.last_cache_hit}
+            return response
+
+    def _execute_measured(
+        self, name: str, arguments: dict[str, Any], *, tool_call_id: str
+    ) -> RepositoryToolResponse:
         """Measure charged requests without storing argument or response content."""
         with self._lock:
+            if self.timing is not None:
+                self.timing.check_cancellation()
             before = self._tool_calls
             started = monotonic()
             self._last_cache_hit = False

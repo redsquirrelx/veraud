@@ -1,5 +1,6 @@
 export { Button } from "./Button.tsx"
 export { IconButton } from "./IconButton.tsx"
+export { Tooltip } from "./Tooltip.tsx"
 export { Badge } from "./Badge.tsx"
 export { Card } from "./Card.tsx"
 export { Accordion } from "./Accordion.tsx"
