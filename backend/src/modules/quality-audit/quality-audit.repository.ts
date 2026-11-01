@@ -9,11 +9,45 @@ export class QualityAuditRepository {
     return await this.db.project.findUnique({ where: { id: projectId }, select: { id: true } }) !== null
   }
 
-  async list(projectId: number) {
-    return this.db.agentExecution.findMany({
-      where: { evaluation: { type: "QualityAudit", projectVersion: { projectId } } },
-      include: { evaluation: { include: { projectVersion: true } } },
-      orderBy: { id: "desc" },
+  async list(projectId: number, limit = 2147483647, offset = 0) {
+    const where = { evaluation: { type: "QualityAudit", projectVersion: { projectId } } }
+    return this.db.$transaction(async (tx) => {
+      const total = await tx.agentExecution.count({ where })
+      const hasRunning = await tx.agentExecution.count({ where: { ...where, status: { in: ["Waiting", "Running"] } } }) > 0
+      const actualOffset = total === 0 ? 0 : offset >= total ? Math.floor((total - 1) / limit) * limit : offset
+      const rows = await tx.agentExecution.findMany({
+        where, take: limit, skip: actualOffset, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true, agentType: true, evaluationId: true, status: true, error: true, createdAt: true,
+          startedAt: true, finishedAt: true, cancellationRequestedAt: true,
+          evaluation: { select: { projectVersion: { select: { branch: true, commitHash: true } } } } },
+      })
+      // SQLite projects only summary metadata; result contains Blackboard and base64 DOCX.
+      const projections = await tx.$queryRaw<Array<{ id: number, runId: string | null, attributes: string | null,
+        auditStatus: string | null, reportType: string | null, configurationSnapshot: string | null }>>`
+        WITH page AS (
+          SELECT a.id FROM agent_execution a JOIN evaluation e ON e.id = a.evaluation_id
+            JOIN project_version v ON v.id = e.project_version_id
+          WHERE v.project_id = ${projectId} AND e.type = 'QualityAudit'
+          ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit} OFFSET ${actualOffset}
+        )
+        SELECT a.id,
+          CASE WHEN json_valid(a.result) THEN COALESCE(json_extract(a.result, '$.run_id'), json_extract(a.result, '$.report.identification.audit_id')) END AS runId,
+          CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.attributes') END AS attributes,
+          CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.status') END AS auditStatus,
+          CASE WHEN json_valid(a.result) THEN json_type(a.result, '$.report') END AS reportType,
+          CASE WHEN json_valid(a.configuration_snapshot) THEN json_object('auditConfiguration', json_object(
+            'version', json_extract(a.configuration_snapshot, '$.auditConfiguration.version'),
+            'branch', json_extract(a.configuration_snapshot, '$.auditConfiguration.branch'),
+            'commitHash', json_extract(a.configuration_snapshot, '$.auditConfiguration.commitHash'),
+            'attributes', json_extract(a.configuration_snapshot, '$.auditConfiguration.attributes')
+          )) END AS configurationSnapshot
+        FROM page JOIN agent_execution a ON a.id = page.id
+      `
+      const byId = new Map(projections.map((projection) => [projection.id, projection]))
+      return { total, hasRunning, offset: actualOffset, limit, items: rows.map((row) => {
+        const projection = byId.get(row.id)!
+        return { row: { ...row, configurationSnapshot: projection.configurationSnapshot }, projection }
+      }) }
     })
   }
 

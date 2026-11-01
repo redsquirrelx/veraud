@@ -2,14 +2,14 @@ import { useEffect, useId, useState } from "react"
 import { Link } from "react-router-dom"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
-import { Accordion, Badge, Button, Card, Checkbox, Drawer, Pagination } from "../../shared/ui-kit/index.ts"
+import { Accordion, Badge, Button, Card, Checkbox, Drawer, Pagination, Spinner } from "../../shared/ui-kit/index.ts"
 import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
-import { downloadQualityAuditReport, getQualityAudit, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { downloadQualityAuditReport, listQualityAuditPage, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { MaintainabilityConfiguration } from "./MaintainabilityConfiguration.tsx"
 import { AuditAttributeSummary } from "./AuditAttributeSummary.tsx"
@@ -41,26 +41,11 @@ function qualityAuditError(cause: unknown, key: ParseKeys<"projects">): QualityA
   return cause instanceof ApiError && cause.messageSource !== "client" ? { detail: cause.message } : { key }
 }
 
-function AuditRunId({ projectId, audit }: { projectId: number, audit: QualityAuditSummary }) {
+function AuditRunId({ audit }: { audit: QualityAuditSummary }) {
   const { t } = useTranslation("projects")
-  const { t: tCommon } = useTranslation("common")
-  const [runId, setRunId] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    if (audit.runId || !audit.reportAvailable) return
-    let alive = true
-    getQualityAudit(projectId, audit.id).then(
-      (summary) => { if (alive) setRunId(summary.runId ?? null) },
-      () => { if (alive) setRunId(null) },
-    ).finally(() => { if (alive) setLoaded(true) })
-    return () => { alive = false }
-  }, [projectId, audit.id, audit.reportAvailable, audit.runId])
-
-  const id = audit.runId ?? runId
+  const id = audit.runId
   const serverUrl = (import.meta.env.VITE_AGENT_SERVER_URL ?? "http://localhost:7502").replace(/\/+$/, "")
-  const pending = audit.reportAvailable && !loaded ? tCommon("ui.loading")
-    : ["Waiting", "Running"].includes(audit.executionStatus) ? t("qualityAudits.runId.initializing") : t("qualityAudits.runId.unavailable")
+  const pending = ["Waiting", "Running"].includes(audit.executionStatus) ? t("qualityAudits.runId.initializing") : t("qualityAudits.runId.unavailable")
   return <p className="audit-run-id">{t("qualityAudits.runId.label")}: {id
     ? <><code>{id}</code>{" · "}<a className="ui-button ui-button-secondary" href={`${serverUrl}/blackboard?run_id=${encodeURIComponent(id)}`} target="_blank" rel="noreferrer">{t("qualityAudits.runId.openBlackboard")}</a></>
     : <span>{pending}</span>}</p>
@@ -74,7 +59,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const attributeId = useId()
-  const agentCatalog = useAuditAgentCatalog()
+  const agentCatalog = useAuditAgentCatalog(view !== "history")
   const startMessages = useAuditStartMessages()
   const historyLabels = useAuditHistoryLabels()
   const auditStateLabel = useAuditStateLabel()
@@ -97,48 +82,54 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const invalidRequirements = functionalSelected && (requirements.length === 0 || requirements.length > 100
     || requirements.some((description) => description.length > 10000))
   const [audits, setAudits] = useState<QualityAuditSummary[]>([])
+  const [loadingAudits, setLoadingAudits] = useState(true)
+  const [totalAudits, setTotalAudits] = useState(0)
+  const [hasRunning, setHasRunning] = useState(false)
   const [pageSize, setPageSize] = useState(5)
   const [page, setPage] = useState(1)
-  const pageCount = Math.max(1, Math.ceil(audits.length / pageSize))
+  const pageCount = Math.max(1, Math.ceil(totalAudits / pageSize))
   const currentPage = Math.min(page, pageCount)
-  const sortedAudits = [...audits].sort((left, right) => {
-    const leftDate = Date.parse(left.createdAt)
-    const rightDate = Date.parse(right.createdAt)
-    // Missing/invalid timestamps go last; IDs break ties deterministically.
-    const dateOrder = (Number.isNaN(rightDate) ? -Infinity : rightDate)
-      - (Number.isNaN(leftDate) ? -Infinity : leftDate)
-    return dateOrder || right.id - left.id
-  })
-  const visibleAudits = sortedAudits.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const visibleAudits = audits
   const [starting, setStarting] = useState(false)
   const [refresh, setRefresh] = useState(0)
-  const [error, setError] = useState<QualityAuditError | null>(null)
+  const [actionError, setError] = useState<QualityAuditError | null>(null)
+  const [loadError, setLoadError] = useState<QualityAuditError | null>(null)
+  const error = actionError ?? loadError
   const [downloading, setDownloading] = useState<number | null>(null)
   const [reuseNotice, setReuseNotice] = useState<"loaded" | "adjusted" | null>(null)
 
   useEffect(() => {
     let alive = true
+    const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     async function load() {
+      setLoadingAudits(true)
       try {
-        const rows = await listQualityAudits(projectId)
+        const result = await listQualityAuditPage(projectId, pageSize, (page - 1) * pageSize, controller.signal)
         if (!alive) return
-        setAudits(rows)
-        if (rows.some((row) => ["Waiting", "Running"].includes(row.executionStatus))) {
+        setAudits(result.items)
+        setTotalAudits(result.total)
+        setHasRunning(result.hasRunning)
+        setLoadError(null)
+        const landedPage = Math.floor(result.offset / pageSize) + 1
+        if (landedPage !== page) setPage(landedPage)
+        if (result.hasRunning) {
           timer = setTimeout(() => void load(), 3000)
         }
       } catch (cause) {
         if (alive) {
-          setError(qualityAuditError(cause, "qualityAudits.errors.load"))
+          setLoadError(qualityAuditError(cause, "qualityAudits.errors.load"))
           timer = setTimeout(() => void load(), 5000)
         }
+      } finally {
+        if (alive) setLoadingAudits(false)
       }
     }
     void load()
-    return () => { alive = false; clearTimeout(timer) }
-  }, [projectId, refresh, cancellationRevision])
+    return () => { alive = false; controller.abort(); clearTimeout(timer) }
+  }, [projectId, refresh, cancellationRevision, page, pageSize])
 
-  const running = audits.some((row) => ["Waiting", "Running"].includes(row.executionStatus))
+  const running = hasRunning
   const configurationAttributes = [
     { id: "maintainability", selected, label: "auditStatus.pipelines.maintainability" },
     { id: "security", selected: securitySelected, label: "auditStatus.pipelines.security" },
@@ -288,12 +279,16 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     </Card>}
     {view !== "configuration" && <Card layout={cardLayout} gap="sm" align={cardLayout === "stack" ? "stretch" : "start"} padding={cardPadding}>
       <div className="quality-audit-heading">
-        <div className="quality-audit-history-title"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(audits.length)}</Badge></div>
-        {view === "history" && <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>}
+        <div className="quality-audit-history-title"><h3>{t("qualityAudits.historyTitle")}</h3><Badge tone="neutral">{formatNumber(totalAudits)}</Badge></div>
+        {view === "history" && <Button variant="secondary" disabled={loadingAudits} onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>}
       </div>
       {view === "history" && error && <p role="alert">{"detail" in error ? error.detail : t(error.key)}</p>}
       {historyPagination}
-      {audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
+      {loadingAudits && <div className="quality-audits-loading" role="status" aria-label={t("qualityAudits.loading")}>
+        <Spinner />
+        <span className="label">{t("qualityAudits.loading")}</span>
+      </div>}
+      {!loadingAudits && !error && audits.length === 0 && <p className="quality-audits-empty">{t("qualityAudits.empty")}</p>}
       {visibleAudits.map((audit) => <article className="quality-audit-run" key={audit.id}>
         <div className="quality-audit-run-heading">
         <h4>{audit.attributes?.map((attribute) => attributeLabelKeys[attribute] ? t(attributeLabelKeys[attribute]) : attribute).join(" + ") || t("auditStatus.pipelines.maintainability")} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
@@ -306,7 +301,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         </Badge>
         </div>
         <div className="quality-audit-run-meta">
-        <AuditRunId key={`${projectId}-${audit.id}`} projectId={projectId} audit={audit} />
+        <AuditRunId key={`${projectId}-${audit.id}`} audit={audit} />
         <p className="label">{Number.isNaN(new Date(audit.createdAt).getTime())
           ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</p>
         </div>
@@ -314,7 +309,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <div className="quality-audit-history-actions">
           <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
           <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
-            available={audit.configurationAvailable === true} catalog={agentCatalog} disabled={starting} onReuse={reuseConfiguration} />
+            available={audit.configurationAvailable === true} catalog={agentCatalog} lazyCatalog={view === "history"} disabled={starting} onReuse={reuseConfiguration} />
           <Link className="ui-button ui-button-secondary" to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewDetails")}</Link>
         {audit.reportAvailable && <>
           <Button variant="secondary" disabled={downloading !== null} onClick={() => void download(audit.id)}>{downloading === audit.id ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>

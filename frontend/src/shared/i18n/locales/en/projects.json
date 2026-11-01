@@ -79,6 +79,7 @@
     }
   },
   "qualityAudits": {
+    "loading": "Loading audits",
     "viewDetails": "View details",
     "findingsList": {
       "pageRange": "Findings {{start}}–{{end}} of {{total}} · {{order}}",

@@ -107,12 +107,15 @@ export class QualityAuditService {
     return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, effective)
   }
 
-  async list(projectId: number) {
+  async list(projectId: number, pagination?: { limit: number, offset: number }) {
     if (!await this.repository.projectExists(projectId)) throw new ProjectNotFoundError("Project not found")
-    return (await this.repository.list(projectId)).map((row) => {
-      const result = artifacts(row)
-      return summary(row, result, result?.report != null)
-    })
+    const page = await this.repository.list(projectId, pagination?.limit, pagination?.offset)
+    const items = page.items.map(({ row, projection }) => summary(row, {
+      ...(projection.runId !== null ? { run_id: projection.runId } : {}),
+      ...(projection.auditStatus !== null ? { status: projection.auditStatus } : {}),
+      ...(projection.attributes ? { attributes: JSON.parse(projection.attributes) as string[] } : {}),
+    }, projection.reportType === "object"))
+    return pagination ? { ...page, items } : items
   }
 
   async detail(projectId: number, id: number) {

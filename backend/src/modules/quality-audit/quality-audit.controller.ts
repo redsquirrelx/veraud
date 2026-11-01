@@ -89,10 +89,19 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
 
   app.get("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "List persisted quality audits", params,
-    description: "Returns audit runs for all project revisions, newest first, with execution and evaluation states kept separate. Report artifacts are fetched separately.",
-    response: { 200: { type: "array", items: summary }, ...errorResponses([400, 404, 422]) },
+    description: "Returns lightweight summaries, newest first. Supply limit and offset for a paginated response. Report, configuration and Word artifacts are not materialized in Node.",
+    querystring: { type: "object", additionalProperties: false, properties: {
+      limit: { type: "integer", minimum: 1, maximum: 100 }, offset: { type: "integer", minimum: 0, maximum: 2147483647 },
+    } },
+    response: { 200: { anyOf: [{ type: "array", items: summary }, objectResponse({
+      items: { type: "array", items: summary }, total: { type: "integer" }, hasRunning: { type: "boolean" },
+      limit: { type: "integer" }, offset: { type: "integer" },
+    })] }, ...errorResponses([400, 404, 422]) },
   } }, async (request, reply) => {
-    try { return await service.list(Number((request.params as { id: string }).id)) }
+    const query = request.query as { limit?: number, offset?: number }
+    const pagination = query.limit !== undefined || query.offset !== undefined
+      ? { limit: query.limit ?? 5, offset: query.offset ?? 0 } : undefined
+    try { return await service.list(Number((request.params as { id: string }).id), pagination) }
     catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 

@@ -16,7 +16,7 @@ vi.mock("./auditOperatingSettingsApi.ts", async (importOriginal) => ({
 }))
 
 vi.mock("./qualityAuditApi.ts", () => ({
-  listQualityAudits: vi.fn(), startQualityAudit: vi.fn(), getQualityAuditReport: vi.fn(), downloadQualityAuditReport: vi.fn(),
+  listQualityAudits: vi.fn(), listQualityAuditPage: vi.fn(), startQualityAudit: vi.fn(), getQualityAuditReport: vi.fn(), downloadQualityAuditReport: vi.fn(),
   getQualityAuditConfiguration: vi.fn(),
   getQualityAudit: vi.fn(),
 }))
@@ -33,6 +33,12 @@ const readyAgents: AgentSettings[] = ["maintainability_manager", "security", "fu
   agentType, qualityAttributes: [agentType], workflowIds: [], configured: true, configuration: null, availability: "available", requiresModel: true,
 }))
 beforeEach(() => {
+  vi.mocked(api.listQualityAuditPage).mockImplementation(async (projectId, limit, offset) => {
+    const rows = [...await api.listQualityAudits(projectId)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id - a.id)
+    const actualOffset = rows.length ? Math.min(offset, Math.floor((rows.length - 1) / limit) * limit) : 0
+    return { items: rows.slice(actualOffset, actualOffset + limit), total: rows.length, limit, offset: actualOffset,
+      hasRunning: rows.some((row) => ["Waiting", "Running"].includes(row.executionStatus)) }
+  })
   vi.mocked(listAgentSettings).mockResolvedValue(readyAgents)
   vi.mocked(api.getQualityAudit).mockResolvedValue(historicalSummary)
   vi.mocked(operating.getAuditSettings).mockImplementation(async (attribute) => ({ schema: { type: "object", properties: {
@@ -56,6 +62,35 @@ async function toggleAttribute(name: string) {
 }
 
 describe("project quality audits", () => {
+  it("shows a loading indicator before the empty history and while refreshing", async () => {
+    let resolve!: (rows: api.QualityAuditSummary[]) => void
+    vi.mocked(api.listQualityAudits).mockImplementation(() => new Promise((done) => { resolve = done }))
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+
+    expect(screen.getByRole("status", { name: "Loading audits" })).toBeVisible()
+    expect(screen.queryByText("No audits recorded.")).toBeNull()
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled()
+    resolve([])
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading audits" })).toBeNull())
+    expect(screen.getByText("No audits recorded.")).toBeVisible()
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    expect(screen.getByRole("status", { name: "Loading audits" })).toBeVisible()
+    expect(screen.queryByText("No audits recorded.")).toBeNull()
+    resolve([historicalSummary])
+    expect(await screen.findByRole("article")).toBeVisible()
+    expect(screen.queryByRole("status", { name: "Loading audits" })).toBeNull()
+  })
+
+  it("stops the loading indicator on failure without showing an empty history", async () => {
+    vi.mocked(api.listQualityAudits).mockRejectedValue(new Error("offline"))
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+    expect(await screen.findByRole("alert")).toBeVisible()
+    expect(screen.queryByRole("status", { name: "Loading audits" })).toBeNull()
+    expect(screen.queryByText("No audits recorded.")).toBeNull()
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled()
+  })
+
   it("refreshes history on confirmed cancellation events without refetching every usage update", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValueOnce([{ ...historicalSummary, executionStatus: "Running", auditStatus: null }])
       .mockResolvedValue([{ ...historicalSummary, executionStatus: "Completed", auditStatus: "cancelled" }])
@@ -91,6 +126,34 @@ describe("project quality audits", () => {
   function showHistory() {
     render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
   }
+
+  it("loads only one summary page without fetching audit details or the agent catalog", async () => {
+    vi.mocked(api.listQualityAuditPage).mockResolvedValue({ items: [{ ...historicalSummary, runId: null }], total: 12,
+      hasRunning: false, limit: 5, offset: 0 })
+    showHistory()
+    await screen.findByRole("article")
+    expect(api.listQualityAuditPage).toHaveBeenCalledWith(5, 5, 0, expect.any(AbortSignal))
+    expect(api.getQualityAudit).not.toHaveBeenCalled()
+    expect(api.getQualityAuditReport).not.toHaveBeenCalled()
+    expect(api.getQualityAuditConfiguration).not.toHaveBeenCalled()
+    expect(listAgentSettings).not.toHaveBeenCalled()
+    expect(screen.getByText("Unavailable")).toBeVisible()
+
+    vi.mocked(api.listQualityAuditPage).mockResolvedValue({ items: [{ ...historicalSummary, id: 9 }], total: 12,
+      hasRunning: false, limit: 5, offset: 5 })
+    await userEvent.click(screen.getAllByRole("button", { name: "Next page" })[0])
+    await waitFor(() => expect(screen.getByRole("article")).toHaveTextContent("#9"))
+    expect(api.listQualityAuditPage).toHaveBeenLastCalledWith(5, 5, 5, expect.any(AbortSignal))
+  })
+
+  it("aborts history requests when leaving the page", async () => {
+    vi.mocked(api.listQualityAuditPage).mockImplementation(() => new Promise(() => {}))
+    const view = render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+    const signal = vi.mocked(api.listQualityAuditPage).mock.calls[0][3]!
+    expect(signal.aborted).toBe(false)
+    view.unmount()
+    expect(signal.aborted).toBe(true)
+  })
 
   it("orders history newest first and starts with five records per page", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue(paginatedAudits)
@@ -130,13 +193,14 @@ describe("project quality audits", () => {
   })
 
   it("handles the final partial page and clamps the page after history shrinks", async () => {
-    vi.mocked(api.listQualityAudits).mockResolvedValueOnce(paginatedAudits).mockResolvedValue([paginatedAudits[0]])
+    vi.mocked(api.listQualityAudits).mockResolvedValue(paginatedAudits)
     showHistory()
     await screen.findAllByRole("article")
     await userEvent.selectOptions(screen.getAllByRole("combobox", { name: "Audits per page" })[0], "20")
     await userEvent.click(screen.getAllByRole("button", { name: "Next page" })[1])
     expect(screen.getAllByRole("article")).toHaveLength(1)
     screen.getAllByRole("button", { name: "Next page" }).forEach((button) => expect(button).toBeDisabled())
+    vi.mocked(api.listQualityAudits).mockResolvedValue([paginatedAudits[0]])
     await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
     await waitFor(() => expect(screen.queryAllByRole("navigation", { name: "Audit history pages" })).toHaveLength(0))
     expect(screen.getAllByRole("article")).toHaveLength(1)
@@ -678,13 +742,13 @@ describe("project quality audits", () => {
   it("links to dedicated results for a completed partial audit and permits downloading its report", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
-      executionStatus: "Completed", auditStatus: "partial", error: null,
+      executionStatus: "Completed", auditStatus: "partial", error: null, runId: "bdeb6efb73bd45fe9cb193f54710cf60",
       createdAt: "2026-10-17T10:00:00Z", finishedAt: "2026-10-17T10:05:00Z", reportAvailable: true,
     }])
-    vi.mocked(api.getQualityAudit).mockResolvedValue({ ...historicalSummary, runId: "bdeb6efb73bd45fe9cb193f54710cf60" })
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     expect(await screen.findByText("bdeb6efb73bd45fe9cb193f54710cf60")).toBeInTheDocument()
+    expect(api.getQualityAudit).not.toHaveBeenCalled()
     expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.queryByRole("heading", { name: "Audit report · #8" })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Download Word report" }))
@@ -749,7 +813,7 @@ describe("project quality audits", () => {
   it("translates history links without changing selections, requirements, or API activity", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
-      executionStatus: "Completed", auditStatus: "partial", error: null,
+      executionStatus: "Completed", auditStatus: "partial", error: null, runId: "report-run-id",
       createdAt: "2026-10-17T10:00:00Z", finishedAt: "2026-10-17T10:05:00Z", reportAvailable: true,
     }])
     vi.mocked(api.getQualityAudit).mockResolvedValue(historicalSummary)
@@ -759,7 +823,7 @@ describe("project quality audits", () => {
     const requirements = screen.getByRole("textbox", { name: "Functional requirements" })
     await userEvent.type(requirements, "Requirement one.\nRequirement two.")
     expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
-    await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledTimes(1))
+    expect(api.getQualityAudit).not.toHaveBeenCalled()
     const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
 
     await changeLanguage("es")

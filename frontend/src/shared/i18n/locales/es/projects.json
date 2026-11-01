@@ -79,6 +79,7 @@
     }
   },
   "qualityAudits": {
+    "loading": "Cargando auditorías",
     "viewDetails": "Ver detalles",
     "findingsList": {
       "pageRange": "Hallazgos {{start}}–{{end}} de {{total}} · {{order}}",
