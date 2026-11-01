@@ -271,6 +271,7 @@ export function ProjectDetailPage() {
           <>
             <ProjectHeader
               project={project}
+              showVersionSelector={auditId === undefined}
               analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
               syncing={syncActive}
               onSync={() => void handleSync()}

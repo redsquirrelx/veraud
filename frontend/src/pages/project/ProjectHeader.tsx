@@ -9,13 +9,14 @@ import "./ProjectHeader.css"
 interface ProjectHeaderProps {
   project: ProjectSummary
   versionSelector: Omit<ComponentProps<typeof VersionSelector>, "analysis">
+  showVersionSelector?: boolean
   analysis: AnalysisAction
   syncing: boolean
   onSync: () => void
   onAudit: () => void
 }
 
-export function ProjectHeader({ project, versionSelector, analysis, syncing, onSync, onAudit }: ProjectHeaderProps) {
+export function ProjectHeader({ project, versionSelector, showVersionSelector = true, analysis, syncing, onSync, onAudit }: ProjectHeaderProps) {
   const { t } = useTranslation("projects")
   const statusKey = projectStatusLabelKey(project.status)
   return <header className="project-context-header" aria-label={t("detail.contextLabel")}>
@@ -34,8 +35,8 @@ export function ProjectHeader({ project, versionSelector, analysis, syncing, onS
         <Button onClick={onAudit}>{t("analyze.label")}</Button>
       </div>
     </div>
-    <div className="project-context-controls">
+    {showVersionSelector && <div className="project-context-controls">
       <VersionSelector {...versionSelector} showLocation={false} size="compact" />
-    </div>
+    </div>}
   </header>
 }
