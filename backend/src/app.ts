@@ -44,6 +44,8 @@ import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configu
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
+import { ProjectGraphService } from "./modules/project-graph/project-graph.service.js"
+import { registerProjectGraphRoutes } from "./modules/project-graph/project-graph.controller.js"
 
 export interface BuildAppOptions {
   databaseUrl: string
@@ -76,12 +78,15 @@ export async function buildApp(options: BuildAppOptions) {
   const github = new GithubClient()
   const projectRepository = new ProjectRepository(db)
   const taskRepository = new TaskRepository(db)
+  const graphService = new ProjectGraphService(db, taskRepository, projectRepository, gateway, options.workspaceDir, options.agentServerUrl)
   const runner = options.makeRunner
     ? options.makeRunner(taskRepository, projectRepository, gateway)
     : new TaskRunner(taskRepository, projectRepository, gateway, [
-      gitTaskExecutor(options.workspaceDir), serviceTaskExecutor(options.taskHandlers ?? {}),
+      gitTaskExecutor(options.workspaceDir), serviceTaskExecutor({ ...options.taskHandlers, "graph.extract": graphService.handler() }),
     ])
   const taskService = new TaskService(taskRepository, runner)
+  app.addHook("onReady", () => graphService.reconcile())
+  app.addHook("onClose", () => graphService.close())
   const agentSettingsRepository = new AgentSettingsRepository(db)
   const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
     ? new AgentServerClient(options.agentServerUrl)
@@ -131,6 +136,7 @@ export async function buildApp(options: BuildAppOptions) {
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)
+  registerProjectGraphRoutes(app, graphService, runner)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
   registerExecutionEventRoutes(app, new ExecutionEventRepository(db))

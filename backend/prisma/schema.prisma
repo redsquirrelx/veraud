@@ -222,5 +222,22 @@ model Task {
 
   project Project @relation(fields: [projectId], references: [id])
 
+  graphExtraction GraphExtraction?
+
   @@map("task")
+}
+
+model GraphExtraction {
+  taskId     Int @id @map("task_id")
+  projectId  Int @map("project_id")
+  branch     String
+  commitHash String @map("commit_hash")
+  phase      String @default("queued")
+  error      String?
+  callbackHash String? @map("callback_hash")
+  createdAt  DateTime @default(now()) @map("created_at")
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, commitHash, taskId])
+  @@map("graph_extraction")
 }
