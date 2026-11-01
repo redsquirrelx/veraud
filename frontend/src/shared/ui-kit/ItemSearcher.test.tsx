@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ItemSearcher } from "./ItemSearcher.tsx"
 
@@ -9,6 +9,22 @@ const items = [
 ]
 
 describe("ItemSearcher", () => {
+  it("blocks already-open options and blur commits when disabled during editing", async () => {
+    const onSelect = vi.fn()
+    const view = (disabled: boolean) => <ItemSearcher items={items} selectedId="main" onSelect={onSelect} hasMore={false} onLoadMore={() => {}} disabled={disabled} />
+    const { rerender } = render(view(false))
+    const input = screen.getByRole("textbox", { name: "Search items" })
+    await userEvent.click(input)
+    rerender(view(true))
+    expect(input).toBeDisabled()
+    expect(screen.getByRole("option", { name: /feature-a/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole("option", { name: /feature-a/ }))
+    fireEvent.blur(input)
+    expect(onSelect).not.toHaveBeenCalled()
+    rerender(view(false))
+    await userEvent.click(screen.getByRole("option", { name: /feature-a/ }))
+    expect(onSelect).toHaveBeenCalledWith("feature-a")
+  })
   it("filters the list while typing", async () => {
     render(
       <ItemSearcher items={items} selectedId={null} onSelect={() => {}} hasMore={false} onLoadMore={() => {}} />

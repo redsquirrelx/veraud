@@ -35,7 +35,7 @@ export function VersionLocation({ selection }: { selection: Selection }) {
   </span>
 }
 
-export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed, showLocation = true, size = "default" }: {
+export function VersionSelector({ selection, analysis, mode, onModeChange, analyzed, showLocation = true, size = "default", disabled = false }: {
   selection: Selection
   analysis?: AnalysisAction
   mode?: VersionMode
@@ -43,11 +43,12 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
   analyzed?: AnalyzedSelection
   showLocation?: boolean
   size?: "default" | "compact"
+  disabled?: boolean
 }) {
   const { t } = useTranslation("projects")
   const current = mode ?? "git"
   const analyzeButton = analysis === undefined ? null : (
-    <AnalyzeMenu canAnalyze={analysis.canAnalyze} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
+    <AnalyzeMenu canAnalyze={analysis.canAnalyze && !disabled} analyzing={analysis.analyzing} onAnalyze={analysis.onAnalyze} />
   )
   const translateDerivedStatus = (status: string) => {
     const key = derivedStatusLabelKey(status)
@@ -58,6 +59,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
     <div className="version-selector">
       {analyzed !== undefined && (
         <FilterTabs
+          disabled={disabled}
           label={t("version.sourceLabel")}
           options={[
             { id: "git", label: t("version.git"), count: 0 },
@@ -80,7 +82,8 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           <ItemSelector
             items={analyzed.versions.map((version) => ({ id: String(version.id), label: analyzedLabel(version, translateDerivedStatus) }))}
             selectedId={analyzed.selectedId === null ? null : String(analyzed.selectedId)}
-            onSelect={(id) => analyzed.onSelect(Number(id))}
+            onSelect={(id) => { if (!disabled) analyzed.onSelect(Number(id)) }}
+            disabled={disabled}
             hasMore={false}
             onLoadMore={() => {}}
             emptyText={t("version.analyzedEmpty")}
@@ -97,7 +100,8 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
         <ItemSelector
           items={selection.branches.map((name) => ({ id: name, label: name }))}
           selectedId={selection.detached === null && selection.branch !== "" ? selection.branch : null}
-          onSelect={(name) => void selection.changeBranch(name)}
+          onSelect={(name) => { if (!disabled) void selection.changeBranch(name) }}
+          disabled={disabled}
           hasMore={false}
           onLoadMore={() => {}}
           emptyText={t("version.branchesEmpty")}
@@ -115,7 +119,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
             detail: index === 0 ? `(HEAD) ${commit.subject.slice(0, 60)}` : commit.subject.slice(0, 60),
           }))}
           selectedId={selection.commitHash === "" ? null : selection.commitHash}
-          onSelect={(hash) => void selection.stageCommit(hash)}
+          onSelect={(hash) => { if (!disabled) void selection.stageCommit(hash) }}
           hasMore={false}
           onLoadMore={() => {}}
           emptyText={t("version.commitsEmpty")}
@@ -123,7 +127,7 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           label={t("version.commitLabel")}
           size={size}
           loading={selection.loadingCommits}
-          disabled={selection.detached !== null || selection.applying}
+          disabled={disabled || selection.detached !== null || selection.applying}
         />
         {analyzeButton}
       </div>
