@@ -4,7 +4,7 @@ import { promisify } from "node:util"
 import { join, resolve, sep } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
-import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
+import { taskOutput, type GitCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
 import type { ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
@@ -147,7 +147,7 @@ export class ProjectService {
     const previousStatus = project.status
 
     let description: string
-    let command: TaskCommand
+    let command: GitCommand
 
     if (!hasFiles) {
       description = `cloning ${project.repositoryOwner}/${project.repositoryName}`

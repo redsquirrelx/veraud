@@ -8,7 +8,7 @@ export interface NewTask {
 }
 
 export interface TaskUpdate {
-  command?: string
+  command?: string | null
   status: string
   exitCode: number | null
   logTrail: string | null

@@ -4,7 +4,8 @@ import { setImmediate } from "node:timers/promises"
 import type { FastifyBaseLogger } from "fastify"
 import { logger } from "../../config/logger.js"
 import type { StoredTask, TaskStore } from "../../modules/task/task.repository.js"
-import type { TaskCommand } from "./task.runner.js"
+import type { GitCommand } from "./git.executor.js"
+import { gitTaskExecutor } from "./git.task-executor.js"
 import { TaskRunner } from "./task.runner.js"
 
 logger.configure({ child: () => ({ info() {}, warn() {}, error() {}, debug() {} }) } as unknown as FastifyBaseLogger)
@@ -24,20 +25,20 @@ function harness() {
     delete: async () => {},
   }
   const runner = new TaskRunner(store, { setStatus: async () => {}, markSynced: async () => {} },
-    { broadcast: () => {} }, "workspace", async (_binary, argv) => {
+    { broadcast: () => {} }, [gitTaskExecutor("workspace", async (_binary, argv) => {
       return new Promise((resolve, reject) => {
         started.push({ argv, finish: () => resolve({ stdout: "ok", stderr: "" }), fail: () => reject(new Error("clone failed")) })
       })
-    })
+    })])
   let id = 0
-  function enqueue(projectId: number, kind: TaskCommand["kind"]) {
+  function enqueue(projectId: number, kind: GitCommand["kind"]) {
     const taskId = ++id
     tasks.set(taskId, {
       id: taskId, projectId, repositoryOwner: "acme", repositoryName: "Demo",
       description: kind, status: "Queued", kind, exitCode: null,
     })
     const folder = `project-${projectId}`
-    let command: TaskCommand
+    let command: GitCommand
     if (kind === "clone") command = { kind, folder, cloneUrl: "repo" }
     else if (kind === "checkout-branch" || kind === "rev-parse") command = { kind, folder, branch: "main" }
     else if (kind === "checkout-detach") command = { kind, folder, commitHash: "a".repeat(40) }

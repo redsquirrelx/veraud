@@ -52,6 +52,7 @@ describe("projects API with mocked github", () => {
       workspaceDir: mkdtempSync(join(tmpdir(), "veraud-ws-")),
       silent: true,
       makeRunner: () => ({ enqueue: async (task) => {
+        if (task.command.kind === "service") throw new Error("Expected a Git task")
         commands.push(task.command)
         return noopRunner.enqueue()
       } }),
