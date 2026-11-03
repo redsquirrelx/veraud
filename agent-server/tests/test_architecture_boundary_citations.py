@@ -144,7 +144,7 @@ def test_real_graph_routes_structured_decisions_and_retains_initial_evidence(tmp
     # Initial evidence is loaded through the real graph too, before any LLM decision.
     bootstrap = ["plan_investigation", "investigate", "tools"]
     expected = ["investigate", "tools", "investigate"] if explore else ["investigate"]
-    assert nodes == bootstrap + expected
+    assert nodes == bootstrap + expected + ["synthesis", "finalize"]
     assert decisions == (["tools", "close"] if explore else ["close"])
     result = updates[-1][1]["result"]
     assert result.investigation_results[0].status == "no_finding"
@@ -176,7 +176,7 @@ def test_multiple_investigations_close_with_one_decision_each(tmp_path, caplog):
     result, model, _ = audit(tmp_path, cycles(count=3), conclusion)
     assert [item.status for item in result.investigation_results] == ["no_finding"] * 3
     assert result.model_calls == 4 and result.tool_calls == 9
-    assert result.next_phase == "synthesis" and not result.findings
+    assert result.next_phase is None and not result.findings
     ids = [ctx["investigation"]["id"] for ctx in model.contexts if "investigation" in ctx]
     assert ids == [item.investigation_id for item in result.investigation_results]
     assert all(ctx["reusable_queries"] == [] for ctx in model.contexts[1:])  # Unrelated prior tasks are not context.
@@ -353,7 +353,8 @@ def test_correct_candidate_keeps_strict_source_and_dependency_provenance(tmp_pat
         return response
     result, _, _ = audit(tmp_path, contents, decide)
     assert result.investigation_results[0].status == "finding_candidate"
-    assert len(result.candidates) == 1 and not result.findings
+    assert len(result.candidates) == len(result.findings) == 1
+    assert result.findings[0].validation_status == "insufficient_evidence"
     assert result.candidates[0].relationship_ids and len(result.candidates[0].components) == 2
     assert result.model_calls == (3 if repair_candidate else 2) and result.tool_calls == 3
 

@@ -1,8 +1,8 @@
-# Architecture boundary — planificación e investigación
+# Architecture boundary — investigación y síntesis
 
-Grafo actual: `START → plan_investigation → investigate ↔ tools → END`.
-La salida queda preparada para el futuro `synthesis`, que todavía no se implementa;
-tampoco hay evaluación ni revisión adversarial. Su pregunta es si una dependencia contradice
+Grafo actual: `START → plan_investigation → investigate ↔ tools → synthesis → finalize → END`.
+Síntesis y finalización son deterministas, sin evaluación ni revisión adversarial
+mediante otro LLM. Su pregunta es si una dependencia contradice
 un límite razonablemente inferido del código y sus relaciones: dirección,
 encapsulación o interfaces de integración. Cohesión/responsabilidades, impacto de
 cambios, acoplamiento perjudicial, reutilización y corrección funcional de APIs
@@ -124,12 +124,22 @@ no inspeccionados, relaciones no recuperadas ni referencias inventadas. La
 atribución a commit reutiliza las verificaciones del runtime; sin commit se
 conserva únicamente la atribución a snapshot y hash de contenido.
 
-`BoundaryResult.investigation_results` contiene los cierres estructurados;
-`candidates` contiene candidatos provisionales, y `next_phase="synthesis"`
-señala el final de esta fase. `findings` e hipótesis permanecen vacíos. El blackboard
-recibe las evidencias con estos datos provisionales, nunca hallazgos finales
-fabricados. Los resultados entre ejecuciones distintas no sustituyen evidencia
-recuperada y validada en la ejecución actual.
+`BoundaryResult.investigation_results` conserva los cierres originales, incluidos
+`no_finding` e `inconclusive`. `synthesis` consolida únicamente candidatos con los
+mismos campos sustantivos y sujetos; no fusiona textos parecidos, discrepancias
+de severidad/confianza ni candidatos por compartir rutas o IDs. Une sus evidencias
+y conserva en `candidate_origins` la investigación y el ID local de cada original.
+Los IDs en conflicto se desambiguan determinísticamente sin eliminar candidatos.
+
+`finalize` construye `findings` provisionales con el criterio y las referencias
+resueltas, sin alterar severidad, confianza o narrativa. El contrato común no tiene
+un estado «provisional»: se usa `validation_status="insufficient_evidence"` con una
+justificación explícita de ausencia de revisión; ningún candidato se acepta ni
+rechaza. Los detalles de límites, símbolos y relaciones permanecen en `candidates`.
+Las hipótesis siguen vacías y `next_phase` queda en `null`. Se retienen el ledger
+completo, las limitaciones, las métricas por investigación y el consumo por fase;
+síntesis/finalización no consumen llamadas ni tokens. La ausencia de hallazgos no
+prueba cumplimiento. Los resultados previos no sustituyen evidencia actual.
 
 `BoundaryPlan` extiende el contrato común y conserva hipótesis vacías. Cada tarea
 incluye alcance, pregunta neutral, hechos/inferencias, fundamento, evidencias,

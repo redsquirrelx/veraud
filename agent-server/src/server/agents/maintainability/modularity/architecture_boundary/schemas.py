@@ -185,6 +185,11 @@ class BoundaryInvestigationResult(Contract):
     limitations: list[str] = Field(default_factory=list, max_length=40)
 
 
+class BoundaryCandidateOrigin(Contract):
+    investigation_id: str
+    candidate_id: str
+
+
 class BoundaryInvestigationTurn(Contract):
     validation_feedback: ClassVar[dict[str, str]] = {
         "invalid_boundary_query": "Use an enabled tool and its supplied argument schema with exact accessible references.",
@@ -241,7 +246,9 @@ class BoundaryResult(AuditResult):
     investigation_progress: list[dict] = Field(default_factory=list)
     investigation_results: list[BoundaryInvestigationResult] = Field(default_factory=list)
     candidates: list[BoundaryCandidate] = Field(default_factory=list,
-        description="Provisional candidates only; no synthesis or final findings have been produced.")
+        description="Consolidated provisional candidates; original claims remain in investigation_results.")
+    candidate_origins: dict[str, list[BoundaryCandidateOrigin]] = Field(default_factory=dict,
+        description="Consolidated candidate ID to original investigation and local candidate IDs.")
     next_phase: Literal["synthesis"] | None = None
     consumption_by_phase: dict[str, dict[str, int]] = Field(default_factory=dict)
     continuation_usage: dict[str, int] = Field(default_factory=dict,

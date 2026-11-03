@@ -52,7 +52,8 @@ def test_bidirectional_components_can_be_legitimate_or_contradict_an_inferred_in
     record = result.investigation_results[0]
     assert record.status == ("finding_candidate" if private_access else "no_finding")
     assert len(record.relationship_ids) == 2 and record.evidence_ids
-    assert not result.findings
+    assert len(result.findings) == int(private_access)
+    assert all(item.validation_status == "insufficient_evidence" for item in result.findings)
     if private_access:
         assert "__all__" in result.candidates[0].inferred_boundary
         assert "service._labels" in result.candidates[0].contradictory_dependency

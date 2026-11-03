@@ -77,7 +77,8 @@ def run(tools, decide, request=None, **overrides):
             return await execution.graph.ainvoke(execution.initial_state(), {"recursion_limit": 200})
     state = asyncio.run(invoke())
     assert BoundaryResult.model_validate_json(state["result"].model_dump_json()) == state["result"]
-    assert not state["result"].findings and not state["result"].hypotheses
+    assert all(item.validation_status == "insufficient_evidence" for item in state["result"].findings)
+    assert not state["result"].hypotheses
     return state, model, execution
 
 
@@ -93,14 +94,14 @@ def test_graph_iterates_multiple_queries_and_tasks_in_sequence(tmp_path):
     assert len(results) == 2 and all(item.status == "no_finding" for item in results), [(item.status, item.limitations) for item in results]
     ids = [context["investigation"]["id"] for context in model.contexts if "investigation" in context]
     assert ids == [results[0].investigation_id] * 3 + [results[1].investigation_id] * 3
-    assert state["current_investigation"] == 2 and state["next_phase"] == "synthesis"
-    assert state["result"].next_phase == "synthesis"
+    assert state["current_investigation"] == 2 and state["next_phase"] is None
+    assert state["result"].next_phase is None
     assert state["result"].tool_calls == 4 and state["result"].model_calls == 7
     assert state["result"].accounted_tokens == 1400
     assert state["consumption"]["tool_calls"] == 4
     edges = {(edge.source, edge.target) for edge in execution.graph.get_graph().edges}
     assert ("tools", "investigate") in edges and ("investigate", "tools") in edges
-    assert "synthesis" not in execution.graph.get_graph().nodes
+    assert ("investigate", "synthesis") in edges and ("synthesis", "finalize") in edges
     assert len(state["result"].investigation_progress) == 2
     for result in results:
         assert result.evidence_ids and set(result.evidence_ids) <= {ref.id for ref in state["evidence"]}
@@ -139,7 +140,8 @@ def test_finding_candidate_requires_real_source_symbols_and_returned_relationshi
     candidate = state["result"].candidates[0]
     assert candidate.symbol_ids and candidate.relationship_ids
     assert set(candidate.relationship_ids) <= {row.id for row in tools.accessible_snapshot.relationships}
-    assert not state["result"].findings and state["result"].evaluation_evidence_status == "not_evaluated"
+    assert len(state["result"].findings) == 1 and state["result"].evaluation_evidence_status == "not_evaluated"
+    assert state["result"].findings[0].confidence == candidate.confidence
 
 
 @pytest.mark.parametrize("invented", ["evidence", "symbol", "relationship", "component"])
@@ -458,7 +460,7 @@ def test_one_slow_task_times_out_without_restarting_completed_or_blocking_later_
     assert len(result.investigation_results) == 2
     assert "investigation_time_limit" in result.investigation_results[0].limitations
     assert "No concrete boundary was established." in result.investigation_results[1].limitations
-    assert result.model_calls == 3 and result.next_phase == "synthesis"
+    assert result.model_calls == 3 and result.next_phase is None
 
 
 def test_blackboard_publishes_evidence_not_provisional_candidates_as_findings(tmp_path):
@@ -469,7 +471,7 @@ def test_blackboard_publishes_evidence_not_provisional_candidates_as_findings(tm
     agent = ArchitectureBoundaryAgent(model, BoundaryConfig(provider_request_interval_seconds=0), blackboard=board, audit_identity=identity)
     result = asyncio.run(agent.run(tools))
     assert result.investigation_results and result.evidence and not result.findings
-    assert result.next_phase == "synthesis"
+    assert result.next_phase is None
     assert not board.query_findings(identity.run_id)
     evidence = board.query_evidence(identity.run_id)
     assert len(evidence) == len(result.evidence)

@@ -1,7 +1,12 @@
 """Local sequential phase state; evidence remains owned by RepositoryToolset."""
 
 from .....runtimes.investigation.state import InvestigationState
-from .schemas import BoundaryCandidate, BoundaryInvestigationResult, BoundaryToolQuery
+from .schemas import (
+    BoundaryCandidate,
+    BoundaryCandidateOrigin,
+    BoundaryInvestigationResult,
+    BoundaryToolQuery,
+)
 
 
 class BoundaryState(InvestigationState, total=False):
@@ -9,6 +14,7 @@ class BoundaryState(InvestigationState, total=False):
     initial_evidence_loaded: bool
     investigation_results: list[BoundaryInvestigationResult]
     candidates: list[BoundaryCandidate]
+    candidate_origins: dict[str, list[BoundaryCandidateOrigin]]
     pending_queries: list[BoundaryToolQuery]
     query_cache: dict[str, dict]
     active_query_keys: list[str]
@@ -16,4 +22,4 @@ class BoundaryState(InvestigationState, total=False):
     task_limitations: list[str]
     no_progress_turns: int
     consumption: dict
-    next_phase: str
+    next_phase: str | None

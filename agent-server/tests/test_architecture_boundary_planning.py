@@ -496,16 +496,16 @@ def test_same_candidates_reordered_are_not_reported_as_replacements(tmp_path):
     assert result.investigation_coverage["selection_added_ids"] == result.investigation_coverage["selection_removed_ids"] == []
 
 
-def test_graph_connects_investigation_without_synthesis_and_runner_preserves_json_contract(tmp_path):
+def test_graph_connects_synthesis_and_finalization_and_runner_preserves_json_contract(tmp_path):
     tools = tools_for(tmp_path, cycles())
     agent = ArchitectureBoundaryAgent(PlanningModel())
     execution = agent.execution_type(agent.model, agent.config, tools, AuditRequest())
-    assert set(execution.graph.get_graph().nodes) == {START, "plan_investigation", "investigate", "tools", END}
+    assert set(execution.graph.get_graph().nodes) == {START, "plan_investigation", "investigate", "tools", "synthesis", "finalize", END}
     result, _ = run_plan(tools)
     path = Path(__file__).parents[1] / "src/test-agents/run_architecture_boundary.py"
     spec = importlib.util.spec_from_file_location("boundary_runner", path)
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
     text = runner.render_boundary_plan(result)
-    assert "PLAN DE INVESTIGACIÓN" in text and "Condición de cierre" in text and "Hallazgos: no evaluados" in text
+    assert "PLAN DE INVESTIGACIÓN" in text and "Condición de cierre" in text and "Hallazgos: 0 provisionales, no evaluados" in text
     assert_grounded(result, tools)

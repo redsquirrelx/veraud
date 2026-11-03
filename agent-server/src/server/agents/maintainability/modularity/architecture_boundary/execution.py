@@ -1,4 +1,4 @@
-"""Grounded planning and sequential investigation; synthesis remains pending."""
+"""Grounded investigation followed by deterministic synthesis and finalization."""
 
 import json
 import math
@@ -27,6 +27,7 @@ from .planning import (
 )
 from .schemas import (
     BoundaryCitationRepair,
+    BoundaryFinding,
     BoundaryInvestigationResult,
     BoundaryInvestigationTurn,
     BoundaryPlan,
@@ -34,6 +35,7 @@ from .schemas import (
     BoundaryResult,
 )
 from .state import BoundaryState
+from .synthesis import consolidate_candidates
 
 
 class BoundaryExecution(InvestigationExecution):
@@ -164,7 +166,7 @@ class BoundaryExecution(InvestigationExecution):
         return response
 
     async def plan_investigation(self, state):
-        limitations = ["Synthesis is not implemented. Investigation conclusions and candidates are provisional, not final findings or compliance verdicts."]
+        limitations = ["Investigation conclusions and candidates are provisional, not compliance verdicts. No critical review is performed."]
         self._opportunities = []
         inventory = {}
         selected = []
@@ -300,10 +302,12 @@ class BoundaryExecution(InvestigationExecution):
             repository_id=state["repository_id"], commit=state["commit"],
             snapshot_hash=self.tools.context.input.snapshot_hash,
             objective=state["objective"], plan=plan, findings=[], hypotheses=[],
-            missing_information=["Synthesis remains pending."], limitations=plan.limitations,
+            missing_information=[], limitations=plan.limitations,
             termination_reason=reason, model_calls=self.calls, tool_calls=self.tools.budget_usage.tool_calls,
             iterations=0, accounted_tokens=self.tokens, estimated_tokens=self.estimates,
             deferred_stages=self.deferred_stages, evidence=self.references(),
+            consumption_by_phase={"plan_investigation": {key: value for key, value in self._consumption().items()
+                if key != "remaining_seconds"}},
             investigation_tasks=[item.model_dump() for item in selected],
             investigation_coverage={"counts": inventory.get("counts", {}), "selected": len(selected),
                 "candidate_menu": len(self._opportunities), "exhaustive": False, **diagnostics},
@@ -317,10 +321,15 @@ class BoundaryExecution(InvestigationExecution):
         graph.add_node("plan_investigation", phase_node("plan_investigation", self.plan_investigation))
         graph.add_node("investigate", phase_node("investigate", self.investigate))
         graph.add_node("tools", phase_node("tools", self.execute_investigation_tools))
+        graph.add_node("synthesis", phase_node("synthesis", self.synthesis))
+        graph.add_node("finalize", phase_node("finalize", self.finalize))
         graph.add_edge(START, "plan_investigation")
         graph.add_edge("plan_investigation", "investigate")
-        graph.add_conditional_edges("investigate", self.route_investigation, {"tools": "tools", "investigate": "investigate", "end": END})
+        graph.add_conditional_edges("investigate", self.route_investigation,
+            {"tools": "tools", "investigate": "investigate", "synthesis": "synthesis"})
         graph.add_edge("tools", "investigate")
+        graph.add_edge("synthesis", "finalize")
+        graph.add_edge("finalize", END)
         return graph.compile()
 
     def initial_state(self):
@@ -741,4 +750,54 @@ class BoundaryExecution(InvestigationExecution):
     def route_investigation(self, state):
         if state["pending_queries"]:
             return "tools"
-        return "investigate" if state["current_investigation"] < len(state["plan"].investigations) else "end"
+        return "investigate" if state["current_investigation"] < len(state["plan"].investigations) else "synthesis"
+
+    def synthesis(self, state):
+        candidates, origins = consolidate_candidates(state["investigation_results"])
+        self.logger.info("boundary_synthesis %s", json.dumps({
+            "original_candidates": sum(len(item.candidates) for item in state["investigation_results"]),
+            "consolidated_candidates": len(candidates),
+            "candidate_origins": {key: [origin.model_dump() for origin in value] for key, value in origins.items()},
+        }, sort_keys=True))
+        return {"candidates": candidates, "candidate_origins": origins, "next_phase": "finalize"}
+
+    def finalize(self, state):
+        # No model adjudication: expose candidates in the common finding envelope
+        # as unreviewed, preserving their original confidence, severity and prose.
+        ledger, mismatch = self.verify_references(self.references())
+        references = {reference.id: reference for reference in ledger}
+        criteria = {criterion.id: criterion for criterion in self.request.criteria}
+        findings = [BoundaryFinding(
+            **candidate.model_dump(exclude={"inferred_boundary", "contradictory_dependency", "technical_basis",
+                "symbol_ids", "relationship_ids"}),
+            criterion=criteria[candidate.criterion_id],
+            evidence=[references[identifier] for identifier in candidate.evidence_ids],
+            validation_status="insufficient_evidence",
+            review_rationale="Provisional investigation candidate; no critical review or acceptance was performed.",
+        ) for candidate in state["candidates"]]
+        limitations = list(dict.fromkeys([*state["limitations"], *self.issues,
+            *(limitation for item in state["investigation_results"] for limitation in item.limitations),
+            "Coverage is bounded; absence of findings does not establish architectural compliance.",
+            *(["Some retained evidence could not be attributed to the declared commit."] if mismatch else []),
+            *([] if state["commit"] else ["No commit is available; evidence is attributed to retained snapshot bytes only."])]))
+        missing = list(dict.fromkeys([*state["missing_information"],
+            *(f"Investigation {item.investigation_id}: {limitation}"
+                for item in state["investigation_results"] if item.status == "inconclusive" for limitation in item.limitations)]))
+        usage = self._consumption()
+        planning_usage = state["result"].consumption_by_phase["plan_investigation"]
+        fields = tuple(planning_usage)
+        investigation_usage = {field: usage[field] - planning_usage[field] for field in fields}
+        result = self.result_schema(**(state["result"].model_dump() | {
+            "findings": findings, "candidates": state["candidates"], "candidate_origins": state["candidate_origins"],
+            "investigation_results": state["investigation_results"], "evidence": ledger,
+            "missing_information": missing, "limitations": limitations, "next_phase": None,
+            "termination_reason": state["termination_reason"], "iterations": state["iterations"],
+            "model_calls": self.calls, "tool_calls": self.tools.budget_usage.tool_calls,
+            "accounted_tokens": self.tokens, "estimated_tokens": self.estimates, "deferred_stages": self.deferred_stages,
+            "consumption_by_phase": {
+                "plan_investigation": planning_usage,
+                "investigate": investigation_usage,
+                "synthesis": dict.fromkeys(fields, 0), "finalize": dict.fromkeys(fields, 0)},
+        }))
+        return {"result": result, "evidence": ledger, "missing_information": missing, "limitations": limitations,
+            "consumption": usage, "next_phase": None}

@@ -123,7 +123,7 @@ def render_boundary_plan(result):
     lines = ["PLAN DE INVESTIGACIÓN · LÍMITES ARQUITECTÓNICOS",
         f"Repositorio: {result.repository_id}", f"Objetivo: {result.objective}",
         f"Estado: {result.termination_reason}", f"Snapshot: {result.snapshot_hash}",
-        f"Investigaciones: {len(tasks)} · Hallazgos: no evaluados",
+        f"Investigaciones: {len(tasks)} · Hallazgos: {len(result.findings)} provisionales, no evaluados",
         (f"Recursos: {result.model_calls} llamadas al modelo, {result.tool_calls} herramientas, "
         f"{result.accounted_tokens} tokens contabilizados ({result.estimated_tokens} estimados)")]
     coverage = result.investigation_coverage
@@ -171,7 +171,7 @@ def render_boundary_plan(result):
         lines.append("\nNo se seleccionaron investigaciones. Esto no demuestra cumplimiento ni ausencia de dependencias.")
     conclusions = getattr(result, "investigation_results", [])
     if conclusions:
-        lines.append("\nRESULTADOS PROVISIONALES · síntesis pendiente")
+        lines.append("\nRESULTADOS PROVISIONALES · sin revisión crítica")
         for conclusion in conclusions:
             lines.extend([f"  {conclusion.investigation_id}: {conclusion.status} · {conclusion.summary}",
                 f"    Justificación: {conclusion.justification}",
@@ -179,6 +179,13 @@ def render_boundary_plan(result):
             lines.extend(f"    Candidato {candidate.id}: {candidate.title} · {candidate.technical_basis}"
                 for candidate in conclusion.candidates)
             lines.extend(f"    Limitación: {item}" for item in conclusion.limitations)
+    if result.candidates:
+        lines.append("\nCANDIDATOS CONSOLIDADOS · sin aceptación ni rechazo")
+        for candidate in result.candidates:
+            origins = result.candidate_origins.get(candidate.id, [])
+            lines.extend([f"  {candidate.id}: {candidate.title}",
+                f"    Evidencias: {', '.join(candidate.evidence_ids)}",
+                "    Orígenes: " + ", ".join(f"{origin.investigation_id}/{origin.candidate_id}" for origin in origins)])
     lines.append("\nLimitaciones y trabajo pendiente:")
     lines.extend(f"  - {item}" for item in dict.fromkeys([*result.limitations, *result.missing_information]))
     return "\n".join(lines)
