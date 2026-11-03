@@ -1,8 +1,7 @@
-"""Architectural-boundary specialization of the shared investigation graph."""
-
-from config.agents import InvestigationConfig as BoundaryConfig
+"""Minimal architectural-boundary agent with only its initial graph node."""
 
 from .....runtimes.investigation.agent import InvestigationAgent
+from .config import BoundaryConfig
 from .execution import BoundaryExecution
 from .schemas import AuditRequest
 

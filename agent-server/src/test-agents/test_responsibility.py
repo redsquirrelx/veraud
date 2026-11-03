@@ -23,9 +23,6 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.architecture_boundary import (
-    ArchitectureBoundaryAgent,
-)
 from server.agents.maintainability.modularity.responsibility import (
     ResponsibilityAgent,
     ResponsibilityConfig,
@@ -140,7 +137,7 @@ def test_graph_plan_tools_review_finalization_and_read_only(repo):
     assert isinstance(result, ResponsibilityResult)
     assert isinstance(ResponsibilityAgent(model), InvestigationAgent)
     assert issubclass(ResponsibilityAgent.execution_type, InvestigationExecution)
-    assert ArchitectureBoundaryAgent.execution_type._build_graph is ResponsibilityAgent.execution_type._build_graph
+    assert ResponsibilityAgent.execution_type._build_graph is InvestigationExecution._build_graph
     assert result.plan.hypotheses[0].question.startswith("Does OrderService")
     assert isinstance(model.history[2][-1], ToolMessage)  # native tools -> investigate
     assert result.tool_calls == 2

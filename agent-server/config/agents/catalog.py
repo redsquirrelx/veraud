@@ -30,7 +30,7 @@ class AgentConfigSpec:
 
 
 AGENT_CONFIGS = {
-    "architecture_boundary": AgentConfigSpec("maintainability.modularity.architecture_boundary", "BoundaryConfig", "AuditRequest", "investigator", InvestigationConfig),
+    "architecture_boundary": AgentConfigSpec("maintainability.modularity.architecture_boundary", "BoundaryConfig", "AuditRequest", "investigator"),
     "responsibility": AgentConfigSpec("maintainability.modularity.responsibility", "ResponsibilityConfig", "ResponsibilityRequest", "investigator", InvestigationConfig),
     "dependency_impact": AgentConfigSpec("maintainability.modularity.dependency_impact", "DependencyImpactConfig", "DependencyImpactRequest", "investigator"),
     "abstraction": AgentConfigSpec("maintainability.reusability.abstraction", "AbstractionConfig", "AbstractionRequest", "investigator"),

@@ -25,9 +25,6 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.architecture_boundary import (
-    ArchitectureBoundaryAgent,
-)
 from server.agents.maintainability.modularity.dependency_impact import (
     DependencyImpactAgent,
     DependencyImpactConfig,
@@ -177,9 +174,9 @@ def test_graph_dependency_tools_impact_review_results_and_read_only(repo):
     assert DependencyImpactResult.model_validate_json(result.model_dump_json()) == result
 
 
-def test_all_auditors_share_the_same_graph(repo):
+def test_active_auditors_share_the_investigation_graph(repo):
     assert (DependencyImpactAgent.execution_type._build_graph is ResponsibilityAgent.execution_type._build_graph
-            is ArchitectureBoundaryAgent.execution_type._build_graph)
+            is InvestigationExecution._build_graph)
     result, model, _ = run_audit(repo, model_type=NativeStructuredModel)
     assert [name for name, _, _ in model.schemas] == ["InvestigationPlan", "DependencyImpactEvaluation", "DependencyImpactReview"]
     assert result.findings[0].validation_status == "accepted"

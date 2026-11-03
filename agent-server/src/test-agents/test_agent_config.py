@@ -7,12 +7,8 @@ import json
 import pytest
 from pydantic import ValidationError
 from test_architecture_boundary import (
-    PLAN,
     ScriptedModel,
-    call,
-    evaluation,
     request,
-    review,
     toolset,
 )
 
@@ -116,7 +112,9 @@ def test_coordinator_family_preserves_nested_envelopes_and_has_no_direct_tools(a
 
 def test_unique_controls_are_not_exposed_as_universal_agent_fields():
     expected = {
-        "responsibility": [], "architecture_boundary": [],
+        "responsibility": [], "architecture_boundary": ["max_calls_per_investigation", "max_integration_scan_characters",
+            "max_integration_scan_files", "max_planned_investigations", "max_seconds_per_investigation",
+            "max_tokens_per_investigation", "max_tools_per_investigation"],
         "dependency_impact": ["max_dependency_depth", "max_relationships_per_assessment"],
         "abstraction": ["max_candidates", "max_participants_per_assessment"],
         "reuse_opportunity": ["max_discovery_symbols", "max_feature_characters", "max_groups", "max_planned_groups"],
@@ -163,13 +161,23 @@ def test_panel_validated_values_and_prompt_override_drive_the_real_investigator_
     (root / "domain").mkdir(parents=True)
     (root / "storage").mkdir()
     (root / "domain" / "service.py").write_text("from storage.db import save\n\ndef execute():\n    save()\n", encoding="utf-8")
-    (root / "storage" / "db.py").write_text("def save():\n    return None\n", encoding="utf-8")
+    (root / "storage" / "db.py").write_text("from domain.service import execute\ndef save():\n    return None\n", encoding="utf-8")
     config = validate_developer_agent_config("architecture_boundary", {"max_total_tokens": 300_000, "max_tool_calls": 1,
+        "max_planned_investigations": 4, "max_integration_scan_files": 0,
         "prompts": {"plan_investigation": "Configured prompt used by this actual investigation."}})
-    model = ScriptedModel([PLAN, call(), evaluation, review()])
+    model = ScriptedModel([
+        lambda messages: {"opportunity_ids": [json.loads(messages[1].content)["opportunities"][0]["id"]]},
+        lambda messages: {"action": "close", "conclusion": {
+            "investigation_id": json.loads(messages[1].content)["investigation"]["id"], "status": "inconclusive",
+            "summary": "Configuration-driven retrieval completed.", "justification": "The scripted model does not adjudicate the boundary.",
+            "limitations": ["No architectural conclusion supplied by this configuration test."]}},
+    ])
     result = asyncio.run(ArchitectureBoundaryAgent(model, config).run(toolset(root), request()))
     assert model.history[0][0].content.startswith(config.prompts["plan_investigation"])
-    assert result.tool_calls == 1 and result.findings[0].validation_status == "accepted"
+    assert result.tool_calls == 3 and not result.findings and len(result.plan.investigations) == 1
+    assert result.model_calls == 2 and result.investigation_results[0].status == "inconclusive"
+    assert json.loads(model.history[0][1].content)["budget"]["max_investigations"] == 4
+    assert result.investigation_coverage["integrations"]["scanned_files"] == 0
 
 
 def test_manager_overrides_are_local_and_unknown_agent_does_not_import_arbitrary_modules():
