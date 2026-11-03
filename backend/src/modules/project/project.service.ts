@@ -4,7 +4,7 @@ import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infr
 import { TaskService } from "../task/task.service.js"
 import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import type { ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
+import type { FunctionalAdequacyExecutions, ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
 
@@ -36,12 +36,24 @@ export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 /** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
   openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest>
+  openFunctionalAdequacyPipelineForProject(projectId: number, branch: string, commitHash: string, requirements: FunctionalRequirement[]): Promise<FunctionalAdequacyAnalysisRequest>
+}
+
+export interface FunctionalRequirement {
+  requirement_id: string
+  description: string
 }
 
 export interface ProjectArchitectureAnalysisRequest {
   versionId: number
   evaluationId: number
   executions: ProjectArchitectureExecutions
+}
+
+export interface FunctionalAdequacyAnalysisRequest {
+  versionId: number
+  evaluationId: number
+  executions: FunctionalAdequacyExecutions
 }
 
 export interface VersionAnalysis {
@@ -413,6 +425,45 @@ export class ProjectService {
     }
 
     return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
+  }
+
+  /**
+   * Runs functional adequacy on the selected version. Requirements are
+   * optional: without them the pipeline audits the repository exploratorily
+   * and needs no model configuration. Version selection and the fresh
+   * evaluation follow the same path as project architecture.
+   */
+  async analyzeProjectFunctionalAdequacy(
+    id: number,
+    branch: string,
+    commitHash: string,
+    requirements: FunctionalRequirement[],
+  ): Promise<FunctionalAdequacyAnalysisRequest> {
+    const cleanBranch = assertValidBranch(branch)
+    const cleanHash = assertValidHash(commitHash).toLowerCase()
+    const project = await this.projects.findById(id)
+
+    if (project === null) {
+      throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    }
+
+    if (project.status === "SYNCING") {
+      throw new SyncInProgressError(
+        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
+      )
+    }
+
+    this.requireWorkspace(project)
+
+    const running = await this.projects.findOpenExecution(project.id, cleanHash)
+
+    if (running !== null) {
+      throw new AnalysisAlreadyRunningError(
+        `Version ${cleanBranch} at ${cleanHash.slice(0, 7)} is already being analyzed (execution ${running.id})`
+      )
+    }
+
+    return this.analyses.openFunctionalAdequacyPipelineForProject(project.id, cleanBranch, cleanHash, requirements)
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {

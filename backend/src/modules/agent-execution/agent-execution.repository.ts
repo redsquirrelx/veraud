@@ -21,10 +21,16 @@ export type AgentExecutionStatus =
  *  run yet. Title case, matching the `task` module. */
 export const INITIAL_STATUS: AgentExecutionStatus = "Waiting"
 
+export interface AgentExecutionPlan {
+  agentType: string
+  /** Null for deterministic stages that must start without a model/credential. */
+  configuration: PreparedAgentConfiguration | null
+}
+
 export interface NewAgentExecution {
   agentType: string
   evaluationId: number | null
-  configuration: PreparedAgentConfiguration
+  configuration: PreparedAgentConfiguration | null
 }
 
 export interface AgentExecutionCompletion {
@@ -71,9 +77,9 @@ export interface AgentExecutionStore {
    *  status: used to attach the pipeline-level diagram to the architecture
    *  row after every stage already reported. */
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
-  /** One row per configuration, keyed by agent type, under a fresh evaluation.
+  /** One row per planned stage, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
+  createExecutionsForProject(projectId: number, branch: string, commitHash: string, plans: AgentExecutionPlan[]): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
@@ -82,13 +88,17 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
     try {
       return await this.db.$transaction(async (tx) => {
-        await this.assertCurrent(tx, data.configuration)
+        if (data.configuration !== null) {
+          await this.assertCurrent(tx, data.configuration)
+        }
         const execution = await tx.agentExecution.create({
           data: {
             agentType: data.agentType,
             evaluationId: data.evaluationId,
             status: INITIAL_STATUS,
-            configurationSnapshot: JSON.stringify(data.configuration.snapshot),
+            ...(data.configuration === null
+              ? {}
+              : { configurationSnapshot: JSON.stringify(data.configuration.snapshot) }),
           },
         })
 
@@ -136,15 +146,18 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
   /** Generic row creation shared by every pipeline: version row is saved (or
    *  reused), it becomes the selected one, a fresh evaluation is created, and
-   *  one Waiting execution per configuration is stored with its snapshot. */
-  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[]) {
-    if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
+   *  one Waiting execution per planned stage is stored with its snapshot when
+   *  the stage needs a model. */
+  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, plans: AgentExecutionPlan[]) {
+    if (plans.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage is required" }])
     return this.db.$transaction(async (tx) => {
       const running = await tx.agentExecution.findFirst({ where: {
         status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
       } })
       if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
-      for (const configuration of configurations) await this.assertCurrent(tx, configuration)
+      for (const plan of plans) {
+        if (plan.configuration !== null) await this.assertCurrent(tx, plan.configuration)
+      }
       const version = await tx.projectVersion.upsert({
         where: { projectId_commitHash: { projectId, commitHash } },
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
@@ -152,10 +165,12 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
       const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "Analysis" } })
       const executions: Record<string, StoredAgentExecution> = {}
-      for (const configuration of configurations) {
-        executions[configuration.agentType] = this.toStored(await tx.agentExecution.create({ data: {
-          evaluationId: evaluation.id, agentType: configuration.agentType, status: INITIAL_STATUS,
-          configurationSnapshot: JSON.stringify(configuration.snapshot),
+      for (const plan of plans) {
+        executions[plan.agentType] = this.toStored(await tx.agentExecution.create({ data: {
+          evaluationId: evaluation.id, agentType: plan.agentType, status: INITIAL_STATUS,
+          ...(plan.configuration === null
+            ? {}
+            : { configurationSnapshot: JSON.stringify(plan.configuration.snapshot) }),
         } }))
       }
       return { versionId: version.id, evaluationId: evaluation.id, executions }

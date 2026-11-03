@@ -20,10 +20,18 @@ export interface AgentInvoker {
   runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>): Promise<Record<string, AgentInput>>
 }
 
-/** What the pipeline needs: only the repository root. Stage inputs are
- *  derived server-side from previous stages. */
+/** Requirements travel with the pipeline input when the caller has them.
+ *  Pipelines that derive everything from the checkout ignore this field. */
+export interface PipelineRequirement {
+  requirement_id: string
+  description: string
+}
+
+/** What a pipeline needs: the repository root, plus optional requirements.
+ *  Stage-specific inputs are derived server-side. */
 export interface PipelineInput {
   root_path: string
+  requirements?: PipelineRequirement[]
 }
 
 export class AgentInvocationError extends Error {

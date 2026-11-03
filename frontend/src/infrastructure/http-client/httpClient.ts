@@ -231,6 +231,35 @@ export async function requestProjectArchitecture(id: number, branch: string, com
   return body as ProjectArchitectureRequest
 }
 
+export interface ProjectFunctionalAdequacyRequest {
+  versionId: number
+  evaluationId: number
+  executions: { functional_adequacy: AgentExecution }
+}
+
+/** Requirements are omitted for the exploratory audit, which needs no model. */
+export async function requestProjectFunctionalAdequacy(
+  id: number,
+  branch: string,
+  commitHash: string,
+  requirements?: Array<{ requirement_id: string; description: string }>,
+): Promise<ProjectFunctionalAdequacyRequest> {
+  const response = await fetch(`${baseUrl}/api/projects/${id}/functional-adequacy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requirements === undefined ? { branch, commitHash } : { branch, commitHash, requirements }),
+    signal: AbortSignal.timeout(600000),
+  })
+
+  const body = (await response.json()) as { message?: string }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.message ?? "Could not analyze functional adequacy")
+  }
+
+  return body as ProjectFunctionalAdequacyRequest
+}
+
 export async function getAgentExecution(executionId: number): Promise<AgentExecution> {
   const response = await fetch(`${baseUrl}/api/agent-executions/${executionId}`)
 

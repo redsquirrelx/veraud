@@ -214,9 +214,10 @@ class AgentExecutionService:
     async def run(
         self,
         agent_type: str,
-        config: ExecutionConfig,
+        config: ExecutionConfig | None,
         payload: dict,
         execution_id: int | None = None,
+        model_required: bool = True,
     ) -> BaseModel:
         """Validate the payload against the agent's own input schema, then run it.
 
@@ -226,10 +227,26 @@ class AgentExecutionService:
         backend that created that row: once when it starts and once when it ends.
         The agent itself knows nothing about this, so no agent has to change to
         take part.
-        """
-        agent, timeout = self.build_agent(agent_type, config)
 
-        input_schema = type(agent).input_schema
+        `model_required=False` is for deterministic agents (e.g. exploratory
+        functional adequacy) that must run without a provider or credentials.
+        The agent still owns its input schema; only model construction and usage
+        reporting are skipped.
+        """
+        if model_required:
+            agent, timeout = self.build_agent(agent_type, config)
+            input_schema = type(agent).input_schema
+            model = getattr(agent, "model", None)
+        else:
+            agent_cls = self._registry.get(agent_type)
+            input_schema = agent_cls.input_schema
+            timeout = self._static_timeout(config)
+            agent = agent_cls(
+                settings=AgentSettings(agent_id=agent_type, timeout_seconds=timeout),
+                model=None,
+            )
+            model = None
+
         try:
             agent_input = input_schema.model_validate(payload)
         except ValidationError as error:
@@ -238,13 +255,25 @@ class AgentExecutionService:
             ) from None
 
         logger.info(
-            "Running agent %r (timeout=%ss input=%s execution=%s)",
-            agent_type, timeout, type(agent_input).__name__, execution_id,
+            "Running agent %r (timeout=%ss input=%s execution=%s model=%s)",
+            agent_type,
+            timeout,
+            type(agent_input).__name__,
+            execution_id,
+            "required" if model_required else "skipped",
         )
 
         callbacks = self._callbacks(execution_id)
-        reporting_model = ReportingModel(agent.model, callbacks, execution_id)
-        agent.model = reporting_model
+        reporting_model = (
+            ReportingModel(model, callbacks, execution_id)
+            if model is not None
+            else None
+        )
+        if reporting_model is not None:
+            agent.model = reporting_model
+
+        def usage() -> dict:
+            return reporting_model.usage.model_dump() if reporting_model is not None else {}
 
         try:
             await self._mark_running(callbacks, execution_id)
@@ -252,25 +281,33 @@ class AgentExecutionService:
             result = await self._tracing.wrap_stage(
                 asyncio.wait_for(agent.run(agent_input), timeout),
                 name=agent_type,
-                model=agent.model.settings.name,
+                model=model.settings.name if model is not None else None,
                 timeout_seconds=timeout,
             )
 
-            await self._report(callbacks, execution_id, result, reporting_model.usage.model_dump())
+            await self._report(callbacks, execution_id, result, usage())
 
             return result
 
         except TimeoutError:
             logger.error("Agent %r timed out after %ss", agent_type, timeout)
-            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s", reporting_model.usage.model_dump())
+            await self._report_failure(callbacks, execution_id, f"Agent timed out after {timeout}s", usage())
             raise
         except Exception as error:  # noqa: BLE001 - Report failures without leaking provider credentials.
             message = f"Agent execution failed ({type(error).__name__}); check model access and agent input"
-            await self._report_failure(callbacks, execution_id, message, reporting_model.usage.model_dump())
+            await self._report_failure(callbacks, execution_id, message, usage())
             raise InvalidConfigError(message) from None
         finally:
             if callbacks is not None:
                 await callbacks.aclose()
+
+    def _static_timeout(self, config: ExecutionConfig | None) -> int:
+        timeout = config.timeout_seconds if config is not None else None
+        if timeout is None:
+            timeout = 60
+        if timeout <= 0:
+            raise InvalidConfigError("timeout_seconds must be positive")
+        return timeout
 
     def _callbacks(self, execution_id: int | None) -> CallbackSink | None:
         """A sink for reporting this run, or None when nobody asked for one."""

@@ -2,28 +2,81 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError
+
+from ..agents.functional_adequacy.repository_adapter import (
+    prepare_repository_input,
+)
+from ..agents.functional_adequacy.schemas import (
+    CodeFragment,
+    FunctionalAdequacyInput,
+    FunctionalRequirement,
+    RepositoryContext,
+)
+from ..config.settings import resolve_workspace_root
+from .execution_service import InvalidConfigError
 from .pipeline_service import PipelineDefinition
 
 STAGE = "functional_adequacy"
 
 
-def parse_functional_input(raw: dict) -> dict:
-    # El esquema del agente valida los requisitos y fragmentos al ejecutarse.
-    return raw
+class FunctionalAdequacyPipelineInput(BaseModel):
+    """Entrada del pipeline: repositorio, requisitos o evidencia ya preparada."""
+
+    root_path: str | None = Field(
+        default=None,
+        description="Checkout dentro del workspace compartido que se analizará.",
+    )
+    requirements: list[FunctionalRequirement] = Field(default_factory=list)
+    code_fragments: list[CodeFragment] = Field(default_factory=list)
+    repository_context: RepositoryContext | None = None
+
+
+def parse_functional_input(raw: dict) -> FunctionalAdequacyPipelineInput:
+    try:
+        return FunctionalAdequacyPipelineInput.model_validate(raw)
+    except ValidationError as error:
+        raise InvalidConfigError(f"Invalid pipeline input: {error}") from None
+
+
+def _workspace_repository(root_path: str) -> Path:
+    root = Path(root_path).expanduser().resolve()
+    workspace = resolve_workspace_root()
+    if root.parent != workspace:
+        raise InvalidConfigError(
+            f"root_path must be a checkout directly inside the shared workspace ({workspace})"
+        )
+    return root
 
 
 async def build_functional_agents(
     exec_service: Any,
     config: Any,
     stage_configs: dict | None,
-    parsed: dict,
+    parsed: FunctionalAdequacyPipelineInput,
     timeout_seconds: int,
 ) -> tuple[dict, dict]:
-    # Reutilizar el servicio compartido sin instanciar otro agente.
+    if parsed.root_path is not None:
+        prepared = await prepare_repository_input(
+            _workspace_repository(parsed.root_path),
+            parsed.requirements,
+        )
+    else:
+        prepared = FunctionalAdequacyInput(
+            requirements=parsed.requirements,
+            code_fragments=parsed.code_fragments,
+            repository_context=parsed.repository_context,
+        )
+
     selected_config = (stage_configs or {}).get(STAGE) or config
-    return {STAGE: exec_service}, {"config": selected_config}
+    return {STAGE: exec_service}, {
+        "config": selected_config,
+        "input": prepared,
+        "uses_model": bool(prepared.requirements),
+    }
 
 
 def adapt_functional_hooks(generic: Any) -> Any:
@@ -40,7 +93,7 @@ def create_functional_pipeline(
 
 async def run_functional_pipeline(
     pipeline: dict,
-    parsed: dict,
+    parsed: FunctionalAdequacyPipelineInput,
     ctx: dict,
 ) -> dict:
     hooks = pipeline["hooks"]
@@ -51,7 +104,8 @@ async def run_functional_pipeline(
     result = await pipeline["service"].run(
         agent_type=STAGE,
         config=ctx["config"],
-        payload=parsed,
+        payload=ctx["input"].model_dump(),
+        model_required=ctx["uses_model"],
     )
 
     if hooks is not None:

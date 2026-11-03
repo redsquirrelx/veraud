@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ApiError, getAgentExecution, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, getAgentExecution, requestProjectArchitecture, requestProjectFunctionalAdequacy, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
@@ -125,7 +125,9 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
       // The tracked row is the one that finishes last for the chosen
       // pipeline, so progress follows the run to completion.
       const option = pipelineById(pipelineId)
-      const response = await requestProjectArchitecture(projectId, branch, commitHash)
+      const response = option.endpoint === "functional-adequacy"
+        ? await requestProjectFunctionalAdequacy(projectId, branch, commitHash)
+        : await requestProjectArchitecture(projectId, branch, commitHash)
       const rows = Object.values(response.executions)
       setInitialExecutions(rows)
       const trackedRow = (response.executions as Record<string, AgentExecution>)[option.trackedStage] ?? rows[0]!

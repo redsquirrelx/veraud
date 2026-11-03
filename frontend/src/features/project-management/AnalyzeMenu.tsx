@@ -15,6 +15,10 @@ const pipelineTextKeys: Record<string, { labelKey: ParseKeys<"projects">, descri
     labelKey: "analyze.pipelines.projectArchitecture.label",
     descriptionKey: "analyze.pipelines.projectArchitecture.description",
   },
+  "functional-adequacy": {
+    labelKey: "analyze.pipelines.functionalAdequacy.label",
+    descriptionKey: "analyze.pipelines.functionalAdequacy.description",
+  },
 }
 
 /** Pipeline picker: the same menu wherever an analysis can start. */

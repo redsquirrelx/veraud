@@ -8,6 +8,7 @@ import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
 import { useTasks } from "../../shared/task-manager/useTasks.ts"
 import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
 import {
+  FunctionalAdequacyResultView,
   OrientationResultView,
   PipelineRunStatus,
   ProjectArchitectureResultView,
@@ -15,6 +16,7 @@ import {
   StageStatusView,
 } from "../../features/project-management/PipelineResult.tsx"
 import {
+  parseFunctionalAdequacyResult,
   parseOrientationResult,
   parseProjectArchitectureResult,
   parseSemanticValidationResult,
@@ -85,9 +87,11 @@ export function ProjectDetailPage() {
   const orientationExec = stageExecution("orientation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const projectArchitectureExec = stageExecution("architecture", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const semanticValidationExec = stageExecution("semantic_validation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
+  const functionalAdequacyExec = stageExecution("functional_adequacy", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const orientationSummary = orientationExec === null ? null : parseOrientationResult(orientationExec.result)
   const projectArchitectureSummary = projectArchitectureExec === null ? null : parseProjectArchitectureResult(projectArchitectureExec.result)
   const semanticValidationSummary = semanticValidationExec === null ? null : parseSemanticValidationResult(semanticValidationExec.result)
+  const functionalAdequacySummary = functionalAdequacyExec === null ? null : parseFunctionalAdequacyResult(functionalAdequacyExec.result)
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
@@ -216,6 +220,7 @@ export function ProjectDetailPage() {
     // has those.
     analysis.show(
       target.executions.find((execution) => execution.agentType === "semantic_validation")
+        ?? target.executions.find((execution) => execution.agentType === "functional_adequacy")
         ?? target.executions.find((execution) => execution.agentType === "architecture")
         ?? target.executions.find((execution) => execution.agentType === "orientation")
         ?? target.executions.find((execution) => execution.agentType === "architect")
@@ -253,6 +258,7 @@ export function ProjectDetailPage() {
       {orientationExec !== null && <PipelineRunStatus execution={orientationExec} />}
       {projectArchitectureExec !== null && <PipelineRunStatus execution={projectArchitectureExec} />}
       {semanticValidationExec !== null && <PipelineRunStatus execution={semanticValidationExec} />}
+      {functionalAdequacyExec !== null && <PipelineRunStatus execution={functionalAdequacyExec} />}
     </>
   )
 
@@ -395,6 +401,13 @@ export function ProjectDetailPage() {
                       : <StageStatusView title={t("pipeline.semanticTitle")} result={semanticValidationExec.result} execution={semanticValidationExec} />}
                   </Card>
                 )}
+                {functionalAdequacyExec !== null && (
+                  <Card>
+                    {functionalAdequacySummary !== null
+                      ? <FunctionalAdequacyResultView summary={functionalAdequacySummary} execution={functionalAdequacyExec} />
+                      : <StageStatusView title={t("pipeline.functionalTitle")} result={functionalAdequacyExec.result} execution={functionalAdequacyExec} />}
+                  </Card>
+                )}
               </>
             )}
             {activeSection === "files" && (
@@ -438,8 +451,8 @@ export function ProjectDetailPage() {
               ) : (
                 <Card>
                   {runStatuses}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, functionalAdequacyExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, functionalAdequacyExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>
                     <p className="label">{t("detail.audits.configuration.capturedFor", { agentType: execution.agentType, id: execution.id })}</p>
                     <dl>

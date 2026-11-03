@@ -7,8 +7,11 @@ import { formatNumber } from "../../shared/i18n/format.ts"
 import "./PipelineStage.css"
 import {
   auditTone,
+  functionalTone,
   parseStageStatus,
   verdictTone,
+  type FunctionalAdequacySummary,
+  type FunctionalEvidenceView,
   type OrientationSummary,
   type ProjectArchitectureSummary,
   type SemanticValidationSummary,
@@ -333,6 +336,113 @@ export function SemanticValidationResultView({ summary, execution }: { summary: 
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function evidenceLocation(evidence: FunctionalEvidenceView): string {
+  const hasRange = /:\d+-\d+$/.test(evidence.filePath)
+  const lines = hasRange || evidence.startLine === null ? "" : `:${evidence.startLine}${evidence.endLine === null || evidence.endLine === evidence.startLine ? "" : `-${evidence.endLine}`}`
+  return `${evidence.filePath}${lines}${evidence.symbol === "" ? "" : ` (${evidence.symbol})`}`
+}
+
+export function FunctionalAdequacyResultView({ summary, execution }: { summary: FunctionalAdequacySummary; execution?: AgentExecution }) {
+  const { t } = useTranslation("projects")
+  const requirementStatus = (value: string): string => t(
+    value === "cumple" ? "functional.status.fulfilled" : value === "no_cumple" ? "functional.status.notFulfilled" : "functional.status.insufficientEvidence"
+  )
+  const classification = (value: string): string => t(
+    value === "confirmado" ? "functional.classification.confirmed" : value === "probable" ? "functional.classification.probable" : "functional.classification.unverified"
+  )
+  const attribute = (value: string): string => t(
+    value === "completitud" ? "functional.attribute.completeness" : value === "correccion" ? "functional.attribute.correctness" : "functional.attribute.relevance"
+  )
+  return (
+    <div className="stage-view">
+      <div className="stage-head">
+        <h4 className="stage-title">{t("pipeline.functionalTitle")}</h4>
+        <div className="stage-head-right">
+          {execution !== undefined && <PipelineRunStatus execution={execution} />}
+          <Badge tone="info">{summary.auditMode === "exploratory" ? t("pipeline.functionalExploratory") : t("pipeline.functionalRequirementsBased")}</Badge>
+          {summary.scoreApplicable && summary.auditMode === "requirements_based" && (
+            <Badge tone={summary.score >= 100 ? "success" : summary.score > 0 ? "info" : "warning"}>
+              {t("pipeline.functionalScore", { score: formatNumber(summary.score), fulfilled: formatNumber(summary.fulfilledRequirements), total: formatNumber(summary.totalRequirements) })}
+            </Badge>
+          )}
+        </div>
+      </div>
+      {summary.scoreMeaning !== "" && <p className="stage-row-sub">{summary.scoreMeaning}</p>}
+
+      {summary.results.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.functionalRequirementResults", { count: summary.results.length })}</span>
+        <div className="stage-rows">
+          {summary.results.map((result) => <div className="stage-row" key={result.requirementId}>
+            <div className="stage-row-main">
+              <span className="mono stage-path">{result.requirementId}</span>: {result.description}
+              {result.justification !== "" && <div className="stage-row-sub">{result.justification}</div>}
+              {result.evidence.slice(0, 3).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
+            </div>
+            <span className="stage-row-side"><Badge tone={functionalTone(result.status)}>{requirementStatus(result.status)}</Badge></span>
+          </div>)}
+        </div>
+      </>}
+
+      {summary.capabilities.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.functionalCapabilities", { count: summary.capabilities.length })}</span>
+        <div className="stage-rows">
+          {summary.capabilities.map((capability) => <div className="stage-row" key={capability.capabilityId}>
+            <div className="stage-row-main">
+              <span className="mono stage-path">{capability.name}</span>
+              {capability.description !== "" && <> — {capability.description}</>}
+              {capability.route !== "" && <div className="stage-row-sub"><span className="mono">{capability.route}</span></div>}
+              {capability.evidence.slice(0, 2).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
+            </div>
+            <span className="stage-row-side">
+              <Badge tone="neutral">{capability.kind}</Badge>
+              {capability.detection !== "" && <Badge tone="info">{capability.detection}</Badge>}
+            </span>
+          </div>)}
+        </div>
+      </>}
+
+      {summary.subattributes.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.functionalSubattributes")}</span>
+        <div className="stage-rows">
+          {summary.subattributes.map((item) => <div className="stage-row" key={item.attribute}>
+            <div className="stage-row-main">
+              <strong>{attribute(item.attribute)}</strong>
+              <div className="stage-row-sub">{t("pipeline.functionalEvaluationCounts", {
+                evaluated: formatNumber(item.evaluated), confirmed: formatNumber(item.confirmed), probable: formatNumber(item.probable), unverified: formatNumber(item.unverified),
+              })}</div>
+              {item.summary !== "" && <div className="stage-row-sub">{item.summary}</div>}
+            </div>
+          </div>)}
+        </div>
+      </>}
+
+      {summary.findings.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.functionalFindings", { count: summary.findings.length })}</span>
+        <div className="stage-rows">
+          {summary.findings.map((finding) => <div className="stage-row" key={finding.findingId}>
+            <div className="stage-row-main">
+              <span className="mono stage-path">{finding.capabilityName}</span> · {attribute(finding.attribute)}
+              {finding.justification !== "" && <div className="stage-row-sub">{finding.justification}</div>}
+              {finding.criteria !== "" && <div className="stage-row-sub">{t("pipeline.functionalCriteria", { criteria: finding.criteria })}</div>}
+              {finding.evidence.slice(0, 2).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
+            </div>
+            <span className="stage-row-side"><Badge tone={functionalTone(finding.classification)}>{classification(finding.classification)}</Badge></span>
+          </div>)}
+        </div>
+      </>}
+
+      {summary.limitations.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.limitations", { count: summary.limitations.length })}</span>
+        <div className="stage-rows">{summary.limitations.map((item, index) => <div className="stage-row" key={index}><div className="stage-row-main">{item}</div></div>)}</div>
+      </>}
+      {summary.recommendations.length > 0 && <>
+        <span className="stage-section-label">{t("pipeline.functionalRecommendations", { count: summary.recommendations.length })}</span>
+        <div className="stage-rows">{summary.recommendations.map((item, index) => <div className="stage-row" key={index}><div className="stage-row-main">{item}</div></div>)}</div>
+      </>}
     </div>
   )
 }

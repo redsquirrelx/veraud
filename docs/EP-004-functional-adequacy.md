@@ -25,14 +25,15 @@ The agent accepts a JSON object containing:
 - `requirements`: objects with `requirement_id` and `description`.
 - `code_fragments`: objects with `fragment_id`, `file_path`, and `code`.
 
-The CLI supports two execution modes:
+The CLI supports these execution modes:
 
-1. **Prepared input:** the JSON provides both requirements and code fragments.
-2. **Local repository input:** the JSON provides requirements, and `--repository` generates code fragments automatically from the specified repository.
+1. **Prepared input:** the JSON provides requirements and/or code fragments.
+2. **Local repository input:** `--repository` generates code fragments and capabilities automatically from the specified repository. The JSON input is optional.
+3. **Exploratory input:** when no requirements are provided, the agent detects functional capabilities and evaluates completeness, correctness, and relevance.
 
-The local repository mode preserves the existing agent input contract.
+The local repository mode preserves the existing agent input contract and adds an optional repository context.
 
-Requirements must still be supplied in structured JSON. Automatic extraction of requirements from SRS documents is not implemented.
+Requirements remain optional. Automatic extraction of requirements from SRS documents is not implemented; exploratory mode does not claim compliance with real specifications.
 
 ## Repository Adapter
 
@@ -44,6 +45,8 @@ The repository adapter:
 - Divides source content into fragments of up to 80 lines.
 - Preserves source-file paths and line ranges for traceability.
 - Limits the generated collection to 500 fragments.
+
+The adapter also derives functional capabilities from entrypoints, endpoints, functions, classes, and internal relationships. Each capability keeps traceable evidence (file, line range, symbol, and matching code fragment when available).
 
 The adapter produces candidate evidence, not verified proof of functional compliance.
 
@@ -60,6 +63,23 @@ The classification values are:
 Classification values remain in Spanish because they are part of the existing output contract.
 
 The output also includes requirement counts and a calculated score. These values describe the evaluated requirements and must not be interpreted as overall repository coverage.
+
+In exploratory mode, `score` is `0.0`, `score_applicable` is `false`, and `score_meaning` states that no compliance or coverage percentage is calculated. The output adds:
+
+- `audit_mode`: `requirements_based` or `exploratory`.
+- `capabilities`: detected functional capabilities with traceable evidence.
+- `findings`: completeness, correctness, and relevance findings.
+- `subattributes`: qualitative summaries for `completitud`, `correccion`, and `pertinencia`.
+- `classification_criteria`: explicit criteria for `confirmado`, `probable`, and `no_verificado`.
+- `limitations` and `recommendations`.
+
+Findings are classified as:
+
+- `confirmado`: observed, traceable evidence supports the evaluated static characteristic. This does not prove compliance with real requirements.
+- `probable`: evidence is partial, inferred, or incomplete.
+- `no_verificado`: retained evidence or specifications are insufficient.
+
+Exploratory mode does not execute tests, measure coverage, or claim functional correctness against unavailable specifications.
 
 ## Execution
 
@@ -86,7 +106,18 @@ uv run functional-adequacy ../datasets/flask_validation.json \
   --model gemini-3.8-flash
 ```
 
-The `LLM_API_KEY` environment variable must be configured. API keys must never be committed to the repository.
+### Exploratory audit without requirements
+
+```bash
+cd agent-server
+uv run functional-adequacy \
+  --repository /path/to/local/flask \
+  --output ../datasets/flask_exploratory_result.json \
+  --provider gemini \
+  --model gemini-3.8-flash
+```
+
+Exploratory mode does not call the language model. `LLM_API_KEY` is only required for requirements-based verification. API keys must never be committed to the repository.
 
 ## Verified Results
 
@@ -136,21 +167,111 @@ This outcome demonstrates error handling, not a functional noncompliance finding
 - The `functional-adequacy` pipeline was executed successfully using the Flask prepared dataset.
 - Result: `datasets/flask_pipeline_result.json`.
 
-### Automated Tests
+## Backend Integration
 
-Command:
+`POST /api/projects/:id/functional-adequacy` opens one `functional_adequacy`
+execution on a project version. The request body is:
+
+```json
+{
+  "branch": "main",
+  "commitHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requirements": [
+    { "requirement_id": "RF-01", "description": "The catalog lists products." }
+  ]
+}
+```
+
+`requirements` is optional. When it is omitted or empty, the backend creates the
+version/evaluation/execution without validating or capturing a model and sends
+only `root_path` to the `functional-adequacy` pipeline. This is the exploratory
+path and does not require provider credentials. When requirements are present,
+the saved `functional_adequacy` model is validated before any records are
+created, its public configuration snapshot is stored, and `requirements` travel
+with the pipeline input.
+
+The response is `201` with `versionId`, `evaluationId`, and
+`executions.functional_adequacy`. Completion is reported by the agent-server
+through the existing callbacks and WebSocket lifecycle; `GET
+/api/projects/:id/versions` exposes the stored row and its `result`.
+
+Backend-only validation is covered by
+`backend/src/tests/project-functional-adequacy.integration.test.ts`: exploratory
+runs, requirements forwarding with a captured model, missing-model rejection,
+unknown projects, and empty requirement identifiers. The live crossing test now
+starts the real agent-server and verifies an exploratory functional run finishes
+with structured subattributes and traceable capability evidence.
+
+## Frontend Integration
+
+The Analyze menu offers **Functional adequacy**. The current UI always starts it
+in exploratory mode because the requirements form has not been designed yet; the
+HTTP client already accepts optional requirements for a future form.
+
+Results are parsed from the execution JSON and rendered in the project
+**Analysis** section as a report-style stage view:
+
+- audit mode and, only in requirements mode, the requirement score;
+- requirement results with classification, justification, and evidence;
+- detected capabilities with route/symbol and file/line evidence;
+- qualitative subattribute summaries for completeness, correctness, and
+  relevance;
+- capability findings with classification, criteria, and traceable evidence;
+- limitations and recommendations.
+
+The **Audits** section shows the functional run status and its captured
+configuration when one exists. Exploratory rows intentionally have no
+configuration snapshot.
+
+EP-004 uses the project **Analysis** view as its report surface. The stored
+`execution.result` is the report data, and the UI renders it with traceable
+evidence. A standalone consolidated report or PDF module is out of scope for
+this branch; existing “Reports” navigation entries remain placeholders.
+
+## Automated Tests
+
+Agent-server command:
 
 ```bash
 cd agent-server
 uv run pytest -q
 ```
 
-Verified result on October 18, 2026:
+Verified result on November 2, 2026:
 
-- **270 passed**
+- **291 passed**
 - **0 failed**
 - **1 dependency deprecation warning**
-- Execution time: 24.65 seconds
+
+Backend command:
+
+```bash
+cd backend
+pnpm test
+```
+
+Verified result on November 2, 2026:
+
+- **183 passed**
+- **0 failed**
+- Includes the live backend + agent-server architecture and exploratory
+  functional-adequacy crossing.
+
+Frontend command:
+
+```bash
+cd frontend
+pnpm test
+```
+
+Verified result on November 2, 2026:
+
+- **487 passed** across 69 test files
+- **0 failed**
+
+`pnpm lint` passed for backend and frontend. The modified agent-server Python
+files pass `ruff check`; the full agent-server tree still has pre-existing Ruff
+findings under `src/server/agents/security/`.
 
 Five tests specifically validate the repository adapter:
 
@@ -174,23 +295,25 @@ Test file: `agent-server/tests/test_functional_adequacy_repository_adapter.py`.
 
 ## Known Limitations
 
-1. Requirements must be supplied as structured JSON; automatic SRS requirement extraction is not implemented.
+1. Automatic SRS requirement extraction is not implemented; exploratory mode infers capabilities instead of recovering real requirements.
 2. Automatic analysis currently accepts local repository paths, not direct GitHub URLs or ZIP archives through this CLI.
 3. Fixed-size fragment splitting can separate related code across fragments.
 4. The 500-fragment limit can exclude relevant code from large repositories.
 5. Semantic retrieval can select irrelevant fragments, and language-model classifications require independent validation.
 6. A language-model provider failure can result in `evidencia_insuficiente`; this must not be interpreted as functional noncompliance.
-7. The backend currently supplies `root_path` to pipeline execution, while the functional agent expects structured requirements and code fragments.
-8. End-to-end backend integration and consolidated PDF reporting have not been verified.
-9. The evaluated examples do not establish overall functional coverage or general classification accuracy.
+7. Exploratory findings are static indicators, not proof of correctness, coverage, or compliance with real specifications.
+8. The API accepts requirements, but the frontend still has no requirements input form, so UI runs are exploratory only.
+9. The report surface is the project Analysis view over the stored execution result; a standalone consolidated/PDF report is out of scope for this branch.
+10. The live crossing verifies the exploratory path. Requirements-based runs have integration and unit coverage, but no live provider-backed execution is part of the automated suite.
+11. The evaluated examples do not establish overall functional coverage or general classification accuracy.
 
 ## Integration Notes
 
 The local repository adapter is implemented within EP-004 and reuses VERAUD's shared repository analysis service.
 
-Backend integration must supply structured requirements, invoke the compatible preparation and execution workflow, and connect the resulting findings to the consolidated report.
+Backend, persistence, callbacks, and the project Analysis view now use the existing execution architecture. No parallel invocation path was added. The endpoint supports both exploratory and requirements-based runs, while the UI currently exposes exploratory runs only.
 
-The existing agent, pipeline, and output contracts should be reused rather than creating a separate execution architecture.
+The remaining UI gap is the requirements input form. EP-004 deliberately closes with the project Analysis view as its report surface; consolidated/PDF reporting is out of scope for this branch. The existing agent, pipeline, and output contracts should continue to be reused rather than creating a separate execution architecture.
 
 ## Git References
 

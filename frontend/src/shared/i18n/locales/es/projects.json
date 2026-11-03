@@ -71,6 +71,10 @@
       "projectArchitecture": {
         "label": "Arquitectura del proyecto",
         "description": "Orientación, arquitectura y validación semántica"
+      },
+      "functionalAdequacy": {
+        "label": "Adecuación funcional",
+        "description": "Explora capacidades o verifica requisitos contra el código"
       }
     }
   },
@@ -116,7 +120,18 @@
     "diagram": "Diagrama",
     "diagramWithOrigin": "Diagrama (informe {{origin}})",
     "diagramFallback": "Diagrama “{{title}}”: {{nodes}} nodo(s), {{edges}} arista(s)",
-    "proposedCorrection": "Corrección propuesta: {{correction}}"
+    "proposedCorrection": "Corrección propuesta: {{correction}}",
+    "functionalTitle": "Adecuación funcional",
+    "functionalExploratory": "Auditoría exploratoria",
+    "functionalRequirementsBased": "Auditoría por requisitos",
+    "functionalScore": "{{score}}% · {{fulfilled}}/{{total}} requisitos",
+    "functionalRequirementResults": "Resultados por requisito ({{count}})",
+    "functionalCapabilities": "Capacidades detectadas ({{count}})",
+    "functionalSubattributes": "Resumen por subatributo",
+    "functionalEvaluationCounts": "{{evaluated}} evaluadas · {{confirmed}} confirmadas · {{probable}} probables · {{unverified}} no verificadas",
+    "functionalFindings": "Hallazgos por capacidad ({{count}})",
+    "functionalCriteria": "Criterio: {{criteria}}",
+    "functionalRecommendations": "Recomendaciones ({{count}})"
   },
   "detail": {
     "loading": "Cargando proyecto",
@@ -245,5 +260,22 @@
     }
   },
   "selectedCount_one": "{{count}} proyecto seleccionado",
-  "selectedCount_other": "{{count}} proyectos seleccionados"
+  "selectedCount_other": "{{count}} proyectos seleccionados",
+  "functional": {
+    "status": {
+      "fulfilled": "Cumple",
+      "notFulfilled": "No cumple",
+      "insufficientEvidence": "Evidencia insuficiente"
+    },
+    "classification": {
+      "confirmed": "Confirmado",
+      "probable": "Probable",
+      "unverified": "No verificado"
+    },
+    "attribute": {
+      "completeness": "Completitud",
+      "correctness": "Corrección",
+      "relevance": "Pertinencia"
+    }
+  }
 }

@@ -128,6 +128,7 @@ function makeFakes(options: {
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
     openProjectArchitecturePipelineForProject: async () => { throw new Error("not used here") },
+    openFunctionalAdequacyPipelineForProject: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
@@ -262,6 +263,7 @@ describe("ProjectService.registerProject", () => {
       join(tmpdir(), "veraud-unused"),
       {
         openProjectArchitecturePipelineForProject: async () => { throw new Error("must not open executions") },
+        openFunctionalAdequacyPipelineForProject: async () => { throw new Error("must not open executions") },
       }
     )
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestProjectArchitecture } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestProjectArchitecture, requestProjectFunctionalAdequacy } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -136,6 +136,36 @@ describe("requestProjectArchitecture", () => {
     stubFetch(422, { message: "Agents require attention: semantic_validation" })
 
     await expect(requestProjectArchitecture(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422 } as Partial<ApiError>)
+  })
+})
+
+describe("requestProjectFunctionalAdequacy", () => {
+  it("omits requirements for the exploratory audit", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    const runs = { functional_adequacy: { ...waitingExecution, id: 31, agentType: "functional_adequacy" } }
+    globalThis.fetch = (async (url: string, init?: { body?: string }) => {
+      seen.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") as unknown })
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: runs }), { status: 201 })
+    }) as typeof fetch
+
+    const response = await requestProjectFunctionalAdequacy(2, "main", "a".repeat(40))
+
+    expect(response.executions.functional_adequacy.agentType).toBe("functional_adequacy")
+    expect(seen[0]?.url).toContain("/api/projects/2/functional-adequacy")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+  })
+
+  it("forwards explicit requirements", async () => {
+    const seen: Array<{ body: unknown }> = []
+    const requirements = [{ requirement_id: "RF-01", description: "Catalog lists products" }]
+    globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
+      seen.push({ body: JSON.parse(init?.body ?? "{}") as unknown })
+      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: { functional_adequacy: waitingExecution } }), { status: 201 })
+    }) as typeof fetch
+
+    await requestProjectFunctionalAdequacy(2, "main", "a".repeat(40), requirements)
+
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40), requirements })
   })
 })
 

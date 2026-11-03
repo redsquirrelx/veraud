@@ -82,6 +82,7 @@ function makeService(options: {
     workspaceDir,
     {
       openProjectArchitecturePipelineForProject: async () => { throw new Error("not used") },
+      openFunctionalAdequacyPipelineForProject: async () => { throw new Error("not used") },
     }
   )
 

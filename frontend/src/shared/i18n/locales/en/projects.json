@@ -71,6 +71,10 @@
       "projectArchitecture": {
         "label": "Project architecture",
         "description": "Orientation, architecture and semantic validation"
+      },
+      "functionalAdequacy": {
+        "label": "Functional adequacy",
+        "description": "Explore capabilities or check requirements against the code"
       }
     }
   },
@@ -116,7 +120,18 @@
     "diagram": "Diagram",
     "diagramWithOrigin": "Diagram ({{origin}} report)",
     "diagramFallback": "Diagram “{{title}}”: {{nodes}} node(s), {{edges}} edge(s)",
-    "proposedCorrection": "Proposed correction: {{correction}}"
+    "proposedCorrection": "Proposed correction: {{correction}}",
+    "functionalTitle": "Functional adequacy",
+    "functionalExploratory": "Exploratory audit",
+    "functionalRequirementsBased": "Requirements-based audit",
+    "functionalScore": "{{score}}% · {{fulfilled}}/{{total}} requirements",
+    "functionalRequirementResults": "Requirement results ({{count}})",
+    "functionalCapabilities": "Detected capabilities ({{count}})",
+    "functionalSubattributes": "Subattribute summary",
+    "functionalEvaluationCounts": "{{evaluated}} evaluated · {{confirmed}} confirmed · {{probable}} probable · {{unverified}} unverified",
+    "functionalFindings": "Capability findings ({{count}})",
+    "functionalCriteria": "Criterion: {{criteria}}",
+    "functionalRecommendations": "Recommendations ({{count}})"
   },
   "detail": {
     "loading": "Loading project",
@@ -245,5 +260,22 @@
     }
   },
   "selectedCount_one": "{{count}} project selected",
-  "selectedCount_other": "{{count}} projects selected"
+  "selectedCount_other": "{{count}} projects selected",
+  "functional": {
+    "status": {
+      "fulfilled": "Fulfilled",
+      "notFulfilled": "Not fulfilled",
+      "insufficientEvidence": "Insufficient evidence"
+    },
+    "classification": {
+      "confirmed": "Confirmed",
+      "probable": "Probable",
+      "unverified": "Not verified"
+    },
+    "attribute": {
+      "completeness": "Completeness",
+      "correctness": "Correctness",
+      "relevance": "Relevance"
+    }
+  }
 }

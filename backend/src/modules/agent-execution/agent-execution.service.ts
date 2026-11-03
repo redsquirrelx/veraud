@@ -5,14 +5,15 @@ import type { AgentTargetResolver } from "../../infrastructure/agent-target/agen
 import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
-import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import type { FunctionalAdequacyAnalysisRequest, ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
+import { FUNCTIONAL_ADEQUACY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
   type AgentExecutionUsage,
   type AgentExecutionStatus,
   type AgentExecutionStore,
+  type AgentExecutionPlan,
   type NewAgentExecution,
   type StoredAgentExecution,
 } from "./agent-execution.repository.js"
@@ -29,6 +30,11 @@ export interface ProjectArchitectureExecutions {
   orientation: StoredAgentExecution
   architecture: StoredAgentExecution
   semantic_validation: StoredAgentExecution
+}
+
+/** Functional adequacy has one stage, with or without a model. */
+export interface FunctionalAdequacyExecutions {
+  functional_adequacy: StoredAgentExecution
 }
 
 export class InvalidCompletionError extends Error {
@@ -114,7 +120,11 @@ export class AgentExecutionService {
 
   async openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
     const configurations = await this.settings.prepareExecution([...PROJECT_ARCHITECTURE_PIPELINE_STAGES])
-    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, configurations)
+    const plans: AgentExecutionPlan[] = configurations.map((configuration) => ({
+      agentType: configuration.agentType,
+      configuration,
+    }))
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, plans)
     const executions = {
       orientation: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[0]]!,
       architecture: result.executions[PROJECT_ARCHITECTURE_PIPELINE_STAGES[1]]!,
@@ -126,6 +136,51 @@ export class AgentExecutionService {
     const configs: Record<string, AgentRunConfig> = {}
     for (const configuration of configurations) configs[configuration.agentType] = configuration.transport
     void this.dispatchPipelineByName(PROJECT_ARCHITECTURE_PIPELINE_NAME, executions, configs)
+    return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
+  }
+
+  /**
+   * Opens one functional-adequacy row on the selected version.
+   *
+   * Requirements are optional. Without them the pipeline runs in exploratory
+   * mode, which is deterministic: no model is validated, no configuration is
+   * captured, and the agent-server receives no stage config. With them the
+   * configured model is required and captured exactly like any other stage.
+   */
+  async openFunctionalAdequacyPipelineForProject(
+    projectId: number,
+    branch: string,
+    commitHash: string,
+    requirements: Array<{ requirement_id: string, description: string }>,
+  ): Promise<FunctionalAdequacyAnalysisRequest> {
+    const needsModel = requirements.length > 0
+    const configurations = needsModel
+      ? await this.settings.prepareExecution([FUNCTIONAL_ADEQUACY_AGENT_TYPE])
+      : []
+    const configuration = configurations[0] ?? null
+    const plans: AgentExecutionPlan[] = [{
+      agentType: FUNCTIONAL_ADEQUACY_AGENT_TYPE,
+      configuration,
+    }]
+    const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, plans)
+    const executions: FunctionalAdequacyExecutions = {
+      functional_adequacy: result.executions[FUNCTIONAL_ADEQUACY_AGENT_TYPE]!,
+    }
+    for (const execution of Object.values(executions)) {
+      this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    }
+    const configs: Record<string, AgentRunConfig> = configuration === null
+      ? {}
+      : { [FUNCTIONAL_ADEQUACY_AGENT_TYPE]: configuration.transport }
+    const runtimeExecutions: Record<string, StoredAgentExecution> = {
+      functional_adequacy: executions.functional_adequacy,
+    }
+    void this.dispatchPipelineByName(
+      FUNCTIONAL_ADEQUACY_PIPELINE_NAME,
+      runtimeExecutions,
+      configs,
+      requirements.length > 0 ? { requirements } : {},
+    )
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
@@ -166,7 +221,12 @@ export class AgentExecutionService {
    *  The pipeline-level diagram (mermaid) is not a stage row: once the run
    *  returns it is merged into the finished architecture row, so the frontend
    *  can render it from the same result it already parses. */
-  private async dispatchPipelineByName(pipeline: string, executions: Record<string, StoredAgentExecution>, configs: Record<string, AgentRunConfig>): Promise<void> {
+  private async dispatchPipelineByName(
+    pipeline: string,
+    executions: Record<string, StoredAgentExecution>,
+    configs: Record<string, AgentRunConfig>,
+    extraInput: Record<string, unknown> = {},
+  ): Promise<void> {
     const ids = Object.keys(executions)
     try {
       const first = executions[ids[0]!]!
@@ -182,7 +242,7 @@ export class AgentExecutionService {
       const executionIds: Record<string, number> = {}
       for (const [stage, execution] of Object.entries(executions)) executionIds[stage] = execution.id
 
-      const payload = await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path) }, executionIds, configs)
+      const payload = await this.agents.runPipelineByName(pipeline, { root_path: String(input.root_path), ...extraInput }, executionIds, configs)
       await this.attachDiagram(executions["architecture"], payload)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

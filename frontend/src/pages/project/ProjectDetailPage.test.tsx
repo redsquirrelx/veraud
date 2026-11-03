@@ -524,6 +524,60 @@ describe("ProjectDetailPage", () => {
     expect(screen.getAllByText("Waiting")).toHaveLength(3)
   })
 
+  it("starts and renders a functional-adequacy run from the Analyze menu", async () => {
+    const seen: Array<{ url: string, body: unknown }> = []
+    const result = JSON.stringify({
+      evaluated_attribute: "functional_adequacy",
+      audit_mode: "exploratory",
+      score: 0,
+      score_applicable: false,
+      total_requirements: 0,
+      fulfilled_requirements: 0,
+      results: [],
+      capabilities: [{ capability_id: "cap-1", name: "list_products", kind: "function", description: "Lists products.", detection: "observed", evidence: [] }],
+      findings: [],
+      subattributes: [],
+      limitations: ["No requirements were supplied."],
+      recommendations: [],
+    })
+    stubFetch((url, init) => {
+      if (url.includes("/api/tasks/active")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      if (url.endsWith("/functional-adequacy")) {
+        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
+        return new Response(JSON.stringify({
+          versionId: 9,
+          evaluationId: 7,
+          executions: {
+            functional_adequacy: {
+              id: 31, evaluationId: 7, agentType: "functional_adequacy", status: "Completed", result,
+              error: null, inputTokens: null, outputTokens: null, createdAt: "2026-01-01", startedAt: "2026-01-01", finishedAt: "2026-01-01",
+            },
+          },
+        }), { status: 201 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+
+    await screen.findByText("acme/Demo")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
+    await userEvent.click(analyze)
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Functional adequacy/ }))
+
+    expect(seen.length).toBe(1)
+    expect(seen[0]?.url).toContain("/api/projects/2/functional-adequacy")
+    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
+    expect(await screen.findByRole("heading", { name: "Functional adequacy" })).toBeDefined()
+    expect(screen.getByText("Exploratory audit")).toBeDefined()
+    expect(screen.getByText("list_products", { exact: false })).toBeDefined()
+    expect(screen.getByText("No requirements were supplied.")).toBeDefined()
+  })
+
   it("renders parsed orientation content once its run completes", async () => {    const orientationResult = JSON.stringify({
       completion_status: "complete",
       orientation: {

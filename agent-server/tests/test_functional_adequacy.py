@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from server.agents.functional_adequacy.agent import FunctionalAdequacyAgent
+from server.agents.functional_adequacy.agent import (
+    SBERT_DEPENDENCY_ERROR,
+    FunctionalAdequacyAgent,
+    SemanticRetrievalUnavailableError,
+)
 from server.agents.functional_adequacy.schemas import FunctionalAdequacyInput
 
 
@@ -18,6 +22,10 @@ def build_agent():
     agent.model = FakeModel()
     agent._graph = agent._build_graph()
     return agent
+
+
+def require_semantic_retrieval():
+    pytest.importorskip("sentence_transformers")
 
 
 def make_input(requirements, fragments):
@@ -89,6 +97,7 @@ def test_rejects_duplicate_requirement_ids():
         )
 
 def test_sbert_retrieves_expected_fragments():
+    require_semantic_retrieval()
     data = make_input(
         [
             {
@@ -131,6 +140,7 @@ def test_sbert_retrieves_expected_fragments():
     assert candidates["REQ-002"][0].fragment_id == "CODE-002"
 
 def test_full_execution_and_coverage():
+    require_semantic_retrieval()
     data = make_input(
         [
             {
@@ -191,6 +201,7 @@ def test_full_execution_and_coverage():
 
 
 def test_invalid_llm_response():
+    require_semantic_retrieval()
     data = make_input(
         [{"requirement_id": "REQ-001", "description": "Validate passwords."}],
         [{
@@ -240,6 +251,7 @@ def test_no_code_skips_sbert_and_llm():
 
 
 def test_llm_provider_failure():
+    require_semantic_retrieval()
     data = make_input(
         [{"requirement_id": "REQ-001", "description": "Validate passwords."}],
         [{
@@ -262,8 +274,69 @@ def test_llm_provider_failure():
     assert output.score == 0.0
     assert output.fulfilled_requirements == 0
 
+def test_exploratory_mode_does_not_load_semantic_retrieval():
+    data = FunctionalAdequacyInput.model_validate({
+        "code_fragments": [
+            {
+                "fragment_id": "CODE-001",
+                "file_path": "routes.py:1-3",
+                "code": "def list_items():\n    return []\n",
+            }
+        ]
+    })
+
+    with patch(
+        "server.agents.functional_adequacy.agent._get_sbert_model",
+        side_effect=AssertionError("Exploratory mode must not load SBERT"),
+    ):
+        output = asyncio.run(build_agent().run(data))
+
+    assert output.audit_mode == "exploratory"
+    assert output.score_applicable is False
+    assert {item.attribute for item in output.subattributes} == {
+        "completitud",
+        "correccion",
+        "pertinencia",
+    }
+
+
+def test_missing_semantic_retrieval_dependency_returns_controlled_result():
+    data = make_input(
+        [{"requirement_id": "REQ-001", "description": "Allow login."}],
+        [{
+            "fragment_id": "CODE-001",
+            "file_path": "auth.py",
+            "code": "def login(): return True",
+        }],
+    )
+
+    async def unexpected_generate(model, prompt):
+        raise AssertionError("LLM should not execute without evidence")
+
+    with (
+        patch(
+            "server.agents.functional_adequacy.agent._get_sbert_model",
+            side_effect=SemanticRetrievalUnavailableError(
+                SBERT_DEPENDENCY_ERROR
+            ),
+        ),
+        patch(
+            "server.agents.functional_adequacy.agent.traced_generate",
+            new=unexpected_generate,
+        ),
+    ):
+        output = asyncio.run(build_agent().run(data))
+
+    assert output.audit_mode == "requirements_based"
+    assert output.score == 0.0
+    assert output.results[0].status == "evidencia_insuficiente"
+    assert SBERT_DEPENDENCY_ERROR in output.results[0].justification
+    assert SBERT_DEPENDENCY_ERROR in output.limitations
+
+
 def test_explicit_route_symbol_is_retrieved():
     """Verifica que una coincidencia explícita no se pierda por el ranking semántico."""
+    pytest.importorskip("torch")
     from unittest.mock import Mock
 
     import torch
@@ -307,7 +380,7 @@ def test_explicit_route_symbol_is_retrieved():
                 return_value=fake_model,
             ),
             patch(
-                "server.agents.functional_adequacy.agent.util.cos_sim",
+                "server.agents.functional_adequacy.agent._cosine_similarity",
                 return_value=scores,
             ),
         ):
