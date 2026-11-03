@@ -13,8 +13,9 @@ import { AuditAttributeSummary } from "./AuditAttributeSummary.tsx"
 import { AuditConfigurationDetails } from "./AuditConfigurationDetails.tsx"
 import { ReuseAuditConfiguration } from "./ReuseAuditConfiguration.tsx"
 import type { ReusedAuditSelection } from "./reuseAuditSelection.ts"
-import { availableSubcharacteristics, isAvailable, useAuditAgentCatalog } from "./auditAgentCatalog.ts"
+import { useAuditAgentCatalog } from "./auditAgentCatalog.ts"
 import { auditReadiness } from "./auditReadiness.ts"
+import { useAuditStartMessages } from "./auditStartMessages.ts"
 import { AuditAttributeConfiguration } from "./AuditAttributeConfiguration.tsx"
 import { auditDraftValues, type AuditAttributeDraft } from "./auditOperatingSettingsApi.ts"
 
@@ -69,8 +70,13 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const { t: tCommon } = useTranslation("common")
   const attributeId = useId()
   const agentCatalog = useAuditAgentCatalog()
-  const [selected, setSelected] = useState(true)
-  const [securitySelected, setSecuritySelected] = useState(true)
+  const startMessages = useAuditStartMessages()
+  // Defaults follow executable roots; explicit user selections remain authoritative
+  // even if a later catalog refresh makes an agent unavailable.
+  const [maintainabilityEnabled, setSelected] = useState<boolean | undefined>()
+  const [securityEnabled, setSecuritySelected] = useState<boolean | undefined>()
+  const selected = maintainabilityEnabled ?? (auditReadiness(agentCatalog.agents, ["maintainability"]).length === 0)
+  const securitySelected = securityEnabled ?? (auditReadiness(agentCatalog.agents, ["security"]).length === 0)
   const [functionalSelected, setFunctionalSelected] = useState(false)
   const [configurationOpen, setConfigurationOpen] = useState(false)
   const [expandedAttributes, setExpandedAttributes] = useState<Record<string, boolean>>({ maintainability: true, security: true, functional_adequacy: false })
@@ -129,6 +135,14 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       if (Object.keys(values).length) attributeOptions[attribute] = values
     } catch { invalidOptions = true }
   }
+  const startBlocked = !canRun || !branch || !commitHash || !ready || !selectedAttributes.length
+    || invalidRequirements || invalidMaintainability || invalidOptions || starting || running
+  const startBlocker = !branch || !commitHash ? startMessages.revision
+    : !canRun ? startMessages.project
+    : agentCatalog.loading ? tCommon("ui.loading")
+    : !agentCatalog.failed && !selectedAttributes.length ? startMessages.selection
+    : invalidRequirements ? startMessages.requirements
+    : starting ? t("qualityAudits.starting") : null
   const requirementsEditor = <div className="quality-functional-requirements">
     <label htmlFor={`${attributeId}-requirements`}>{t("qualityAudits.requirements.label")}</label>
     <p id={`${attributeId}-requirements-help`} className="label">{t("qualityAudits.requirements.help", { minimum: 1, maximum: 100 })}</p>
@@ -150,8 +164,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     setReuseNotice(null)
     setAttributeDrafts({})
     setConfigurationRevision((value) => value + 1)
-    const maintainability = availableSubcharacteristics(agentCatalog.agents).length > 0
-    const security = agentCatalog.agents.some((agent) => agent.agentType === "security" && isAvailable(agent))
+    const maintainability = auditReadiness(agentCatalog.agents, ["maintainability"]).length === 0
+    const security = auditReadiness(agentCatalog.agents, ["security"]).length === 0
     setMaintainabilitySelection(undefined)
     setSelected(maintainability)
     setSecuritySelected(security)
@@ -224,12 +238,13 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
       </fieldset>
       {functionalSelected && !configurationOpen && requirementsEditor}
       <div className="quality-audit-actions">
-        <Button disabled={!canRun || !ready || !selectedAttributes.length || invalidRequirements || invalidMaintainability || invalidOptions || starting || running} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
+        <Button disabled={startBlocked} title={startBlocker ?? undefined} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
         <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
         <Button variant="secondary" onClick={() => setConfigurationOpen(true)}>{t("qualityAudits.configuration.title")}</Button>
         <Link className="ui-button ui-button-secondary" to="/settings">{t("qualityAudits.configureAgents")}</Link>
       </div>
-      {!agentCatalog.loading && (agentCatalog.failed || readinessIssues.length > 0) && <div role="status">
+      {startBlocker && <p role="status">{startBlocker}</p>}
+      {!agentCatalog.loading && (agentCatalog.failed || readinessIssues.length > 0 || !selectedAttributes.length) && <div role="status">
         {agentCatalog.failed ? <p>{t("qualityAudits.setup.catalogFailed")}</p> : readinessIssues.map((issue) => <p key={issue.attribute}>
           {t(attributeLabelKeys[issue.attribute]!)}: {t(`qualityAudits.setup.${issue.reason}`)}
         </p>)}

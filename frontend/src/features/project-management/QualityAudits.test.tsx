@@ -73,6 +73,8 @@ describe("project quality audits", () => {
     vi.mocked(listAgentSettings).mockResolvedValueOnce(readyAgents.map((agent) => agent.agentType === "security" ? { ...agent, configured: false } : agent))
       .mockResolvedValue(readyAgents)
     show()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
+    await toggleAttribute("Security")
     expect(await screen.findByText("Security: Configure a model and compatible credentials before starting.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
     const user = userEvent.setup()
@@ -80,6 +82,66 @@ describe("project quality audits", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "Start audit" }))
     expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"])
+  })
+
+  it.each(["maintainability_manager", "security"])("starts with only %s ready, without requiring other agents", async (agentType) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.map((agent) => ({ ...agent, configured: agent.agentType === agentType })))
+    show()
+    const start = screen.getByRole("button", { name: "Start audit" })
+    await waitFor(() => expect(start).toBeEnabled())
+    await userEvent.click(start)
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), [agentType === "security" ? "security" : "maintainability"])
+  })
+
+  it("allows a ready selection even when all other agents are absent from the catalog", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.filter((agent) => agent.agentType === "security"))
+    show()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
+    await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security"])
+  })
+
+  it("explains when no configured agent can be selected by default", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.map((agent) => ({ ...agent, configured: false })))
+    show()
+    expect(await screen.findByText(/Select at least one available, configured agent/)).toBeVisible()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    expect(api.startQualityAudit).not.toHaveBeenCalled()
+  })
+
+  it("rechecks readiness when no default agent was initially configured", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(listAgentSettings).mockResolvedValueOnce(readyAgents.map((agent) => ({ ...agent, configured: false })))
+      .mockResolvedValue(readyAgents.filter((agent) => agent.agentType === "security"))
+    show()
+    await screen.findByText(/Select at least one available, configured agent/)
+    await userEvent.click(screen.getByRole("button", { name: "Check agents again" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
+    expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
+  })
+
+  it.each(["Waiting", "Running"])("does not start another audit while an existing audit is %s", async (executionStatus) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, executionStatus }])
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.filter((agent) => agent.agentType === "security"))
+    show()
+    await screen.findByRole("article")
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    expect(api.startQualityAudit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { branch: null, commitHash: null, canRun: true, reason: /Apply a branch and commit/ },
+    { branch: "main", commitHash: "a".repeat(40), canRun: false, reason: /project is not ready/ },
+  ])("explains the project or revision blocker", async ({ reason, ...props }) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    render(<MemoryRouter><QualityAudits projectId={5} {...props} /></MemoryRouter>)
+    expect(await screen.findByText(reason)).toBeVisible()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
   })
 
   it("configures security and functional run-only options and requirements inside the drawer", async () => {
@@ -210,7 +272,7 @@ describe("project quality audits", () => {
     expect(JSON.stringify(history)).toBe(original)
   })
 
-  it("restores available scope defaults locally without saving global agent settings or clearing requirements", async () => {
+  it("restores ready scope defaults locally without saving global agent settings or clearing requirements", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(listAgentSettings).mockResolvedValue([
       ...readyAgents.filter((agent) => agent.agentType !== "security"),
@@ -240,9 +302,10 @@ describe("project quality audits", () => {
 
       await user.click(screen.getByRole("button", { name: "Restore defaults" }))
 
-      for (const name of ["Enable Maintainability", "Enable Security", "Modularity", "Reusability", "architecture_boundary", "responsibility"]) {
+      for (const name of ["Enable Maintainability", "Modularity", "Reusability", "architecture_boundary", "responsibility"]) {
         expect(screen.getByRole("checkbox", { name })).toBeChecked()
       }
+      expect(screen.getByRole("checkbox", { name: "Enable Security" })).not.toBeChecked()
       expect(screen.getByRole("checkbox", { name: "Unavailable" })).toBeDisabled()
       expect(screen.getByRole("checkbox", { name: "Unavailable" })).not.toBeChecked()
       expect(screen.getByRole("checkbox", { name: "Enable Functional adequacy" })).not.toBeChecked()

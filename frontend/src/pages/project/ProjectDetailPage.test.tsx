@@ -473,7 +473,9 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Audits" }))
 
     expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
-    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
+    // No executable agent is configured by this fixture; defaults must not
+    // silently select an unavailable audit scope.
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Disabled")
     expect(screen.queryByRole("checkbox", { name: "Maintainability" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
     expect(screen.queryByRole("tree")).toBeNull()

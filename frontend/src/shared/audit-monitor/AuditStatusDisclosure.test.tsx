@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { AuditStatusDisclosure } from "./AuditStatusDisclosure.tsx"
 import { changeLanguage } from "../i18n/index.ts"
 import type { AuditStatusModel } from "./auditStatus.ts"
+
+beforeEach(() => window.localStorage.clear())
 
 const completed: AuditStatusModel = {
   id: 40,
@@ -54,6 +56,17 @@ function detail(): HTMLElement {
 }
 
 describe("AuditStatusDisclosure", () => {
+  it("restores audit and pipeline expansion after remounting", async () => {
+    const view = <MemoryRouter><AuditStatusDisclosure audit={completed} defaultExpanded={false} /></MemoryRouter>
+    const { unmount } = render(view)
+    await userEvent.click(document.querySelector<HTMLButtonElement>(".audit-disclosure-toggle")!)
+    await userEvent.click(document.querySelector<HTMLButtonElement>(".audit-pipeline-head")!)
+    unmount()
+    render(view)
+    expect(document.querySelector(".audit-disclosure-toggle")).toHaveAttribute("aria-expanded", "true")
+    expect(document.querySelector(".audit-pipeline-head")).toHaveAttribute("aria-expanded", "false")
+  })
+
   it("folds and unfolds from its summary row", async () => {
     const toggle = show(completed, false)
 
@@ -96,7 +109,7 @@ describe("AuditStatusDisclosure", () => {
   it("keeps folded agents mounted but out of the accessibility tree", () => {
     show(completed, false)
 
-    const agent = screen.getByText("security_scanner run #114", { selector: ".audit-agent-type" })
+    const agent = screen.getByText("security_scanner", { selector: ".audit-agent-type" })
 
     expect(detail().contains(agent)).toBe(true)
     expect(detail()).toHaveAttribute("inert")
