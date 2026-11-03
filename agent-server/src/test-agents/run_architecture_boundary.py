@@ -10,7 +10,8 @@ Tracing opcional: LANGSMITH_API_KEY y LANGSMITH_PROJECT en el mismo .env.
 Con clave, LangSmithTracingBackend registra el agente, grafo, nodos y llamadas LLM.
 Sin clave, ejecuta normalmente sin tracing. Para ocultar código/prompts en las
 trazas: LANGSMITH_HIDE_INPUTS=true y LANGSMITH_HIDE_OUTPUTS=true en el .env.
-Realiza llamadas reales al proveedor (pueden generar costes). Imprime JSON y no
+Realiza llamadas reales al proveedor (pueden generar costes). Muestra el plan y los resultados provisionales
+legible; --output json conserva la salida JSON completa. No
 escribe en el repositorio auditado. Ver --help para todas las opciones.
 """
 
@@ -110,7 +111,77 @@ async def run_audit(args, root, request, config, model, settings, *, tracing_bac
             provider=settings.provider,
             model=settings.name,
         )
-    print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+    if getattr(args, "output", "json") == "readable":
+        print(render_boundary_plan(result))
+    else:
+        print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+def render_boundary_plan(result):
+    """Human-facing planning summary; canonical JSON remains available."""
+    tasks = getattr(result.plan, "investigations", [])
+    lines = ["PLAN DE INVESTIGACIÓN · LÍMITES ARQUITECTÓNICOS",
+        f"Repositorio: {result.repository_id}", f"Objetivo: {result.objective}",
+        f"Estado: {result.termination_reason}", f"Snapshot: {result.snapshot_hash}",
+        f"Investigaciones: {len(tasks)} · Hallazgos: no evaluados",
+        (f"Recursos: {result.model_calls} llamadas al modelo, {result.tool_calls} herramientas, "
+        f"{result.accounted_tokens} tokens contabilizados ({result.estimated_tokens} estimados)")]
+    coverage = result.investigation_coverage
+    if coverage.get("by_project"):
+        lines.append("\nCobertura de producción por proyecto:")
+        for project in coverage["by_project"]:
+            lines.append(f"  {project['root']}: archivos elegibles={project['eligible_files']}, "
+                f"excluidos no producción={project['excluded_nonproduction_files']}, "
+                f"relaciones elegibles={project['eligible_relationships']} "
+                f"(type_only={project['type_only_relationships']}, sin resolver={project['unresolved_relationships']}), "
+                f"candidatos generados={project['candidates_generated']}, "
+                f"deduplicados={project['candidates_deduplicated']}, "
+                f"omitidos del menú={project['candidates_omitted']}, "
+                f"seleccionados={project['selected']} (modelo={project['model_selected']}); "
+                f"internos={project.get('internal_selected', 0)}, integraciones={project.get('integration_selected', 0)}; "
+                f"índice={project['index_status']}, selección={project['selection_status']}")
+        lines.append(f"  Sesgo de selección del modelo detectado: {coverage['selection_bias_detected']}; "
+            f"candidatos sustituidos/ampliados: {coverage['selection_rebalanced']}; "
+            f"solo reordenados: {coverage.get('selection_reordered', False)}")
+        if coverage.get("integrations"):
+            lines.append("  Descubrimiento de integraciones: " + json.dumps(coverage["integrations"], ensure_ascii=False))
+            lines.append("  Oportunidades y descartes: " + json.dumps(coverage.get("opportunities", {}), ensure_ascii=False))
+    for number, task in enumerate(tasks, 1):
+        signal = task.structural_signal
+        lines.extend(["", f"{number}. [{task.priority.upper()}] {task.id}",
+            f"   Alcance: {', '.join(task.scope)}", f"   Pregunta: {task.question}",
+            f"   Indicio ({signal.kind}):"])
+        lines.extend(f"     Hecho indexado: {fact}" for fact in signal.observed)
+        lines.append(f"     Inferencia por comprobar: {signal.inference}")
+        lines.extend(f"     {ref.source_path} → {ref.target_path} ({ref.kind}; {ref.id}; "
+            f"{ref.source_id} → {ref.target_id})" for ref in signal.relationships)
+        for link in signal.integration_links:
+            lines.append(f"     Integración {link.client.mechanism}: {link.client.project_id} → "
+                f"{link.target_project_id or 'destino no resuelto'}; {link.match_basis}; {link.status}")
+            for point in [link.client, *link.endpoints, *link.binding_points]:
+                lines.append(f"       {point.path}:{point.start_line}-{point.end_line} · "
+                    f"{point.method or ''} {point.authority or ''}{point.route or ''} · {point.id}")
+        lines.append("   Evidencias necesarias:")
+        lines.extend(f"     - {item}" for item in task.evidence_needed)
+        lines.append("   Estrategia inicial:")
+        lines.extend(f"     - {query.tool}({json.dumps(query.arguments, ensure_ascii=False)})"
+            for query in task.investigation_strategy)
+        lines.append(f"   Condición de cierre: {task.completion_condition}")
+    if not tasks:
+        lines.append("\nNo se seleccionaron investigaciones. Esto no demuestra cumplimiento ni ausencia de dependencias.")
+    conclusions = getattr(result, "investigation_results", [])
+    if conclusions:
+        lines.append("\nRESULTADOS PROVISIONALES · síntesis pendiente")
+        for conclusion in conclusions:
+            lines.extend([f"  {conclusion.investigation_id}: {conclusion.status} · {conclusion.summary}",
+                f"    Justificación: {conclusion.justification}",
+                f"    Evidencias: {', '.join(conclusion.evidence_ids) or 'no recuperadas'}"])
+            lines.extend(f"    Candidato {candidate.id}: {candidate.title} · {candidate.technical_basis}"
+                for candidate in conclusion.candidates)
+            lines.extend(f"    Limitación: {item}" for item in conclusion.limitations)
+    lines.append("\nLimitaciones y trabajo pendiente:")
+    lines.extend(f"  - {item}" for item in dict.fromkeys([*result.limitations, *result.missing_information]))
+    return "\n".join(lines)
 
 
 def main():
@@ -120,6 +191,8 @@ def main():
     parser.add_argument("--request", help="JSON AuditRequest, including context and criteria")
     parser.add_argument("--config", help="JSON BoundaryConfig, including limits and prompt overrides")
     parser.add_argument("--max-files", type=int, default=2000)
+    parser.add_argument("--output", choices=("readable", "json"), default="readable",
+        help="Readable plan (default) or complete canonical JSON")
     asyncio.run(run(parser.parse_args()))
 
 
