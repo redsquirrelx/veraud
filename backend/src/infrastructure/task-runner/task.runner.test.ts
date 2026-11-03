@@ -10,6 +10,7 @@ import { logger } from "../../config/logger.js"
 import type { TaskEvent } from "../realtime-gateway/realtime.gateway.js"
 import type { StoredTask, TaskStore } from "../../modules/task/task.repository.js"
 import { TaskRunner } from "./task.runner.js"
+import { gitTaskExecutor } from "./git.task-executor.js"
 
 const quiet = { child: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }
 logger.configure(quiet as unknown as FastifyBaseLogger)
@@ -37,7 +38,7 @@ describe("TaskRunner.enqueue", () => {
       findById: async () => stored,
       findActive: async () => [],
     }
-    const runner = new TaskRunner(store, { setStatus: async () => {}, markSynced: async () => {} }, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, { setStatus: async () => {}, markSynced: async () => {} }, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
     try {
       git("init", "-q", "-b", "main", source)
       for (const text of ["first", "second", "third"]) {
@@ -84,7 +85,7 @@ describe("TaskRunner.enqueue", () => {
       store,
       projects,
       { broadcast: (event) => { events.push(event) } },
-      mkdtempSync(join(tmpdir(), "veraud-runner-"))
+      [gitTaskExecutor(mkdtempSync(join(tmpdir(), "veraud-runner-")))]
     )
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "clone", cloneUrl: "not-a-repo", folder: "folder" } })
@@ -113,12 +114,12 @@ describe("TaskRunner.enqueue", () => {
       store,
       { setStatus: async (id, status) => { statuses.push({ id, status }) }, markSynced: async () => {} },
       { broadcast: (event) => { events.push(event) } },
-      mkdtempSync(join(tmpdir(), "veraud-ssh-failure-")),
+      [gitTaskExecutor(mkdtempSync(join(tmpdir(), "veraud-ssh-failure-")),
       async (_binary, _argv, options) => {
         assert.ok(options)
         executionOptions.push(options)
         throw new Error("Permission denied (publickey)")
-      },
+      })],
     )
 
     const result = await runner.enqueue({
@@ -153,7 +154,7 @@ describe("TaskRunner.enqueue", () => {
       },
     }
     const workspace = mkdtempSync(join(tmpdir(), "veraud-runner-"))
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const source = join(mkdtempSync(join(tmpdir(), "veraud-src-")), "repo")
     execSync(`git init -q "${source}"`)
@@ -183,7 +184,7 @@ describe("TaskRunner.enqueue", () => {
       markSynced: async () => {},
     }
     const workspace = mkdtempSync(join(tmpdir(), "veraud-runner-"))
-    const runner = new TaskRunner(store, projects, { broadcast: (event) => { events.push(event) } }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: (event) => { events.push(event) } }, [gitTaskExecutor(workspace)])
 
     const source = join(mkdtempSync(join(tmpdir(), "veraud-src-")), "repo")
     execSync(`git init -q -b main "${source}"`)
@@ -223,7 +224,7 @@ describe("TaskRunner.enqueue", () => {
       },
     }
     const workspace = mkdtempSync(join(tmpdir(), "veraud-runner-"))
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const source = join(mkdtempSync(join(tmpdir(), "veraud-src-")), "repo")
     execSync(`git init -q -b main "${source}"`)

@@ -37,3 +37,9 @@
 .ui-filter-tab-active:hover {
   color: var(--color-on-brand);
 }
+
+.ui-filter-tab:disabled {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+}

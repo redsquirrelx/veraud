@@ -14,6 +14,15 @@ export function ProjectOverviewIcon() {
   </SectionIcon>
 }
 
+export function ProjectGraphIcon() {
+  return <SectionIcon>
+    <path d="m4 5 6 1M4 5l2 7m4-6-4 6" />
+    <circle cx="3" cy="3.5" r="2" />
+    <circle cx="12" cy="6" r="2" />
+    <circle cx="6" cy="12.5" r="2" />
+  </SectionIcon>
+}
+
 export function ProjectAnalysisIcon() {
   return <SectionIcon>
     <circle cx="6.5" cy="6.5" r="4.5" />

@@ -59,14 +59,20 @@ class CallbackClient:
     async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
         return await self._post(f"/api/agent-executions/{execution_id}/events", {"events": events})
 
+    async def graph_task(self, task_id: int, token: str, phase: str, error_code: str | None = None) -> CallbackResult:
+        payload = {"phase": phase}
+        if error_code is not None:
+            payload["errorCode"] = error_code
+        return await self._post(f"/api/tasks/{task_id}/graph-callback", payload, {"X-Graph-Token": token})
+
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
 
-    async def _post(self, path: str, payload: dict) -> CallbackResult:
+    async def _post(self, path: str, payload: dict, extra_headers: dict | None = None) -> CallbackResult:
         payload = public_error_fields(payload)
         url = f"{self._config.backend_url.rstrip('/')}{path}"
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = dict(extra_headers or {})
 
         if self._config.shared_secret:
             headers["X-Agent-Secret"] = self._config.shared_secret

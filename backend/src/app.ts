@@ -14,6 +14,8 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 import { GithubClient } from "./infrastructure/github-client/github.client.js"
 import { RealtimeGateway } from "./infrastructure/realtime-gateway/realtime.gateway.js"
 import { TaskRunner, type TaskQueue } from "./infrastructure/task-runner/task.runner.js"
+import { gitTaskExecutor } from "./infrastructure/task-runner/git.task-executor.js"
+import { serviceTaskExecutor, type ServiceTaskHandler } from "./infrastructure/task-runner/service.task-executor.js"
 import { AgentServerClient, type AgentInvoker } from "./infrastructure/agent-server-client/agent-server.client.js"
 import {
   AgentTargetResolverImpl,
@@ -42,6 +44,8 @@ import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configu
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
+import { ProjectGraphService } from "./modules/project-graph/project-graph.service.js"
+import { registerProjectGraphRoutes } from "./modules/project-graph/project-graph.controller.js"
 
 export interface BuildAppOptions {
   databaseUrl: string
@@ -49,6 +53,8 @@ export interface BuildAppOptions {
   silent?: boolean
   agentServerUrl?: string
   makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => TaskQueue
+  /** Trusted backend procedures; not exposed as an arbitrary task-launch HTTP API. */
+  taskHandlers?: Readonly<Record<string, ServiceTaskHandler>>
   /** How agents are reached and what they are invoked with. Tests override these
    *  to keep a run from leaving the machine; production leaves them unset. */
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
@@ -72,10 +78,15 @@ export async function buildApp(options: BuildAppOptions) {
   const github = new GithubClient()
   const projectRepository = new ProjectRepository(db)
   const taskRepository = new TaskRepository(db)
+  const graphService = new ProjectGraphService(db, taskRepository, projectRepository, gateway, options.workspaceDir, options.agentServerUrl)
   const runner = options.makeRunner
     ? options.makeRunner(taskRepository, projectRepository, gateway)
-    : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
+    : new TaskRunner(taskRepository, projectRepository, gateway, [
+      gitTaskExecutor(options.workspaceDir), serviceTaskExecutor({ ...options.taskHandlers, "graph.extract": graphService.handler() }),
+    ])
   const taskService = new TaskService(taskRepository, runner)
+  app.addHook("onReady", () => graphService.reconcile())
+  app.addHook("onClose", () => graphService.close())
   const agentSettingsRepository = new AgentSettingsRepository(db)
   const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
     ? new AgentServerClient(options.agentServerUrl)
@@ -125,6 +136,7 @@ export async function buildApp(options: BuildAppOptions) {
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)
+  registerProjectGraphRoutes(app, graphService, runner)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
   registerExecutionEventRoutes(app, new ExecutionEventRepository(db))

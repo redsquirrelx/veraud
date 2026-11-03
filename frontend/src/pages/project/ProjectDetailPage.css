@@ -38,11 +38,38 @@
 
 .project-body-card { min-width: 0; }
 
-.project-overview {
+.project-structural-graph {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.project-structural-graph-empty {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 1.5rem;
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-canvas);
+  text-align: center;
+}
+
+.project-structural-graph-empty p {
+  margin: 0;
+  color: var(--color-text-description);
+}
+
+.project-body-card.project-overview-card {
+  padding: 0.875rem 1rem;
+}
+
+.project-overview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
   width: 100%;
 }
 
@@ -68,14 +95,55 @@
 }
 
 .project-dates-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  width: 100%;
+  gap: 0.25rem 1rem;
+  min-width: 0;
 }
 
-.project-date { padding: 0.875rem 1rem; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-canvas); font-size: var(--font-size-md); color: var(--color-text-description); }
+.project-overview .project-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-description);
+  overflow-wrap: anywhere;
+}
+
+.project-overview > .files-loading {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  padding: 0.25rem 0;
+}
+
+.project-overview-summary .audit-block {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.project-overview-summary .audit-head {
+  flex: 1 1 20rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  width: auto;
+}
+
+.project-overview-summary .audit-button-row {
+  width: auto;
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .project-overview { grid-template-columns: minmax(0, 1fr) auto; }
+  .project-overview > a { grid-column: 2; grid-row: 1; }
+  .project-dates-row { grid-column: 1 / -1; }
+}
+
+@media (max-width: 480px) {
+  .project-overview { grid-template-columns: minmax(0, 1fr); }
+  .project-overview > a { grid-column: 1; grid-row: auto; justify-self: start; }
+}
 
 .files-loading {
   display: flex;

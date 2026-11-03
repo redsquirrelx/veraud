@@ -79,6 +79,7 @@ export function ItemSearcher({
   }, [items, query, filtering])
 
   function pick(id: string) {
+    if (disabled) return
     const match = items.find((item) => item.id === id) ?? null
     setText(match?.label ?? id)
     setFiltering(false)
@@ -117,6 +118,7 @@ export function ItemSearcher({
   }
 
   function commitOnBlur(event: FocusEvent<HTMLInputElement>) {
+    if (disabled) return
     const next = event.relatedTarget as Node | null
     if (next !== null && root.current?.contains(next)) {
       return
@@ -191,6 +193,7 @@ export function ItemSearcher({
                 <button
                   type="button"
                   role="option"
+                  disabled={disabled}
                   aria-selected={item.id === selectedId}
                   className={item.id === selectedId ? "ui-item ui-item-active" : "ui-item"}
                   onClick={() => pick(item.id)}
@@ -206,7 +209,7 @@ export function ItemSearcher({
           <button
             type="button"
             className="ui-item-more"
-            disabled={loadingMore}
+            disabled={disabled || loadingMore}
             onClick={onLoadMore}
           >
             {loadingMore ? t("ui.itemSearcher.loading") : resolvedLoadMoreText}

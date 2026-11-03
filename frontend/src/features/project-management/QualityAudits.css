@@ -152,3 +152,11 @@
   .quality-attributes { grid-template-columns: minmax(0, 1fr); }
   .quality-audit-actions > a { margin-left: 0; }
 }
+.quality-audits-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 2rem 0;
+}

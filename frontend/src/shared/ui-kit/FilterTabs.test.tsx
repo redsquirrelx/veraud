@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { FilterTabs, type FilterOption } from "./FilterTabs.tsx"
 
@@ -16,6 +16,17 @@ function StatefulTabs() {
 }
 
 describe("FilterTabs", () => {
+  it("blocks click and keyboard selection while disabled", async () => {
+    const onChange = vi.fn()
+    render(<FilterTabs options={options} value="all" onChange={onChange} disabled />)
+    const all = screen.getByRole("tab", { name: "All (18)" })
+    const running = screen.getByRole("tab", { name: "Running (2)" })
+    expect(all).toBeDisabled()
+    expect(running).toBeDisabled()
+    await userEvent.click(running)
+    fireEvent.keyDown(all, { key: "ArrowRight" })
+    expect(onChange).not.toHaveBeenCalled()
+  })
   it("moves focus and selection with arrows, Home and End", async () => {
     const user = userEvent.setup()
     render(<StatefulTabs />)

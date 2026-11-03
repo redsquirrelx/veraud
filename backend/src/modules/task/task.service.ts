@@ -1,5 +1,5 @@
 import type { StoredTask, TaskStore } from "./task.repository.js"
-import type { TaskCommand, TaskQueue, TaskResult } from "../../infrastructure/task-runner/task.runner.js"
+import type { TaskCommand, TaskQueue, TaskResult } from "../../infrastructure/task-runner/task.types.js"
 
 export class TaskService {
   constructor(private tasks: TaskStore, private runner: TaskQueue) {}
@@ -17,7 +17,7 @@ export class TaskService {
       projectId,
       description,
       status: "Queued",
-      kind: command.kind,
+      kind: command.kind === "service" ? command.name : command.kind,
     })
 
     const result = await this.runner.enqueue({

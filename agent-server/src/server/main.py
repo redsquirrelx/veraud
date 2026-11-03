@@ -7,9 +7,11 @@ from fastapi.responses import JSONResponse
 
 from .api.audits import router as audits_router
 from .api.executions import router as executions_router
+from .api.graphs import router as graphs_router
 from .api.pipelines import router as pipelines_router
 from .api.schemas import StatusResponse
 from .app.audit_service import AuditService
+from .app.graph_jobs import GraphJobs
 from .blackboard.impls.memory import MemoryBlackboard
 from .config.token_budget import token_budget_policy
 from .web.router import router as web_router
@@ -55,11 +57,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     token_budget_policy()
     app.state.blackboard = MemoryBlackboard()
     app.state.audit_service = AuditService(app.state.blackboard)
+    app.state.graph_jobs = GraphJobs()
     stop_events = asyncio.Event()
     event_delivery = asyncio.create_task(execution_event_delivery_worker(stop_events, default_callback_sink))
     try:
         yield
     finally:
+        await app.state.graph_jobs.aclose()
         await app.state.audit_service.aclose()
         stop_events.set()
         try:
@@ -107,6 +111,7 @@ app.include_router(router)
 app.include_router(executions_router)
 app.include_router(pipelines_router)
 app.include_router(audits_router)
+app.include_router(graphs_router)
 app.include_router(web_router)
 app.mount("/static", static_files, name="web_static")
 

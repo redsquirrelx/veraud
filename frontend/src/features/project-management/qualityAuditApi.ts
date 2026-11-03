@@ -48,6 +48,18 @@ export function listQualityAudits(projectId: number, signal?: AbortSignal) {
   return requestJson<QualityAuditSummary[]>(`/api/projects/${projectId}/audits`, "Could not load the audit", { signal })
 }
 
+export interface QualityAuditPage {
+  items: QualityAuditSummary[]
+  total: number
+  hasRunning: boolean
+  limit: number
+  offset: number
+}
+
+export function listQualityAuditPage(projectId: number, limit: number, offset: number, signal?: AbortSignal) {
+  return requestJson<QualityAuditPage>(`/api/projects/${projectId}/audits?limit=${limit}&offset=${offset}`, "Could not load audits", { signal })
+}
+
 export function getQualityAudit(projectId: number, id: number, signal?: AbortSignal) {
   return requestJson<QualityAuditSummary>(`/api/projects/${projectId}/audits/${id}`, "Could not load the audit", { signal })
 }

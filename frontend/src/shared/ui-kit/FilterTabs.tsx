@@ -11,9 +11,10 @@ interface FilterTabsProps {
   value: string
   onChange: (id: string) => void
   label?: string
+  disabled?: boolean
 }
 
-export function FilterTabs({ options, value, onChange, label }: FilterTabsProps) {
+export function FilterTabs({ options, value, onChange, label, disabled = false }: FilterTabsProps) {
   return (
     <div className="ui-filter-tabs" role="tablist" aria-label={label}>
       {options.map((option) => (
@@ -21,9 +22,11 @@ export function FilterTabs({ options, value, onChange, label }: FilterTabsProps)
           key={option.id}
           type="button"
           role="tab"
+          disabled={disabled}
           aria-selected={option.id === value}
           tabIndex={option.id === value ? 0 : -1}
           onKeyDown={(event) => {
+            if (disabled) return
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
             event.preventDefault()
             const index = options.findIndex((item) => item.id === option.id)

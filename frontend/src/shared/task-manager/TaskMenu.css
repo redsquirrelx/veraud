@@ -128,6 +128,7 @@
 .task-command { margin: 0; padding: 8px; max-width: 100%; overflow-x: auto; background: var(--color-canvas); border-radius: var(--radius-control); color: var(--color-text-secondary); font-family: var(--font-mono); font-size: var(--font-size-xs); line-height: var(--line-height-relaxed); user-select: text; }
 .task-command code { font: inherit; }
 .task-command-unavailable { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.task-service-description { color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: var(--line-height-relaxed); }
 
 @media (prefers-reduced-motion: reduce) {
   .task-command-detail, .task-command-chevron { transition: none; }

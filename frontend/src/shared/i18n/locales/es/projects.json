@@ -64,6 +64,11 @@
       "loadAnalyzed": "No se pudieron cargar las versiones analizadas"
     }
   },
+  "structuralGraph": {
+    "title": "Grafo estructural",
+    "empty": "Analiza el proyecto para cargar el grafo estructural de la rama y el commit seleccionados.",
+    "noSelection": "Sin seleccionar"
+  },
   "analyze": {
     "audit": {
       "label": "Auditoría de calidad",
@@ -79,6 +84,7 @@
     }
   },
   "qualityAudits": {
+    "loading": "Cargando auditorías",
     "viewDetails": "Ver detalles",
     "findingsList": {
       "pageRange": "Hallazgos {{start}}–{{end}} de {{total}} · {{order}}",
