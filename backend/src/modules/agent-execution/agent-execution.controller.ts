@@ -8,6 +8,7 @@ import type {
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
 import { monitorExecution } from "./agent-execution.monitor.js"
+import { executionErrorDetailSchema, executionErrorEvent, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { invocationEvents, invocationReceiptSchema, type InvocationReceipt } from "./invocationReceipt.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
 import {
@@ -53,6 +54,7 @@ const closeBody = {
     status: { type: "string", enum: ["Completed", "Failed"], examples: ["Completed"] },
     result: { type: ["string", "null"], description: "Opaque serialized agent output. Omitted means null.", examples: ['{"summary":"Analysis completed"}'] },
     error: { type: ["string", "null"], description: "Required to be truthy when failing an open execution. Omitted means null." },
+    errorDetail: executionErrorDetailSchema,
     inputTokens: { type: ["integer", "null"], minimum: 0, examples: [1200] },
     outputTokens: { type: ["integer", "null"], minimum: 0, examples: [180] },
     estimatedTokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
@@ -223,6 +225,7 @@ export function registerAgentExecutionRoutes(
         status: "Completed" | "Failed"
         result?: string | null
         error?: string | null
+        errorDetail?: ExecutionErrorDetail | null
         inputTokens?: number | null
         outputTokens?: number | null
         estimatedTokens?: number | null
@@ -234,6 +237,7 @@ export function registerAgentExecutionRoutes(
           status: body.status,
           result: body.result ?? null,
           error: body.error ?? null,
+          errorDetail: body.errorDetail ?? null,
           inputTokens: body.inputTokens ?? null,
           outputTokens: body.outputTokens ?? null,
           ...(body.estimatedTokens === undefined ? {} : { estimatedTokens: body.estimatedTokens }),
@@ -263,6 +267,7 @@ function toResponse(execution: StoredAgentExecution, includeContext = true) {
     status: execution.status,
     result: execution.result,
     error: execution.error,
+    errorDetail: execution.errorDetail ?? null,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
     estimatedTokens: execution.estimatedTokens,
@@ -293,5 +298,6 @@ function broadcast(
   type: AgentExecutionEvent["type"],
   execution: StoredAgentExecution,
 ): void {
-  gateway.broadcast({ type, execution: { ...toResponse(execution, false), invocations: invocationEvents(execution.invocations) } })
+  gateway.broadcast({ type, execution: { ...toResponse(execution, false), errorDetail: executionErrorEvent(execution.errorDetail),
+    invocations: invocationEvents(execution.invocations) } })
 }

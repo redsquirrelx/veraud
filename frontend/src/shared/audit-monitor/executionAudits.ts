@@ -1,4 +1,5 @@
-import type { AgentExecution, AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
+import type { AgentExecution, AgentSettings, ExecutionErrorDetail } from "../../infrastructure/http-client/httpClient.ts"
+import { readExecutionErrorDetail } from "../../infrastructure/http-client/executionErrorDetail.ts"
 import { auditStateFrom, isFinished, type AuditAgentRun, type AuditRunState, type AuditStatusModel } from "./auditStatus.ts"
 
 type RecordValue = Record<string, unknown>
@@ -76,6 +77,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
     const pipelines = new Map<string, Map<string | number, AuditAgentRun>>()
     const reportedStates = new Map<string, AuditRunState>()
     const outcomes: string[] = []
+    const errorDetails = new Map<number, ExecutionErrorDetail | null>()
     let reportAvailable = false
     const add = (pipeline: string, agent: AuditAgentRun) => {
       if (!pipelines.has(pipeline)) pipelines.set(pipeline, new Map())
@@ -83,6 +85,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
     }
     for (const execution of group) {
       const result = resultOf(execution)
+      const executionError = readExecutionErrorDetail(execution.errorDetail) ?? readExecutionErrorDetail(result.error_detail)
+      errorDetails.set(execution.id, executionError)
       const report = object(result.report)
       const selected = strings(result.attributes)
       const metadata = byAgent.get(execution.agentType)
@@ -124,6 +128,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         const usage = object(trace.consumption)
         const priorUsage = object(live?.consumption)
         receipts.set(id, { ...live, ...trace, parent_invocation_id: trace.parent_invocation_id ?? live?.parent_invocation_id,
+          error_detail: live?.error_detail ?? trace.error_detail,
+          error: trace.error ?? live?.error,
           consumption: { input_tokens: count(usage.input_tokens) ?? count(priorUsage.input_tokens),
             output_tokens: count(usage.output_tokens) ?? count(priorUsage.output_tokens) } })
       }
@@ -151,7 +157,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
           configuration: agentType === execution.agentType ? execution.configuration : null,
           parentId: text(trace.parent_invocation_id),
           inputTokens: count(consumption.input_tokens), outputTokens: count(consumption.output_tokens),
-          startedAt: text(trace.started_at), finishedAt: text(trace.finished_at), error: text(trace.error),
+           startedAt: text(trace.started_at), finishedAt: text(trace.finished_at), error: text(trace.error),
+           errorDetail: readExecutionErrorDetail(trace.error_detail) ?? (agentType === execution.agentType ? executionError : null),
         })
       }
       if (!traces.some((trace) => trace.agent_id === execution.agentType && typeof trace.invocation_id === "string")) {
@@ -161,7 +168,8 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
         add(pipeline, { id: execution.id, agentType: execution.agentType,
           role: metadata?.role, name: metadata?.name,
           configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
-          interruptionReason: execution.interruptionReason,
+           interruptionReason: execution.interruptionReason,
+           errorDetail: executionError,
            state: auditStateFrom(execution.status, quality ? evaluationOutcome(execution, result) : null),
           inputTokens: execution.inputTokens, outputTokens: execution.outputTokens,
           startedAt: execution.startedAt, finishedAt: execution.finishedAt, error: execution.error })
@@ -172,11 +180,13 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
     const outcome = outcomes.includes("cancelled") ? "cancelled" : outcomes.includes("cancelling") ? "cancelling"
       : outcomes.includes("failed") ? "failed" : outcomes.includes("partial") ? "partial"
       : outcomes.length > 0 && outcomes.every((state) => state === "completed") ? "completed" : null
+    const incidentExecution = group.find((item) => errorDetails.get(item.id)) ?? group.find((item) => item.error?.trim())
     return {
       canCancel: context?.evaluationType === "QualityAudit" && (context.project?.id ?? 0) > 0,
       id: first.id, project: context?.project ?? null, branch: context?.branch ?? null, commitHash: context?.commitHash ?? null,
       state: outcome ? auditStateFrom("", outcome) : executionState,
-      error: group.find((item) => item.error)?.error ?? null,
+      error: incidentExecution?.error ?? null,
+      errorDetail: incidentExecution ? errorDetails.get(incidentExecution.id) ?? null : null,
       createdAt: group.map((item) => item.createdAt).sort()[0]!,
       finishedAt: group.every((item) => isFinished(auditStateFrom(item.status, null)))
         ? group.map((item) => item.finishedAt).filter((date): date is string => date !== null).sort().at(-1) ?? null : null,

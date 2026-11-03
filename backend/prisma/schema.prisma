@@ -78,6 +78,7 @@ model AgentExecution {
   estimatedTokens Int?  @map("estimated_tokens")
   interruptionReason String? @map("interruption_reason")
   error        String?
+  errorDetail  String? @map("error_detail")
   result       String?
   configurationSnapshot String? @map("configuration_snapshot")
   invocationReceipts String @default("[]") @map("invocation_receipts")

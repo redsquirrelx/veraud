@@ -1,5 +1,6 @@
 import { configurationSchema } from "../../../modules/agent-settings/agent-settings.schemas.js"
 import { invocationReceiptSchema } from "../../../modules/agent-execution/invocationReceipt.js"
+import { executionErrorDetailSchema } from "../../../modules/agent-execution/execution-error-detail.js"
 
 export const agentExecutionSchema = {
   $id: "AgentExecution",
@@ -13,6 +14,7 @@ export const agentExecutionSchema = {
     status: { type: "string", enum: ["Waiting", "Running", "Completed", "Failed"] },
     result: { type: ["string", "null"], description: "Opaque serialized agent output, returned as a string rather than a JSON object." },
     error: { type: ["string", "null"] },
+    errorDetail: executionErrorDetailSchema,
     inputTokens: { type: ["integer", "null"] },
     outputTokens: { type: ["integer", "null"] },
     estimatedTokens: { type: ["integer", "null"], description: "Estimated usage, separate from provider-reported counts." },

@@ -125,5 +125,6 @@ async def run_pipeline(
 
 
 def _http_error(status: int, detail: str) -> HTTPException:
+    detail = TIMEOUT_DETAIL if status == TIMED_OUT else "Pipeline request could not be completed."
     logger.warning("Pipeline request failed status=%d error=%s", status, detail)
     return HTTPException(status_code=status, detail=detail)

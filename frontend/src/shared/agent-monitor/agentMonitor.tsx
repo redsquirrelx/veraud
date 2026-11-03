@@ -33,6 +33,7 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as typeof result
       } catch { /* Retain the live metadata. */ }
       return mergeExecution(execution, { ...execution, status: audit.executionStatus, error: audit.error,
+        errorDetail: audit.errorDetail ?? execution.errorDetail ?? null,
         finishedAt: audit.finishedAt, cancellationRequestedAt: audit.cancellationRequestedAt,
         interruptionReason: audit.auditStatus === "cancelled" ? "cancelled"
           : audit.cancellationRequestedAt && ["Waiting", "Running"].includes(audit.executionStatus) ? "cancellation_requested" : null,

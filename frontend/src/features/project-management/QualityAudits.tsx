@@ -7,6 +7,7 @@ import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { downloadQualityAuditReport, getQualityAudit, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
@@ -309,7 +310,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <p className="label">{Number.isNaN(new Date(audit.createdAt).getTime())
           ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</p>
         </div>
-        {audit.error && <p role="alert">{audit.error}</p>}
+        {audit.error && <p role="alert">{publicErrorText(audit.error)}</p>}
         <div className="quality-audit-history-actions">
           <AuditConfigurationDetails projectId={projectId} auditId={audit.id} available={audit.configurationAvailable === true} />
           <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}

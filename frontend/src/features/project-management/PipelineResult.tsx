@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 import type { ParseKeys, TFunction } from "i18next"
 import { Badge, MermaidDiagram } from "../../shared/ui-kit/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
@@ -39,7 +40,7 @@ export function PipelineRunStatus({ execution }: { execution: AgentExecution }) 
           {t("pipeline.runLabel", { agentType: execution.agentType, id: execution.id })}
         </span>
         {execution.status === "Failed" && execution.error !== null && execution.error !== "" && (
-          <span className="audit-error">{execution.error}</span>
+          <span className="audit-error">{publicErrorText(execution.error)}</span>
         )}
         {execution.status === "Failed" && execution.interruptionReason === "token_budget_exhausted" && <span className="audit-error">{t("pipeline.tokenBudgetExhausted")}</span>}
         {execution.status === "Failed" && execution.result && <Badge tone="info">{t("pipeline.partialResults")}</Badge>}
@@ -368,7 +369,7 @@ export function StageStatusView({ title, result, execution }: { title: string; r
               <div className="stage-row" key={index}>
                 <div className="stage-row-main">
                   <span className="mono stage-path">{issue.category}</span>
-                  <div className="stage-row-sub">{issue.message}</div>
+                  <div className="stage-row-sub">{publicErrorText(issue.message)}</div>
                 </div>
               </div>
             ))}

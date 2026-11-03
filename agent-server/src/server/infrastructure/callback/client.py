@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from ...config.logs import get_logger
+from ...contracts.public_errors import public_error_fields
 from .schemas import (
     CallbackConfig,
     CallbackResult,
@@ -43,7 +44,7 @@ class CallbackClient:
         """Close the run with its outcome."""
         return await self._post(
             f"/api/agent-executions/{execution_id}/completion",
-            outcome.model_dump(by_alias=True),
+            outcome.model_dump(mode="json", by_alias=True),
         )
 
     async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
@@ -53,13 +54,14 @@ class CallbackClient:
         )
 
     async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
-        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json"))
+        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json", by_alias=True))
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
 
     async def _post(self, path: str, payload: dict) -> CallbackResult:
+        payload = public_error_fields(payload)
         url = f"{self._config.backend_url.rstrip('/')}{path}"
         headers: dict[str, str] = {}
 
@@ -75,23 +77,20 @@ class CallbackClient:
             else:
                 response = await client.post(url, json=payload, headers=headers)
 
-        except Exception as error:  # noqa: BLE001 - any transport failure
+        except Exception:  # noqa: BLE001 - any transport failure
             # The run itself already finished; failing loudly here would throw
             # away a completed analysis because the report did not land.
-            logger.warning(
-                "Callback to %s did not reach the backend: %s", url, error
-            )
-            return CallbackResult(acknowledged=False, error=str(error))
+            logger.warning("Execution callback did not reach the backend")
+            return CallbackResult(acknowledged=False, error="Execution callback transport failed.")
 
         acknowledged = response.is_success
-        body = response.text
+        body = None if acknowledged else "Execution callback rejected."
 
         if acknowledged:
-            logger.info("Callback %s acknowledged (%s)", url, response.status_code)
+            logger.info("Execution callback acknowledged (%s)", response.status_code)
         else:
             logger.warning(
-                "Callback %s rejected with %s: %s",
-                url, response.status_code, body[:300],
+                "Execution callback rejected with %s", response.status_code,
             )
 
         return CallbackResult(

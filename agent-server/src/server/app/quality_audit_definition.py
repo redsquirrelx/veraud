@@ -106,6 +106,7 @@ class QualityAuditRunner:
                 "attributes": parsed.attributes,
                 "status": snapshot.status,
                 "run_id": state.run_id,
+                "error_detail": snapshot.error_detail.model_dump(mode="json", by_alias=True) if snapshot.error_detail else None,
                 "report": report.model_dump(mode="json"),
                 "blackboard": snapshot.model_dump(mode="json"),
                 "docx_base64": base64.b64encode(document).decode("ascii"),

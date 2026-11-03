@@ -1,11 +1,12 @@
 import type { ParseKeys, TFunction } from "i18next"
-import type { AgentConfiguration } from "../../infrastructure/http-client/httpClient.ts"
+import type { AgentConfiguration, ExecutionErrorDetail } from "../../infrastructure/http-client/httpClient.ts"
 import { formatNumber } from "../i18n/format.ts"
 
 /** Lifecycle of an audit, of one of its pipelines, or of a single agent run. */
 export type AuditRunState = "waiting" | "running" | "cancelling" | "cancelled" | "completed" | "partial" | "failed" | "unknown"
 
 export interface AuditAgentRun {
+  errorDetail?: ExecutionErrorDetail | null
   role?: string
   name?: string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
@@ -40,6 +41,7 @@ export interface AuditProjectRef {
 }
 
 export interface AuditStatusModel {
+  errorDetail?: ExecutionErrorDetail | null
   canCancel?: boolean
   demo?: boolean
   id: number
@@ -88,14 +90,15 @@ export function isFinished(state: AuditRunState): boolean {
   return state === "completed" || state === "partial" || state === "failed" || state === "cancelled"
 }
 
-export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" {
+export function stateTone(state: AuditRunState): "success" | "warning" | "info" | "neutral" | "danger" {
+  if (state === "failed") return "danger"
   if (state === "completed") {
     return "success"
   }
   if (state === "running") {
     return "info"
   }
-  if (state === "partial" || state === "failed" || state === "cancelling") {
+  if (state === "partial" || state === "cancelling") {
     return "warning"
   }
   return "neutral"

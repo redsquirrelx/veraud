@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.blackboard.models import Assessment, Evidence, Finding
+from server.contracts.execution_error import ExecutionErrorDetail
 from server.services.audit_diagnostics import ExecutionDiagnostic
 
 AuditStatus = Literal["queued", "running", "cancelling", "completed", "partial", "failed", "cancelled"]
@@ -22,6 +23,7 @@ class AuditState(BaseModel):
     view_url: str
     created_at: datetime
     error: str | None = None
+    error_detail: ExecutionErrorDetail | None = None
 
 
 class AuditWait(BaseModel):
