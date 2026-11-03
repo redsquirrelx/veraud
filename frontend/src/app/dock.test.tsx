@@ -116,7 +116,8 @@ describe("Dock", () => {
       })
     } })
 
-    const trigger = await screen.findByRole("button", { name: "1 audit" })
+    // The isolated DEMO preview is also present in the monitor.
+    const trigger = await screen.findByRole("button", { name: "2 audits" })
     expect(trigger).toHaveAttribute("aria-expanded", "false")
     await userEvent.click(trigger)
     const panel = screen.getByRole("region", { name: "Audit statuses" })

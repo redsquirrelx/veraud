@@ -2,6 +2,7 @@
 
 from threading import Lock
 
+from ....infrastructure.execution_events import record_event
 from ...models import Assessment, BlackboardRecord, Evidence, Finding
 from ..interface import BlackboardRepository
 
@@ -74,6 +75,8 @@ class MemoryBlackboardRepository(BlackboardRepository):
             if audit_records is None:
                 audit_records = {}
                 records[detached.run_id] = audit_records
+            record_event("publication.created", action_id=detached.id, name=type(record).__name__, status="completed",
+                identity={"run_id": detached.run_id, "invocation_id": detached.invocation_id, "agent_id": detached.agent_id})
             audit_records[detached.id] = detached
             return detached.id
 

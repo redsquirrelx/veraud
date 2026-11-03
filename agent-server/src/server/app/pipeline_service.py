@@ -26,6 +26,7 @@ from server.services.execution_error_details import (
 
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
+from ..infrastructure.execution_events import bind_execution, record_execution
 from .callback_port import CallbackSink, default_callback_sink
 from .errors import InvalidConfigError
 from .usage_reporting import report_progress
@@ -69,6 +70,7 @@ class GenericReportingHooks:
         self.partial_results: dict[int, BaseModel] = {}
 
     async def on_stage_start(self, stage: str) -> None:
+        bind_execution(self._ids[stage])
         if stage in self.started or stage in self.completed:
             return
         await self._mark_running(self._ids[stage])
@@ -233,6 +235,7 @@ class GenericPipelineService:
                     logger.warning("Pipeline %r resource cleanup failed (%s)", pipeline_name, type(error).__name__)
 
 
+    @record_execution
     async def _execute_prepared(
         self, definition, pipeline_name, parsed, agents, ctx, config, stage_configs,
         execution_ids, stages, timeout_seconds,

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from langchain_core.runnables import Runnable, RunnableConfig
 
 from ..config.logs import get_logger
+from ..infrastructure.execution_events import invocation_event_context, record_event
 from ..services.execution_error_details import (
     capture_execution_errors,
     exception_error_detail,
@@ -57,6 +58,8 @@ async def report_invocation_phase(phase):
     if active is None:
         return
     receipt, _ = active
+    record_event("phase.changed", name=phase, action_id=receipt["invocation_id"], status="running",
+        metadata={"phase_sequence": receipt["phase_sequence"] + 1})
     if receipt["phase"] == phase:
         return
     receipt["phase"] = phase
@@ -91,8 +94,11 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         "status": "running", "started_at": datetime.now(UTC).isoformat(), "finished_at": None,
         "input_tokens": None, "output_tokens": None, "error": None, "phase": None, "phase_sequence": 0}
     token = _active.set((receipt, {}))
+    event_context = invocation_event_context(receipt)
+    event_context.__enter__()
     began = False
     try:
+        record_event("invocation.started", action_id=invocation_id, name=agent_id, status="running")
         await _send(receipt)
         check_cancellation()
         began = True
@@ -122,6 +128,8 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         receipt["phase"] = None
         receipt["phase_sequence"] += 1
         try:
+            record_event("invocation.finished", action_id=invocation_id, name=agent_id, status=receipt["status"])
             await _send(receipt)
         finally:
             _active.reset(token)
+            event_context.__exit__(None, None, None)

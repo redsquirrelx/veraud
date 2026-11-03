@@ -6,6 +6,7 @@ from server.infrastructure.llm.usage import response_usage
 
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionProgress
+from ..infrastructure.execution_events import record_action
 from ..infrastructure.llm.usage import extract_text
 from ..runtimes.repository.token_budget import account_tokens
 
@@ -45,6 +46,7 @@ class ReportingModel:
     def __getattr__(self, name):
         return getattr(self.delegate, name)
 
+    @record_action("model", name="text_model")
     async def generate(self, message):
         try:
             response = await self.delegate.generate(message)

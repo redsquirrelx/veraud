@@ -250,16 +250,6 @@ export function ProjectDetailPage() {
     },
   }
 
-  const runStatuses = (
-    <>
-      {analyzerExec !== null && <PipelineRunStatus execution={analyzerExec} />}
-      {architectExec !== null && <PipelineRunStatus execution={architectExec} />}
-      {orientationExec !== null && <PipelineRunStatus execution={orientationExec} />}
-      {projectArchitectureExec !== null && <PipelineRunStatus execution={projectArchitectureExec} />}
-      {semanticValidationExec !== null && <PipelineRunStatus execution={semanticValidationExec} />}
-    </>
-  )
-
   if (section !== undefined && !VALID_SECTIONS.has(section)) {
     return <Navigate to={`/projects/${id}/overview`} replace />
   }
@@ -454,7 +444,6 @@ export function ProjectDetailPage() {
                 null
               ) : (
                 <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
-                  {runStatuses}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link className="ui-button ui-button-secondary" to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
                   {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>

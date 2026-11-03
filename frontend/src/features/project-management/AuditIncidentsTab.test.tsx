@@ -47,7 +47,7 @@ it("adds Incidents after Evidence, deduplicates inherited causes, sorts chronolo
     { ...receipt("legacy"), error: "Legacy error" },
   ] })
   show()
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen General", "Hallazgos", "Evidencias", "Incidentes"])
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen General", "Hallazgos", "Evidencias", "Incidentes", "Cronología"])
   const panel = screen.getByRole("tabpanel", { name: "Incidentes" })
   const articles = await within(panel).findAllByRole("article")
   expect(articles).toHaveLength(3)
@@ -113,7 +113,7 @@ it("shows recorded root and child errors even when cancellation is confirmed", a
   expect(articles).toHaveLength(2)
   expect(screen.queryByText("Cancellation cleanup failed")).not.toBeInTheDocument()
   await userEvent.click(within(articles.find((article) => article.textContent?.includes("cancelled-agent"))!).getByRole("button", { name: /Ver error/ }))
-  expect(screen.getByRole("dialog")).toHaveTextContent(hiddenErrorMessage)
+  expect(screen.getByRole("dialog")).toHaveTextContent(publicErrorMessages.execution_cancelled)
   expect(screen.getByRole("dialog").querySelector("time")).toBeNull()
 })
 

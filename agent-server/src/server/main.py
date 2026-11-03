@@ -47,13 +47,25 @@ def get_status():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    import asyncio
+
+    from .app.callback_port import default_callback_sink
+    from .infrastructure.execution_event_buffer import execution_event_delivery_worker
+
     token_budget_policy()
     app.state.blackboard = MemoryBlackboard()
     app.state.audit_service = AuditService(app.state.blackboard)
+    stop_events = asyncio.Event()
+    event_delivery = asyncio.create_task(execution_event_delivery_worker(stop_events, default_callback_sink))
     try:
         yield
     finally:
         await app.state.audit_service.aclose()
+        stop_events.set()
+        try:
+            await asyncio.wait_for(event_delivery, 3)
+        except TimeoutError:
+            pass  # Unacknowledged events exist only in memory and cannot survive shutdown.
         del app.state.audit_service
         del app.state.blackboard
 

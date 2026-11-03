@@ -97,34 +97,39 @@
 .audit-status[data-state="completed"],
 .audit-disclosure[data-state="completed"],
 .audit-pipeline[data-state="completed"],
-.audit-agent[data-state="completed"] { --audit-accent: var(--status-success-accent); }
+.audit-agent[data-state="completed"],
+.audit-chronology-row[data-state="completed"] { --audit-accent: var(--status-success-accent); }
 
 .audit-monitor-legend [data-state="running"],
 .audit-status[data-state="running"],
 .audit-disclosure[data-state="running"],
 .audit-pipeline[data-state="running"],
-.audit-agent[data-state="running"] { --audit-accent: var(--status-running-accent); }
+.audit-agent[data-state="running"],
+.audit-chronology-row[data-state="running"] { --audit-accent: var(--status-running-accent); }
 
 .audit-monitor-legend [data-state="waiting"],
 .audit-status[data-state="waiting"],
 .audit-disclosure[data-state="waiting"],
 .audit-pipeline[data-state="waiting"],
-.audit-agent[data-state="waiting"] { --audit-accent: var(--status-waiting-accent); }
+.audit-agent[data-state="waiting"],
+.audit-chronology-row[data-state="waiting"] { --audit-accent: var(--status-waiting-accent); }
 
 .audit-monitor-legend [data-state="partial"],
 .audit-status[data-state="partial"],
 .audit-disclosure[data-state="partial"],
 .audit-pipeline[data-state="partial"],
-.audit-agent[data-state="partial"] { --audit-accent: #d4b49b; }
+.audit-agent[data-state="partial"],
+.audit-chronology-row[data-state="partial"] { --audit-accent: #d4b49b; }
 
 .audit-monitor-legend [data-state="failed"],
 .audit-status[data-state="failed"],
 .audit-disclosure[data-state="failed"],
 .audit-pipeline[data-state="failed"],
-.audit-agent[data-state="failed"] { --audit-accent: #dc2626; }
+.audit-agent[data-state="failed"],
+.audit-chronology-row[data-state="failed"] { --audit-accent: #dc2626; }
 
-:is(.audit-monitor-legend [data-state="cancelling"], .audit-status[data-state="cancelling"], .audit-disclosure[data-state="cancelling"], .audit-pipeline[data-state="cancelling"], .audit-agent[data-state="cancelling"]) { --audit-accent: var(--status-waiting-accent); }
-:is(.audit-monitor-legend [data-state="cancelled"], .audit-status[data-state="cancelled"], .audit-disclosure[data-state="cancelled"], .audit-pipeline[data-state="cancelled"], .audit-agent[data-state="cancelled"]) { --audit-accent: var(--color-text-muted); }
+:is(.audit-monitor-legend [data-state="cancelling"], .audit-status[data-state="cancelling"], .audit-disclosure[data-state="cancelling"], .audit-pipeline[data-state="cancelling"], .audit-agent[data-state="cancelling"], .audit-chronology-row[data-state="cancelling"]) { --audit-accent: var(--status-waiting-accent); }
+:is(.audit-monitor-legend [data-state="cancelled"], .audit-status[data-state="cancelled"], .audit-disclosure[data-state="cancelled"], .audit-pipeline[data-state="cancelled"], .audit-agent[data-state="cancelled"], .audit-chronology-row[data-state="cancelled"]) { --audit-accent: var(--color-text-muted); }
 
 .audit-pipeline-list {
   display: flex;

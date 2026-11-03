@@ -98,7 +98,10 @@ class ActiveDeadline:
         self._waiting += 1
         self._refresh(self.clock())
         try:
-            yield wait
+            from ...infrastructure.execution_events import action_event
+
+            with action_event("wait", name="quota_admission"):
+                yield wait
         finally:
             self._waits.remove(wait)
             self._waiting -= 1
@@ -137,7 +140,10 @@ class ActiveDeadline:
         self._activities.append(entry)
         self.touch()
         try:
-            yield
+            from ...infrastructure.execution_events import action_event
+
+            with action_event("activity", name=name):
+                yield
         finally:
             self._activities.remove(entry)
             self.touch()
@@ -225,7 +231,12 @@ async def within_deadline(awaitable, deadline):
                 changed.cancel()
                 await asyncio.gather(changed, return_exceptions=True)
         deadline.check_cancellation()
-        return task.result()
+        result = task.result()  # Preserve the operation's original exception first.
+        # Synchronous work can finish after
+        # expiry before the timer gets another turn. Do not accept late success.
+        if deadline.remaining <= 0:
+            raise TimeoutError
+        return result
     finally:
         if not task.done():
             deadline.cancelled = True

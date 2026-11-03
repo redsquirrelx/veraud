@@ -35,6 +35,7 @@ from ..config.schemas import (
     ModelSettings,
 )
 from ..infrastructure.callback.schemas import ExecutionOutcome
+from ..infrastructure.execution_events import record_execution
 from ..infrastructure.llm.base import Model
 from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from .agent_registry import AgentRegistry
@@ -207,6 +208,7 @@ class AgentExecutionService:
             await resources.aclose()
 
 
+    @record_execution
     async def _run_built_agent(
         self, agent, timeout, agent_type, payload, execution_id, blackboard
     ) -> BaseModel:
