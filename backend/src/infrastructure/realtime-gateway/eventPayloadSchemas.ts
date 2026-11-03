@@ -37,6 +37,7 @@ export const agentExecutionPayloadSchema = {
     outputTokens: { type: ["integer", "null"], description: "Optional output token usage." },
     estimatedTokens: { type: ["integer", "null"], description: "Estimated usage, separate from provider-reported counts." },
     interruptionReason: { type: ["string", "null"], description: "Machine-readable interruption cause." },
+    cancellationRequestedAt: { type: ["string", "null"], format: "date-time", description: "Persisted request; does not confirm the audit has stopped." },
     createdAt: { type: "string", format: "date-time", description: "Creation timestamp, serialized from a Date." },
     startedAt: {
       anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],

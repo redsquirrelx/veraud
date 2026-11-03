@@ -25,6 +25,7 @@ export interface AgentInvoker {
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
   /** Read published records without reconciling, generating a report or starting work. */
   getAuditSnapshot?(runId: string): Promise<AgentInput>
+  cancelAudit?(runId: string): Promise<AgentInput>
 }
 
 /** What the pipeline needs: only the repository root. Stage inputs are
@@ -228,7 +229,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     }
     const snapshot = await (await read(base)).json() as AgentInput
     if (snapshot["run_id"] !== runId) throw new Error("Audit reconciliation returned a different run")
-    if (["queued", "running"].includes(String(snapshot["status"]))) return null
+    if (["queued", "running", "cancelling"].includes(String(snapshot["status"]))) return null
     if (!["completed", "partial", "failed", "cancelled"].includes(String(snapshot["status"]))) {
       throw new Error("Audit reconciliation returned an invalid state")
     }
@@ -247,5 +248,18 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const snapshot = await response.json() as AgentInput
     if (snapshot.run_id !== runId) throw new Error("Audit snapshot returned a different run")
     return snapshot
+  }
+
+  async cancelAudit(runId: string): Promise<AgentInput> {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST", signal: AbortSignal.timeout(10_000),
+    })
+    if (response.status === 404) throw new AuditRunUnavailableError("The agent-server no longer retains this audit run")
+    if (!response.ok) throw new AgentInvocationError(`Audit cancellation returned HTTP ${response.status}`, response.status)
+    const state = await response.json() as AgentInput
+    if (state.run_id !== runId || !["queued", "running", "cancelling", "cancelled", "completed", "partial", "failed"].includes(String(state.status))) {
+      throw new AgentInvocationError("Agent-server returned an invalid audit cancellation state")
+    }
+    return state
   }
 }

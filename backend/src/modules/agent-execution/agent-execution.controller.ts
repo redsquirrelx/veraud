@@ -270,6 +270,7 @@ function toResponse(execution: StoredAgentExecution, includeContext = true) {
     createdAt: execution.createdAt,
     startedAt: execution.startedAt,
     finishedAt: execution.finishedAt,
+    cancellationRequestedAt: execution.cancellationRequestedAt ?? null,
     configuration: execution.configuration ?? null,
     ...(!includeContext || execution.monitorContext === undefined ? {} : { monitorContext: execution.monitorContext }),
   }

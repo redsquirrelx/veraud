@@ -1,6 +1,7 @@
 """Active execution deadlines with quota pauses and an independent wall deadline."""
 
 import asyncio
+import inspect
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from time import monotonic
@@ -8,6 +9,7 @@ from time import monotonic
 from config.agents.budgets import ExecutionTimingConfig
 
 from ...config.logs import get_logger
+from ..cancellation import current_cancellation
 
 logger = get_logger("execution-timing")
 _pending_cancellations = set()
@@ -55,6 +57,7 @@ class ActiveDeadline:
         self.cancellation_grace_seconds = (ExecutionTimingConfig().cancellation_grace_seconds
             if cancellation_grace_seconds is None else cancellation_grace_seconds)
         self.cancelled = False
+        self.cancellation = parent.cancellation if parent is not None else current_cancellation()
         self._activities = []
         self._cancellations = []
         self.last_progress_at = datetime.now(UTC).isoformat()
@@ -89,6 +92,7 @@ class ActiveDeadline:
 
     @contextmanager
     def quota_wait(self, *, reason="quota_admission", seconds=None, source=None):
+        self.check_cancellation()
         wait = {"reason": reason, "source": source, "until": self.clock() + seconds if seconds is not None else None}
         self._waits.append(wait)
         self._waiting += 1
@@ -101,6 +105,7 @@ class ActiveDeadline:
             self._refresh(self.clock())
 
     def fork(self, seconds, *, label=None, invocation_id=None, max_wall_time_seconds=None, cancellation_grace_seconds=None):
+        self.check_cancellation()
         wall = self.wall_deadline
         if max_wall_time_seconds is not None:
             wall = min(wall, self.clock() + max_wall_time_seconds)
@@ -117,10 +122,16 @@ class ActiveDeadline:
 
     @property
     def publication_allowed(self):
-        return not self.cancelled and (self.parent is None or self.parent.publication_allowed)
+        return (not self.cancelled and not (self.cancellation and self.cancellation.requested)
+            and (self.parent is None or self.parent.publication_allowed))
+
+    def check_cancellation(self):
+        if self.cancellation is not None:
+            self.cancellation.check()
 
     @contextmanager
     def stage(self, name):
+        self.check_cancellation()
         entry = {"agent_id": self.label, "invocation_id": self.invocation_id, "stage": name,
             "started_at": datetime.now(UTC).isoformat(), "started": self.clock(), "status": "running"}
         self._activities.append(entry)
@@ -168,7 +179,36 @@ class ActiveDeadline:
 
 async def within_deadline(awaitable, deadline):
     """Re-evaluate an outer timer when quota pauses start or end, including children."""
-    task = asyncio.ensure_future(awaitable)
+    started = False
+
+    def discard_unstarted():
+        if inspect.iscoroutine(awaitable):
+            awaitable.close()
+        elif isinstance(awaitable, asyncio.Future):
+            awaitable.cancel()
+
+    try:
+        deadline.check_cancellation()
+    except asyncio.CancelledError:
+        discard_unstarted()
+        raise
+
+    async def admitted():
+        nonlocal started
+        started = True
+        try:
+            deadline.check_cancellation()
+        except asyncio.CancelledError:
+            discard_unstarted()
+            raise
+        return await awaitable
+
+    task = asyncio.ensure_future(admitted())
+    task.add_done_callback(lambda _: discard_unstarted() if not started else None)
+    if deadline.cancellation is not None:
+        deadline.cancellation.track(task)
+        if isinstance(awaitable, asyncio.Future):
+            deadline.cancellation.track(awaitable)
     try:
         while not task.done():
             notification = deadline.changed
@@ -184,6 +224,7 @@ async def within_deadline(awaitable, deadline):
             finally:
                 changed.cancel()
                 await asyncio.gather(changed, return_exceptions=True)
+        deadline.check_cancellation()
         return task.result()
     finally:
         if not task.done():

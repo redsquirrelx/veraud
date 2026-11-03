@@ -11,7 +11,6 @@ import {
   pipelineLabelKey,
   pipelineProgress,
   progressText,
-  stateLabelKey,
   stateTone,
   type AuditAgentNode,
   type AuditPipelineRun,
@@ -20,7 +19,8 @@ import {
 } from "./auditStatus.ts"
 import "./AuditStatusView.css"
 import { useExpansion } from "./useExpansion.ts"
-import { useMonitorLabels } from "./monitorLabels.ts"
+import { useAuditStateLabel, useMonitorLabels } from "./monitorLabels.ts"
+import { AuditActions } from "./AuditActions.tsx"
 
 function ProgressLabel({ progress }: { progress: AuditProgress }) {
   const { t } = useTranslation("projects")
@@ -45,6 +45,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
   const { t } = useTranslation("projects")
   const { t: tEvidence } = useTranslation("auditEvidence")
   const labels = useMonitorLabels()
+  const stateLabel = useAuditStateLabel()
   const childrenId = useId()
   const detailsId = useId()
   const stateId = useId()
@@ -69,7 +70,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
             ? <PhaseDot key={`${agent.id}:${agent.phase}`} phase={agent.phase} />
             : <span className="audit-agent-phase" role="img" aria-label={labels.noPhase} title={labels.noPhase} />}
           <span className="mono audit-agent-type" title={agent.name ?? agent.agentType}>{agent.name ?? agent.agentType}</span>
-          <span id={stateId} className="audit-agent-state">{t(stateLabelKey(agent.state))}</span>
+          <span id={stateId} className="audit-agent-state">{stateLabel(agent.state)}</span>
           <span className="audit-pipeline-chevron" data-expanded={contentExpanded} aria-hidden="true"><ChevronDownIcon size={12} /></span>
         </button>
         <button className="audit-agent-details-toggle" type="button" aria-label={`${labels.details} · ${identity}`}
@@ -116,6 +117,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
 
 function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipelineRun, auditId: number, evidenceAudit?: AuditStatusModel }) {
   const { t } = useTranslation("projects")
+  const stateLabel = useAuditStateLabel()
   const agentsId = useId()
   // Pipelines start open: the agent runs are the point of the view. Folding is
   // for scanning an audit with many attributes, not a summary-first default.
@@ -147,7 +149,7 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
         aria-controls={agentsId}
         aria-label={t("auditStatus.pipelines.toggleLabel", {
           pipeline: name,
-          state: t(stateLabelKey(pipeline.state)),
+          state: stateLabel(pipeline.state),
           progress: progressText(t, progress),
         })}
         onClick={toggleExpanded}
@@ -162,7 +164,7 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
           </span>
         </span>
         <span className="audit-pipeline-line">
-          <Badge tone={stateTone(pipeline.state)}>{t(stateLabelKey(pipeline.state))}</Badge>
+          <Badge tone={stateTone(pipeline.state)}>{stateLabel(pipeline.state)}</Badge>
           <ProgressLabel progress={progress} />
         </span>
       </button>
@@ -194,14 +196,16 @@ function PipelineRow({ pipeline, auditId, evidenceAudit }: { pipeline: AuditPipe
  *  nothing, so any caller can drive it with live or fixture data.
  *  `bare` drops the card surface and `summary` drops the header, so a caller
  *  that renders its own summary shows the identity once instead of twice. */
-export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false }: {
+export function AuditStatusView({ audit, bare = false, summary = true, evidenceLinks = false, actions = true }: {
   audit: AuditStatusModel
   bare?: boolean
   summary?: boolean
   evidenceLinks?: boolean
+  actions?: boolean
 }) {
   const { t } = useTranslation("projects")
   const hasRevision = audit.branch !== null || audit.commitHash !== null
+  const stateLabel = useAuditStateLabel()
   const repository = audit.project ? `${audit.project.repositoryOwner}/${audit.project.repositoryName}` : null
 
   const content = (
@@ -209,16 +213,18 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
       {summary && <>
         <div className="audit-status-head">
           <span className="mono audit-status-id">{t("auditStatus.title", { id: audit.id })}</span>
-          <Badge tone={stateTone(audit.state)}>{t(stateLabelKey(audit.state))}</Badge>
+          <Badge tone={stateTone(audit.state)}>{stateLabel(audit.state)}</Badge>
           <ProgressLabel progress={auditProgress(audit)} />
         </div>
         <div className="audit-status-meta">
-          {audit.project && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
+          {audit.project && audit.project.id <= 0 && <span className="audit-status-project"><span className="mono">{repository}</span></span>}
+          {audit.project && audit.project.id > 0 && <Link className="audit-status-project" to={`/projects/${audit.project.id}/audits`}
             aria-label={t("auditStatus.openProject", { repository })}>
             <FolderIcon size={13} />
             <span className="mono">{repository}</span>
             <ArrowRightIcon size={12} />
           </Link>}
+          {actions && <AuditActions audit={audit} />}
           {hasRevision ? (
             <span className="mono audit-status-revision">
               {t("auditStatus.revision", { branch: audit.branch ?? "—", hash: audit.commitHash?.slice(0, 7) ?? "—" })}
@@ -232,6 +238,7 @@ export function AuditStatusView({ audit, bare = false, summary = true, evidenceL
         </div>
       </>}
       {audit.error && <p role="alert" className="audit-status-error">{audit.error}</p>}
+      {!summary && actions && <AuditActions audit={audit} />}
       {audit.pipelines.length === 0 ? (
         <p className="label">{t("auditStatus.pipelines.empty")}</p>
       ) : (

@@ -108,6 +108,20 @@ async def start_audit(body: StartAuditRequest, response: Response, service: Serv
     return state
 
 
+@router.post("/{run_id}/cancel", status_code=202, response_model=AuditState,
+    summary="Request cancellation of one audit",
+    description="Idempotently stops admission of new work and requests cancellation of active tasks. "
+        "The state remains cancelling until owned tasks and cleanup finish. Published records are retained.",
+    responses={404: {"model": DomainError, "description": "Audit not found in this process."}})
+async def cancel_audit(run_id: str, response: Response, service: ServiceDep) -> AuditState:
+    if service.get(run_id) is None:
+        raise HTTPException(status_code=404, detail="Audit not found.")
+    await service.cancel(run_id)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Location"] = f"/api/audits/{run_id}"
+    return service.get(run_id)
+
+
 @router.get("/{run_id}", response_model=AuditSnapshot,
     summary="Get audit execution status",
     description="Returns the lifecycle state, active per-invocation waits (reason, remaining delay and source), and all currently published evidence, findings and assessments for this run_id. Partial records are available while the audit is running and remain visible after failure.",

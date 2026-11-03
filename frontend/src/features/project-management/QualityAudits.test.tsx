@@ -4,7 +4,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { changeLanguage } from "../../shared/i18n/index.ts"
-import { ApiError, listAgentSettings, type AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
+import { ApiError, listAgentSettings, type AgentExecution, type AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
+import { AgentExecutionsContext } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAudits } from "./QualityAudits.tsx"
 import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import * as api from "./qualityAuditApi.ts"
@@ -55,6 +56,33 @@ async function toggleAttribute(name: string) {
 }
 
 describe("project quality audits", () => {
+  it("refreshes history on confirmed cancellation events without refetching every usage update", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValueOnce([{ ...historicalSummary, executionStatus: "Running", auditStatus: null }])
+      .mockResolvedValue([{ ...historicalSummary, executionStatus: "Completed", auditStatus: "cancelled" }])
+    const view = (executions: AgentExecution[]) => <MemoryRouter><AgentExecutionsContext.Provider value={executions}>
+      <QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" />
+    </AgentExecutionsContext.Provider></MemoryRouter>
+    const { rerender } = render(view([]))
+    await screen.findByRole("article")
+    const cancelled: AgentExecution = { id: historicalSummary.id, evaluationId: 4, agentType: "security", status: "Completed", result: null, error: null,
+      inputTokens: 12, outputTokens: 2, createdAt: historicalSummary.createdAt, startedAt: null, finishedAt: "2026-10-30T12:00:00Z",
+      interruptionReason: "cancelled", cancellationRequestedAt: "2026-10-30T11:59:00Z",
+      monitorContext: { project: { id: 5, repositoryOwner: "acme", repositoryName: "demo" }, branch: "main", commitHash: null,
+        evaluationType: "QualityAudit", qualityAttributes: ["security"], workflowIds: [] } }
+    rerender(view([cancelled]))
+    expect(await screen.findByText("Cancelled")).toBeVisible()
+    expect(api.listQualityAudits).toHaveBeenCalledTimes(2)
+    rerender(view([{ ...cancelled, inputTokens: 15 }]))
+    expect(api.listQualityAudits).toHaveBeenCalledTimes(2)
+  })
+  it.each([["cancelling", "Running", "Cancelling…"], ["cancelled", "Completed", "Cancelled"]])(
+    "shows the server's %s outcome instead of a successful execution label", async (auditStatus, executionStatus, label) => {
+      vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, auditStatus, executionStatus }])
+      render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+      const article = await screen.findByRole("article")
+      expect(within(article).getByText(label)).toBeVisible()
+    },
+  )
   const paginatedAudits = Array.from({ length: 21 }, (_, index) => ({
     ...historicalSummary, id: 100 - index, reportAvailable: false,
     createdAt: `2026-01-${String(index + 1).padStart(2, "0")}T12:00:00Z`,

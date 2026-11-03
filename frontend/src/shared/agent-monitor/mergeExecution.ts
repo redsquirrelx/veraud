@@ -33,6 +33,8 @@ export function mergeExecution(previous: AgentExecution | null | undefined, inco
     inputTokens: count(previous.inputTokens, incoming.inputTokens),
     outputTokens: count(previous.outputTokens, incoming.outputTokens),
     estimatedTokens: count(previous.estimatedTokens, incoming.estimatedTokens),
-    interruptionReason: lifecycle.interruptionReason ?? previous.interruptionReason ?? incoming.interruptionReason ?? null,
+    interruptionReason: ["Completed", "Failed"].includes(lifecycle.status) && previous.interruptionReason === "cancellation_requested"
+      ? lifecycle.interruptionReason ?? null : lifecycle.interruptionReason ?? previous.interruptionReason ?? incoming.interruptionReason ?? null,
+    cancellationRequestedAt: previous.cancellationRequestedAt ?? incoming.cancellationRequestedAt ?? null,
   }
 }

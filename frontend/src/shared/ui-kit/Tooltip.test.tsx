@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { Tooltip } from "./Tooltip.tsx"
@@ -10,6 +10,20 @@ function show(disabled = false) {
 }
 
 describe("Tooltip", () => {
+  it("positions the tooltip to the left when requested", async () => {
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute("role") === "tooltip"
+        ? { left: 0, right: 100, top: 0, bottom: 20, width: 100, height: 20, x: 0, y: 0, toJSON() {} }
+        : { left: 300, right: 322, top: 100, bottom: 122, width: 22, height: 22, x: 300, y: 100, toJSON() {} }
+    })
+    try {
+      render(<Tooltip content="Cancel audit" placement="left">{(props) => <button {...props}>Cancel</button>}</Tooltip>)
+      await userEvent.hover(screen.getByRole("button"))
+      expect(screen.getByRole("tooltip")).toHaveStyle({ left: "192px" })
+    } finally {
+      bounds.mockRestore()
+    }
+  })
   it("shows a linked tooltip on hover and hides it on leave", async () => {
     const user = userEvent.setup()
     show()

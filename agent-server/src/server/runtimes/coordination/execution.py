@@ -322,10 +322,12 @@ class CoordinatorExecution(ABC):
             dispatch.append((assignment.model_copy(update={"budget": budget}), budget))
 
         async def invoke(assignment, budget):
+            self.timing.check_cancellation()
             if budget is None:
                 return self.raw_invocation_type(assignment=assignment, status="skipped", error="execution_budget_exhausted",
                     failure=failures[assignment.invocation_id])
             async with semaphore:
+                self.timing.check_cancellation()
                 started = monotonic()
                 try:
                     async def wait_for_start():

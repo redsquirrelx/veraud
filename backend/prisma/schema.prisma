@@ -71,6 +71,8 @@ model AgentExecution {
   createdAt    DateTime  @default(now()) @map("created_at")
   startedAt    DateTime? @map("started_at")
   finishedAt   DateTime? @map("finished_at")
+  cancellationRequestedAt DateTime? @map("cancellation_requested_at")
+  dispatchStartedAt DateTime? @map("dispatch_started_at")
   inputTokens  Int?      @map("input_tokens")
   outputTokens Int?      @map("output_tokens")
   estimatedTokens Int?  @map("estimated_tokens")

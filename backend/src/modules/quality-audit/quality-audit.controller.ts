@@ -24,6 +24,7 @@ const summary = objectResponse({
   startedAt: { type: ["string", "null"], format: "date-time" },
   finishedAt: { type: ["string", "null"], format: "date-time" }, reportAvailable: { type: "boolean" },
   configurationAvailable: { type: "boolean" },
+  cancellationRequestedAt: { type: ["string", "null"], format: "date-time" },
 })
 
 function failure(error: unknown) {
@@ -36,6 +37,19 @@ function failure(error: unknown) {
 }
 
 export function registerQualityAuditRoutes(app: FastifyInstance, service: QualityAuditService) {
+  app.post("/api/projects/:id/audits/:auditId/cancel", { schema: {
+    tags: ["Projects"], summary: "Request cancellation of a project audit",
+    description: "Persists an idempotent cancellation request. Pending dispatch is blocked; active runs are cancelled by agent-server. A request alone does not confirm cancellation.",
+    params: { ...params, required: ["id", "auditId"] },
+    response: { 202: summary, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    try {
+      reply.header("Cache-Control", "no-store")
+      return reply.code(202).send(await service.cancel(Number(id), Number(auditId)))
+    } catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
   app.post("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "Start a quality audit for a project revision",
     description: "Run maintainability, security and functional adequacy, independently or together, with one report. Functional adequacy requires explicit functional_requirements. Configure model access for each selected attribute first. Optional operating patches are validated against agent-server's catalog.",

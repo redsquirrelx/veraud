@@ -64,6 +64,11 @@ from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
 from ..infrastructure.llm.resources import close_model_clients
+from ..runtimes.cancellation import (
+    AuditCancellation,
+    cancellation_scope,
+    check_cancellation,
+)
 from ..runtimes.invocation_reporting import observe_invocation
 from ..runtimes.repository.shared_tokens import SharedTokenBudget
 from ..runtimes.repository.timing import ActiveDeadline, within_deadline
@@ -88,6 +93,7 @@ class AuditService:
         self._states: dict[str, AuditState] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._timings: dict[str, ActiveDeadline] = {}
+        self._cancellations: dict[str, AuditCancellation] = {}
         self._closing = False
         self._report_generations: dict[str, dict[str, SoftwareAuditReport]] = {}
         self._base_model_config: dict | None = None
@@ -309,16 +315,26 @@ class AuditService:
         state = AuditState(run_id=identity.run_id, invocation_id=identity.invocation_id, status="queued",
             view_url=f"/blackboard?run_id={identity.run_id}", created_at=datetime.now(UTC))
         self._states[identity.run_id] = state
-        task = asyncio.create_task(
-            self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections,
-                security_request=(security_request or SecurityAuditRequest()) if combined and "security" in attributes else None,
-                security_limits=security_limits, attributes=attributes,
-                functional_requirements=functional_requirements, functional_limits=functional_limits,
-                output_overrides=output_overrides), name=f"audit-{identity.run_id}",
-        )
+        signal = AuditCancellation(lambda: self._audit_idle(identity.run_id))
+        self._cancellations[identity.run_id] = signal
+        with cancellation_scope(signal):
+            task = asyncio.create_task(
+                self._execute(identity, root, request, limits, settings, credentials, total_tokens, model_selections,
+                    security_request=(security_request or SecurityAuditRequest()) if combined and "security" in attributes else None,
+                    security_limits=security_limits, attributes=attributes,
+                    functional_requirements=functional_requirements, functional_limits=functional_limits,
+                    output_overrides=output_overrides), name=f"audit-{identity.run_id}",
+            )
+        signal.track(task)
         self._tasks[identity.run_id] = task
         task.add_done_callback(lambda _: self._tasks.pop(identity.run_id, None))
         return state
+
+    def _audit_idle(self, run_id: str) -> None:
+        signal = self._cancellations.pop(run_id, None)
+        if signal is not None and signal.requested:
+            self._update(run_id, "cancelled")
+        self._timings.pop(run_id, None)
 
     def _update(self, run_id: str, status: AuditStatus, error: str | None = None) -> None:
         self._states[run_id] = self._states[run_id].model_copy(update={"status": status, "error": error})
@@ -339,6 +355,7 @@ class AuditService:
         self._timings[identity.run_id] = timing
 
         async def run():
+            check_cancellation()
             nonlocal model
             with timing.stage("repository_snapshot"):
                 snapshot = await RepositoryAnalysisService().analyze(RepositoryAnalysisInput(root_path=str(root)))
@@ -396,7 +413,9 @@ class AuditService:
             if timing.publication_allowed:
                 self._update(identity.run_id, "completed" if result.status == "complete" else result.status)
         except asyncio.CancelledError:
-            self._update(identity.run_id, "cancelled")
+            signal = self._cancellations[identity.run_id]
+            signal.request()
+            self._update(identity.run_id, "cancelling")
             raise
         except TimeoutError:
             self._update(identity.run_id, "failed", "Audit timed out.")
@@ -406,16 +425,21 @@ class AuditService:
         finally:
             try:
                 if clients:
-                    cleanup = ActiveDeadline(max(0.001, limits.cancellation_grace_seconds), cancellation_grace_seconds=0)
-                    with timing.stage("close_provider_clients"):
+                    # Cleanup must be allowed after admission closes, but it is
+                    # still owned by this audit and delays its final state.
+                    with cancellation_scope(None):
+                        cleanup = ActiveDeadline(max(0.001, limits.cancellation_grace_seconds), cancellation_grace_seconds=0)
+                        operation = asyncio.gather(*(
+                            close_model_clients(SimpleNamespace(llm=entry))
+                            for entry in {id(value): value for value in clients.values()}.values()))
+                        self._cancellations[identity.run_id].track(operation)
                         try:
-                            await within_deadline(asyncio.gather(*(
-                                close_model_clients(SimpleNamespace(llm=entry))
-                                for entry in {id(value): value for value in clients.values()}.values())), cleanup)
+                            await within_deadline(operation, cleanup)
                         except TimeoutError:
                             logger.warning("Audit %s provider_cleanup_timeout", identity.run_id)
             finally:
-                self._timings.pop(identity.run_id, None)
+                if not self._cancellations[identity.run_id].requested:
+                    self._timings.pop(identity.run_id, None)
 
     async def _run_combined(self, identity, root, snapshot, request, security_request, limits,
                             settings, credentials, total_tokens, model_selections, timing, clients, security_limits,
@@ -425,6 +449,7 @@ class AuditService:
         tracing = LangSmithTracingBackend()
 
         async def evaluate(attribute, selected_request, policy):
+            check_cancellation()
             # Keep the manager's established root identity for report authority
             # and continuation lineage; security owns a distinct invocation.
             agent_id = audit_root([attribute])
@@ -496,30 +521,46 @@ class AuditService:
 
     async def cancel(self, run_id: str) -> None:
         """Cancel one pipeline audit without affecting other active audits."""
-        task = self._tasks.get(run_id)
-        if task is None or task.done():
+        state = self.get(run_id)
+
+        if state is None or state.status in {"completed", "partial", "failed", "cancelled"}:
             return
-        task.cancel()
-        cleanup = ActiveDeadline(MaintainabilityConfig().cancellation_grace_seconds, cancellation_grace_seconds=0)
-        try:
-            await within_deadline(asyncio.gather(task, return_exceptions=True), cleanup)
-        except TimeoutError:
+
+        signal = self._cancellations.get(run_id)
+
+        task = self._tasks.get(run_id)
+
+        if signal is None:
+            return
+
+        if signal.request():
+            self._update(run_id, "cancelling")
+
+            if task is not None and not task.done():
+                task.cancel()
+
+        # asyncio.wait does not cancel the work a second time on timeout or
+        # when an HTTP client disconnects during this bounded join.
+        if signal.tasks:
+            timing = self._timings.get(run_id)
+            grace = timing.cancellation_grace_seconds if timing is not None else MaintainabilityConfig().cancellation_grace_seconds
+            await asyncio.wait(tuple(signal.tasks), timeout=grace)
+
+        if self.get(run_id).status == "cancelling":
             logger.warning("Audit %s cancellation_pending", run_id)
 
     async def aclose(self) -> None:
         """Cancel active work and await cleanup before the application releases its Blackboard."""
         self._closing = True
-        tasks = list(self._tasks.values())
-        for run_id, task in self._tasks.items():
-            if self._states[run_id].status in {"queued", "running"}:
-                task.cancel()
+        for run_id, signal in tuple(self._cancellations.items()):
+            if self._states[run_id].status in {"queued", "running", "cancelling"} and signal.request():
+                self._update(run_id, "cancelling")
+                task = self._tasks.get(run_id)
+                if task is not None and not task.done():
+                    task.cancel()
+        tasks = {task for signal in self._cancellations.values() for task in signal.tasks}
         if tasks:
-            cleanup = ActiveDeadline(MaintainabilityConfig().cancellation_grace_seconds, cancellation_grace_seconds=0)
-            try:
-                await within_deadline(asyncio.gather(*tasks, return_exceptions=True), cleanup)
-            except TimeoutError:
+            _, pending = await asyncio.wait(tasks, timeout=MaintainabilityConfig().cancellation_grace_seconds)
+            if pending:
                 logger.warning("audit_shutdown_cancellation_pending")
-        for run_id, state in self._states.items():
-            if state.status in {"queued", "running"}:
-                self._update(run_id, "cancelled")
-        self._tasks.clear()
+        # Owned late cleanup retains its signal and may finalize only when idle.

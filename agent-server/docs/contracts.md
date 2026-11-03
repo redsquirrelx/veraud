@@ -17,6 +17,7 @@ Implementation owners are listed in [`architecture.md`](architecture.md).
 | `GET /api/pipelines` | Names remain `functional-adequacy`, `project-architecture`, `quality-audit` |
 | `POST /api/pipelines/{name}/run` | Preserve `input`, `config`, `stage_configs`, `execution_ids`, `timeout_seconds` and stage-keyed result |
 | `POST /api/audits` | Accepted asynchronous lifecycle remains HTTP 202; do not change validation-before-acceptance order |
+| `POST /api/audits/{run_id}/cancel` | HTTP 202, idempotent; rejects new audit work before requesting task cancellation. Returns `cancelling` while owned work/cleanup remains, then `cancelled`; terminal runs are unchanged, unknown runs return 404. Evidence and usage already recorded are retained. |
 | `GET /api/audits/{run_id}` | Current lifecycle and Blackboard snapshot; terminal states are completed, partial, failed or cancelled |
 | `GET /api/audits/{run_id}/report[.docx]` | Canonical report and DOCX; generations remain separately retrievable |
 | `POST /api/audits/reports/from-snapshot[.docx]` | Offline deterministic report from same-run evidence/findings/assessments; does not import into active Blackboard |

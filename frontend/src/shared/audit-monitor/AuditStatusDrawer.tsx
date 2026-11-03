@@ -29,7 +29,7 @@ export function AuditStatusDrawer({ audits }: AuditStatusDrawerProps) {
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const wasOpen = useRef(false)
-  const active = audits.some((audit) => audit.state === "running" || audit.state === "waiting")
+  const active = audits.some((audit) => audit.state === "running" || audit.state === "waiting" || audit.state === "cancelling")
 
   useEffect(() => {
     if (!open) {

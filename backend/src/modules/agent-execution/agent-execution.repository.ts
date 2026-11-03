@@ -69,10 +69,15 @@ export interface StoredAgentExecution {
   createdAt: Date
   startedAt: Date | null
   finishedAt: Date | null
+  cancellationRequestedAt?: Date | null
+  dispatchStartedAt?: Date | null
   configuration?: AgentConfiguration | null
 }
 
 export interface AgentExecutionStore {
+  requestAuditCancellation(id: number): Promise<StoredAgentExecution>
+  claimAuditDispatch(id: number): Promise<boolean>
+  pendingAuditCancellations(): Promise<number[]>
   recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution>
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
@@ -90,6 +95,30 @@ export interface AgentExecutionStore {
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async requestAuditCancellation(id: number): Promise<StoredAgentExecution> {
+    await this.db.agentExecution.updateMany({
+      where: { id, status: { in: ["Waiting", "Running"] }, cancellationRequestedAt: null, evaluation: { type: "QualityAudit" } },
+      data: { cancellationRequestedAt: new Date(), interruptionReason: "cancellation_requested" },
+    })
+    return this.toStored(await this.db.agentExecution.findUniqueOrThrow({ where: { id } }))
+  }
+
+  async claimAuditDispatch(id: number): Promise<boolean> {
+    const claimed = await this.db.agentExecution.updateMany({
+      where: { id, status: { in: ["Waiting", "Running"] }, cancellationRequestedAt: null, dispatchStartedAt: null,
+        evaluation: { type: "QualityAudit" } },
+      data: { dispatchStartedAt: new Date() },
+    })
+    return claimed.count === 1
+  }
+
+  async pendingAuditCancellations(): Promise<number[]> {
+    return (await this.db.agentExecution.findMany({
+      where: { cancellationRequestedAt: { not: null }, status: { in: ["Waiting", "Running"] }, evaluation: { type: "QualityAudit" } },
+      select: { id: true },
+    })).map((row) => row.id)
+  }
 
   async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
     return this.db.$transaction(async (tx) => {
@@ -300,6 +329,8 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     createdAt: Date
     startedAt: Date | null
     finishedAt: Date | null
+    cancellationRequestedAt?: Date | null
+    dispatchStartedAt?: Date | null
     configurationSnapshot?: string | null
     invocationReceipts?: string
   }): StoredAgentExecution {
@@ -322,6 +353,8 @@ export class AgentExecutionRepository implements AgentExecutionStore {
       createdAt: execution.createdAt,
       startedAt: execution.startedAt,
       finishedAt: execution.finishedAt,
+      cancellationRequestedAt: execution.cancellationRequestedAt ?? null,
+      dispatchStartedAt: execution.dispatchStartedAt ?? null,
       configuration,
     }
   }

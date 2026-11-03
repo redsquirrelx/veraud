@@ -6,6 +6,8 @@ import { Accordion, Badge, Button, Card, Checkbox, Drawer, Pagination } from "..
 import { formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
+import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
+import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { downloadQualityAuditReport, getQualityAudit, listQualityAudits, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { MaintainabilityConfiguration } from "./MaintainabilityConfiguration.tsx"
@@ -74,6 +76,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const agentCatalog = useAuditAgentCatalog()
   const startMessages = useAuditStartMessages()
   const historyLabels = useAuditHistoryLabels()
+  const auditStateLabel = useAuditStateLabel()
+  const cancellationRevision = useAuditCancellationRevision(projectId)
   // Defaults follow executable roots; explicit user selections remain authoritative
   // even if a later catalog refresh makes an agent unavailable.
   const [maintainabilityEnabled, setSelected] = useState<boolean | undefined>()
@@ -131,7 +135,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     }
     void load()
     return () => { alive = false; clearTimeout(timer) }
-  }, [projectId, refresh])
+  }, [projectId, refresh, cancellationRevision])
 
   const running = audits.some((row) => ["Waiting", "Running"].includes(row.executionStatus))
   const configurationAttributes = [
@@ -293,7 +297,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <div className="quality-audit-run-heading">
         <h4>{audit.attributes?.map((attribute) => attributeLabelKeys[attribute] ? t(attributeLabelKeys[attribute]) : attribute).join(" + ") || t("auditStatus.pipelines.maintainability")} · #{audit.id} · {audit.branch} @ {audit.commitHash?.slice(0, 7)}</h4>
         <Badge tone={audit.auditStatus === "partial" || audit.executionStatus === "Failed" || audit.auditStatus === "failed" ? "warning" : "info"}>
-          {audit.auditStatus !== null && evaluationLabelKeys[audit.auditStatus]
+          {audit.auditStatus === "cancelling" || audit.auditStatus === "cancelled" ? auditStateLabel(audit.auditStatus)
+            : audit.auditStatus !== null && evaluationLabelKeys[audit.auditStatus]
             ? t(evaluationLabelKeys[audit.auditStatus]!)
             : statusLabelKey(executionStatusLabelKeys, audit.executionStatus)
               ? t(statusLabelKey(executionStatusLabelKeys, audit.executionStatus)!) : audit.auditStatus ?? audit.executionStatus}
