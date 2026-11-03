@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { ChevronLeftIcon, ChevronRightIcon } from "./icons.tsx"
+import { Tooltip } from "./Tooltip.tsx"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import "./Sidebar.css"
 
@@ -87,18 +88,20 @@ export function Sidebar({ title, items, activeId, defaultExpanded = true, storag
       {beforeItems?.(expanded)}
       <nav className="ui-sidebar-nav" aria-label={t("ui.sidebar.sections", { title })}>
         {items.map((item) => (
-          <button
-            key={item.id}
+          <Tooltip key={item.id} content={item.label} disabled={expanded}>
+            {(tooltipProps) => <button
+            {...tooltipProps}
             type="button"
             className={item.id === activeId ? "ui-sidebar-item ui-sidebar-item-active" : "ui-sidebar-item"}
-             title={item.label}
+             title={expanded ? item.label : undefined}
              aria-label={item.label}
              aria-current={item.id === activeId ? "page" : undefined}
             onClick={() => onSelect?.(item.id)}
           >
             {item.icon && <span className="ui-sidebar-icon">{item.icon}</span>}
             {expanded && <span>{item.label}</span>}
-          </button>
+          </button>}
+          </Tooltip>
         ))}
       </nav>
       {footer && <div className="ui-sidebar-footer">{footer(expanded)}</div>}
