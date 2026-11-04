@@ -1,0 +1,15 @@
+diff --git a/src/shoplab/application/checkout.py b/src/shoplab/application/checkout.py
+index ab027ad..dccd14a 100644
+--- a/src/shoplab/application/checkout.py
++++ b/src/shoplab/application/checkout.py
+@@ -1,5 +1,5 @@
+ from shoplab.billing import charge
+-from shoplab.domain.checkout import send_special_confirmation
++from shoplab.domain.checkout_v2 import send_special_confirmation
+ from shoplab.domain.models import Order
+ from shoplab.domain.notifications import send_confirmation
+ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout_v2.py
+similarity index 100%
+rename from src/shoplab/domain/checkout.py
+rename to src/shoplab/domain/checkout_v2.py

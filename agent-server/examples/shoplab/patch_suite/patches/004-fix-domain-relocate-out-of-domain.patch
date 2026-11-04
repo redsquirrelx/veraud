@@ -1,0 +1,25 @@
+diff --git a/src/shoplab/application/checkout.py b/src/shoplab/application/checkout.py
+index ab027ad..9937136 100644
+--- a/src/shoplab/application/checkout.py
++++ b/src/shoplab/application/checkout.py
+@@ -1,5 +1,5 @@
+ from shoplab.billing import charge
+-from shoplab.domain.checkout import send_special_confirmation
++from shoplab.application.special_notification import send_special_confirmation
+ from shoplab.domain.models import Order
+ from shoplab.domain.notifications import send_confirmation
+ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/application/special_notification.py
+similarity index 61%
+rename from src/shoplab/domain/checkout.py
+rename to src/shoplab/application/special_notification.py
+index 76699ed..2364c47 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/application/special_notification.py
+@@ -3,5 +3,4 @@ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
+-    notifier.send(order, f"Special handling for {order.order_id}")
++    ConsoleNotifier().send(order, f"Special handling for {order.order_id}")

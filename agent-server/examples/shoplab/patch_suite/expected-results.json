@@ -1,0 +1,879 @@
+{
+  "schema_version": 1,
+  "baseline": "fixture_A original, same original three finding IDs in out.json",
+  "instructions": "Each .patch applies independently at the root of a CLEAN fixture_A; do not stack patches.",
+  "expected_ids": [
+    "candidate:domain_infrastructure_dependency",
+    "candidate:billing-inventory-store-access",
+    "candidate:inventory-encapsulation-bypass"
+  ],
+  "expected_states_are_code_ground_truth": true,
+  "note": "Statuses reflect intended architectural defect persistence/resolution; they are test oracles, not observed agent results. Cases involving dynamically hidden or moved code intentionally test robustness; existing unit tests alone cannot establish architectural correctness.",
+  "control": {
+    "id": "000-baseline",
+    "patch": null,
+    "expected": {
+      "candidate:domain_infrastructure_dependency": "persists",
+      "candidate:billing-inventory-store-access": "persists",
+      "candidate:inventory-encapsulation-bypass": "persists"
+    },
+    "title": "Original fixture_A, no changes"
+  },
+  "scenarios": [
+    {
+      "id": "001-fix-domain-di",
+      "patch": "patches/001-fix-domain-di.patch",
+      "title": "Domain dependency injection",
+      "category": "fix",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Domain now depends on Notifier protocol; application constructs the console notifier. Functionality retained.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "d80d0e3027fae60bf715caf01ec5d2597c6a8baf3d93b3bdf972bad6316425f0",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "002-fix-inventory-api",
+      "patch": "patches/002-fix-inventory-api.patch",
+      "title": "Billing uses inventory public API",
+      "category": "fix",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Billing reads available_stock rather than private _store.STOCK.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "71a5d8cb22e2799a0145fc6307eb0c58c82bee2a390a374768e0fd4d5762b6f3",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "003-fix-all",
+      "patch": "patches/003-fix-all.patch",
+      "title": "Fix both architectural violations",
+      "category": "fix",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Both independent violations are corrected.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "463ef9bc4afb7daa615d87b50da703522eba4a7818580c14ba14f8bb030c45a7",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "004-fix-domain-relocate-out-of-domain",
+      "patch": "patches/004-fix-domain-relocate-out-of-domain.patch",
+      "title": "Move notification to application boundary",
+      "category": "fix",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Delete the domain implementation and move special notification to application; class remains infrastructure-only.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "7d43086032a932a70aaad492f6dfd747ff5a8ca1f6445cd480146930c9df6746",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/application/special_notification.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "005-fix-billing-new-public-operation",
+      "patch": "patches/005-fix-billing-new-public-operation.patch",
+      "title": "Alternative public inventory operation",
+      "category": "fix",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Expose an explicit public inventory method; _store remains private inside inventory only.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "628196d949d84b4ca438586ccd109dc69955ce3dec67d6a379a5434ef4def467",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/__init__.py",
+        "src/shoplab/inventory/api.py"
+      ]
+    },
+    {
+      "id": "006-fix-domain-pure-message",
+      "patch": "patches/006-fix-domain-pure-message.patch",
+      "title": "Extract pure domain message building",
+      "category": "fix",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Domain builds the message only; application invokes concrete infrastructure notifier.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "d3547d362f0981131070b90267b5f69b9d54e2f5f22a1f82cb186e8b93eb7ecc",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "007-fix-billing-relocate-public",
+      "patch": "patches/007-fix-billing-relocate-public.patch",
+      "title": "Relocate billing implementation and remove private access",
+      "category": "fix",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Original service file removed; moved active implementation imports public inventory API.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "e1583f86fcc622a6022efd34dfd81d0cca89cc8f6c0429fccc204041d1594b1d",
+      "changed_paths": [
+        "src/shoplab/billing/__init__.py",
+        "src/shoplab/billing/payments.py",
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "008-fix-domain-remove-feature",
+      "patch": "patches/008-fix-domain-remove-feature.patch",
+      "title": "Legitimate removal of special confirmation feature",
+      "category": "fix",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Remove special confirmation and its domain module; existing tests still pass but product behavior changes.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "4d3591db9517e582c43ebd099514671226743b6519c04a7aa94fccdca4b94367",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "101-claim-fixed-in-comments",
+      "patch": "patches/101-claim-fixed-in-comments.patch",
+      "title": "Misleading comments claim resolution",
+      "category": "adversarial",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Comments assert issues were corrected while executable dependencies are intact. Test trust in source facts.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "bcd0bd611b08c112b01ee83d534eea9c4c2ae4e6e47d6ba0cf24786983d5db10",
+      "changed_paths": [
+        "README.md",
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "102-refactor-formatting-only",
+      "patch": "patches/102-refactor-formatting-only.patch",
+      "title": "Source formatting, docstrings and line movements",
+      "category": "superficial",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Renumber lines and restructure formatting, without changing concrete dependencies.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "55ced125d506b505ddd520eb73b36d41c5385fd7439940a236f603c0277dcba4",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "103-import-aliases",
+      "patch": "patches/103-import-aliases.patch",
+      "title": "Alias direct imports without changing dependencies",
+      "category": "obfuscation",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Both concrete dependencies remain but identifiers in the usage sites change.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "9abf88d687b168dc0527442cb2f9727756b542039218d7fcd9fbe479112b9904",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "104-local-imports",
+      "patch": "patches/104-local-imports.patch",
+      "title": "Move imports inside functions",
+      "category": "obfuscation",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Imports only happen when the corresponding functions execute; dependency violation remains.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "a1801c4995b1e85498db77b69c77983da1417a325871564c085991f658e22d77",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "105-dynamic-imports",
+      "patch": "patches/105-dynamic-imports.patch",
+      "title": "Use importlib to defer both violations",
+      "category": "obfuscation",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Dependency and private access are present at runtime but hidden behind dynamic imports.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "254b0f3e0844de4b854b5269ec5d9fae7a1f6f95cc2d2b84b2b11ddf93b9ab84",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "106-domain-delegates-bad-helper",
+      "patch": "patches/106-domain-delegates-bad-helper.patch",
+      "title": "Move concrete dependency into a different domain module",
+      "category": "relocation",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "checkout.py no longer names ConsoleNotifier, but new domain helper imports infrastructure.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "8d4f0b1146e4c241e627720ecf24ca56dec210f8a873bbea926f76595c2458ac",
+      "changed_paths": [
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/domain/notification_bridge.py"
+      ]
+    },
+    {
+      "id": "107-domain-renamed-module",
+      "patch": "patches/107-domain-renamed-module.patch",
+      "title": "Rename domain violation module",
+      "category": "relocation",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Delete original checkout.py and move the violation unchanged to checkout_v2.py, reconnecting the consumer.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "c743ee7444212a199ee6232737b7a90c69d074812aba30ab3b8467090b5f2cc8",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/domain/checkout_v2.py"
+      ]
+    },
+    {
+      "id": "108-billing-bad-helper",
+      "patch": "patches/108-billing-bad-helper.patch",
+      "title": "Move backing-store access to another billing module",
+      "category": "relocation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "billing/service.py now calls a helper, but billing still directly reads inventory internals via helper.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "61658671bff862696f6078d428298cd3ea687f62f0d1d6e54a9a47d00e797344",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/billing/stock_access.py"
+      ]
+    },
+    {
+      "id": "109-billing-renamed-module",
+      "patch": "patches/109-billing-renamed-module.patch",
+      "title": "Rename billing implementation while retaining violation",
+      "category": "relocation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "billing/service.py removed, active charge function moved to payments.py with unchanged private read.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "18da6d52545d3d9accffd88df129997d3e528dc5cf99b0b1cf27cfccd2568d1b",
+      "changed_paths": [
+        "src/shoplab/billing/__init__.py",
+        "src/shoplab/billing/payments.py",
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "110-internal-storage-renamed",
+      "patch": "patches/110-internal-storage-renamed.patch",
+      "title": "Rename private inventory store module",
+      "category": "relocation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Internal module _store renamed to stock_engine; billing still accesses STOCK directly, but the old identifier disappears.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "c101d5d7f06df02ea9dd9809e25eec0153cc3f83692abcdb12097dcfa3c13a08",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py",
+        "src/shoplab/inventory/api.py",
+        "src/shoplab/inventory/stock_engine.py",
+        "tests/test_shop.py"
+      ]
+    },
+    {
+      "id": "111-direct-stock-import",
+      "patch": "patches/111-direct-stock-import.patch",
+      "title": "Replace private module import with direct STOCK import",
+      "category": "obfuscation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Importing STOCK directly from the private module still bypasses the inventory API.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "7323f4eb5da44f5e9c029aa85953776eb89cadc98ef3d96352e075044b0911ea",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "112-reflective-stock-access",
+      "patch": "patches/112-reflective-stock-access.patch",
+      "title": "Access private state through getattr",
+      "category": "obfuscation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "The backing store is accessed through getattr rather than a literal _store.STOCK expression.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "4ba711ac17b467ec33e5acf6aea458462999014cdf2b4457b2a0d9dde6303869",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "113-reexport-private-store",
+      "patch": "patches/113-reexport-private-store.patch",
+      "title": "Re-export private store under public-looking alias",
+      "category": "deceptive-api",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Inventory __init__ exports the internal module as a public-looking symbol; billing still inspects mutable STOCK.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "00fe592fb2013510b8411d01180aed513d37a68c34777543c9af442a457eb568",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/__init__.py"
+      ]
+    },
+    {
+      "id": "114-billing-local-wrapper",
+      "patch": "patches/114-billing-local-wrapper.patch",
+      "title": "Add billing-local facade over the private store",
+      "category": "deceptive-api",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Charge calls a billing helper rather than _store directly, but helper remains in billing and reads backing state.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "97b49d6f3410d08f6e668636d8d0bd43883aef3c9fe90d021b17dffcd240fa9a",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "115-partial-billing-fallback",
+      "patch": "patches/115-partial-billing-fallback.patch",
+      "title": "Use public API for most SKUs, private state on PEN",
+      "category": "partial",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Main path uses public API, but reachable fallback for PEN still accesses internal backing state.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "c7c245594e5f3fe8da258b831405b4ae390d51f1a92dad239853bf1d9b0ff273",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "116-partial-domain-injected-default",
+      "patch": "patches/116-partial-domain-injected-default.patch",
+      "title": "Add notifier injection but keep concrete default",
+      "category": "partial",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "New Notifier protocol parameter is optional; default still constructs ConsoleNotifier in domain.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "c00bc971f2251d5576df835d3c4ec745c2f4f72ae414d2bd4860cf818ef75886",
+      "changed_paths": [
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "117-domain-through-application-factory",
+      "patch": "patches/117-domain-through-application-factory.patch",
+      "title": "Route domain->application->infrastructure",
+      "category": "transitive",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Domain wrongly imports an application-layer factory that constructs concrete infrastructure.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "7b506cf513b110370684f3a4b0b908a9a36f0ccec77a53075e6e11da637a62e2",
+      "changed_paths": [
+        "src/shoplab/application/notifier_factory.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "118-relative-imports",
+      "patch": "patches/118-relative-imports.patch",
+      "title": "Use relative imports to conceal package names",
+      "category": "obfuscation",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "The source preserves the same direct dependencies using relative imports.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "1a36b8676dfc8bb0d0285d4f39347d87b34b4e4cb8c47547f23e161cc3dc23d4",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "119-tests-and-readme-only",
+      "patch": "patches/119-tests-and-readme-only.patch",
+      "title": "Change tests and documentation without touching violations",
+      "category": "superficial",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Add harmless unit assertion and update docs; no production imports or private accesses change.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "40dc7b4ddf51127f42f616aef2bffd451dd6a598a29cbd5ee23cd7f4f7f33c0f",
+      "changed_paths": [
+        "README.md",
+        "tests/test_shop.py"
+      ]
+    },
+    {
+      "id": "120-public-mutable-stock-leak",
+      "patch": "patches/120-public-mutable-stock-leak.patch",
+      "title": "Publish mutable private stock dictionary as an API",
+      "category": "deceptive-api",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Expose public inventory object referencing raw private STOCK; billing still touches backing dict rather than encapsulated method.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "6490f2b1ac84c522c8111347082e074e6f3f4d4a584f4d5c6247169184209f23",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/__init__.py",
+        "src/shoplab/inventory/api.py"
+      ]
+    },
+    {
+      "id": "121-domain-named-wrapper-with-direct-infra",
+      "patch": "patches/121-domain-named-wrapper-with-direct-infra.patch",
+      "title": "Introduce interface but bridge still instantiates implementation",
+      "category": "partial",
+      "focus": "domain",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Domain code defines a Notifier-typed parameter yet calls a concrete infrastructure client on active path.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "570de2cedf6eeb4b83f1a9ad9521b85396c6e27ec0881e356ddffc6a514cb248",
+      "changed_paths": [
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "122-private-access-via-importlib-dunder",
+      "patch": "patches/122-private-access-via-importlib-dunder.patch",
+      "title": "Import private inventory state with __import__",
+      "category": "obfuscation",
+      "focus": "billing",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "The private STOCK object is retrieved using __import__ with a string module name.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "42eb54e63df8ae36ea1f5db188d617591e82aa8063730d43e19401e4e825beda",
+      "changed_paths": [
+        "src/shoplab/billing/service.py"
+      ]
+    },
+    {
+      "id": "201-fix-domain-but-alias-billing",
+      "patch": "patches/201-fix-domain-but-alias-billing.patch",
+      "title": "Fix domain, obfuscate billing",
+      "category": "mixed",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "First finding resolved; both billing findings persist through alias access.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "fe231f17c8add4629d08e474b4fbb5ef62b44138fd98ba8c3243823cd675ab7d",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "202-fix-billing-but-dynamic-domain",
+      "patch": "patches/202-fix-billing-but-dynamic-domain.patch",
+      "title": "Fix billing, retain dynamic domain dependency",
+      "category": "mixed",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Billing violation fixed, but domain still imports infrastructure dynamically.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "a031cd7f3bb54355853346de61b15c734f2bc0cde678a7fd1f71b85b5b47646c",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "203-apparent-fix-all-billing-fallback",
+      "patch": "patches/203-apparent-fix-all-billing-fallback.patch",
+      "title": "Fix domain and billing main path, leave PEN fallback",
+      "category": "mixed",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "resolved",
+        "candidate:billing-inventory-store-access": "persists",
+        "candidate:inventory-encapsulation-bypass": "persists"
+      },
+      "rationale": "Domain clean; billing public API for BOOK but direct private fallback for PEN.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "cdb70a591577d766cf2925e6d0cbbc1075a8b9f6f3063651c50a1286d499627a",
+      "changed_paths": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    },
+    {
+      "id": "204-apparent-fix-all-domain-default",
+      "patch": "patches/204-apparent-fix-all-domain-default.patch",
+      "title": "Fix billing and add optional domain injection",
+      "category": "mixed",
+      "focus": "both",
+      "expected": {
+        "candidate:domain_infrastructure_dependency": "persists",
+        "candidate:billing-inventory-store-access": "resolved",
+        "candidate:inventory-encapsulation-bypass": "resolved"
+      },
+      "rationale": "Billing clean; domain accepts injection but retains a concrete default.",
+      "verification": {
+        "git_apply_check": true,
+        "git_apply": true,
+        "python_ast": true,
+        "unittest_passed": true,
+        "app_passed": true
+      },
+      "patch_sha256": "bd6c451552f6d1c56f65b44620ab6fc14fba80d1da286f1b4febb9527f148129",
+      "changed_paths": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/checkout.py"
+      ]
+    }
+  ]
+}

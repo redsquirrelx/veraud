@@ -1,0 +1,9 @@
+flowchart TB
+    Transport[Presentation] --> UseCases[Application use cases]
+    UseCases --> Core[Domain]
+    UseCases --> Ports[Application ports]
+    Ports --> Core
+    Adapters[Infrastructure adapters] --> Ports
+    Adapters --> Core
+    Bootstrap[Bootstrap composition root] -. instantiate .-> Adapters
+    Bootstrap -. inject .-> UseCases
