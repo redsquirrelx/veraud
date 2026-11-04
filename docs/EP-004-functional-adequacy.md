@@ -196,11 +196,16 @@ Test file: `agent-server/tests/test_functional_adequacy_repository_adapter.py`.
 The local repository adapter is implemented within EP-004 and reuses VERAUD's shared repository analysis service.
 
 The project frontend offers **Adecuación funcional** alongside Maintainability and
-Security. Select it independently or combine attributes. Leave requirements empty
-for static exploration without functional model configuration. To evaluate explicit
-requirements, configure its model and credential under Settings → Audit, then enter
-1–100 requirements (one per line). The UI assigns stable request-local IDs
-`REQ-001`, `REQ-002`, etc.
+Security. The visible selection is **Functional adequacy · exploratory**, independently
+or combined with other attributes. It always submits an empty requirements list and
+requires no functional model configuration. Only active-time, wall-time and cancellation
+grace controls are shown for this mode, including in Settings → Audit.
+
+**Functional adequacy · requirements-based (LLM)** is retained as a hidden UI variant.
+Its implementation, model assignments, operating settings and API support remain
+available; only its frontend editor and model/credential controls are hidden. Saving
+exploratory time limits preserves all saved hidden LLM settings. Existing audit history,
+reports and evidence remain accessible and are not relabeled as exploratory.
 
 `POST /api/projects/:id/audits` accepts `functional_adequacy` in `attributes` and
 optionally accepts `functional_requirements: [{ requirement_id, description }]`.
@@ -232,10 +237,50 @@ and database schema remain those of `main`. A domain-only adapter opens a standa
 exploration, then reuses the existing dispatch, recovery and cancellation lifecycle.
 Combined audits retain their configured root and omit the unused functional model.
 
+### Shared operating configuration
+
+Both modes retain the existing quality-audit endpoint and configuration flow.
+Saved category settings and per-run `attribute_options.functional_adequacy` accept:
+
+- `agent_defaults`: the existing context, output-token, personal-token and model-call
+  controls. The functional drawers omit the tool-call control because this agent
+  reads a retained snapshot rather than calling repository tools. Legacy shared
+  patches remain accepted for compatibility with combined audits.
+- `functional_config`: `embedding_model`, `retrieval_top_k`, `timeout_seconds`,
+  `max_wall_time_seconds`, `cancellation_grace_seconds`, `provider_rate_limits`
+  (RPM/TPM), and the shared provider request timeout, retry count, spacing,
+  backoff, per-recovery wait and cumulative recovery-wait controls.
+- `audit_budget`: the existing audit-wide token budget, separate from the
+  attribute's personal allowance.
+
+All added controls derive their types, defaults and validation from the owning
+shared configuration classes; no second parameter/default catalog is maintained.
+An omitted quota retains its effective value; an explicit `null` disables only
+that quota and survives validation, persistence and per-run merging. An explicit
+functional active-time cap cannot be widened by the root transport timeout.
+
+Time limits apply to both modes. Provider, token, context and model-call controls
+govern only requirements-based model work; exploration still requires no model,
+credentials or SBERT. Structured-output repair and tool controls are not added to
+`functional_config`: the graph does not implement those mechanisms. Static
+extraction constants and default classifications remain unchanged. The existing
+process-wide `unlimited_token_budget` policy is also unchanged; finite cumulative
+token caps are enforced only when that policy enables them.
+
+Exploratory capabilities retain the repository analyzer's detection categories:
+`declared`, `observed` and `inferred`. A declaration is not promoted to an observed
+implementation or proof of functional correctness. Contract validation failures
+log only known schema/field names and validation types to the agent console;
+rejected values and repository contents are excluded, and public errors remain
+subject to the existing shared privacy policy.
+
 ### Integration regression checks
 
 - `test_functional_adequacy_characterization.py`: complete output fingerprints captured
   from pre-merge commit `ad4e0b3`, with controlled retrieval and provider responses.
+- `test_functional_audit_configuration.py`: effective runtime schemas, partial/null
+  quota merging, actual model-call/context/token admission, provider timeout and
+  retries, and time limits in both modes.
 - `test_functional_quality_audit.py`: exact direct/audit output equality, one shared
   snapshot, three exploratory subattributes, evidence links, invocation phases,
   JSON/Word reports, no functional model calls and partial status without source.
