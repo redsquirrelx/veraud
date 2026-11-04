@@ -3,6 +3,7 @@
 from .agent import FindingResolutionAgent
 from .config import FindingResolutionConfig
 from .schemas import (
+    FindingEvaluationTurn,
     FindingInvestigation,
     FindingInvestigationTurn,
     FindingResolutionRequest,
@@ -13,6 +14,7 @@ from .schemas import (
 )
 
 __all__ = [
+    "FindingEvaluationTurn",
     "FindingInvestigation",
     "FindingInvestigationTurn",
     "FindingResolutionAgent",

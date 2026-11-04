@@ -18,7 +18,7 @@ class Investigator(PlanningModel):
         super().__init__(lambda context: self.plan(context) if "plan" not in context else decide(context))
 
     async def ainvoke(self, messages, **kwargs):
-        if "plan" in json.loads(messages[1].content):
+        if json.loads(messages[1].content).get("node") == "investigate":
             assert any("action=tools requests" in message.content for message in messages if message.type == "human")
         return await super().ainvoke(messages, **kwargs)
 
@@ -45,9 +45,9 @@ def test_direct_close_records_a_limitation_without_unnecessary_queries(finding, 
     state, model = run(finding, tools, lambda context: close(context, limitations=["Current code could not be inspected."]))
     record = state["investigations"][0]
     assert record.stop_reason == "investigation_limited" and not record.evidence and not record.tool_results
-    assert len(model.contexts) == 2 and state["consumption"].tool_calls == 0
+    assert len(model.contexts) == 3 and state["consumption"].tool_calls == 0
     assert record.finding == finding and record.plan == state["plans"][0]
-    assert not hasattr(record, "status") and "results" not in state
+    assert not hasattr(record, "status") and state["results"][0].status == "inconclusive"
 
 
 @pytest.mark.parametrize("native", [False, True], ids=["json", "structured"])
@@ -80,8 +80,8 @@ def test_full_investigation_flow_and_visible_evidence(finding, tools, caplog, na
             return [update async for update in execution.graph.astream(execution.initial_state(), stream_mode="updates")]
     updates = asyncio.run(stream())
     nodes = [next(iter(update)) for update in updates]
-    assert nodes == ["read_finding", "plan_verification", "investigate", "tools", "investigate", "tools", "investigate", "read_finding"]
-    record = updates[-2]["investigate"]["investigations"][0]
+    assert nodes == ["read_finding", "plan_verification", "investigate", "tools", "investigate", "tools", "investigate", "evaluate_resolution", "read_finding"]
+    record = updates[-3]["investigate"]["investigations"][0]
     assert record.stop_reason == "evidence_collected" and record.evidence and record.tool_results
     assert record.finding == finding and record.plan.finding_id == finding.id
     assert record.consumption.model_calls == 4 and record.consumption.tool_calls == 2 and record.consumption.accounted_tokens == 800
@@ -94,7 +94,8 @@ def test_full_investigation_flow_and_visible_evidence(finding, tools, caplog, na
         if item.getMessage().startswith("finding_resolution_trace ")]
     assert all(event["finding_id"] == finding.id for event in events)
     assert [event["transition"] for event in events].count("tools->investigate") == 2
-    assert events[-1]["transition"] == "investigate->close" and set(events[-1]["evidence_ids"]) == ids
+    closing = next(event for event in events if event["transition"] == "investigate->close")
+    assert set(closing["evidence_ids"]) == ids
     print("\n" + " -> ".join(nodes))
     for reference in record.evidence:
         print(f"  {reference.id}: {reference.path}:{reference.start_line}-{reference.end_line} ({reference.kind})")
@@ -193,8 +194,8 @@ def test_limits_retain_collected_evidence_without_infinite_loops(finding, tools,
     record = state["investigations"][0]
     assert record.evidence and record.limitations and record.consumption.tool_calls == 1
     assert record.stop_reason == {"iterations": "investigation_iteration_limit", "tools": "tool_call_limit",
-        "calls": "model_call_limit", "no_progress": "no_investigation_progress"}[limit]
-    assert record.consumption.model_calls <= 4
+        "calls": "evaluation_call_reserve", "no_progress": "no_investigation_progress"}[limit]
+    assert record.consumption.model_calls <= (4 if limit == "calls" else 5)
 
 
 def test_token_admission_after_retrieval_preserves_evidence(finding, tools, monkeypatch, finite_token_budget):

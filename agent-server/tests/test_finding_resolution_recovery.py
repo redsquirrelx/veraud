@@ -27,7 +27,8 @@ class Model:
     async def ainvoke(self, messages, **kwargs):
         context = json.loads(messages[1].content)
         self.contexts.append(context)
-        value = PlanningModel.plan(context) if "plan" not in context else self.decide(context)
+        value = (PlanningModel.plan(context) if "plan" not in context else
+            PlanningModel.evaluation(context) if context.get("node") == "evaluate_resolution" else self.decide(context))
         return AIMessage(content=value if isinstance(value, str) else json.dumps(value),
             usage_metadata={"input_tokens": 100, "output_tokens": 100, "total_tokens": 200})
 
@@ -40,10 +41,10 @@ def request_for(finding, tools):
 @pytest.mark.parametrize("invalid", ["json", "citation"])
 def test_middle_finding_exhausts_retries_but_later_finding_is_processed(finding, tools, caplog, invalid):
     caplog.set_level("INFO", logger="server.finding-resolution")
-    # This scenario needs ten attempts (including two invalid responses). Both
+    # This scenario needs thirteen attempts, including evaluations and invalid responses. Both
     # test-only envelopes allow them; the separate limit test deliberately does not.
     tools.context = RepositoryContext(tools.context.snapshot, tools.context.input.model_copy(update={
-        "budget": tools.context.input.budget.model_copy(update={"max_model_calls": 12})}))
+        "budget": tools.context.input.budget.model_copy(update={"max_model_calls": 16})}))
     def decide(context):
         if not context["tool_results"]:
             assert context["current_evidence"] == [] and context["history"] == []
@@ -54,22 +55,22 @@ def test_middle_finding_exhausts_retries_but_later_finding_is_processed(finding,
     request = request_for(finding, tools)
     before = request.model_dump()
     model = Model(decide)
-    state = asyncio.run(planning_agent(model, max_schema_retries=1, max_model_calls=12).run(request, tools=tools))
+    state = asyncio.run(planning_agent(model, max_schema_retries=1, max_model_calls=16).run(request, tools=tools))
     assert [item.finding_id for item in state["investigations"]] == ["first", "middle", "last"]
     first, failed, last = state["investigations"]
     assert first.stop_reason == last.stop_reason == "evidence_collected"
     assert failed.stop_reason == "model_or_schema_error" and failed.evidence and failed.tool_results
     assert failed.plan == state["plans"][1] and failed.finding == request.findings[1]
-    assert failed.consumption.model_calls == 4 and failed.consumption.tool_calls == 1
+    assert failed.consumption.model_calls == 5 and failed.consumption.tool_calls == 1
     assert len([item for item in failed.limitations if "response_schema attempt" in item]) == 2
     assert "invented" not in {reference.id for reference in failed.evidence}
     assert {reference.id for reference in failed.evidence}.isdisjoint(reference.id for reference in last.evidence)
     assert [turn.action for turn in failed.history] == ["tools"]
     assert state["termination_reason"] == "investigations_completed_with_errors" and state["next_finding"] == 3
-    assert state["consumption"].model_calls == 10 and state["consumption"].tool_calls == 3
+    assert state["consumption"].model_calls == 13 and state["consumption"].tool_calls == 3
     assert sum(item.consumption.accounted_tokens for item in state["investigations"]) == state["consumption"].accounted_tokens
     assert state["limitations"] and request.model_dump() == before
-    assert any('"finding_id": "middle"' in item.getMessage() and '"transition": "investigate->read_finding"' in item.getMessage()
+    assert any('"finding_id": "middle"' in item.getMessage() and '"transition": "investigate->evaluate_resolution"' in item.getMessage()
         for item in caplog.records)
 
 
@@ -79,10 +80,10 @@ def test_call_limit_at_invalid_response_does_not_start_the_next_finding(finding,
             return ask(context)
         return "bad JSON" if context["finding"]["id"] == "middle" else close(context)
     model = Model(decide)
-    state = asyncio.run(planning_agent(model, max_schema_retries=1, max_model_calls=7).run(request_for(finding, tools), tools=tools))
+    state = asyncio.run(planning_agent(model, max_schema_retries=1, max_model_calls=10).run(request_for(finding, tools), tools=tools))
     assert [item.finding_id for item in state["investigations"]] == ["first", "middle"]
     assert state["investigations"][-1].evidence and state["investigations"][-1].stop_reason == "model_or_schema_error"
-    assert state["termination_reason"] == "model_call_limit" and state["consumption"].model_calls == 7
+    assert state["termination_reason"] == "model_call_limit" and state["consumption"].model_calls == 9
     assert all(context["finding"]["id"] != "last" for context in model.contexts)
 
 

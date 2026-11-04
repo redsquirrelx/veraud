@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from server.agents.finding_resolution import FindingInvestigation, VerificationPlan
+from server.agents.finding_resolution import (
+    FindingInvestigation,
+    FindingVerificationResult,
+    VerificationPlan,
+)
 from server.contracts.audit import Consumption
 from server.runtimes.repository.tools import RepositoryToolResponse
 
@@ -56,7 +60,7 @@ def test_readable_plan_shows_checks_criteria_and_pending_findings(runner):
     assert "Planes generados: 1" in text and "Limite de llamadas alcanzado" in text
     assert findings[0].title in text and findings[0].description in text
     assert "Comprobacion 1:" in text and "get_source_excerpt(path='service.py')" in text
-    assert "Persiste si:" in text and "Se considera resuelto si:" in text
+    assert "Persiste si [persists_if]:" in text and "Se considera resuelto si [resolved_if]:" in text
     assert "No source has been read yet." in text and "Budget exhausted." in text
     assert text.count("Sin plan generado") == len(findings) - 1
     assert "consultas NO se han ejecutado" in text and "Tokens contabilizados: 200" in text
@@ -88,7 +92,7 @@ def test_readable_investigation_shows_collected_source_not_a_resolution(runner):
     assert record.model_dump(mode="json")["finding"] == original.model_dump(mode="json")
     text = runner.render_verification_plan(request, {"plans": [plan], "investigations": [record],
         "termination_reason": "investigations_completed", "limitations": [], "consumption": record.consumption})
-    assert "INVESTIGACION Y EVIDENCIAS RECOPILADAS" in text and "def current(): return 1" in text
+    assert "INVESTIGACION Y EVIDENCIAS RECOPILADAS" in text and "def current(): return 1" not in text
     assert "current-source" in text and "current-call" in text and "600 tokens" in text
     assert "no hay decisiones de resolucion" in text and "consultas NO se han ejecutado" not in text
 
@@ -115,3 +119,32 @@ def test_readable_errors_identify_the_failed_phase(runner, phase):
     assert f"Error de {other}:" not in text
     if phase == "investigacion":
         assert "Hallazgos procesados con errores de investigacion" in text
+
+
+def test_readable_output_includes_structured_diagnostics_and_global_summary(runner):
+    original = runner.load_findings(runner.DEFAULT_FINDINGS)[0]
+    request = runner.FindingResolutionRequest(repository_path=str(runner.DEFAULT_REPOSITORY), findings=[original])
+    diagnostic = {"finding_id": original.id, "node": "plan_verification", "attempt": 1,
+        "category": "tool_arguments", "error_type": "ValidationError", "scope": "finding",
+        "issues": [{"field": "checks.0.queries.0.arguments.start_line", "rule": "greater_than_equal", "constraints": {"ge": 1}}]}
+    state = {"plans": [], "investigations": [], "finding": original, "termination_reason": "model_or_schema_error",
+        "limitations": ["plan_verification: response_schema attempt 1/1: ValueError (response unavailable or invalid)"],
+        "consumption": Consumption()}
+    capture = runner.DiagnosticCapture()
+    record = runner.logging.makeLogRecord({"finding_resolution_diagnostic": diagnostic})
+    capture.emit(record)
+    text = runner.render_verification_plan(request, state, capture.diagnostics)
+    assert "checks.0.queries.0.arguments.start_line" in text and "greater_than_equal" in text and "'ge': 1" in text
+    assert "RESUMEN DE EJECUCION" in text and "Interrupcion global: model_or_schema_error" in text
+    assert "response unavailable or invalid" not in text
+
+
+def test_readable_output_displays_individual_evaluation(runner):
+    original = runner.load_findings(runner.DEFAULT_FINDINGS)[0]
+    request = runner.FindingResolutionRequest(repository_path=str(runner.DEFAULT_REPOSITORY), findings=[original])
+    result = FindingVerificationResult(finding_id=original.id, status="inconclusive",
+        reason="Evaluation could not proceed within the available token budget.", evidence_ids=[])
+    text = runner.render_verification_plan(request, {"plans": [], "investigations": [], "results": [result],
+        "finding": original, "termination_reason": "token_limit", "limitations": [], "consumption": Consumption()})
+    assert "Evaluacion: inconclusive" in text and result.reason in text and "Inconclusive: 1" in text
+    assert "evaluate_resolution no implementado" not in text and "Interrupcion global: token_limit" in text

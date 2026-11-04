@@ -1,4 +1,4 @@
-"""The scaffold retains findings without claiming to have resolved them."""
+"""Input/output contracts and planning/investigation protocol regressions."""
 
 import asyncio
 import json
@@ -15,7 +15,7 @@ from server.agents.finding_resolution import (
 )
 from server.contracts.audit import Criterion, EvidenceReference, Finding
 from server.runtimes.repository.context import RepositoryContext
-from server.runtimes.repository.schemas import RepositoryInput
+from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput
 from server.runtimes.repository.tools import RepositoryToolset
 from server.services.repository_analysis import RepositoryAnalysisService
 
@@ -46,11 +46,19 @@ class PlanningModel:
             "summary": "This planning test does not inspect source.",
             "limitations": ["Current source was not inspected by this test."]}
 
+    @staticmethod
+    def evaluation(context):
+        return {"finding_id": context["finding"]["id"], "action": "record", "result": {
+            "finding_id": context["finding"]["id"], "status": "inconclusive",
+            "reason": "This protocol test does not adjudicate the finding.",
+            "evidence_ids": [item["id"] for item in context["current_evidence"]]}}
+
     async def ainvoke(self, messages, **kwargs):
         assert len(messages) == 3  # No conversation/history from another finding.
         context = json.loads(messages[1].content)
         self.contexts.append(context)
-        return AIMessage(content=json.dumps(self.respond(context)),
+        value = self.evaluation(context) if context.get("node") == "evaluate_resolution" else self.respond(context)
+        return AIMessage(content=json.dumps(value),
             usage_metadata={"input_tokens": 100, "output_tokens": 100, "total_tokens": 200})
 
 
@@ -58,13 +66,14 @@ class PlanningModel:
 def tools(tmp_path):
     (tmp_path / "service.py").write_text("def use(): return 1\n", encoding="utf-8")
     snapshot = RepositoryAnalysisService().analyze_sync(tmp_path)
-    return RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(snapshot_hash=snapshot.repository.snapshot_hash)),
+    return RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(snapshot_hash=snapshot.repository.snapshot_hash,
+        budget=ExecutionBudget(max_model_calls=32))),
         workspace_root=tmp_path.parent)
 
 
 def planning_agent(model, **overrides):
-    return FindingResolutionAgent(model, FindingResolutionConfig(provider_request_interval_seconds=0,
-        provider_rate_limits={"requests_per_minute": None, "tokens_per_minute": None}, **overrides))
+    return FindingResolutionAgent(model, FindingResolutionConfig(**({"provider_request_interval_seconds": 0,
+        "provider_rate_limits": {"requests_per_minute": None, "tokens_per_minute": None}, "max_model_calls": 32} | overrides)))
 
 
 @pytest.fixture
@@ -91,13 +100,13 @@ def test_read_finding_and_plan_verification(finding, tools):
         with execution.timing.stage("planning-test"):
             return [update async for update in execution.graph.astream(execution.initial_state(), stream_mode="updates")]
     updates = asyncio.run(stream())
-    assert [next(iter(update)) for update in updates] == ["read_finding", "plan_verification", "investigate", "read_finding"]
+    assert [next(iter(update)) for update in updates] == ["read_finding", "plan_verification", "investigate", "evaluate_resolution", "read_finding"]
     plan = updates[1]["plan_verification"]["plans"][0]
     assert plan.finding_id == finding.id and plan.checks[0].queries[0].name == "get_source_excerpt"
     assert model.contexts[0]["finding"] == finding.model_dump(mode="json")
     assert request.model_dump() == before
-    assert execution.calls == 2 and execution.tokens == 400 and tools.budget_usage.tool_calls == 0
-    assert set(execution.graph.get_graph().nodes) == {"__start__", "read_finding", "plan_verification", "investigate", "tools", "__end__"}
+    assert execution.calls == 3 and execution.tokens == 600 and tools.budget_usage.tool_calls == 0
+    assert set(execution.graph.get_graph().nodes) == {"__start__", "read_finding", "plan_verification", "investigate", "tools", "evaluate_resolution", "__end__"}
     print("\nread_finding -> plan_verification\n" + json.dumps(plan.model_dump(mode="json"), indent=2))
 
 
@@ -123,7 +132,7 @@ def test_findings_have_independent_contexts_and_leave_originals_unchanged(findin
     assert planning_contexts[1]["affected_paths"] == [{"path": "missing.py", "in_current_snapshot": False}]
     assert all(context["historical_evidence_only"] for context in model.contexts)
     assert state["finding"] is None and state["finding_context"] == {} and state["messages"] == []
-    assert state["termination_reason"] == "investigations_completed" and state["consumption"].accounted_tokens == 800
+    assert state["termination_reason"] == "investigations_completed" and state["consumption"].accounted_tokens == 1200
     assert request.model_dump() == before and tools.retrieved_evidence == ()
 
 
@@ -140,7 +149,8 @@ def test_invalid_plans_are_not_retained(finding, tools, invalid):
         return plan
     state = asyncio.run(planning_agent(PlanningModel(respond), max_schema_retries=0).run(
         FindingResolutionRequest(repository_path=tools.accessible_snapshot.repository.root_path, findings=[finding]), tools=tools))
-    assert state["plans"] == [] and state["next_finding"] == 0
+    assert state["plans"] == [] and state["next_finding"] == 1
+    assert state["results"][0].status == "inconclusive"
     assert state["termination_reason"] == "model_or_schema_error" and state["limitations"]
     assert state["consumption"].model_calls == 1 and tools.budget_usage.tool_calls == 0
 
@@ -156,8 +166,8 @@ def test_shared_call_budget_retains_completed_plans(finding, tools):
     request = FindingResolutionRequest(repository_path=tools.accessible_snapshot.repository.root_path,
         findings=[finding.model_copy(update={"id": f"f{index}"}) for index in range(5)])
     state = asyncio.run(planning_agent(PlanningModel(), max_model_calls=4).run(request, tools=tools))
-    assert len(state["plans"]) == len(state["investigations"]) == 2
-    assert state["consumption"].model_calls == 4
+    assert len(state["plans"]) == len(state["investigations"]) == 1
+    assert state["consumption"].model_calls <= 4
     assert state["next_finding"] == 2 and state["termination_reason"] == "model_call_limit"
 
 
@@ -172,7 +182,7 @@ def test_native_structured_output_uses_the_same_plan_contract(finding, tools):
             return Structured()
     state = asyncio.run(planning_agent(StructuredModel()).run(FindingResolutionRequest(
         repository_path=tools.accessible_snapshot.repository.root_path, findings=[finding]), tools=tools))
-    assert state["plans"][0].finding_id == finding.id and state["consumption"].model_calls == 2
+    assert state["plans"][0].finding_id == finding.id and state["consumption"].model_calls == 3
 
 
 def test_input_contract_has_exactly_two_required_fields_and_reuses_finding():

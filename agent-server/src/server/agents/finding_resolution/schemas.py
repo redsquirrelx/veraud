@@ -59,6 +59,13 @@ class FindingVerificationResult(Contract):
     evidence_ids: list[str]
 
 
+class FindingEvaluationTurn(Contract):
+    finding_id: str = Field(min_length=1)
+    action: Literal["record", "investigate"]
+    result: FindingVerificationResult | None = None
+    missing_checks: list[str] = Field(default_factory=list, max_length=8)
+
+
 class FindingResolutionResult(Contract):
     results: list[FindingVerificationResult]
 

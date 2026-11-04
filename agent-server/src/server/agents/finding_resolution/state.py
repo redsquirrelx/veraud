@@ -6,7 +6,12 @@ from server.contracts.audit import Consumption, DeferredProviderStage, Finding
 from server.runtimes.repository.schemas import RepositoryToolCall
 from server.runtimes.repository.tools import RepositoryToolResponse
 
-from .schemas import FindingInvestigation, FindingInvestigationTurn, VerificationPlan
+from .schemas import (
+    FindingInvestigation,
+    FindingInvestigationTurn,
+    FindingVerificationResult,
+    VerificationPlan,
+)
 
 
 class FindingResolutionState(TypedDict):
@@ -16,6 +21,11 @@ class FindingResolutionState(TypedDict):
     plans: list[VerificationPlan]
     plan: VerificationPlan | None
     investigations: list[FindingInvestigation]
+    investigation: FindingInvestigation | None
+    results: list[FindingVerificationResult]
+    evaluation_returns: int
+    evaluation_return: bool
+    missing_checks: list[str]
     query_cache: dict[str, RepositoryToolResponse]
     pending_queries: list[RepositoryToolCall]
     history: list[FindingInvestigationTurn]

@@ -1,5 +1,6 @@
-"""Investigation entry point; final resolution is intentionally not implemented."""
+"""Investigation and evaluation entry point; audit finalization remains separate."""
 
+import asyncio
 from pathlib import Path
 
 from .config import FindingResolutionConfig
@@ -20,13 +21,19 @@ class FindingResolutionAgent:
         self.config = config or FindingResolutionConfig()
 
     async def run(self, request: FindingResolutionRequest, *, tools) -> FindingResolutionState:
-        """Return collected investigations, not a final FindingResolutionResult."""
+        """Return investigations and individual evaluations, without audit finalization."""
         if Path(request.repository_path).resolve() != Path(tools.accessible_snapshot.repository.root_path).resolve():
             raise ValueError("The toolset must belong to the requested repository_path.")
         identifiers = [finding.id for finding in request.findings]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("Original finding IDs must be unique.")
         execution = self.execution_type(self.model, self.config, tools, request)
-        with execution.timing.stage("finding_resolution_investigation"):
-            return await execution.graph.ainvoke(execution.initial_state(), {
-                "recursion_limit": (2 * self.config.max_iterations + 4) * len(request.findings) + 4})
+        try:
+            with execution.timing.stage("finding_resolution_investigation"):
+                state = await execution.graph.ainvoke(execution.initial_state(), {
+                    "recursion_limit": (2 * self.config.max_iterations + 2 * self.config.max_evaluation_returns + 6) * len(request.findings) + 4})
+        except BaseException as error:
+            execution.log_summary(interrupted="cancelled" if isinstance(error, asyncio.CancelledError) else "execution_failed")
+            raise
+        execution.log_summary(state)
+        return state

@@ -1,4 +1,4 @@
-"""Run planning and investigation; defaults to fixture_A and finding_resolution/out.json.
+"""Run planning, investigation and evaluation; defaults to fixture_A and finding_resolution/out.json.
 
     uv run python src/test-agents/run_finding_resolution.py
     uv run python src/test-agents/run_finding_resolution.py REPOSITORY --findings FILE
@@ -10,6 +10,7 @@ Planning and investigation use the configured LLM and may incur provider costs.
 import argparse
 import asyncio
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,9 +22,15 @@ from server.agents.finding_resolution import (
     FindingResolutionConfig,
     FindingResolutionRequest,
 )
+from server.agents.finding_resolution.diagnostics import (
+    failure_text,
+    safe_arguments,
+    safe_text,
+)
 from server.agents.maintainability.modularity.architecture_boundary.schemas import (
     BoundaryFinding,
 )
+from server.config.logs import get_logger
 from server.contracts.audit import Finding
 from server.runtimes.repository.context import RepositoryContext
 from server.runtimes.repository.model_runtime import close_model_clients
@@ -46,28 +53,63 @@ def load_findings(path: str | Path) -> list[Finding]:
     return TypeAdapter(list[Finding | BoundaryFinding]).validate_python(rows)
 
 
-def render_verification_plan(request, state):
+class DiagnosticCapture(logging.Handler):
+    """CLI-only capture: no diagnostic fields are added to agent contracts/state."""
+
+    def __init__(self):
+        super().__init__()
+        self.diagnostics = []
+        self.traces = []
+
+    def emit(self, record):
+        if hasattr(record, "finding_resolution_diagnostic"):
+            self.diagnostics.append(record.finding_resolution_diagnostic)
+        if hasattr(record, "finding_resolution_trace"):
+            self.traces.append(record.finding_resolution_trace)
+
+
+def render_verification_plan(request, state, diagnostics=(), traces=()):
     """Present plans and collected evidence without implying a resolution decision."""
     statuses = {"planning_completed": "Planificacion completada", "no_findings": "Sin hallazgos recibidos",
-        "investigations_completed": "Recopilacion de evidencias completada",
-        "investigations_completed_with_errors": "Hallazgos procesados con errores de investigacion",
+        "investigations_completed": "Investigacion y evaluacion completadas",
+        "investigations_completed_with_errors": "Hallazgos procesados con errores de investigacion o evaluacion",
         "model_call_limit": "Limite de llamadas alcanzado", "token_limit": "Limite de tokens alcanzado",
         "time_limit": "Tiempo disponible agotado", "model_or_schema_error": "Error del modelo o de validacion; consulte la fase afectada"}
     plans = {plan.finding_id: plan for plan in state["plans"]}
     investigations = {item.finding_id: item for item in state.get("investigations", [])}
+    results = {item.finding_id: item for item in state.get("results", [])}
     usage = state["consumption"]
     lines = ["PLAN DE VERIFICACION DE HALLAZGOS", "=" * 50,
         f"Repositorio: {request.repository_path}",
         f"Estado: {statuses.get(state['termination_reason'], state['termination_reason'])}",
         f"Hallazgos recibidos: {len(request.findings)} | Planes generados: {len(plans)}",
-        ("Solo recopilacion de evidencias: no hay decisiones de resolucion (evaluate_resolution no implementado)."
+        ("Evaluaciones individuales registradas; no se ha ejecutado una finalizacion de auditoria."
+            if results else "Solo recopilacion de evidencias: no hay decisiones de resolucion."
             if investigations else "Las consultas NO se han ejecutado y no hay decisiones de resolucion.")]
     if not request.findings:
         lines.append("\nNo hay hallazgos que planificar. Esto no demuestra ausencia de problemas.")
     for number, finding in enumerate(request.findings, 1):
-        lines.extend(["", f"{number}. {finding.title}", f"   ID: {finding.id}",
-            f"   Problema original: {finding.description}",
+        errors = [event for event in diagnostics if event["finding_id"] == finding.id]
+        lines.extend(["", f"{number}. {safe_text(finding.title)}", f"   ID: {finding.id}",
+            f"   Problema original: {safe_text(finding.description)}",
             f"   Elementos afectados: {', '.join(finding.components)}"])
+        result = results.get(finding.id)
+        if result:
+            lines.extend([f"   Evaluacion: {result.status}", f"   Justificacion: {safe_text(result.reason)}",
+                f"   Evidencias citadas: {', '.join(result.evidence_ids) or 'ninguna'}"])
+        for event in errors:
+            lines.append(f"   Diagnostico [{event['node']} / {event['category']} / intento {event['attempt']}]:")
+            if event.get("error_type"):
+                lines.append(f"     Tipo: {event['error_type']}")
+            if event.get("http_status") is not None:
+                lines.append(f"     HTTP: {event['http_status']} {event.get('provider_facts', '')}")
+            if event.get("generation_outcome"):
+                lines.append(f"     Generacion: {event['generation_outcome']}")
+            if event.get("safe_detail"):
+                lines.append(f"     Detalle: {event['safe_detail']}")
+            for issue in event["issues"]:
+                lines.append(f"     Campo: {issue['field']} | Regla: {issue['rule']}"
+                    + (f" | Restriccion: {issue['constraints']}" if issue.get("constraints") else ""))
         plan = plans.get(finding.id)
         if plan is None:
             current = state.get("finding")
@@ -77,20 +119,22 @@ def render_verification_plan(request, state):
                 lines.append("   Sin plan generado; este hallazgo queda pendiente.")
             continue
         for index, check in enumerate(plan.checks, 1):
-            lines.extend(["", f"   Comprobacion {index}: {check.question}", "     Evidencias que se necesitan:"])
-            lines.extend(f"       - {item}" for item in check.evidence_needed)
+            lines.extend(["", f"   Comprobacion {index}: {safe_text(check.question)}", "     Evidencias que se necesitan:"])
+            lines.extend(f"       - {safe_text(item)}" for item in check.evidence_needed)
             lines.append("     Consultas propuestas en el plan:")
             for query in check.queries:
-                arguments = ", ".join(f"{key}={value!r}" for key, value in query.arguments.items())
+                arguments = ", ".join(f"{key}={value!r}" for key, value in safe_arguments(query.arguments).items())
                 lines.append(f"       - {query.name}({arguments})")
-            lines.extend([f"     Persiste si: {check.persists_if}", f"     Se considera resuelto si: {check.resolved_if}"])
+            lines.extend([f"     Persiste si [persists_if]: {safe_text(check.persists_if)}",
+                f"     Se considera resuelto si [resolved_if]: {safe_text(check.resolved_if)}",
+                "     Criterios propuestos: la evaluacion debe contrastarlos con el problema original."])
         if plan.limitations:
             lines.append("   Limitaciones de este plan:")
-            lines.extend(f"     - {item}" for item in plan.limitations)
+            lines.extend(f"     - {safe_text(item)}" for item in plan.limitations)
         investigation = investigations.get(finding.id)
         if investigation:
             lines.extend(["", "   INVESTIGACION Y EVIDENCIAS RECOPILADAS",
-                f"     Cierre de recopilacion: {investigation.stop_reason}", f"     Resumen: {investigation.summary}"])
+                f"     Cierre de recopilacion: {investigation.stop_reason}", f"     Resumen: {safe_text(investigation.summary)}"])
             if investigation.stop_reason == "model_or_schema_error":
                 lines.append("     Error de investigacion: no se obtuvo una respuesta valida; consulte las limitaciones. Evidencias previas conservadas.")
             if not investigation.evidence:
@@ -105,20 +149,25 @@ def render_verification_plan(request, state):
                     lines.append(f"       Simbolos: {', '.join(reference.symbol_ids)}")
             for response in investigation.tool_results:
                 lines.append(f"     Herramienta: {response.tool_name} | {response.status} | {response.tool_call_id}")
+                query = next((event for event in traces if event.get("transition") == "tool_result"
+                    and event.get("tool_call_id") == response.tool_call_id), None)
+                if query:
+                    lines.append("       Argumentos ejecutados: " + json.dumps(query["arguments"]))
                 if response.error:
-                    lines.append(f"       Error: {response.error.code}: {response.error.message}")
-                content = (response.data or {}).get("content", "")
-                if content:
-                    snippet = content.splitlines()
-                    lines.extend(f"       {line}" for line in snippet[:8])
-                    if len(snippet) > 8:
-                        lines.append("       ... (fragmento completo disponible con --output json)")
-            lines.extend(f"     Limitacion: {item}" for item in investigation.limitations)
+                    lines.append(f"       Error: {response.error.code}")
+            lines.extend(f"     Limitacion: {failure_text(item, errors)}" for item in investigation.limitations)
             lines.append(f"     Consumo de este hallazgo: {investigation.consumption.model_calls} llamadas LLM, "
                 f"{investigation.consumption.tool_calls} herramientas, {investigation.consumption.accounted_tokens} tokens")
     if state["limitations"]:
         lines.append("\nLimitaciones de la ejecucion:")
-        lines.extend(f"  - {item}" for item in state["limitations"])
+        lines.extend(f"  - {failure_text(item, diagnostics)}" for item in state["limitations"])
+    complete = state["termination_reason"] in {"no_findings", "investigations_completed", "investigations_completed_with_errors"}
+    lines.extend(["", "RESUMEN DE EJECUCION",
+        (f"  Evaluaciones: {len(results)} | Resolved: {sum(item.status == 'resolved' for item in results.values())} | "
+            f"Persists: {sum(item.status == 'persists' for item in results.values())} | Inconclusive: {sum(item.status == 'inconclusive' for item in results.values())}"),
+        f"  Investigaciones registradas: {len(investigations)} | Sin investigacion registrada: {len(request.findings) - len(investigations)}",
+        f"  Hallazgos con error de investigacion: {sum(item.stop_reason == 'model_or_schema_error' for item in investigations.values())}",
+        f"  Interrupcion global: {'ninguna' if complete else state['termination_reason']}"])
     lines.extend(["", "CONSUMO", f"  Llamadas LLM: {usage.model_calls} | Herramientas ejecutadas: {usage.tool_calls}",
         f"  Tokens contabilizados: {usage.accounted_tokens} | Tokens estimados: {usage.estimated_tokens}"])
     return "\n".join(lines)
@@ -136,16 +185,21 @@ async def run(repository_path: str, findings_path: str, agent_config: str, outpu
     tools = RepositoryToolset(RepositoryContext(snapshot, RepositoryInput(
         snapshot_hash=snapshot.repository.snapshot_hash, budget=budget)), workspace_root=root.parent)
     model, _ = load_test_model(agent_config)
+    capture = DiagnosticCapture()
+    logger = get_logger("finding-resolution")
+    logger.addHandler(capture)
     try:
         state = await FindingResolutionAgent(model, config).run(request, tools=tools)
         if output == "json":
             print(json.dumps({"plans": [plan.model_dump(mode="json") for plan in state["plans"]],
+                "results": [item.model_dump(mode="json") for item in state["results"]],
                 "investigations": [item.model_dump(mode="json") for item in state["investigations"]],
                 "termination_reason": state["termination_reason"], "limitations": state["limitations"],
                 "consumption": state["consumption"].model_dump()}, indent=2))
         else:
-            print(render_verification_plan(request, state))
+            print(render_verification_plan(request, state, capture.diagnostics, capture.traces))
     finally:
+        logger.removeHandler(capture)
         await close_model_clients(SimpleNamespace(llm=model))
 
 

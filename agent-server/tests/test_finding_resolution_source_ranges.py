@@ -118,7 +118,7 @@ def test_recovery_respects_tool_budget_and_does_not_claim_absence(finding, tools
         setup=lambda execution: monkeypatch.setattr(execution, "_valid_source_range", lambda arguments: arguments),
         max_tool_calls=1)
     assert record.stop_reason == "tool_call_limit" and record.consumption.tool_calls == 1
-    assert len(model.contexts) == 2 and record.evidence == [] and record.limitations
+    assert len(model.contexts) == 3 and record.evidence == [] and record.limitations
     assert record.tool_results[0].error.code == "invalid_source_range" and not hasattr(record, "status")
 
 
