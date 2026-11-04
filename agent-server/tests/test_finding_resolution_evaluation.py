@@ -97,10 +97,10 @@ def execute(finding, tools, evaluate, investigate=inspect, setup=None, native=Fa
 def test_evaluation_records_each_status_and_advances_only_after_recording(finding, tools, status, native):
     state, model, updates = execute(finding, tools, lambda context: verdict(context, status), native=native)
     assert [next(iter(update)) for update in updates] == [
-        "read_finding", "plan_verification", "investigate", "tools", "investigate", "evaluate_resolution", "read_finding"]
-    closed = updates[-3]["investigate"]
+        "read_finding", "plan_verification", "investigate", "tools", "investigate", "evaluate_resolution", "read_finding", "finalize"]
+    closed = updates[-4]["investigate"]
     assert "next_finding" not in closed and closed["investigation"].finding == finding
-    registered = updates[-2]["evaluate_resolution"]
+    registered = updates[-3]["evaluate_resolution"]
     assert registered["next_finding"] == 1 and registered["results"][0].status == status
     context = model.contexts[-1]
     assert context["node"] == "evaluate_resolution" and context["finding"] == finding.model_dump(mode="json")

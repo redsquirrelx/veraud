@@ -1,4 +1,4 @@
-"""Minimal contracts for the future finding-resolution workflow."""
+"""Contracts for evidence-grounded finding resolution."""
 
 from typing import Literal
 

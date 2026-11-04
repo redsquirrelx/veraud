@@ -1,0 +1,26 @@
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..52c3860 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -1,7 +1,6 @@
+ from shoplab.domain.models import Order
+-from shoplab.infrastructure.console_notifier import ConsoleNotifier
++from shoplab.domain.notification_bridge import send_via_bridge
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
+-    notifier.send(order, f"Special handling for {order.order_id}")
++    send_via_bridge(order, f"Special handling for {order.order_id}")
+diff --git a/src/shoplab/domain/notification_bridge.py b/src/shoplab/domain/notification_bridge.py
+new file mode 100644
+index 0000000..1f99307
+--- /dev/null
++++ b/src/shoplab/domain/notification_bridge.py
+@@ -0,0 +1,6 @@
++from shoplab.domain.models import Order
++from shoplab.infrastructure.console_notifier import ConsoleNotifier
++
++
++def send_via_bridge(order: Order, message: str) -> None:
++    ConsoleNotifier().send(order, message)

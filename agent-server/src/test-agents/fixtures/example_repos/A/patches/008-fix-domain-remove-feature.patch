@@ -1,0 +1,29 @@
+diff --git a/src/shoplab/application/checkout.py b/src/shoplab/application/checkout.py
+index ab027ad..270dd6a 100644
+--- a/src/shoplab/application/checkout.py
++++ b/src/shoplab/application/checkout.py
+@@ -1,5 +1,4 @@
+ from shoplab.billing import charge
+-from shoplab.domain.checkout import send_special_confirmation
+ from shoplab.domain.models import Order
+ from shoplab.domain.notifications import send_confirmation
+ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+@@ -13,5 +12,4 @@ def process_order(order: Order) -> tuple[bool, int]:
+         return False, before
+     receipt = charge(order)
+     send_confirmation(order, ConsoleNotifier())
+-    send_special_confirmation(order)
+     return True, receipt.amount
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+deleted file mode 100644
+index 76699ed..0000000
+--- a/src/shoplab/domain/checkout.py
++++ /dev/null
+@@ -1,7 +0,0 @@
+-from shoplab.domain.models import Order
+-from shoplab.infrastructure.console_notifier import ConsoleNotifier
+-
+-
+-def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
+-    notifier.send(order, f"Special handling for {order.order_id}")

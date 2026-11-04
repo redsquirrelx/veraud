@@ -80,8 +80,8 @@ def test_full_investigation_flow_and_visible_evidence(finding, tools, caplog, na
             return [update async for update in execution.graph.astream(execution.initial_state(), stream_mode="updates")]
     updates = asyncio.run(stream())
     nodes = [next(iter(update)) for update in updates]
-    assert nodes == ["read_finding", "plan_verification", "investigate", "tools", "investigate", "tools", "investigate", "evaluate_resolution", "read_finding"]
-    record = updates[-3]["investigate"]["investigations"][0]
+    assert nodes == ["read_finding", "plan_verification", "investigate", "tools", "investigate", "tools", "investigate", "evaluate_resolution", "read_finding", "finalize"]
+    record = updates[-4]["investigate"]["investigations"][0]
     assert record.stop_reason == "evidence_collected" and record.evidence and record.tool_results
     assert record.finding == finding and record.plan.finding_id == finding.id
     assert record.consumption.model_calls == 4 and record.consumption.tool_calls == 2 and record.consumption.accounted_tokens == 800

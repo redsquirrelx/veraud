@@ -100,13 +100,13 @@ def test_read_finding_and_plan_verification(finding, tools):
         with execution.timing.stage("planning-test"):
             return [update async for update in execution.graph.astream(execution.initial_state(), stream_mode="updates")]
     updates = asyncio.run(stream())
-    assert [next(iter(update)) for update in updates] == ["read_finding", "plan_verification", "investigate", "evaluate_resolution", "read_finding"]
+    assert [next(iter(update)) for update in updates] == ["read_finding", "plan_verification", "investigate", "evaluate_resolution", "read_finding", "finalize"]
     plan = updates[1]["plan_verification"]["plans"][0]
     assert plan.finding_id == finding.id and plan.checks[0].queries[0].name == "get_source_excerpt"
     assert model.contexts[0]["finding"] == finding.model_dump(mode="json")
     assert request.model_dump() == before
     assert execution.calls == 3 and execution.tokens == 600 and tools.budget_usage.tool_calls == 0
-    assert set(execution.graph.get_graph().nodes) == {"__start__", "read_finding", "plan_verification", "investigate", "tools", "evaluate_resolution", "__end__"}
+    assert set(execution.graph.get_graph().nodes) == {"__start__", "read_finding", "plan_verification", "investigate", "tools", "evaluate_resolution", "finalize", "__end__"}
     print("\nread_finding -> plan_verification\n" + json.dumps(plan.model_dump(mode="json"), indent=2))
 
 

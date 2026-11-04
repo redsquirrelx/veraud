@@ -1,0 +1,24 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..78f8aea 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -14,4 +14,5 @@ class Receipt:
+ def charge(order: Order) -> Receipt:
+     # A payment module is reading another module's concrete backing state.
+     units = _store.STOCK.get(order.sku, 0)
+-    return Receipt(order.order_id, order_total(order), units)
++    amount = order_total(order)
++    return Receipt(order.order_id, amount, units)
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..0d6bd95 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -3,5 +3,7 @@ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:
++    """Send the special handling notification."""
+     notifier = ConsoleNotifier()
+-    notifier.send(order, f"Special handling for {order.order_id}")
++    message = f"Special handling for {order.order_id}"
++    notifier.send(order, message)

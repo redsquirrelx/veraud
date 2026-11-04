@@ -9,6 +9,7 @@ from server.runtimes.repository.tools import RepositoryToolResponse
 from .schemas import (
     FindingInvestigation,
     FindingInvestigationTurn,
+    FindingResolutionResult,
     FindingVerificationResult,
     VerificationPlan,
 )
@@ -23,6 +24,7 @@ class FindingResolutionState(TypedDict):
     investigations: list[FindingInvestigation]
     investigation: FindingInvestigation | None
     results: list[FindingVerificationResult]
+    final_result: FindingResolutionResult | None
     evaluation_returns: int
     evaluation_return: bool
     missing_checks: list[str]

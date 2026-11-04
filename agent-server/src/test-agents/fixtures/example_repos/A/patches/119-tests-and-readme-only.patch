@@ -1,0 +1,24 @@
+diff --git a/README.md b/README.md
+index 047d573..4ee3eb0 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # ShopLab — Architectural boundary test repository
+ 
+-A minimal, runnable Python e-commerce backend for testing static architectural-boundary investigation. No external runtime dependencies or database are needed.
++A minimal, runnable and documented Python e-commerce backend for testing static architectural-boundary investigation. No external runtime dependencies or database are needed.
+ 
+ ## Run
+ 
+diff --git a/tests/test_shop.py b/tests/test_shop.py
+index 6795f8a..c136dde 100644
+--- a/tests/test_shop.py
++++ b/tests/test_shop.py
+@@ -15,6 +15,7 @@ class TestShop(unittest.TestCase):
+         self.assertTrue(ok)
+         self.assertEqual(total, 30)
+         self.assertEqual(available_stock("BOOK"), 8)
++        self.assertEqual(total, 2 * 15)
+ 
+     def test_disallowed_order(self):
+         ok, remaining = process_order(Order("ORD-002", "BLOCKED", 1, 15))

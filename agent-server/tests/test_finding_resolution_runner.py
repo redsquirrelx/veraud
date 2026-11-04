@@ -1,5 +1,6 @@
 """Read audit JSON through Python without dumping large fixture contents."""
 
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
@@ -148,3 +149,18 @@ def test_readable_output_displays_individual_evaluation(runner):
         "finding": original, "termination_reason": "token_limit", "limitations": [], "consumption": Consumption()})
     assert "Evaluacion: inconclusive" in text and result.reason in text and "Inconclusive: 1" in text
     assert "evaluate_resolution no implementado" not in text and "Interrupcion global: token_limit" in text
+
+
+def test_runner_serializes_final_contract_and_preserves_diagnostics(runner, tmp_path, monkeypatch, capsys):
+    from test_finding_resolution import PlanningModel, planning_agent
+
+    model = PlanningModel()
+    monkeypatch.setattr(runner, "load_test_model", lambda config: (model, None))
+    monkeypatch.setattr(runner, "FindingResolutionConfig", lambda: planning_agent(model).config)
+    request, state, capture = asyncio.run(runner.run(str(tmp_path), str(runner.DEFAULT_FINDINGS), "unused", "json"))
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["final_result"] == state["final_result"].model_dump(mode="json")
+    assert len(payload["results"]) == len(request.findings) == 3
+    assert payload["diagnostics"] == capture.diagnostics and payload["traces"] == capture.traces
+    text = runner.render_verification_plan(request, state)
+    assert "Resultado final validado" in text and "Inconclusive: 3" in text

@@ -1,4 +1,4 @@
-"""Run planning, investigation and evaluation; defaults to fixture_A and finding_resolution/out.json.
+"""Run finding resolution; defaults to example_repos/A's repository and findings.
 
     uv run python src/test-agents/run_finding_resolution.py
     uv run python src/test-agents/run_finding_resolution.py REPOSITORY --findings FILE
@@ -42,8 +42,8 @@ from server.services.repository_analysis import (
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-DEFAULT_REPOSITORY = FIXTURES / "architecture_boundary" / "fixture_A"
-DEFAULT_FINDINGS = FIXTURES / "finding_resolution" / "out.json"
+DEFAULT_REPOSITORY = FIXTURES / "example_repos" / "A" / "fixture_A"
+DEFAULT_FINDINGS = FIXTURES / "example_repos" / "A" / "findings.json"
 
 
 def load_findings(path: str | Path) -> list[Finding]:
@@ -69,7 +69,7 @@ class DiagnosticCapture(logging.Handler):
 
 
 def render_verification_plan(request, state, diagnostics=(), traces=()):
-    """Present plans and collected evidence without implying a resolution decision."""
+    """Present final decisions alongside plans, current evidence and diagnostics."""
     statuses = {"planning_completed": "Planificacion completada", "no_findings": "Sin hallazgos recibidos",
         "investigations_completed": "Investigacion y evaluacion completadas",
         "investigations_completed_with_errors": "Hallazgos procesados con errores de investigacion o evaluacion",
@@ -77,13 +77,15 @@ def render_verification_plan(request, state, diagnostics=(), traces=()):
         "time_limit": "Tiempo disponible agotado", "model_or_schema_error": "Error del modelo o de validacion; consulte la fase afectada"}
     plans = {plan.finding_id: plan for plan in state["plans"]}
     investigations = {item.finding_id: item for item in state.get("investigations", [])}
-    results = {item.finding_id: item for item in state.get("results", [])}
+    final = state.get("final_result")
+    results = {item.finding_id: item for item in (final.results if final else state.get("results", []))}
     usage = state["consumption"]
     lines = ["PLAN DE VERIFICACION DE HALLAZGOS", "=" * 50,
         f"Repositorio: {request.repository_path}",
         f"Estado: {statuses.get(state['termination_reason'], state['termination_reason'])}",
         f"Hallazgos recibidos: {len(request.findings)} | Planes generados: {len(plans)}",
-        ("Evaluaciones individuales registradas; no se ha ejecutado una finalizacion de auditoria."
+        ("Resultado final validado; un resultado por hallazgo original." if final else
+            "Evaluaciones individuales registradas; no se ha ejecutado una finalizacion de auditoria."
             if results else "Solo recopilacion de evidencias: no hay decisiones de resolucion."
             if investigations else "Las consultas NO se han ejecutado y no hay decisiones de resolucion.")]
     if not request.findings:
@@ -173,7 +175,7 @@ def render_verification_plan(request, state, diagnostics=(), traces=()):
     return "\n".join(lines)
 
 
-async def run(repository_path: str, findings_path: str, agent_config: str, output: str = "readable"):
+async def run(repository_path: str, findings_path: str, agent_config: str, output: str | None = "readable"):
     request = FindingResolutionRequest(repository_path=repository_path, findings=load_findings(findings_path))
     config = FindingResolutionConfig()
     root = Path(repository_path).resolve()
@@ -192,12 +194,15 @@ async def run(repository_path: str, findings_path: str, agent_config: str, outpu
         state = await FindingResolutionAgent(model, config).run(request, tools=tools)
         if output == "json":
             print(json.dumps({"plans": [plan.model_dump(mode="json") for plan in state["plans"]],
-                "results": [item.model_dump(mode="json") for item in state["results"]],
+                "final_result": state["final_result"].model_dump(mode="json"),
+                "results": [item.model_dump(mode="json") for item in state["final_result"].results],
                 "investigations": [item.model_dump(mode="json") for item in state["investigations"]],
                 "termination_reason": state["termination_reason"], "limitations": state["limitations"],
-                "consumption": state["consumption"].model_dump()}, indent=2))
-        else:
+                "consumption": state["consumption"].model_dump(),
+                "diagnostics": capture.diagnostics, "traces": capture.traces}, indent=2))
+        elif output == "readable":
             print(render_verification_plan(request, state, capture.diagnostics, capture.traces))
+        return request, state, capture
     finally:
         logger.removeHandler(capture)
         await close_model_clients(SimpleNamespace(llm=model))
@@ -206,9 +211,9 @@ async def run(repository_path: str, findings_path: str, agent_config: str, outpu
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repository_path", nargs="?", default=str(DEFAULT_REPOSITORY),
-        help="Current repository (default: architecture_boundary/fixture_A)")
+        help="Current repository (default: example_repos/A/fixture_A)")
     parser.add_argument("--findings", default=str(DEFAULT_FINDINGS),
-        help="Previous findings list or audit result (default: finding_resolution/out.json)")
+        help="Previous findings list or audit result (default: example_repos/A/findings.json)")
     parser.add_argument("--agent-config", default="dummy")
     parser.add_argument("--output", choices=("readable", "json"), default="readable",
         help="Readable summary (default) or structured JSON")

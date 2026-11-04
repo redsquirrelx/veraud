@@ -1,0 +1,14 @@
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..3310f9e 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -1,7 +1,8 @@
+ from shoplab.domain.models import Order
++from shoplab.domain.ports import Notifier
+ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
++    notifier: Notifier = ConsoleNotifier()
+     notifier.send(order, f"Special handling for {order.order_id}")

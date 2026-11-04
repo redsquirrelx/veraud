@@ -1,0 +1,24 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..cedad17 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from ..inventory import _store
+ 
+ 
+ @dataclass(frozen=True)
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..9077f95 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -1,5 +1,5 @@
+ from shoplab.domain.models import Order
+-from shoplab.infrastructure.console_notifier import ConsoleNotifier
++from ..infrastructure.console_notifier import ConsoleNotifier
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:

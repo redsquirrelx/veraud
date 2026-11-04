@@ -1,4 +1,4 @@
-"""Investigation and evaluation entry point; audit finalization remains separate."""
+"""Investigation, evaluation and deterministic finalization entry point."""
 
 import asyncio
 from pathlib import Path
@@ -21,7 +21,7 @@ class FindingResolutionAgent:
         self.config = config or FindingResolutionConfig()
 
     async def run(self, request: FindingResolutionRequest, *, tools) -> FindingResolutionState:
-        """Return investigations and individual evaluations, without audit finalization."""
+        """Return execution diagnostics and the validated final_result envelope."""
         if Path(request.repository_path).resolve() != Path(tools.accessible_snapshot.repository.root_path).resolve():
             raise ValueError("The toolset must belong to the requested repository_path.")
         identifiers = [finding.id for finding in request.findings]

@@ -27,6 +27,7 @@ from .schemas import (
     FindingEvaluationTurn,
     FindingInvestigation,
     FindingInvestigationTurn,
+    FindingResolutionResult,
     FindingVerificationResult,
     VerificationPlan,
 )
@@ -102,7 +103,7 @@ class FindingResolutionExecution(InvestigationExecution):
             "plan": None, "investigations": [], "query_cache": {}, "pending_queries": [], "history": [],
             "investigation_turns": 0, "no_progress_turns": 0, "tool_stop": "",
             "finding_usage_start": Consumption(), "issue_start": 0, "investigation": None, "results": [],
-            "evaluation_returns": 0, "evaluation_return": False, "missing_checks": []}
+            "evaluation_returns": 0, "evaluation_return": False, "missing_checks": [], "final_result": None}
 
     def _build_graph(self):
         graph = StateGraph(FindingResolutionState)
@@ -111,16 +112,18 @@ class FindingResolutionExecution(InvestigationExecution):
         graph.add_node("investigate", phase_node("investigate", self.investigate))
         graph.add_node("tools", phase_node("tools", self.execute_tools))
         graph.add_node("evaluate_resolution", phase_node("evaluate_resolution", self.evaluate_resolution))
+        graph.add_node("finalize", phase_node("finalize", self.finalize))
         graph.add_edge(START, "read_finding")
         graph.add_conditional_edges("read_finding", lambda state: "plan" if state["finding"] else "end",
-            {"plan": "plan_verification", "end": END})
+            {"plan": "plan_verification", "end": "finalize"})
         graph.add_conditional_edges("plan_verification", lambda state: "investigate" if state["plan"] else "evaluate_resolution",
             {"evaluate_resolution": "evaluate_resolution", "investigate": "investigate"})
         graph.add_conditional_edges("investigate", self.route_investigation,
             {"evaluate_resolution": "evaluate_resolution", "tools": "tools"})
         graph.add_edge("tools", "investigate")
         graph.add_conditional_edges("evaluate_resolution", self.route_evaluation,
-            {"end": END, "investigate": "investigate", "next": "read_finding"})
+            {"end": "finalize", "investigate": "investigate", "next": "read_finding"})
+        graph.add_edge("finalize", END)
         return graph.compile()
 
     def read_finding(self, state):
@@ -530,6 +533,47 @@ class FindingResolutionExecution(InvestigationExecution):
         if state["evaluation_return"]:
             return "investigate"
         return "end" if self.stop else "next"
+
+    def finalize(self, state):
+        """Complete original-ID coverage without model calls or repository queries."""
+        records = {item.finding_id: item for item in state["investigations"]}
+        ledger = {item.id: item for item in self.references()}
+        snapshot_hash = self.tools.accessible_snapshot.repository.snapshot_hash
+        results = []
+        for finding in self.request.findings:
+            record = records.get(finding.id)
+            delivered = {reference.id for response in record.tool_results for reference in response.evidence} if record else set()
+            current = {reference.id: reference for reference in (record.evidence if record else [])
+                if reference.id in delivered and reference.id in ledger
+                and reference.snapshot_hash == snapshot_hash
+                and reference.model_dump(exclude={"commit", "commit_verification", "git_blob_id"}) ==
+                    ledger[reference.id].model_dump(exclude={"commit", "commit_verification", "git_blob_id"})}
+            candidates = [item for item in state["results"] if item.finding_id == finding.id]
+            reason = "missing_evaluation"
+            result = None
+            if len(candidates) == 1:
+                try:
+                    result = FindingVerificationResult.model_validate(candidates[0].model_dump())
+                    if set(result.evidence_ids) - current.keys():
+                        reason, result = "invalid_current_evidence", None
+                    elif result.status != "inconclusive" and (
+                        not any(current[key].kind == "source" for key in result.evidence_ids)
+                        or any(current[key].commit_verification == "unverified" for key in result.evidence_ids)
+                    ):
+                        reason, result = "insufficient_verified_source", None
+                    else:
+                        result = candidates[0]
+                except ValidationError:
+                    reason = "invalid_evaluation"
+            elif candidates:
+                reason = "duplicate_evaluations"
+            if result is None:
+                blocker = self.stop or (record.stop_reason if record else state["termination_reason"]) or "not_evaluated"
+                result = FindingVerificationResult(finding_id=finding.id, status="inconclusive",
+                    reason=f"No valid evaluation: {reason}; execution stopped at {blocker}.", evidence_ids=list(current))
+            results.append(result)
+        final = FindingResolutionResult.model_validate({"results": results}, context={"request": self.request})
+        return {"final_result": final, "consumption": self._usage()}
 
     def log_summary(self, state=None, interrupted=None):
         records = state["investigations"] if state is not None else self._completed_records
