@@ -11,6 +11,7 @@ import { AuditEvidenceTab } from "./AuditEvidenceTab.tsx"
 import { AuditIncidentsTab } from "./AuditIncidentsTab.tsx"
 import { useAuditIncidentLabels } from "./auditIncidentLabels.ts"
 import { AuditChronologyTab } from "./AuditChronologyTab.tsx"
+import { AuditValidationHistoryPreview } from "./AuditValidationHistory.tsx"
 import { useAuditChronologyLabels } from "./auditChronologyLabels.ts"
 import { executionStatusLabelKeys, statusLabelKey, isQualityAuditActive } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
@@ -27,11 +28,14 @@ const evaluationLabels: Record<string, ParseKeys<"projects">> = {
 }
 
 export function QualityAuditResults({ projectId, auditId, projectName, repositoryName }: { projectId: number, auditId: number, projectName: string, repositoryName?: string }) {
-  const { t } = useTranslation("projects")
+  const { t, i18n } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const { t: tEvidence } = useTranslation("auditEvidence")
   const incidentLabels = useAuditIncidentLabels()
   const chronologyLabels = useAuditChronologyLabels()
+  const revalidationLabels = i18n.resolvedLanguage?.startsWith("es")
+    ? { tab: "Revalidación de hallazgos" }
+    : { tab: "Findings revalidation" }
   const [audit, setAudit] = useState<QualityAuditSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ResultsError | null>(null)
@@ -39,13 +43,14 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const [downloading, setDownloading] = useState(false)
   const [search, setSearch] = useSearchParams()
   const requestedTab = search.get("tab")
-  const activeTab = requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
+  const activeTab = requestedTab === "revalidation" || requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
   const requestedEvidenceId = search.get("evidence") || undefined
   const [evidenceVisited, setEvidenceVisited] = useState(false)
   const [qualityResultsOpen, setQualityResultsOpen] = useState(false)
   const tabsId = useId()
   const tabs = [
     { id: "general", label: t("qualityAudits.results.generalTab") },
+    { id: "revalidation", label: revalidationLabels.tab },
     { id: "findings", label: t("qualityAudits.results.findingsTab") },
     { id: "evidence", label: tEvidence("tab") },
     { id: "incidents", label: incidentLabels.tab },
@@ -151,6 +156,9 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
         {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
       </>}
     </>}
+    </div>
+    <div role="tabpanel" id={`${tabsId}-panel-revalidation`} aria-labelledby={`${tabsId}-tab-revalidation`} hidden={activeTab !== "revalidation"} tabIndex={0}>
+      {activeTab === "revalidation" && <AuditValidationHistoryPreview />}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-findings`} aria-labelledby={`${tabsId}-tab-findings`} hidden={activeTab !== "findings"} tabIndex={0}>
       {activeTab === "findings" && (loading ? <Spinner /> : pending || (error !== null && audit === null) ? null : audit?.reportAvailable
