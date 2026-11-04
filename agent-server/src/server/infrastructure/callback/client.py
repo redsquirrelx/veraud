@@ -3,7 +3,14 @@ from __future__ import annotations
 import httpx
 
 from ...config.logs import get_logger
-from .schemas import CallbackConfig, CallbackResult, ExecutionOutcome, ExecutionProgress
+from ...contracts.public_errors import public_error_fields
+from .schemas import (
+    CallbackConfig,
+    CallbackResult,
+    ExecutionOutcome,
+    ExecutionProgress,
+    InvocationReceipt,
+)
 
 logger = get_logger("infrastructure.callback")
 
@@ -29,15 +36,15 @@ class CallbackClient:
         self._client = client
         self._owns_client = client is None
 
-    async def mark_running(self, execution_id: int) -> CallbackResult:
+    async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
         """Tell the backend the run started. Optional on the backend side."""
-        return await self._post(f"/api/agent-executions/{execution_id}/running", {})
+        return await self._post(f"/api/agent-executions/{execution_id}/running", {"runId": run_id} if run_id else {})
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
         """Close the run with its outcome."""
         return await self._post(
             f"/api/agent-executions/{execution_id}/completion",
-            outcome.model_dump(by_alias=True),
+            outcome.model_dump(mode="json", by_alias=True),
         )
 
     async def progress(self, execution_id: int, usage: ExecutionProgress) -> CallbackResult:
@@ -46,13 +53,26 @@ class CallbackClient:
             usage.model_dump(by_alias=True),
         )
 
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return await self._post(f"/api/agent-executions/{execution_id}/invocations", receipt.model_dump(mode="json", by_alias=True))
+
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return await self._post(f"/api/agent-executions/{execution_id}/events", {"events": events})
+
+    async def graph_task(self, task_id: int, token: str, phase: str, error_code: str | None = None) -> CallbackResult:
+        payload = {"phase": phase}
+        if error_code is not None:
+            payload["errorCode"] = error_code
+        return await self._post(f"/api/tasks/{task_id}/graph-callback", payload, {"X-Graph-Token": token})
+
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
 
-    async def _post(self, path: str, payload: dict) -> CallbackResult:
+    async def _post(self, path: str, payload: dict, extra_headers: dict | None = None) -> CallbackResult:
+        payload = public_error_fields(payload)
         url = f"{self._config.backend_url.rstrip('/')}{path}"
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = dict(extra_headers or {})
 
         if self._config.shared_secret:
             headers["X-Agent-Secret"] = self._config.shared_secret
@@ -66,23 +86,20 @@ class CallbackClient:
             else:
                 response = await client.post(url, json=payload, headers=headers)
 
-        except Exception as error:  # noqa: BLE001 - any transport failure
+        except Exception:  # noqa: BLE001 - any transport failure
             # The run itself already finished; failing loudly here would throw
             # away a completed analysis because the report did not land.
-            logger.warning(
-                "Callback to %s did not reach the backend: %s", url, error
-            )
-            return CallbackResult(acknowledged=False, error=str(error))
+            logger.warning("Execution callback did not reach the backend")
+            return CallbackResult(acknowledged=False, error="Execution callback transport failed.")
 
         acknowledged = response.is_success
-        body = response.text
+        body = None if acknowledged else "Execution callback rejected."
 
         if acknowledged:
-            logger.info("Callback %s acknowledged (%s)", url, response.status_code)
+            logger.info("Execution callback acknowledged (%s)", response.status_code)
         else:
             logger.warning(
-                "Callback %s rejected with %s: %s",
-                url, response.status_code, body[:300],
+                "Execution callback rejected with %s", response.status_code,
             )
 
         return CallbackResult(

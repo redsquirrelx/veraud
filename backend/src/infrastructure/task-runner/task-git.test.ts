@@ -8,6 +8,7 @@ import type { FastifyBaseLogger } from "fastify"
 import { logger } from "../../config/logger.js"
 import type { StoredTask, TaskStore } from "../../modules/task/task.repository.js"
 import { TaskRunner, taskOutput } from "./task.runner.js"
+import { gitTaskExecutor } from "./git.task-executor.js"
 
 const quiet = { child: () => ({ info() {}, warn() {}, error() {}, debug() {} }) }
 logger.configure(quiet as unknown as FastifyBaseLogger)
@@ -67,7 +68,7 @@ describe("TaskRunner git commands", () => {
   it("lists local branches without touching project status", async () => {
     const { workspace, folder } = makeRepo()
     const { store, projects, statuses, synced } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "list-branches", folder } })
 
@@ -81,7 +82,7 @@ describe("TaskRunner git commands", () => {
   it("resolves a branch hash without touching project status", async () => {
     const { workspace, folder, mainHash } = makeRepo()
     const { store, projects, statuses } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "rev-parse", folder, branch: "main" } })
 
@@ -93,7 +94,7 @@ describe("TaskRunner git commands", () => {
   it("lists commits with pagination", async () => {
     const { workspace, folder } = makeRepo()
     const { store, projects } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const first = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "log-commits", folder, branch: "main", limit: 1, offset: 0 } })
     const second = await runner.enqueue({ taskId: 2, projectId: 2, command: { kind: "log-commits", folder, branch: "main", limit: 10, offset: 1 } })
@@ -107,7 +108,7 @@ describe("TaskRunner git commands", () => {
   it("checks out a commit detached with force", async () => {
     const { workspace, folder, mainHash } = makeRepo()
     const { store, projects, statuses, synced } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "checkout-detach", folder, commitHash: mainHash } })
 
@@ -120,7 +121,7 @@ describe("TaskRunner git commands", () => {
   it("re-attaches a detached HEAD by checking out a branch", async () => {
     const { workspace, folder, mainHash } = makeRepo()
     const { store, projects, statuses, synced } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const detached = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "checkout-detach", folder, commitHash: mainHash } })
     assert.equal(detached.status, "Succeded")
@@ -136,7 +137,7 @@ describe("TaskRunner git commands", () => {
   it("lists the files tracked at HEAD without touching the project status", async () => {
     const { workspace, folder } = makeRepo()
     const { store, projects, statuses, synced } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "list-tree", folder } })
 
@@ -149,7 +150,7 @@ describe("TaskRunner git commands", () => {
   it("returns the whole listing even when it does not fit in the log trail", async () => {
     const { workspace } = makeRepo()
     const { store, projects } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
     const source = join(workspace, "source")
     execSync(`git init -q -b main "${source}"`)
     execSync(`git -C "${source}" config user.email t@t`)
@@ -175,7 +176,7 @@ describe("TaskRunner git commands", () => {
   it("fails cleanly for unknown branches", async () => {
     const { workspace, folder } = makeRepo()
     const { store, projects } = makeStore()
-    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, workspace)
+    const runner = new TaskRunner(store, projects, { broadcast: () => {} }, [gitTaskExecutor(workspace)])
 
     const result = await runner.enqueue({ taskId: 1, projectId: 2, command: { kind: "rev-parse", folder, branch: "nope" } })
 

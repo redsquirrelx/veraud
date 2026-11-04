@@ -1,7 +1,7 @@
 .project-page {
   display: flex;
   align-items: stretch;
-  background: #f2f3ff;
+  background: var(--color-canvas);
   min-height: calc(100vh - 48px);
 }
 
@@ -25,25 +25,51 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 1.25rem;
+  padding: 1.5rem clamp(1rem, 3vw, 2.5rem) 3rem;
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  box-sizing: border-box;
   min-width: 0;
 }
 
 .project-content > p { margin: 0; padding: 1rem; }
 
-.project-content .ui-card {
+.project-body-card { min-width: 0; }
+
+.project-structural-graph {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.project-structural-graph-empty {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 1.5rem;
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-canvas);
+  text-align: center;
+}
+
+.project-structural-graph-empty p {
+  margin: 0;
+  color: var(--color-text-description);
+}
+
+.project-body-card.project-overview-card {
+  padding: 0.875rem 1rem;
 }
 
 .project-overview {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
   width: 100%;
 }
 
@@ -64,13 +90,59 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-dates-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.25rem 1rem;
+  min-width: 0;
+}
+
+.project-overview .project-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-description);
+  overflow-wrap: anywhere;
+}
+
+.project-overview > .files-loading {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  padding: 0.25rem 0;
+}
+
+.project-overview-summary .audit-block {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.project-overview-summary .audit-head {
+  flex: 1 1 20rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  width: auto;
+}
+
+.project-overview-summary .audit-button-row {
+  width: auto;
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .project-overview { grid-template-columns: minmax(0, 1fr) auto; }
+  .project-overview > a { grid-column: 2; grid-row: 1; }
+  .project-dates-row { grid-column: 1 / -1; }
+}
+
+@media (max-width: 480px) {
+  .project-overview { grid-template-columns: minmax(0, 1fr); }
+  .project-overview > a { grid-column: 1; grid-row: auto; justify-self: start; }
 }
 
 .files-loading {
@@ -90,33 +162,26 @@
 }
 
 .files-error {
-  color: #b91c1c;
+  color: var(--color-error-text);
   font-size: 13px;
 }
 
-.project-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #006194;
-}
-
-.project-link:hover {
-  text-decoration: underline;
-}
+.project-body-card > a.ui-button { align-self: flex-start; }
 
 .project-summary {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .audit-status-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .audit-block {
@@ -140,6 +205,8 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .audit-head-right .audit-status-row {
@@ -156,12 +223,12 @@
 
 /* subtitles (Type, Key components, ...) read darker than plain labels */
 .audit-block .label {
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .audit-text {
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -171,8 +238,8 @@
   gap: 0.4rem;
   margin: 0;
   padding-left: 1.1rem;
-  font-size: 12px;
-  color: #334155;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .audit-path {
@@ -180,22 +247,33 @@
 }
 
 .audit-evidence {
-  font-size: 11px;
-  color: #64748b;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 
 .audit-error {
-  font-size: 12px;
-  color: #b91c1c;
+  font-size: var(--font-size-sm);
+  color: var(--color-error-text);
 }
 
 .audit-button-row {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   justify-content: flex-end;
   width: 100%;
   margin-top: 0.25rem;
 }
-.audit-configuration h3 { font-size: 14px; margin: 1rem 0 0.75rem; }
-.audit-configuration dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1.25rem; font-size: 13px; }
-.audit-configuration dt { color: #64748b; }
+.audit-configuration h3 { font-size: var(--font-size-lg); margin: 1rem 0 0.75rem; }
+.audit-configuration dl { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1.25rem; font-size: var(--font-size-md); }
+.audit-configuration dt { color: var(--color-text-muted); }
 .audit-configuration dd { margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .project-body { padding: 1rem 0.75rem 2rem; gap: 1rem; }
+  .audit-head { flex-direction: column; gap: 0.75rem; }
+  .audit-head-right { align-items: flex-start; }
+  .audit-head-right .audit-status-row { justify-content: flex-start; }
+  .audit-configuration dl { grid-template-columns: minmax(0, 1fr); gap: 0.375rem; }
+  .audit-configuration dd { margin-bottom: 0.5rem; }
+}

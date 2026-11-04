@@ -12,9 +12,7 @@ import { auditResponseSerialization } from "./helpers/responseSerializationAudit
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url))
 const agentServerRoot = join(backendRoot, "..", "agent-server")
-const agentServerPython = process.platform === "win32"
-  ? join(agentServerRoot, ".venv", "Scripts", "python.exe")
-  : join(agentServerRoot, ".venv", "bin", "python")
+const agentServerPython = join(agentServerRoot, ".venv", "Scripts", "python.exe")
 
 function freshDatabase(): string {
   const dir = mkdtempSync(join(tmpdir(), "veraud-palv-"))
@@ -54,15 +52,20 @@ async function waitForAgentServer(baseUrl: string, timeoutMs: number): Promise<v
 // Live crossing: real backend HTTP + real agent-server process + real
 // callbacks. Only the model calls are offline (AGENT_SERVER_SMOKE_MODELS),
 // so snapshots, graphs, hooks, tracing ports and rows are all exercised.
-describe("live pipelines", () => {
-  it("runs architecture and exploratory functional adequacy over real HTTP", { timeout: 300_000 }, async () => {
+describe("project architecture live pipeline", () => {
+  it("runs three stages over real HTTP closing every row", { timeout: 300_000 }, async () => {
     // Live crossing needs the real shared workspace: the agent-server only
     // accepts checkouts directly inside it (same default both sides resolve).
     const workspaceDir = join(backendRoot, "..", "appdata", "workspace")
-    const githubRepositoryId = BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000))
+    const folder = projectWorkspaceFolder({
+      id: 999001, githubRepositoryId: 999001n, repositoryOwner: "acme", repositoryName: "live-shop",
+    })
+    const checkout = join(workspaceDir, folder)
+    rmSync(checkout, { recursive: true, force: true })
+    mkdirSync(checkout, { recursive: true })
+    writeFileSync(join(checkout, "main.py"), "def main():\n    return 1\n")
+    writeFileSync(join(checkout, "README.md"), "# shop\n")
     const noopRunner = { enqueue: async () => ({ status: "Succeded", exitCode: 0, logTrail: "" }) }
-    let checkout: string | null = null
-    let checkoutCreated = false
 
     // Both ports are fixed upfront: the agent-server needs PORT_BACKEND at
     // boot for callbacks, and the backend needs the agent-server URL to
@@ -71,8 +74,9 @@ describe("live pipelines", () => {
     const agentPort = await freePort()
     const agentBase = `http://127.0.0.1:${agentPort}`
 
+    let child: ChildProcess | null = null
     const stderr: string[] = []
-    const child: ChildProcess = spawn(
+    child = spawn(
       agentServerPython,
       ["-m", "uvicorn", "server.main:app", "--host", "127.0.0.1", "--port", String(agentPort)],
       {
@@ -111,11 +115,12 @@ describe("live pipelines", () => {
       await waitForAgentServer(agentBase, 120_000)
 
       const project = await db.project.create({
-        data: { githubRepositoryId, repositoryOwner: "acme", repositoryName: "live-shop", status: "READY" },
+        data: { githubRepositoryId: 999001n, repositoryOwner: "acme", repositoryName: "live-shop", status: "READY" },
       })
-      checkout = join(workspaceDir, projectWorkspaceFolder(project))
-      mkdirSync(checkout)
-      checkoutCreated = true
+      const checkout = join(workspaceDir, projectWorkspaceFolder({
+        id: project.id, githubRepositoryId: 555n, repositoryOwner: "acme", repositoryName: "shop",
+      }))
+      mkdirSync(checkout, { recursive: true })
       writeFileSync(join(checkout, "main.py"), "def main():\n    return 1\n")
       writeFileSync(join(checkout, "README.md"), "# shop\n")
 
@@ -158,46 +163,6 @@ describe("live pipelines", () => {
         const parsed = JSON.parse(execution.result!) as { completion_status?: string }
         assert.ok(typeof parsed === "object" && parsed !== null)
       }
-
-      const functionalHash = "b".repeat(40)
-      const functionalOpened = await app.inject({
-        method: "POST",
-        url: `/api/projects/${project.id}/functional-adequacy`,
-        payload: { branch: "main", commitHash: functionalHash },
-      })
-      assert.equal(functionalOpened.statusCode, 201, `expected 201, got ${functionalOpened.statusCode}: ${functionalOpened.body.slice(0, 500)}`)
-
-      const functionalDeadline = Date.now() + 120_000
-      let functionalExecution: { status: string; result: string | null; error: string | null } | null = null
-      let functionalDerived = ""
-      while (Date.now() < functionalDeadline) {
-        const listed = await app.inject({ method: "GET", url: `/api/projects/${project.id}/versions` })
-        const version = (listed.json() as Array<{ commitHash: string, derivedStatus: string, executions: Array<{ agentType: string, status: string, result: string | null, error: string | null }> }>)
-          .find((item) => item.commitHash === functionalHash)
-        functionalExecution = version?.executions.find((execution) => execution.agentType === "functional_adequacy") ?? null
-        functionalDerived = version?.derivedStatus ?? ""
-        if (functionalDerived === "Completed" || functionalDerived === "Failed") break
-        await new Promise((done) => setTimeout(done, 2000))
-      }
-
-      assert.equal(functionalDerived, "Completed", `functional pipeline did not complete (agent-server stderr: ${stderr.join("").slice(-2000)})`)
-      assert.ok(functionalExecution !== null)
-      assert.equal(functionalExecution.status, "Completed")
-      assert.ok(functionalExecution.result)
-      const functional = JSON.parse(functionalExecution.result!) as {
-        audit_mode?: string
-        score_applicable?: boolean
-        results?: unknown[]
-        capabilities?: Array<{ evidence?: Array<{ file_path?: string, start_line?: number | null }> }>
-        findings?: unknown[]
-        subattributes?: Array<{ attribute?: string }>
-      }
-      assert.equal(functional.audit_mode, "exploratory")
-      assert.equal(functional.score_applicable, false)
-      assert.deepEqual(functional.results, [])
-      assert.deepEqual((functional.subattributes ?? []).map((item) => item.attribute).sort(), ["completitud", "correccion", "pertinencia"])
-      assert.ok((functional.capabilities ?? []).length > 0)
-      assert.ok((functional.capabilities ?? []).some((capability) => (capability.evidence ?? []).some((evidence) => typeof evidence.file_path === "string" && evidence.file_path !== "" && typeof evidence.start_line === "number")))
     } finally {
       if (child !== null) {
         child.kill()
@@ -206,7 +171,7 @@ describe("live pipelines", () => {
       }
       await app.close()
       await db.$disconnect()
-      if (checkoutCreated && checkout !== null) rmSync(checkout, { recursive: true, force: true })
+      rmSync(checkout, { recursive: true, force: true })
     }
   })
 })

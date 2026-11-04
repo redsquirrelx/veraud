@@ -3,7 +3,7 @@ export interface PipelineOption {
   label: string
   description: string
   /** Backend route suffix under /api/projects/:id/. */
-  endpoint: "analyze" | "architecture" | "functional-adequacy"
+  endpoint: "analyze" | "architecture"
   /** Stage rows in run order; the last one finishes last. */
   stages: string[]
   /** Row the UI tracks while the pipeline runs. */
@@ -19,14 +19,6 @@ export const PIPELINES: PipelineOption[] = [
     endpoint: "architecture",
     stages: ["orientation", "architecture", "semantic_validation"],
     trackedStage: "semantic_validation",
-  },
-  {
-    id: "functional-adequacy",
-    label: "Functional adequacy",
-    description: "Exploratory functional capabilities or requirement compliance",
-    endpoint: "functional-adequacy",
-    stages: ["functional_adequacy"],
-    trackedStage: "functional_adequacy",
   },
 ]
 

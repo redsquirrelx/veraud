@@ -8,7 +8,6 @@ import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
 import { useTasks } from "../../shared/task-manager/useTasks.ts"
 import { isSyncActive } from "../../shared/task-manager/taskVisibility.ts"
 import {
-  FunctionalAdequacyResultView,
   OrientationResultView,
   PipelineRunStatus,
   ProjectArchitectureResultView,
@@ -16,7 +15,6 @@ import {
   StageStatusView,
 } from "../../features/project-management/PipelineResult.tsx"
 import {
-  parseFunctionalAdequacyResult,
   parseOrientationResult,
   parseProjectArchitectureResult,
   parseSemanticValidationResult,
@@ -25,12 +23,19 @@ import {
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
+import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
 import { useAnalyzedVersions } from "../../features/project-management/useAnalyzedVersions.ts"
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
+import { useProjectGraph } from "../../features/project-management/useProjectGraph.ts"
+import { projectGraphArtifactUrl } from "../../features/project-management/projectGraphApi.ts"
+import { graphErrorMessageKey } from "../../features/project-management/graphMessages.ts"
+import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
+import { QualityAuditResults } from "../../features/project-management/QualityAuditResults.tsx"
+import { AuditAgentEvidence } from "../../features/project-management/AuditAgentEvidence.tsx"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
@@ -39,19 +44,21 @@ import { formatDate, formatNumber } from "../../shared/i18n/format.ts"
 import "./ProjectDetailPage.css"
 
 const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
-  { id: "overview", labelKey: "detail.sections.overview", icon: <FolderIcon /> },
-  { id: "analysis", labelKey: "detail.sections.analysis", icon: <FolderIcon /> },
-  { id: "audits", labelKey: "detail.sections.audits", icon: <FolderIcon /> },
+  { id: "overview", labelKey: "detail.sections.overview", icon: <ProjectOverviewIcon /> },
+  { id: "graph", labelKey: "structuralGraph.title", icon: <ProjectGraphIcon /> },
+  { id: "analysis", labelKey: "detail.sections.analysis", icon: <ProjectAnalysisIcon /> },
+  { id: "audits", labelKey: "detail.sections.audits", icon: <ProjectAuditsIcon /> },
   { id: "files", labelKey: "detail.sections.files", icon: <FolderIcon /> },
 ]
 
 const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
 
 export function ProjectDetailPage() {
-  const { id, section } = useParams()
+  const { id, section, auditId, invocationId } = useParams()
   const { t } = useTranslation("projects")
+  const { t: graphT } = useTranslation("graph")
   const navigate = useNavigate()
-  const activeSection = section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
+  const activeSection = auditId !== undefined ? "audits" : section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
@@ -87,19 +94,28 @@ export function ProjectDetailPage() {
   const orientationExec = stageExecution("orientation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const projectArchitectureExec = stageExecution("architecture", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const semanticValidationExec = stageExecution("semantic_validation", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
-  const functionalAdequacyExec = stageExecution("functional_adequacy", tracked, liveExecutions, analyzedVersions, analysis.initialExecutions)
   const orientationSummary = orientationExec === null ? null : parseOrientationResult(orientationExec.result)
   const projectArchitectureSummary = projectArchitectureExec === null ? null : parseProjectArchitectureResult(projectArchitectureExec.result)
   const semanticValidationSummary = semanticValidationExec === null ? null : parseSemanticValidationResult(semanticValidationExec.result)
-  const functionalAdequacySummary = functionalAdequacyExec === null ? null : parseFunctionalAdequacyResult(functionalAdequacyExec.result)
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
+  const graphExtraction = useProjectGraph(project?.id ?? null, activeBranch, activeHash, liveTasks)
+  const graphActive = graphExtraction.running || liveTasks.some((task) => task.projectId === project?.id
+    && task.kind === "graph.extract" && (task.status === "Queued" || task.status === "Running"))
+  const graphArtifactTaskId = graphExtraction.graph?.graphAvailable ? graphExtraction.graph.taskId : graphExtraction.graph?.previousGraphTaskId ?? null
+  const notifiedGraphTasks = useRef(new Set<number>())
+  useEffect(() => {
+    const taskId = graphExtraction.completedTaskId
+    if (taskId === null || notifiedGraphTasks.current.has(taskId)) return
+    notifiedGraphTasks.current.add(taskId)
+    pushToast("success", graphT("success", { commit: graphExtraction.graph?.commitHash.slice(0, 7) ?? "" }))
+  }, [graphExtraction.completedTaskId, graphExtraction.graph?.commitHash, graphT, pushToast])
   // Sync and analysis exclude each other: a sync rewrites the checkout the
   // pipeline reads. Local clicks flip immediately; a sync started elsewhere
   // shows up through the live tasks and through the backend 422.
-  const syncActive = syncing || isSyncActive(liveTasks, project?.id ?? null)
-  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits && !syncActive
+  const syncActive = syncing || isSyncActive(liveTasks.filter((task) => task.status === "Queued" || task.status === "Running"), project?.id ?? null)
+  const canAnalyze = activeHash !== null && activeBranch !== null && !version.applying && !version.loadingCommits && !syncActive && !graphActive
 
   function openFile(path: string) {
     const root = project?.repositoryName ?? ""
@@ -121,7 +137,7 @@ export function ProjectDetailPage() {
       refreshFiles()
 
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError && error.messageSource !== "client") {
         pushToast("error", error.message)
       } else {
         pushToast("error", t("detail.sync.errorFallback"))
@@ -220,7 +236,6 @@ export function ProjectDetailPage() {
     // has those.
     analysis.show(
       target.executions.find((execution) => execution.agentType === "semantic_validation")
-        ?? target.executions.find((execution) => execution.agentType === "functional_adequacy")
         ?? target.executions.find((execution) => execution.agentType === "architecture")
         ?? target.executions.find((execution) => execution.agentType === "orientation")
         ?? target.executions.find((execution) => execution.agentType === "architect")
@@ -251,19 +266,11 @@ export function ProjectDetailPage() {
     },
   }
 
-  const runStatuses = (
-    <>
-      {analyzerExec !== null && <PipelineRunStatus execution={analyzerExec} />}
-      {architectExec !== null && <PipelineRunStatus execution={architectExec} />}
-      {orientationExec !== null && <PipelineRunStatus execution={orientationExec} />}
-      {projectArchitectureExec !== null && <PipelineRunStatus execution={projectArchitectureExec} />}
-      {semanticValidationExec !== null && <PipelineRunStatus execution={semanticValidationExec} />}
-      {functionalAdequacyExec !== null && <PipelineRunStatus execution={functionalAdequacyExec} />}
-    </>
-  )
-
   if (section !== undefined && !VALID_SECTIONS.has(section)) {
     return <Navigate to={`/projects/${id}/overview`} replace />
+  }
+  if (auditId !== undefined && (!/^[1-9]\d*$/.test(auditId) || !Number.isSafeInteger(Number(auditId)))) {
+    return <Navigate to={`/projects/${id}/audits`} replace />
   }
 
   return (
@@ -280,10 +287,15 @@ export function ProjectDetailPage() {
           <>
             <ProjectHeader
               project={project}
+              showVersionSelector={auditId === undefined}
               analysis={{ canAnalyze, analyzing: analysis.analyzing, onAnalyze: handleAnalyze }}
               syncing={syncActive}
               onSync={() => void handleSync()}
+               onExtractGraph={() => { void graphExtraction.start(); void navigate(`/projects/${id}/graph`) }}
+                graphRunning={graphActive}
+               canExtractGraph={canAnalyze}
               versionSelector={{
+                disabled: graphActive,
                 selection: gitSelection,
                 mode: versionMode,
                 onModeChange: handleModeChange,
@@ -298,7 +310,7 @@ export function ProjectDetailPage() {
               }}
             />
             <div className="project-body">
-            {activeSection === "overview" && <Card>
+             {activeSection === "overview" && <Card className="project-body-card project-overview-card" layout="stack" gap="sm" align="stretch">
               <section className="project-overview" aria-label={t("detail.overview.regionLabel")}>
                 <h2>{t("detail.overview.title")}</h2>
                 <div className="project-dates-row">
@@ -312,7 +324,7 @@ export function ProjectDetailPage() {
                   </span>
                 </div>
                 <a
-                  className="project-link"
+                  className="ui-button ui-button-secondary"
                   href={githubRepoUrl(project.repositoryOwner, project.repositoryName)}
                   target="_blank"
                   rel="noreferrer"
@@ -330,7 +342,7 @@ export function ProjectDetailPage() {
             {activeSection === "overview" && analysis.execution !== null
               && (orientationSummary !== null || projectArchitectureSummary !== null
                 || semanticValidationSummary !== null) && (
-              <Card>
+              <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                 <div className="audit-block">
                   <div className="audit-head">
                     <h4 className="audit-title">{t("detail.overview.summary")}</h4>
@@ -368,50 +380,72 @@ export function ProjectDetailPage() {
                 </div>
               </Card>
             )}
-            {activeSection === "analysis" && analysis.execution !== null && (
+             {activeSection === "graph" && auditId === undefined && (
+               <Card className="project-body-card project-overview-card project-overview-summary" layout="stack" gap="sm" align="stretch">
+                 <section className="project-structural-graph" aria-label={t("structuralGraph.title")}>
+                   <h2 className="audit-title">{t("structuralGraph.title")}</h2>
+                   <div className="audit-status-row">
+                     <span className="label">{t("version.branchLabel")}</span>
+                     <Badge tone="neutral">{activeBranch ?? t("structuralGraph.noSelection")}</Badge>
+                     <span className="label">{t("version.commitLabel")}</span>
+                     <Badge tone="neutral"><span className="mono" title={activeHash ?? undefined}>{activeHash?.slice(0, 7) ?? t("structuralGraph.noSelection")}</span></Badge>
+                   </div>
+                    <div className="project-structural-graph-empty">
+                      <p className="label">{graphT("independent")}</p>
+                      {graphExtraction.running && <Spinner />}
+                       {graphExtraction.graph !== null ? <p role={graphExtraction.graph.status === "Failed" ? "alert" : "status"}>{graphT(graphExtraction.graph.status === "Failed" ? graphErrorMessageKey(graphExtraction.graph.error) : graphExtraction.graph.phase)}</p>
+                        : !graphExtraction.starting && <p className="label">{t("structuralGraph.empty")}</p>}
+                      {graphExtraction.error !== null && <p role="alert">{graphT(graphExtraction.error)}</p>}
+                       {graphArtifactTaskId !== null && <a href={projectGraphArtifactUrl(project.id, graphArtifactTaskId)} download="graph.json">{graphT("download")}</a>}
+                       {graphArtifactTaskId !== null && graphExtraction.graph?.status !== "Failed" && <Button variant="secondary" onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("regenerate")}</Button>}
+                       {(graphExtraction.graph?.status === "Failed" || graphExtraction.error !== null) && <Button onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("retry")}</Button>}
+                   </div>
+                 </section>
+               </Card>
+             )}
+             {(activeSection === "analysis" || activeSection === "audits") && auditId === undefined && (
+               <QualityAudits key={project.id} projectId={project.id} branch={activeBranch} commitHash={activeHash}
+                 canRun={canAnalyze && !analysis.analyzing} cardLayout="stack" cardPadding="default"
+                 view={activeSection === "analysis" ? "configuration" : "history"}
+                 onConfigure={() => void navigate(`/projects/${id}/analysis`)} />
+             )}
+             {activeSection === "analysis" && analysis.execution !== null && (
               <>
                 {analyzerExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     <PipelineRunStatus execution={analyzerExec} />
                   </Card>
                 )}
                 {architectExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     <PipelineRunStatus execution={architectExec} />
                   </Card>
                 )}
                 {orientationExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {orientationSummary !== null
                       ? <OrientationResultView summary={orientationSummary} execution={orientationExec} />
                       : <StageStatusView title={t("pipeline.orientationTitle")} result={orientationExec.result} execution={orientationExec} />}
                   </Card>
                 )}
                 {projectArchitectureExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {projectArchitectureSummary !== null
                       ? <ProjectArchitectureResultView summary={projectArchitectureSummary} execution={projectArchitectureExec} />
                       : <StageStatusView title={t("pipeline.architectureTitle")} result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
                   </Card>
                 )}
                 {semanticValidationExec !== null && (
-                  <Card>
+                  <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {semanticValidationSummary !== null
                       ? <SemanticValidationResultView summary={semanticValidationSummary} execution={semanticValidationExec} />
                       : <StageStatusView title={t("pipeline.semanticTitle")} result={semanticValidationExec.result} execution={semanticValidationExec} />}
                   </Card>
                 )}
-                {functionalAdequacyExec !== null && (
-                  <Card>
-                    {functionalAdequacySummary !== null
-                      ? <FunctionalAdequacyResultView summary={functionalAdequacySummary} execution={functionalAdequacyExec} />
-                      : <StageStatusView title={t("pipeline.functionalTitle")} result={functionalAdequacyExec.result} execution={functionalAdequacyExec} />}
-                  </Card>
-                )}
               </>
             )}
             {activeSection === "files" && (
-              <Card>
+              <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                 <SplitView
                   label={t("detail.files.resizeLabel")}
                   right={
@@ -445,14 +479,16 @@ export function ProjectDetailPage() {
                 />
               </Card>
             )}
-            {activeSection === "audits" && (
+            {auditId !== undefined && (invocationId !== undefined
+              ? <AuditAgentEvidence projectId={project.id} auditId={Number(auditId)} invocationId={invocationId} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />
+              : <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />)}
+             {activeSection === "analysis" && auditId === undefined && (
               analysis.execution === null ? (
-                <p className="label">{t("detail.audits.empty")}</p>
+                null
               ) : (
-                <Card>
-                  {runStatuses}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, functionalAdequacyExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
-                  {[orientationExec, projectArchitectureExec, semanticValidationExec, functionalAdequacyExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
+                <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].some((execution) => execution?.status === "Failed" && execution.result) && <Link className="ui-button ui-button-secondary" to={`/projects/${id}/analysis`}>{t("detail.audits.viewPartial")}</Link>}
+                  {[orientationExec, projectArchitectureExec, semanticValidationExec, analyzerExec, architectExec].filter((execution) => execution?.configuration).map((execution) => execution && <div className="audit-configuration" key={execution.id}>
                     <h3>{t("detail.audits.configuration.title")}</h3>
                     <p className="label">{t("detail.audits.configuration.capturedFor", { agentType: execution.agentType, id: execution.id })}</p>
                     <dl>
@@ -469,9 +505,9 @@ export function ProjectDetailPage() {
                 </Card>
               )
             )}
-            {analysis.phase === "error" && <Card>
+             {auditId === undefined && activeSection !== "audits" && analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
-             <Link to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
+             <Link className="ui-button ui-button-secondary" to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
             </Card>}
             </div>
           </>

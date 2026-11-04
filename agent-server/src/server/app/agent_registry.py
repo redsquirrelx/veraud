@@ -1,4 +1,5 @@
-from ..agents.base import BaseAgent
+from server.runtimes.direct import BaseAgent
+
 from ..config.logs import get_logger
 
 logger = get_logger("agent-registry")

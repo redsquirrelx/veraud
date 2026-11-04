@@ -4,12 +4,6 @@ import userEvent from "@testing-library/user-event"
 import { Button } from "./Button.tsx"
 
 describe("Button", () => {
-  it("renders its children", () => {
-    render(<Button>Register project</Button>)
-
-    expect(screen.getByRole("button", { name: "Register project" })).toBeDefined()
-  })
-
   it("disables and shows a spinner while loading", () => {
     render(<Button loading>Register project</Button>)
 

@@ -14,6 +14,8 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3"
 import { GithubClient } from "./infrastructure/github-client/github.client.js"
 import { RealtimeGateway } from "./infrastructure/realtime-gateway/realtime.gateway.js"
 import { TaskRunner, type TaskQueue } from "./infrastructure/task-runner/task.runner.js"
+import { gitTaskExecutor } from "./infrastructure/task-runner/git.task-executor.js"
+import { serviceTaskExecutor, type ServiceTaskHandler } from "./infrastructure/task-runner/service.task-executor.js"
 import { AgentServerClient, type AgentInvoker } from "./infrastructure/agent-server-client/agent-server.client.js"
 import {
   AgentTargetResolverImpl,
@@ -22,20 +24,28 @@ import {
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
+import { QualityAuditRepository } from "./modules/quality-audit/quality-audit.repository.js"
+import { QualityAuditService } from "./modules/quality-audit/quality-audit.service.js"
+import { AuditSettingsService } from "./modules/quality-audit/audit-settings.service.js"
+import { registerAuditSettingsRoutes } from "./modules/quality-audit/audit-settings.controller.js"
+import { registerQualityAuditRoutes } from "./modules/quality-audit/quality-audit.controller.js"
 import { AgentExecutionRepository } from "./modules/agent-execution/agent-execution.repository.js"
 import { AgentExecutionService } from "./modules/agent-execution/agent-execution.service.js"
 import { registerAgentExecutionRoutes } from "./modules/agent-execution/agent-execution.controller.js"
+import { ExecutionEventRepository, registerExecutionEventRoutes } from "./modules/agent-execution/execution-events.js"
 import { AiProviderRepository } from "./modules/ai-provider/ai-provider.repository.js"
 import { AiProviderService, SEEDED_AI_PROVIDERS } from "./modules/ai-provider/ai-provider.service.js"
 import { registerAiProviderRoutes } from "./modules/ai-provider/ai-provider.controller.js"
 import { AgentSettingsRepository } from "./modules/agent-settings/agent-settings.repository.js"
 import { AgentSettingsService } from "./modules/agent-settings/agent-settings.service.js"
 import { registerAgentSettingsRoutes } from "./modules/agent-settings/agent-settings.controller.js"
-import { BACKEND_AGENT_TYPES } from "./modules/agent-settings/agent-types.js"
+import type { AgentCatalogSource } from "./modules/agent-settings/agent-catalog.js"
 import type { ModelAccessVerifier } from "./modules/agent-settings/agent-configuration.js"
 import { TaskRepository } from "./modules/task/task.repository.js"
 import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
+import { ProjectGraphService } from "./modules/project-graph/project-graph.service.js"
+import { registerProjectGraphRoutes } from "./modules/project-graph/project-graph.controller.js"
 
 export interface BuildAppOptions {
   databaseUrl: string
@@ -43,11 +53,14 @@ export interface BuildAppOptions {
   silent?: boolean
   agentServerUrl?: string
   makeRunner?: (tasks: TaskRepository, projects: ProjectRepository, gateway: RealtimeGateway) => TaskQueue
+  /** Trusted backend procedures; not exposed as an arbitrary task-launch HTTP API. */
+  taskHandlers?: Readonly<Record<string, ServiceTaskHandler>>
   /** How agents are reached and what they are invoked with. Tests override these
    *  to keep a run from leaving the machine; production leaves them unset. */
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
   makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
   makeModelAccessVerifier?: () => ModelAccessVerifier
+  makeAgentCatalogSource?: () => AgentCatalogSource
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -65,16 +78,25 @@ export async function buildApp(options: BuildAppOptions) {
   const github = new GithubClient()
   const projectRepository = new ProjectRepository(db)
   const taskRepository = new TaskRepository(db)
+  const graphService = new ProjectGraphService(db, taskRepository, projectRepository, gateway, options.workspaceDir, options.agentServerUrl)
   const runner = options.makeRunner
     ? options.makeRunner(taskRepository, projectRepository, gateway)
-    : new TaskRunner(taskRepository, projectRepository, gateway, options.workspaceDir)
+    : new TaskRunner(taskRepository, projectRepository, gateway, [
+      gitTaskExecutor(options.workspaceDir), serviceTaskExecutor({ ...options.taskHandlers, "graph.extract": graphService.handler() }),
+    ])
   const taskService = new TaskService(taskRepository, runner)
+  app.addHook("onReady", () => graphService.reconcile())
+  app.addHook("onClose", () => graphService.close())
   const agentSettingsRepository = new AgentSettingsRepository(db)
-  await agentSettingsRepository.ensureSeeded(BACKEND_AGENT_TYPES)
   const verifier = options.makeModelAccessVerifier?.() ?? (options.agentServerUrl
     ? new AgentServerClient(options.agentServerUrl)
     : { verify: async () => { throw new Error("No agent-server URL configured; model access cannot be verified") } })
-  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier)
+  const catalogSource = options.makeAgentCatalogSource?.() ?? (options.agentServerUrl ? new AgentServerClient(options.agentServerUrl) : undefined)
+  const agentSettingsService = new AgentSettingsService(agentSettingsRepository, verifier, catalogSource)
+  if (catalogSource) {
+    try { await agentSettingsService.synchronize() }
+    catch { app.log.warn("Agent-server catalog synchronization failed; keeping the last synchronized agents") }
+  }
   const agentExecutionRepository = new AgentExecutionRepository(db, agentSettingsRepository)
   const agentInvoker = options.makeAgentInvoker
     ? options.makeAgentInvoker(options.agentServerUrl)
@@ -91,6 +113,8 @@ export async function buildApp(options: BuildAppOptions) {
     agentSettingsService,
   )
   const projectService = new ProjectService(projectRepository, taskService, github, options.workspaceDir, agentExecutionService)
+  app.addHook("onReady", async () => { await agentExecutionService.resumeAuditCancellations() })
+  app.addHook("onClose", async () => { await agentExecutionService.stopAuditCancellations() })
   const aiProviderRepository = new AiProviderRepository(db)
   await aiProviderRepository.ensureSeeded(SEEDED_AI_PROVIDERS)
   const aiProviderService = new AiProviderService(aiProviderRepository)
@@ -106,11 +130,16 @@ export async function buildApp(options: BuildAppOptions) {
   
   gateway.register(app)
   registerProjectRoutes(app, projectService)
+  const auditSettings = new AuditSettingsService(db, options.agentServerUrl)
+  registerAuditSettingsRoutes(app, auditSettings)
+  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings, agentInvoker))
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)
+  registerProjectGraphRoutes(app, graphService, runner)
 
   registerAgentExecutionRoutes(app, agentExecutionService, gateway)
+  registerExecutionEventRoutes(app, new ExecutionEventRepository(db))
 
   app.get("/status", { logLevel: "silent", schema: {
     tags: ["Status"], summary: "Get backend and agent-server availability",

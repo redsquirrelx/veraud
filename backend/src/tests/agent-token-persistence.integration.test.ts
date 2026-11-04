@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { DatabaseSync } from "node:sqlite"
 import { buildApp } from "../app.js"
+import { makeTestAgentCatalogSource } from "./helpers/agentCatalog.js"
 import { AgentSettingsRepository } from "../modules/agent-settings/agent-settings.repository.js"
 import { AgentExecutionRepository } from "../modules/agent-execution/agent-execution.repository.js"
 import { AgentConfigurationError } from "../modules/agent-settings/agent-configuration.js"
@@ -62,7 +63,7 @@ test("token budgets, immutable snapshots and cumulative usage survive persistenc
   execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "migrate", "deploy"], {
     env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: "ignore",
   })
-  const { app, db } = await buildApp({ databaseUrl, workspaceDir: join(directory, "workspace"), silent: true })
+  const { app, db } = await buildApp({ databaseUrl, workspaceDir: join(directory, "workspace"), silent: true, makeAgentCatalogSource: makeTestAgentCatalogSource })
   auditResponseSerialization(app)
   try {
     const provider = await db.aiProvider.findFirstOrThrow({ where: { name: "OpenAI" } })

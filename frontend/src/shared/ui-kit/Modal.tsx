@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { XIcon } from "./icons.tsx"
+import { IconButton } from "./IconButton.tsx"
 import "./Modal.css"
 
 interface ModalProps {
@@ -46,9 +47,9 @@ export function Modal({ open, label, title, size = "default", onClose, children 
       <div className={size === "narrow" ? "ui-modal ui-modal-narrow" : "ui-modal"} role="dialog" aria-modal="true" aria-label={label} ref={dialog}>
         <div className="ui-modal-head">
           {title !== undefined && <span className="ui-modal-title">{title}</span>}
-          <button type="button" className="ui-modal-close" aria-label={t("ui.close")} onClick={onClose}>
+          <IconButton className="ui-modal-close" variant="ghost" size="sm" ariaLabel={t("ui.close")} onClick={onClose}>
             <XIcon size={14} />
-          </button>
+          </IconButton>
         </div>
         {children}
       </div>

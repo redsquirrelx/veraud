@@ -1,0 +1,23 @@
+"""Compatibility exports for the canonical domain-independent agent contracts."""
+
+from config.agents import InvestigationConfig, ProviderRateLimits
+from server.contracts.audit import (
+    AuditRequest,
+    AuditResult,
+    CandidateFinding,
+    Contract,
+    Criterion,
+    DeferredProviderStage,
+    Evaluation,
+    EvidenceReference,
+    Finding,
+    FindingReview,
+    Hypothesis,
+    InvestigationPlan,
+    Review,
+)
+
+__all__ = [
+    "AuditRequest", "AuditResult", "CandidateFinding", "Contract", "Criterion", "DeferredProviderStage", "Evaluation", "EvidenceReference",
+    "Finding", "FindingReview", "Hypothesis", "InvestigationConfig", "InvestigationPlan", "ProviderRateLimits", "Review",
+]

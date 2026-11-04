@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
+import { Badge, DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, Tooltip, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
 import type { ServiceStatus } from "../useBackendStatus.ts"
 import "./AppNavigation.css"
 
@@ -18,14 +18,14 @@ export function AppBrand({ compact = false }: { compact?: boolean }) {
 export function AppMainNavigation({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation("common")
   return <nav className="app-nav" aria-label={t("navigation.main")}>
-    <NavLink to="/" end aria-label={t("navigation.home")} title={t("navigation.home")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
+    <Tooltip content={t("navigation.home")} disabled={!compact}>{(props) => <NavLink {...props} to="/" end aria-label={t("navigation.home")} title={compact ? undefined : t("navigation.home")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <GridIcon />
       {!compact && t("navigation.home")}
-    </NavLink>
-    <NavLink to="/settings" aria-label={t("navigation.settings")} title={t("navigation.settings")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
+    </NavLink>}</Tooltip>
+    <Tooltip content={t("navigation.settings")} disabled={!compact}>{(props) => <NavLink {...props} to="/settings" aria-label={t("navigation.settings")} title={compact ? undefined : t("navigation.settings")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <SlidersIcon />
       {!compact && t("navigation.settings")}
-    </NavLink>
+    </NavLink>}</Tooltip>
   </nav>
 }
 
@@ -52,13 +52,8 @@ function StatusBadge({ service, status, compact }: { service: keyof typeof servi
     label: t(serviceLabelKeys[service]),
     status: t(online ? "navigation.status.online" : unknown ? "navigation.status.unknown" : "navigation.status.offline"),
   })
-  return <span title={text} aria-label={text} className={online ? "app-status" : unknown ? "app-status app-status-unknown" : "app-status app-status-offline"}>
-    <span
-      className={online ? "app-status-dot" : unknown ? "app-status-dot app-status-dot-unknown" : "app-status-dot app-status-dot-offline"}
-      aria-hidden="true"
-    />
-    {!compact && text}
-  </span>
+  return <Badge tone={online ? "success" : unknown ? "unknown" : "danger"}
+    dot compact={compact} title={text} aria-label={text}>{text}</Badge>
 }
 
 /** Presentational only: the containing layout owns the single status poll. */

@@ -44,6 +44,9 @@ function stubProjects() {
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
+    if (url.includes("/audits?limit=")) {
+      return new Response(JSON.stringify({ items: [], total: 0, hasRunning: false, limit: 5, offset: 0 }), { status: 200 })
+    }
     if (url.includes("/git/branches")) {
       return new Response(JSON.stringify(gitBranches), { status: 200 })
     }
@@ -89,6 +92,7 @@ describe("ProjectDetailPage in Spanish", () => {
     // Translated section tabs keep stable navigation targets.
     expect(screen.getByRole("button", { name: "Resumen" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Análisis" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Grafo estructural" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Auditorías" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Archivos" })).toBeDefined()
     // Registered/synced key strings with locale-formatted dates.
@@ -98,15 +102,21 @@ describe("ProjectDetailPage in Spanish", () => {
     expect(screen.getByRole("region", { name: "Resumen del proyecto" })).toBeDefined()
   })
 
-  it("translates the audits empty state and the not-found message", async () => {
+  it("separates audit setup in Analysis from history in Audits in Spanish", async () => {
     await initializeI18n("es")
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByRole("heading", { name: "acme/Demo" })
-    await userEvent.click(screen.getByRole("button", { name: "Auditorías" }))
+    await userEvent.click(screen.getByRole("button", { name: "Análisis" }))
 
-    expect(await screen.findByText("Aún no hay análisis: elige una versión y pulsa Analizar")).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeDefined()
+    expect(screen.queryByRole("region", { name: "Grafo estructural" })).toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: "Auditorías" }))
+    expect(screen.queryByRole("heading", { name: "Auditoría de calidad" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Grafo estructural" })).toBeNull()
+    expect(await screen.findByText("No hay auditorías registradas.")).toBeDefined()
+    expect(screen.queryByText("Aún no hay análisis: elige una versión y pulsa Analizar")).toBeNull()
   })
 
   it("translates the not-found message for unknown projects", async () => {
@@ -115,5 +125,19 @@ describe("ProjectDetailPage in Spanish", () => {
     renderDetail("/projects/99")
 
     expect(await screen.findByText("Proyecto no encontrado")).toBeDefined()
+  })
+
+  it("opens the structural graph as a separate translated section", async () => {
+    await initializeI18n("es")
+    stubProjects()
+    renderDetail("/projects/2/graph")
+
+    expect(await screen.findByRole("region", { name: "Grafo estructural" })).toBeVisible()
+    expect(screen.getByText("Analiza el proyecto para cargar el grafo estructural de la rama y el commit seleccionados.")).toBeVisible()
+    expect(screen.getByRole("button", { name: "Grafo estructural" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("heading", { name: "Auditoría de calidad" })).toBeNull()
+    await userEvent.click(screen.getByRole("button", { name: "Análisis" }))
+    expect(await screen.findByRole("heading", { name: "Auditoría de calidad" })).toBeVisible()
+    expect(screen.queryByRole("region", { name: "Grafo estructural" })).toBeNull()
   })
 })

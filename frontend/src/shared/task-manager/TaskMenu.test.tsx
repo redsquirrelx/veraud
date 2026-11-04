@@ -67,6 +67,17 @@ describe("TaskMenu", () => {
     expect(container.innerHTML).toBe("")
   })
 
+  it("describes Graphify service tasks instead of showing an unavailable Git command", async () => {
+    render(<TaskMenu tasks={[{ ...running, kind: "graph.extract", command: null, description: "Graphify", status: "Failed" }]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Show details for Graphify" }))
+    expect(screen.getByText("Service")).toBeVisible()
+    expect(screen.getByText("graph.extract")).toBeVisible()
+    expect(screen.getByText("graph.extract").closest("pre")).toHaveClass("task-command")
+    expect(screen.getByText("Structural graph extraction with Graphify.")).toHaveClass("task-service-description")
+    expect(screen.queryByText(/does not use a Git command/)).toBeNull()
+    expect(screen.queryByText("Command unavailable")).toBeNull()
+  })
+
   it("keeps finished tasks with their final status", async () => {
     const { rerender } = render(<TaskMenu tasks={[running]} />)
 
@@ -134,6 +145,16 @@ describe("TaskMenu", () => {
 describe("TaskMenu Spanish", () => {
   afterEach(async () => {
     await changeLanguage("en")
+  })
+
+  it("labels Graphify as a service in Spanish", async () => {
+    await changeLanguage("es")
+    render(<TaskMenu tasks={[{ ...running, kind: "graph.extract", command: null, description: "Graphify" }]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar detalles de Graphify" }))
+    expect(screen.getByText("Servicio")).toBeVisible()
+    expect(screen.getByText("Extracción del grafo estructural mediante Graphify.")).toBeVisible()
+    expect(screen.queryByText(/no utiliza un comando Git/)).toBeNull()
+    expect(screen.queryByText("Comando no disponible")).toBeNull()
   })
 
   it("translates menu chrome and keeps language state consistent", async () => {

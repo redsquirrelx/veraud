@@ -64,17 +64,204 @@
       "loadAnalyzed": "Could not load analyzed versions"
     }
   },
+  "structuralGraph": {
+    "title": "Structural graph",
+    "empty": "Analyze the project to load the structural graph for the selected branch and commit.",
+    "noSelection": "Not selected"
+  },
   "analyze": {
+    "audit": {
+      "label": "Quality audit",
+      "description": "Maintainability and security, with one Word report"
+    },
     "label": "Analyze",
     "loading": "Analyzing",
     "pipelines": {
       "projectArchitecture": {
         "label": "Project architecture",
         "description": "Orientation, architecture and semantic validation"
+      }
+    }
+  },
+  "qualityAudits": {
+    "loading": "Loading audits",
+    "viewDetails": "View details",
+    "findingsList": {
+      "pageRange": "Findings {{start}}–{{end}} of {{total}} · {{order}}",
+      "perPage": "Findings per page", "sortOrder": "Severity order",
+      "severityDescending": "Highest to lowest severity", "severityAscending": "Lowest to highest severity",
+      "identifier": "Identifier", "description": "Full description", "impact": "Software impact", "recommendation": "Recommendations",
+      "attribute": "Attribute", "subcharacteristic": "Subcharacteristic", "validation": "Validation",
+      "verified": "Verified", "inconclusive": "Inconclusive", "discarded": "Discarded",
+      "title": "Findings by quality attribute", "severity": "Severity", "components": "Affected component",
+      "agent": "Detecting agent", "original": "View original details", "empty": "No findings were recorded in the report.",
+      "functionalAdequacy": "Functional adequacy"
+    },
+    "findingsSummary": {
+      "title": "Findings summary", "total": "Total findings detected",
+      "byAttribute": "By quality attribute", "bySeverity": "By severity level",
+      "maintainability": "Maintainability", "security": "Security", "performance_efficiency": "Performance",
+      "critical": "Critical", "high": "High", "medium": "Medium", "low": "Low", "info": "Informational",
+      "otherAttributes": "Other attributes", "otherSeverities": "Undetermined / other severity",
+      "notice": "Counts from the original report. Zero findings does not imply that the attribute was evaluated or demonstrate compliance."
+    },
+    "setup": {
+      "securityScope": "Security runs the available catalog techniques. Selecting individual techniques is not supported by the executor.",
+      "functionalScope": "Functional adequacy checks supplied requirements against the selected revision, or explores static capabilities when no requirements are supplied.",
+      "inheritedSettings": "Saved models, credentials and operating settings are inherited. Model access is checked again when starting.",
+      "advanced": "Advanced settings for this run (developer)",
+      "runOnly": "Local changes for the next audit. Empty fields inherit saved values; global settings are not changed.",
+      "optionsFailed": "Could not load available settings. Retry or continue with inherited values.",
+      "invalidOptions": "Check the audit settings: some values are outside the allowed limits.",
+      "catalogFailed": "Could not check availability of the selected agents.",
+      "unavailable": "The agent is not available in the current catalog.",
+      "unconfigured": "Configure a model and compatible credentials before starting.",
+      "verificationFailed": "The last model access check failed. Review the agent settings.",
+      "checkAgain": "Check agents again"
+    },
+    "results": {
+      "noFindings": "No findings were identified in this audit", "unfinished": "The audit has not finished yet", "retry": "Retry",
+      "generalTab": "General Overview", "findingsTab": "Findings", "tabsLabel": "Audit result views",
+      "headerLabel": "Audit details", "executionDate": "Execution date", "finalStatus": "Final status",
+      "sectionFailed": "Could not load this section.", "showMore": "Show more ({{remaining}} remaining)",
+      "title": "Audit results · #{{id}}", "back": "Back to audits",
+      "notFound": "This audit does not exist in the project.", "loadFailed": "Could not load the audit results.",
+      "noReport": "This audit did not produce a report."
+    },
+    "configurationHistory": {
+      "reuse": "Reuse configuration",
+      "reuseFailed": "Could not load the configuration. Try again.",
+      "reuseLoaded": "Selections loaded. The current branch and commit are unchanged.",
+      "reuseAdjusted": "Some selections are no longer available or cannot be reproduced. They have been disabled; review the configuration. The current branch and commit are unchanged.",
+      "view": "View configuration", "title": "Audit configuration · #{{id}}",
+      "branch": "Branch", "commit": "Commit", "unavailable": "Configuration was not recorded for this audit.",
+      "loadFailed": "Could not load this audit's configuration.",
+      "invocations": "Invoked agents", "noInvocations": "No invocations recorded.",
+      "scopeNotice": "The recorded selection does not imply that every agent was executed.",
+      "running": "Running", "completed": "Completed", "failed": "Failed", "skipped": "Skipped", "cancelled": "Cancelled"
+    },
+    "summary": {
+      "unavailable": "Summary unavailable",
+      "titles": {
+        "architectureBoundary": "Architectural boundaries", "responsibility": "Responsibilities", "dependencyImpact": "Dependency impact",
+        "abstraction": "Abstractions", "reuseOpportunity": "Reuse opportunities", "componentAdaptability": "Adaptability",
+        "sast": "Static analysis", "secrets": "Secrets", "dependencies": "Dependencies", "enrichment": "Context",
+        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification"
+      }
+    },
+    "title": "Quality audit",
+    "description": "Evaluate project quality on the selected revision.",
+    "attributesLegend": "Attributes to evaluate",
+    "attributes": {
+      "maintainability": { "description": "Code structure and ease of evolution." },
+      "security": { "description": "Repository risks and potential vulnerabilities." },
+      "functionalAdequacy": { "description": "Compare requirements with repository code, or explore functional capabilities without a model." }
+    },
+    "requirements": {
+      "label": "Functional requirements",
+      "help": "Enter one requirement per line ({{minimum}}–{{maximum}}). Leave empty for static exploration without a model or compliance percentage. IDs such as REQ-001 are assigned when requirements are supplied."
+    },
+    "start": "Start audit",
+    "starting": "Starting…",
+    "configureAgents": "Configure agents",
+    "configuration": {
+      "title": "Configure audit",
+      "description": "Enable attributes and configure their scope for this audit.",
+      "enableAttribute": "Enable {{attribute}}",
+      "restoreDefaults": "Restore defaults",
+      "active": "Enabled",
+      "inactive": "Disabled",
+      "previewNotice": "The maintainability selection applies to the next audit. Its manager and the coordinators of selected subcharacteristics are included automatically.",
+      "maintainability": {
+        "selectDimension": "Select at least one maintainability subcharacteristic or deselect Maintainability.",
+        "legend": "Subcharacteristics to evaluate",
+        "modularity": "Modularity",
+        "reusability": "Reusability",
+        "analyzability": "Analyzability",
+        "modifiability": "Modifiability",
+        "testability": "Testability",
+        "available": "Available on the server",
+        "unavailable": "Unavailable: no registered and available agent",
+        "loading": "Checking registered agents…",
+        "loadFailed": "Could not check agent availability.",
+        "retry": "Retry"
       },
-      "functionalAdequacy": {
-        "label": "Functional adequacy",
-        "description": "Explore capabilities or check requirements against the code"
+      "optionsPending": "Configuration options will be available soon.",
+      "investigators": {
+        "view": "View investigators",
+        "partialNotice": "The audit result will be partial because not all available investigators are selected.",
+        "empty": "No investigators are registered for this subcharacteristic.",
+        "noDescription": "No description is available for this investigator.",
+        "architectureBoundary": "Evaluates whether dependencies respect architectural boundaries and design principles.",
+        "responsibility": "Examines coherent responsibilities and independent reasons for change.",
+        "dependencyImpact": "Analyzes dependency impacts on maintenance and change propagation.",
+        "abstraction": "Evaluates whether abstractions enable reuse or introduce unnecessary complexity.",
+        "reuseOpportunity": "Identifies functionality that could share an implementation and weighs its differences.",
+        "componentAdaptability": "Examines constraints that make components difficult to reuse in other contexts."
+      },
+      "noAttributes": "Enable at least one attribute in this panel to start the audit."
+    },
+    "runningNotice": "Audit in progress. Results are retained even when the evaluation is partial.",
+    "historyTitle": "Project audits",
+    "empty": "No audits recorded.",
+    "revisionPending": "pending",
+    "errors": {
+      "load": "Could not load audits",
+      "start": "Could not start audit",
+      "report": "Could not load report",
+      "download": "Could not download report"
+    },
+    "runId": {
+      "label": "Run ID",
+      "initializing": "Initializing…",
+      "unavailable": "Unavailable",
+      "openBlackboard": "View Blackboard"
+    },
+    "evaluation": {
+      "partial": "Partial evaluation",
+      "completed": "Evaluation completed",
+      "failed": "Evaluation failed"
+    },
+    "viewReport": "View report",
+    "downloadWord": "Download Word report",
+    "downloading": "Downloading…",
+    "report": {
+      "title": "Audit report · #{{id}}",
+      "originalNotice": "Original report generated from this run's Blackboard.",
+      "notRecorded": "Not recorded",
+      "empty": "No records",
+      "sourceReferences_one": "Source reference ({{formattedCount}})",
+      "sourceReferences_other": "Source references ({{formattedCount}})",
+      "sections": {
+        "identification": "1. Identification",
+        "executive_summary": "2. Executive summary",
+        "objectives_and_scope": "3. Objectives and scope",
+        "methodology_and_criteria": "4. Methodology and criteria",
+        "software_description": "5. Software description",
+        "quality_results": "6. Quality results",
+        "consolidated_risks": "7. Consolidated risks",
+        "general_conclusions": "8. General conclusions",
+        "recommendations_and_improvement_plan": "9. Recommendations and improvement plan",
+        "annexes_and_traceability": "10. Annexes and traceability"
+      },
+      "fields": {
+        "objective": "Objective",
+        "evaluated_attributes": "Evaluated attributes",
+        "principal_results": "Principal results",
+        "conclusion": "Conclusion",
+        "findings": "Findings",
+        "total": "Total",
+        "by_verification": "By verification",
+        "verified": "Verified",
+        "inconclusive": "Inconclusive",
+        "discarded": "Discarded",
+        "status": "Status",
+        "limitations": "Limitations",
+        "source_refs": "Source references",
+        "title": "Title",
+        "project_name": "Project",
+        "revisions": "Revisions",
+        "executed_at": "Execution date"
       }
     }
   },
@@ -91,6 +278,7 @@
     "partialResults": "Partial results available — incomplete",
     "orientationTitle": "Orientation",
     "architectureTitle": "Architecture",
+    "architectureDiagram": "Architecture diagram",
     "semanticTitle": "Semantic validation",
     "components": "Components ({{count}})",
     "startingPoints": "Starting points ({{count}})",
@@ -120,18 +308,7 @@
     "diagram": "Diagram",
     "diagramWithOrigin": "Diagram ({{origin}} report)",
     "diagramFallback": "Diagram “{{title}}”: {{nodes}} node(s), {{edges}} edge(s)",
-    "proposedCorrection": "Proposed correction: {{correction}}",
-    "functionalTitle": "Functional adequacy",
-    "functionalExploratory": "Exploratory audit",
-    "functionalRequirementsBased": "Requirements-based audit",
-    "functionalScore": "{{score}}% · {{fulfilled}}/{{total}} requirements",
-    "functionalRequirementResults": "Requirement results ({{count}})",
-    "functionalCapabilities": "Detected capabilities ({{count}})",
-    "functionalSubattributes": "Subattribute summary",
-    "functionalEvaluationCounts": "{{evaluated}} evaluated · {{confirmed}} confirmed · {{probable}} probable · {{unverified}} unverified",
-    "functionalFindings": "Capability findings ({{count}})",
-    "functionalCriteria": "Criterion: {{criteria}}",
-    "functionalRecommendations": "Recommendations ({{count}})"
+    "proposedCorrection": "Proposed correction: {{correction}}"
   },
   "detail": {
     "loading": "Loading project",
@@ -201,6 +378,63 @@
     "versionApplied": "Version {{branch}} at {{shortHash}} applied",
     "reviewAgents": "Review agent configuration"
   },
+  "auditStatus": {
+    "regionLabel": "Audit status",
+    "title": "Audit #{{id}}",
+    "revision": "{{branch}} @ {{hash}}",
+    "revisionUnknown": "No revision recorded",
+    "openProject": "Open {{repository}}",
+    "toggleLabel": "{{id}} · {{state}} · {{progress}}",
+    "createdAt": "Created {{date}}",
+    "finishedAt": "Finished {{date}}",
+    "reportAvailable": "Report available",
+    "progress": {
+      "empty": "No agents yet",
+      "finished": "{{finished}} of {{total}} agents"
+    },
+    "states": {
+      "waiting": "Waiting",
+      "running": "Running",
+      "completed": "Completed",
+      "partial": "Partial",
+      "failed": "Failed"
+    },
+    "pipelines": {
+      "empty": "No pipelines recorded",
+      "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
+      "maintainability": "Maintainability",
+      "security": "Security",
+      "functionalAdequacy": "Functional adequacy"
+    },
+    "phases": {
+      "plan_investigation": "Planning", "investigate": "Investigation", "evaluate_evidence": "Evidence evaluation",
+      "review_findings": "Review", "finalize": "Finalizing", "tools": "Tools",
+      "limited_review": "Review", "limited_finalize": "Finalizing",
+      "plan_assessment": "Planning", "delegate_investigations": "Delegation", "collect_findings": "Collection",
+      "synthesize_findings": "Synthesis", "analyze_audit_scope": "Scope analysis", "plan_audit": "Planning",
+      "decide_next_step": "Next-step evaluation", "plan_targeted_follow_up": "Follow-up planning", "finalize_assessment": "Finalizing",
+      "delegate_auditors": "Delegation", "collect_assessments": "Collection", "synthesize_assessments": "Synthesis",
+      "refine_audit_plan": "Plan refinement", "finalize_audit": "Finalizing",
+      "prepare": "Preparation", "code_mapping": "Code retrieval", "verify": "Verification", "build_results": "Building results",
+      "security_scan": "Security scanning", "security_remediation": "Remediation"
+    },
+    "agents": {
+      "empty": "No agents recorded",
+      "title": "{{agentType}} run #{{id}}",
+      "tokens": "{{input}} in · {{output}} out",
+      "notReported": "Not reported",
+      "tokensUnreported": "Token usage not reported",
+      "startedAt": "Started {{date}}",
+      "finishedAt": "Finished {{date}}"
+    },
+    "drawer": {
+      "trigger_one": "{{count}} audit",
+      "trigger_other": "{{count}} audits",
+      "title": "Audits",
+      "panelLabel": "Audit statuses",
+      "empty": "No audits to show"
+    }
+  },
   "status": {
     "projectBadge": {
       "queued": "QUEUED",
@@ -260,22 +494,5 @@
     }
   },
   "selectedCount_one": "{{count}} project selected",
-  "selectedCount_other": "{{count}} projects selected",
-  "functional": {
-    "status": {
-      "fulfilled": "Fulfilled",
-      "notFulfilled": "Not fulfilled",
-      "insufficientEvidence": "Insufficient evidence"
-    },
-    "classification": {
-      "confirmed": "Confirmed",
-      "probable": "Probable",
-      "unverified": "Not verified"
-    },
-    "attribute": {
-      "completeness": "Completeness",
-      "correctness": "Correctness",
-      "relevance": "Relevance"
-    }
-  }
+  "selectedCount_other": "{{count}} projects selected"
 }

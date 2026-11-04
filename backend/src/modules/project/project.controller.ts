@@ -323,66 +323,6 @@ export function registerProjectRoutes(app: FastifyInstance, service: ProjectServ
     }
   })
 
-  app.post("/api/projects/:id/functional-adequacy", {
-    schema: {
-      tags: ["Projects"], summary: "Start functional adequacy analysis of a project version",
-      description: "Creates one functional_adequacy execution on the selected version. Requirements are optional: when omitted or empty the pipeline runs in exploratory mode without a model configuration; when present the saved functional_adequacy model is verified before any records are created. Completion arrives through callbacks/WebSocket.",
-      response: { 201: objectResponse({ versionId: { type: "integer" }, evaluationId: { type: "integer" }, executions: objectResponse({ functional_adequacy: { $ref: "AgentExecution#" } }) }), ...errorResponses([400, 404]), 422: { type: "object", required: ["message"], properties: { message: { type: "string" }, agents: configurationIssuesSchema } } },
-      params: idParams,
-      body: {
-        type: "object",
-        required: ["branch", "commitHash"],
-        properties: {
-          branch: branchInput,
-          commitHash: commitHashInput,
-          requirements: {
-            type: "array",
-            maxItems: 100,
-            items: {
-              type: "object",
-              required: ["requirement_id", "description"],
-              additionalProperties: false,
-              properties: {
-                requirement_id: { type: "string", minLength: 1 },
-                description: { type: "string", minLength: 1 },
-              },
-            },
-          },
-        },
-      },
-    },
-  }, async (request, reply) => {
-    const params = request.params as { id: string }
-    const body = request.body as {
-      branch: string
-      commitHash: string
-      requirements?: Array<{ requirement_id: string, description: string }>
-    }
-
-    try {
-      const result = await service.analyzeProjectFunctionalAdequacy(Number(params.id), body.branch, body.commitHash, body.requirements ?? [])
-      return reply.code(201).send({
-        versionId: result.versionId,
-        evaluationId: result.evaluationId,
-        executions: {
-          functional_adequacy: toExecution(result.executions.functional_adequacy),
-        },
-      })
-    } catch (error) {
-      if (error instanceof ProjectNotFoundError) {
-        return reply.code(404).send({ message: error.message })
-      }
-      if (error instanceof InvalidGitRequestError) {
-        return reply.code(400).send({ message: error.message })
-      }
-      if (error instanceof WorkspaceMissingError || error instanceof UnknownExecutionTargetError || error instanceof AnalysisAlreadyRunningError || error instanceof SyncInProgressError) {
-        return reply.code(422).send({ message: error.message })
-      }
-      if (error instanceof AgentConfigurationError) return reply.code(422).send({ message: error.message, agents: error.agents })
-      throw error
-    }
-  })
-
   app.get("/api/projects/:id/versions", {
     schema: { params: idParams, tags: ["Projects"], summary: "List analyzed project versions",
       description: "Returns versions newest first, with their latest evaluation/execution and derived status. An empty list is valid.",
@@ -440,6 +380,7 @@ function toExecution(execution: StoredAgentExecution) {
     status: execution.status,
     result: execution.result,
     error: execution.error,
+    errorDetail: execution.errorDetail ?? null,
     inputTokens: execution.inputTokens,
     outputTokens: execution.outputTokens,
     estimatedTokens: execution.estimatedTokens,

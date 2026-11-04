@@ -130,26 +130,30 @@ export function DirectoryTree({
     }
   }
 
+  const filterInputs = <>
+    <span className="label">{t("ui.directoryTree.filter")}</span>
+    <TextInput value={nameFilter} placeholder={t("ui.directoryTree.namePlaceholder")} disabled={refreshing} onChange={setNameFilter} />
+    <span className="label">{t("ui.directoryTree.extension")}</span>
+    <ItemSelector
+      items={[
+        { id: ALL_EXTENSIONS, label: t("ui.directoryTree.all") },
+        ...extensions.map((value) => ({ id: value, label: value })),
+      ]}
+      selectedId={extension}
+      onSelect={setExtension}
+      hasMore={false}
+      onLoadMore={() => {}}
+      emptyText={t("ui.directoryTree.noExtensions")}
+      placeholder={t("ui.directoryTree.all")}
+      disabled={refreshing}
+    />
+  </>
+
   return (
     <div className="directory-tree-view" aria-busy={refreshing}>
       <Panel>
         <div className="directory-filters" ref={filtersRef}>
-          <span className="label">{t("ui.directoryTree.filter")}</span>
-          <TextInput value={nameFilter} placeholder={t("ui.directoryTree.namePlaceholder")} disabled={refreshing} onChange={setNameFilter} />
-          <span className="label">{t("ui.directoryTree.extension")}</span>
-          <ItemSelector
-            items={[
-              { id: ALL_EXTENSIONS, label: t("ui.directoryTree.all") },
-              ...extensions.map((value) => ({ id: value, label: value })),
-            ]}
-            selectedId={extension}
-            onSelect={setExtension}
-            hasMore={false}
-            onLoadMore={() => {}}
-            emptyText={t("ui.directoryTree.noExtensions")}
-            placeholder={t("ui.directoryTree.all")}
-            disabled={refreshing}
-          />
+          {filterInputs}
           {visible.length === 0 ? (
             <button type="button" className="directory-reset" onClick={resetFilters}>{t("ui.directoryTree.clear")}</button>
           ) : (
@@ -167,22 +171,7 @@ export function DirectoryTree({
           </button>
           {menuOpen && (
             <div className="directory-overflow-panel" role="menu" aria-label={t("ui.directoryTree.moreFilters")}>
-              <span className="label">{t("ui.directoryTree.filter")}</span>
-              <TextInput value={nameFilter} placeholder={t("ui.directoryTree.namePlaceholder")} disabled={refreshing} onChange={setNameFilter} />
-              <span className="label">{t("ui.directoryTree.extension")}</span>
-              <ItemSelector
-                items={[
-                  { id: ALL_EXTENSIONS, label: t("ui.directoryTree.all") },
-                  ...extensions.map((value) => ({ id: value, label: value })),
-                ]}
-                selectedId={extension}
-                onSelect={setExtension}
-                hasMore={false}
-                onLoadMore={() => {}}
-                emptyText={t("ui.directoryTree.noExtensions")}
-                placeholder={t("ui.directoryTree.all")}
-                disabled={refreshing}
-              />
+              {filterInputs}
               {onRefresh !== undefined && <RefreshButton loading={refreshing} onClick={() => void refresh()} />}
             </div>
           )}

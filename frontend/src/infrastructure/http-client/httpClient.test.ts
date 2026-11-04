@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, requestProjectArchitecture, requestProjectFunctionalAdequacy } from "./httpClient.ts"
+import { ApiError, createAiCredential, createAiModel, deleteAiCredential, deleteAiModel, getAgentExecution, listAiProviders, listVersions, registerProject, requestProjectArchitecture } from "./httpClient.ts"
 
 const realFetch = globalThis.fetch
 
@@ -35,6 +35,12 @@ describe("listAiProviders", () => {
 
     await expect(listAiProviders()).rejects.toMatchObject({ status: 500 } as Partial<ApiError>)
   })
+
+  it("uses the fixed GET error without parsing a failed response body", async () => {
+    globalThis.fetch = (async () => new Response("not JSON", { status: 503 })) as typeof fetch
+
+    await expect(listAiProviders()).rejects.toMatchObject({ status: 503, message: "Could not load AI providers", messageSource: "client" })
+  })
 })
 
 describe("createAiModel", () => {
@@ -55,8 +61,32 @@ describe("createAiModel", () => {
   it("reports duplicates with the backend message", async () => {
     stubFetch(409, { message: "Model gpt-4o is already registered" })
 
-    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 409, message: "Model gpt-4o is already registered" } as Partial<ApiError>)
+    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 409, message: "Model gpt-4o is already registered", messageSource: "server" } as Partial<ApiError>)
   })
+
+  it("uses the endpoint fallback when an error response has no message", async () => {
+    stubFetch(400, {})
+
+    await expect(createAiModel(1, "gpt-4o")).rejects.toMatchObject({ status: 400, message: "AI provider request failed", messageSource: "client" })
+  })
+
+  it("preserves JSON parsing errors for malformed mutation responses", async () => {
+    globalThis.fetch = (async () => new Response("not JSON", { status: 500 })) as typeof fetch
+
+    await expect(createAiModel(1, "gpt-4o")).rejects.toBeInstanceOf(SyntaxError)
+  })
+})
+
+it("keeps the registration request timeout signal", async () => {
+  let signal: AbortSignal | null | undefined
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    signal = init?.signal
+    return new Response(JSON.stringify({ id: 1, repositoryOwner: "acme", repositoryName: "Demo", status: "QUEUED" }), { status: 201 })
+  }) as typeof fetch
+
+  await registerProject("https://github.com/acme/Demo")
+
+  expect(signal).toBeInstanceOf(AbortSignal)
 })
 
 describe("deleteAiModel", () => {
@@ -75,10 +105,18 @@ describe("deleteAiModel", () => {
 
 describe("createAiCredential", () => {
   it("posts the name and key returning only the preview", async () => {
-    stubFetch(201, { id: 20, name: "prod", apiKeyPreview: "****1234", inUse: false })
+    let request: { url: string, method: string, body: Record<string, unknown> } | undefined
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      request = { url: String(url), method: init?.method ?? "GET", body: JSON.parse(String(init?.body)) as Record<string, unknown> }
+      return new Response(JSON.stringify({ id: 20, name: "prod", apiKeyPreview: "****1234", inUse: false }), { status: 201 })
+    }) as typeof fetch
 
     const credential = await createAiCredential(3, "prod", "secret-1234")
 
+    expect(request).toMatchObject({ method: "POST", body: { name: "prod" } })
+    expect(request?.url).toContain("/api/ai-providers/3/credentials")
+    expect(typeof request?.body.apiKey).toBe("string")
+    expect(request?.body.apiKey).toBeTruthy()
     expect(credential.apiKeyPreview).toBe("****1234")
     expect(credential).not.toHaveProperty("apiKey")
   })
@@ -136,36 +174,6 @@ describe("requestProjectArchitecture", () => {
     stubFetch(422, { message: "Agents require attention: semantic_validation" })
 
     await expect(requestProjectArchitecture(2, "main", "a".repeat(40))).rejects.toMatchObject({ status: 422 } as Partial<ApiError>)
-  })
-})
-
-describe("requestProjectFunctionalAdequacy", () => {
-  it("omits requirements for the exploratory audit", async () => {
-    const seen: Array<{ url: string, body: unknown }> = []
-    const runs = { functional_adequacy: { ...waitingExecution, id: 31, agentType: "functional_adequacy" } }
-    globalThis.fetch = (async (url: string, init?: { body?: string }) => {
-      seen.push({ url: String(url), body: JSON.parse(init?.body ?? "{}") as unknown })
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: runs }), { status: 201 })
-    }) as typeof fetch
-
-    const response = await requestProjectFunctionalAdequacy(2, "main", "a".repeat(40))
-
-    expect(response.executions.functional_adequacy.agentType).toBe("functional_adequacy")
-    expect(seen[0]?.url).toContain("/api/projects/2/functional-adequacy")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
-  })
-
-  it("forwards explicit requirements", async () => {
-    const seen: Array<{ body: unknown }> = []
-    const requirements = [{ requirement_id: "RF-01", description: "Catalog lists products" }]
-    globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
-      seen.push({ body: JSON.parse(init?.body ?? "{}") as unknown })
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: { functional_adequacy: waitingExecution } }), { status: 201 })
-    }) as typeof fetch
-
-    await requestProjectFunctionalAdequacy(2, "main", "a".repeat(40), requirements)
-
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40), requirements })
   })
 })
 

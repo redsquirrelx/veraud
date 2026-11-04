@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Card, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
-import "./TestSelectorPage.css"
 
 const PAGE_SIZE = 10
 const BRANCH_COUNT = 25
@@ -24,9 +23,9 @@ export function TestSelectorPage() {
   }
 
   return (
-    <section className="test-selector-page">
+    <section className="test-selector-page ui-page-stack">
       <h1>{t("testPages.selector.title")}</h1>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.selector.branches", { visible: items.length, total: allBranches.length })}</span>
         <ItemSelector
           items={items}
@@ -36,11 +35,11 @@ export function TestSelectorPage() {
           onLoadMore={loadMore}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.selector.selectedBranch")}</span>
         <p className="mono">{selectedId ?? t("testPages.none")}</p>
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.selector.findById")}</span>
         <ItemSearcher
           items={items}
@@ -50,7 +49,7 @@ export function TestSelectorPage() {
           onLoadMore={loadMore}
         />
       </Card>
-      <Card>
+      <Card layout="stack" gap="sm" align="start">
         <span className="label">{t("testPages.selector.foundBranch")}</span>
         <p className="mono">{foundId ?? t("testPages.none")}</p>
       </Card>

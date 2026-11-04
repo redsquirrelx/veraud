@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import type { WebSocket } from "ws"
 import { logger } from "../../config/logger.js"
+import { publicErrorFields } from "../security/public-errors.js"
 
 import type { GatewayEvent } from "./eventCatalog.js"
 export type { TaskEvent, AgentExecutionEvent, GatewayEvent, GatewayWireEvent } from "./eventCatalog.js"
@@ -22,13 +23,13 @@ export class RealtimeGateway {
   }
 
   broadcast(event: GatewayEvent): void {
-    const message = JSON.stringify(event)
+    const message = JSON.stringify(publicErrorFields(event))
 
     for (const socket of this.sockets) {
       try {
         socket.send(message)
-      } catch (error) {
-        this.log.error(`Could not send event: ${error}`)
+      } catch {
+        this.log.error("Could not send event")
       }
     }
   }

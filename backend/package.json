@@ -16,14 +16,6 @@
   "keywords": [],
   "author": "students",
   "license": "ISC",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "12.6.0",
-      "onFail": "download"
-    }
-  },
-  "packageManager": "pnpm@12.6.0",
   "type": "module",
   "dependencies": {
     "@asyncapi/react-component": "3.2.1",

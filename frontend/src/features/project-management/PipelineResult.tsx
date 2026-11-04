@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 import type { ParseKeys, TFunction } from "i18next"
 import { Badge, MermaidDiagram } from "../../shared/ui-kit/index.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
@@ -7,11 +8,8 @@ import { formatNumber } from "../../shared/i18n/format.ts"
 import "./PipelineStage.css"
 import {
   auditTone,
-  functionalTone,
   parseStageStatus,
   verdictTone,
-  type FunctionalAdequacySummary,
-  type FunctionalEvidenceView,
   type OrientationSummary,
   type ProjectArchitectureSummary,
   type SemanticValidationSummary,
@@ -42,7 +40,7 @@ export function PipelineRunStatus({ execution }: { execution: AgentExecution }) 
           {t("pipeline.runLabel", { agentType: execution.agentType, id: execution.id })}
         </span>
         {execution.status === "Failed" && execution.error !== null && execution.error !== "" && (
-          <span className="audit-error">{execution.error}</span>
+          <span className="audit-error">{publicErrorText(execution.error)}</span>
         )}
         {execution.status === "Failed" && execution.interruptionReason === "token_budget_exhausted" && <span className="audit-error">{t("pipeline.tokenBudgetExhausted")}</span>}
         {execution.status === "Failed" && execution.result && <Badge tone="info">{t("pipeline.partialResults")}</Badge>}
@@ -122,23 +120,23 @@ export function OrientationResultView({ summary, execution }: { summary: Orienta
 
 function DiagramColorLegend() {
   const { t } = useTranslation("projects")
-  const architect: Array<[string, string]> = [
-    ["#dbeafe", t("status.legendArchitect.supported")],
-    ["#fef3c7", t("status.legendArchitect.hypothesis")],
-    ["#e5e7eb", t("status.legendArchitect.unresolved")],
+  const architect = [
+    ["supported", t("status.legendArchitect.supported")],
+    ["hypothesis", t("status.legendArchitect.hypothesis")],
+    ["unresolved", t("status.legendArchitect.unresolved")],
   ]
-  const semantic: Array<[string, string]> = [
-    ["#15803d", t("status.legendSemantic.supported")],
-    ["#c2410c", t("status.legendSemantic.overstated")],
-    ["#b91c1c", t("status.legendSemantic.contradicted")],
-    ["#64748b", t("status.legendSemantic.insufficientEvidence")],
-    ["#94a3b8", t("status.legendSemantic.notReviewed")],
+  const semantic = [
+    ["supported", t("status.legendSemantic.supported")],
+    ["overstated", t("status.legendSemantic.overstated")],
+    ["contradicted", t("status.legendSemantic.contradicted")],
+    ["insufficient", t("status.legendSemantic.insufficientEvidence")],
+    ["unreviewed", t("status.legendSemantic.notReviewed")],
   ]
   return <div className="architecture-diagram-legend">
     <span className="stage-section-label">{t("pipeline.colorLegend")}</span>
     <p className="stage-row-sub">{t("pipeline.legendHint")}</p>
-    <div className="architecture-diagram-key"><strong>{t("pipeline.architectFill")}</strong>{architect.map(([color, label]) => <span key={label}><i style={{ backgroundColor: color }} />{label}</span>)}</div>
-    <div className="architecture-diagram-key"><strong>{t("pipeline.semanticBorder")}</strong>{semantic.map(([color, label]) => <span key={label}><i style={{ border: `3px ${label === t("status.legendSemantic.insufficientEvidence") ? "dashed" : "solid"} ${color}` }} />{label}</span>)}</div>
+    <div className="architecture-diagram-key"><strong>{t("pipeline.architectFill")}</strong>{architect.map(([status, label]) => <span key={status}><i className={`diagram-legend-architect-${status}`} />{label}</span>)}</div>
+    <div className="architecture-diagram-key"><strong>{t("pipeline.semanticBorder")}</strong>{semantic.map(([status, label]) => <span key={status}><i className={`diagram-legend-semantic-${status}`} />{label}</span>)}</div>
     <p className="stage-row-sub">{t("pipeline.legendArrows")}</p>
   </div>
 }
@@ -255,10 +253,12 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
           <span className="stage-section-label">
             {summary.diagramOrigin !== "" ? t("pipeline.diagramWithOrigin", { origin: summary.diagramOrigin }) : t("pipeline.diagram")}
           </span>
-          {summary.diagramViews.map((view, index) => <section className="architecture-diagram-view" key={index} aria-label={view.title}>
-            <h5>{view.title}</h5>
+          {summary.diagramViews.map((view, index) => {
+            const title = view.title || t("pipeline.architectureDiagram")
+            return <section className="architecture-diagram-view" key={index} aria-label={title}>
+            <h5>{title}</h5>
             {view.scope !== "" && <p className="stage-row-sub">{t("pipeline.scopeLabel", { scope: view.scope })}</p>}
-            <MermaidDiagram chart={view.mermaid} label={view.title} />
+            <MermaidDiagram chart={view.mermaid} label={title} />
             {view.colorLegend && <DiagramColorLegend />}
             {view.deviations.length > 0 && <div className="stage-rows">
               {view.deviations.map((note) => <div className="stage-row" key={note.id}>
@@ -269,7 +269,8 @@ export function ProjectArchitectureResultView({ summary, execution }: { summary:
               </div>)}
             </div>}
             {view.limitations.map((item, limitation) => <p className="stage-footnote" key={limitation}>{item}</p>)}
-          </section>)}
+          </section>
+          })}
         </>
       ) : (
         summary.diagramTitle !== "" && (
@@ -340,113 +341,6 @@ export function SemanticValidationResultView({ summary, execution }: { summary: 
   )
 }
 
-function evidenceLocation(evidence: FunctionalEvidenceView): string {
-  const hasRange = /:\d+-\d+$/.test(evidence.filePath)
-  const lines = hasRange || evidence.startLine === null ? "" : `:${evidence.startLine}${evidence.endLine === null || evidence.endLine === evidence.startLine ? "" : `-${evidence.endLine}`}`
-  return `${evidence.filePath}${lines}${evidence.symbol === "" ? "" : ` (${evidence.symbol})`}`
-}
-
-export function FunctionalAdequacyResultView({ summary, execution }: { summary: FunctionalAdequacySummary; execution?: AgentExecution }) {
-  const { t } = useTranslation("projects")
-  const requirementStatus = (value: string): string => t(
-    value === "cumple" ? "functional.status.fulfilled" : value === "no_cumple" ? "functional.status.notFulfilled" : "functional.status.insufficientEvidence"
-  )
-  const classification = (value: string): string => t(
-    value === "confirmado" ? "functional.classification.confirmed" : value === "probable" ? "functional.classification.probable" : "functional.classification.unverified"
-  )
-  const attribute = (value: string): string => t(
-    value === "completitud" ? "functional.attribute.completeness" : value === "correccion" ? "functional.attribute.correctness" : "functional.attribute.relevance"
-  )
-  return (
-    <div className="stage-view">
-      <div className="stage-head">
-        <h4 className="stage-title">{t("pipeline.functionalTitle")}</h4>
-        <div className="stage-head-right">
-          {execution !== undefined && <PipelineRunStatus execution={execution} />}
-          <Badge tone="info">{summary.auditMode === "exploratory" ? t("pipeline.functionalExploratory") : t("pipeline.functionalRequirementsBased")}</Badge>
-          {summary.scoreApplicable && summary.auditMode === "requirements_based" && (
-            <Badge tone={summary.score >= 100 ? "success" : summary.score > 0 ? "info" : "warning"}>
-              {t("pipeline.functionalScore", { score: formatNumber(summary.score), fulfilled: formatNumber(summary.fulfilledRequirements), total: formatNumber(summary.totalRequirements) })}
-            </Badge>
-          )}
-        </div>
-      </div>
-      {summary.scoreMeaning !== "" && <p className="stage-row-sub">{summary.scoreMeaning}</p>}
-
-      {summary.results.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.functionalRequirementResults", { count: summary.results.length })}</span>
-        <div className="stage-rows">
-          {summary.results.map((result) => <div className="stage-row" key={result.requirementId}>
-            <div className="stage-row-main">
-              <span className="mono stage-path">{result.requirementId}</span>: {result.description}
-              {result.justification !== "" && <div className="stage-row-sub">{result.justification}</div>}
-              {result.evidence.slice(0, 3).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
-            </div>
-            <span className="stage-row-side"><Badge tone={functionalTone(result.status)}>{requirementStatus(result.status)}</Badge></span>
-          </div>)}
-        </div>
-      </>}
-
-      {summary.capabilities.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.functionalCapabilities", { count: summary.capabilities.length })}</span>
-        <div className="stage-rows">
-          {summary.capabilities.map((capability) => <div className="stage-row" key={capability.capabilityId}>
-            <div className="stage-row-main">
-              <span className="mono stage-path">{capability.name}</span>
-              {capability.description !== "" && <> — {capability.description}</>}
-              {capability.route !== "" && <div className="stage-row-sub"><span className="mono">{capability.route}</span></div>}
-              {capability.evidence.slice(0, 2).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
-            </div>
-            <span className="stage-row-side">
-              <Badge tone="neutral">{capability.kind}</Badge>
-              {capability.detection !== "" && <Badge tone="info">{capability.detection}</Badge>}
-            </span>
-          </div>)}
-        </div>
-      </>}
-
-      {summary.subattributes.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.functionalSubattributes")}</span>
-        <div className="stage-rows">
-          {summary.subattributes.map((item) => <div className="stage-row" key={item.attribute}>
-            <div className="stage-row-main">
-              <strong>{attribute(item.attribute)}</strong>
-              <div className="stage-row-sub">{t("pipeline.functionalEvaluationCounts", {
-                evaluated: formatNumber(item.evaluated), confirmed: formatNumber(item.confirmed), probable: formatNumber(item.probable), unverified: formatNumber(item.unverified),
-              })}</div>
-              {item.summary !== "" && <div className="stage-row-sub">{item.summary}</div>}
-            </div>
-          </div>)}
-        </div>
-      </>}
-
-      {summary.findings.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.functionalFindings", { count: summary.findings.length })}</span>
-        <div className="stage-rows">
-          {summary.findings.map((finding) => <div className="stage-row" key={finding.findingId}>
-            <div className="stage-row-main">
-              <span className="mono stage-path">{finding.capabilityName}</span> · {attribute(finding.attribute)}
-              {finding.justification !== "" && <div className="stage-row-sub">{finding.justification}</div>}
-              {finding.criteria !== "" && <div className="stage-row-sub">{t("pipeline.functionalCriteria", { criteria: finding.criteria })}</div>}
-              {finding.evidence.slice(0, 2).map((evidence, index) => <div className="stage-row-sub" key={index}><span className="mono">{evidenceLocation(evidence)}</span></div>)}
-            </div>
-            <span className="stage-row-side"><Badge tone={functionalTone(finding.classification)}>{classification(finding.classification)}</Badge></span>
-          </div>)}
-        </div>
-      </>}
-
-      {summary.limitations.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.limitations", { count: summary.limitations.length })}</span>
-        <div className="stage-rows">{summary.limitations.map((item, index) => <div className="stage-row" key={index}><div className="stage-row-main">{item}</div></div>)}</div>
-      </>}
-      {summary.recommendations.length > 0 && <>
-        <span className="stage-section-label">{t("pipeline.functionalRecommendations", { count: summary.recommendations.length })}</span>
-        <div className="stage-rows">{summary.recommendations.map((item, index) => <div className="stage-row" key={index}><div className="stage-row-main">{item}</div></div>)}</div>
-      </>}
-    </div>
-  )
-}
-
 /** Middle fallback between a rich stage view and a bare run status: shows
  *  the completion status plus the run's own issues and limitations, so failed
  *  runs without a report still explain themselves. */
@@ -475,7 +369,7 @@ export function StageStatusView({ title, result, execution }: { title: string; r
               <div className="stage-row" key={index}>
                 <div className="stage-row-main">
                   <span className="mono stage-path">{issue.category}</span>
-                  <div className="stage-row-sub">{issue.message}</div>
+                  <div className="stage-row-sub">{publicErrorText(issue.message)}</div>
                 </div>
               </div>
             ))}

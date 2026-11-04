@@ -1,0 +1,109 @@
+.audit-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The repository sits on its own row. Beside the toggle it would win the width
+   contest — its flex basis is the full owner/name — and squeeze the toggle to
+   zero, which is what pushed the badges out of the card. */
+.audit-disclosure-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.audit-disclosure-actions { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.audit-disclosure-actions > .audit-actions { margin-left: auto; }
+
+.audit-disclosure-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  align-self: stretch;
+  min-width: 0;
+  padding: var(--space-0-5) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--motion-hover) ease;
+  cursor: pointer;
+}
+
+/* Two rows keep the identity and the state apart while allowing badge text to truncate. */
+.audit-disclosure-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1-5) var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.audit-disclosure-toggle:hover {
+  background: var(--color-surface-hover);
+}
+
+.audit-disclosure-toggle:active { background: var(--color-surface-active); }
+
+.audit-disclosure-toggle:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.audit-disclosure-id {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-disclosure-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--color-text-description);
+  transition: transform 220ms ease;
+}
+
+.audit-disclosure-chevron[data-expanded="true"] {
+  transform: rotate(180deg);
+}
+
+.audit-disclosure-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 220ms ease, opacity 220ms ease, visibility 220ms ease;
+}
+
+.audit-disclosure-detail[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.audit-disclosure-detail-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-disclosure-detail,
+  .audit-disclosure-chevron,
+  .audit-disclosure-toggle {
+    transition: none;
+  }
+}

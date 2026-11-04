@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+
 from ..schemas import Finding
 
 VULN_DEPS = [
@@ -8,7 +8,7 @@ VULN_DEPS = [
 ]
 
 class SCADependencyAgent:
-    def scan_dependencies(self, target_path: str) -> List[Finding]:
+    def scan_dependencies(self, target_path: str) -> list[Finding]:
         findings = []
         path = Path(target_path)
         req_files = list(path.rglob("requirements.txt")) + list(path.rglob("package.json"))
@@ -20,7 +20,7 @@ class SCADependencyAgent:
                 for dep in VULN_DEPS:
                     if dep["name"] in content:
                         findings.append(Finding(
-                            finding_id=f"FIND-SCA-001",
+                            finding_id="FIND-SCA-001",
                             file_path=str(f),
                             line_number=1,
                             rule_id=dep["cve"],
@@ -31,6 +31,6 @@ class SCADependencyAgent:
                             snippet=f"Dependency {dep['name']} identified in manifest",
                             matched_text=dep["name"]
                         ))
-            except Exception:
+            except OSError:
                 pass
         return findings

@@ -6,7 +6,7 @@ import { AgentAccessVerification } from "./AgentAccessVerification.tsx"
 import type { AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { changeLanguage } from "../../shared/i18n/index.ts"
 
-const agent: AgentSettings = { agentType: "analyzer", configured: true, configuration: {
+const agent: AgentSettings = { agentType: "analyzer", qualityAttributes: [], workflowIds: [], configured: true, configuration: {
   model: { id: 1, name: "model", providerId: 1, providerName: "OpenAI" },
   credential: { id: 2, name: "credential", providerId: 1, providerName: "OpenAI" },
   temperature: null, maxTokens: null,
@@ -18,6 +18,30 @@ function Verification() {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+it.each([
+  ["access_denied", "The provider rejected the credential", "El proveedor rechazó la credencial"],
+  ["provider_unavailable", "The provider is temporarily unavailable", "El proveedor no está disponible temporalmente"],
+  ["timeout", "The verification timed out", "Se agotó el tiempo de la comprobación"],
+])("shows the persisted %s category in the current language and clears it after retry", async (reason, english, spanish) => {
+  vi.stubGlobal("fetch", vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...agent, verification: {
+      status: "failed", checkedAt: "2026-10-21T00:00:00Z", message: "Controlled backend message", reason,
+    } })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...agent, verification: {
+      status: "verified", checkedAt: "2026-10-21T00:00:01Z", message: null,
+    } }))))
+  const user = userEvent.setup()
+  render(<Verification />)
+  await user.click(screen.getByRole("button", { name: "Verify access" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(english!)
+  await changeLanguage("es")
+  expect(screen.getByRole("alert")).toHaveTextContent(spanish!)
+  await user.click(screen.getByRole("button", { name: "Verificar acceso" }))
+  expect(await screen.findByText("Verificado")).toBeVisible()
+  expect(screen.queryByRole("alert")).toBeNull()
+  await changeLanguage("en")
+})
 
 it("shows failed access and can retry to verified", async () => {
   const fetch = vi.fn()

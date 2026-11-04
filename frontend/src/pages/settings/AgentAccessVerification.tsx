@@ -5,18 +5,31 @@ import { ApiError, verifyAgentSettings, type AgentSettings } from "../../infrast
 import { Badge, Button } from "../../shared/ui-kit/index.ts"
 import { formatDateTime } from "../../shared/i18n/format.ts"
 
+const failureKeys: Record<string, ParseKeys<"settings">> = {
+  access_denied: "agents.verification.errors.accessDenied",
+  invalid_configuration: "agents.verification.errors.invalidConfiguration",
+  model_not_found: "agents.verification.errors.modelNotFound",
+  rate_limited: "agents.verification.errors.rateLimited",
+  provider_unavailable: "agents.verification.errors.providerUnavailable",
+  timeout: "agents.verification.errors.timeout",
+  verification_failed: "agents.verification.errors.verificationFailed",
+  agent_server_unavailable: "agents.verification.errors.agentServerUnavailable",
+}
+
 export function AgentAccessVerification({ agent, disabled, onUpdated }: { agent: AgentSettings, disabled: boolean, onUpdated: (agent: AgentSettings) => void }) {
   const { t } = useTranslation("settings")
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<{ key: ParseKeys<"settings">, detail?: string } | null>(null)
-  const verification = agent.verification
+  const verification = disabled ? undefined : agent.verification
+  const failureKey = verification?.reason && Object.hasOwn(failureKeys, verification.reason) ? failureKeys[verification.reason] : undefined
+  const verificationMessage = failureKey ? t(failureKey) : verification?.message
   async function verify() {
     if (verifying || disabled || !agent.configured) return
     setVerifying(true)
     setError(null)
     try { onUpdated(await verifyAgentSettings(agent.agentType)) }
     catch (failure) {
-      setError(failure instanceof ApiError
+      setError(failure instanceof ApiError && failure.messageSource !== "client"
         ? { key: "agents.verification.verifyFailedWithDetail", detail: failure.message }
         : { key: "agents.verification.verifyFailed" })
     }
@@ -35,7 +48,7 @@ export function AgentAccessVerification({ agent, disabled, onUpdated }: { agent:
       <Button variant="secondary" disabled={disabled || !agent.configured || verifying} loading={verifying} loadingText={t("agents.verification.verifying")} onClick={() => void verify()}>{t("agents.verification.verify")}</Button>
     </div>
     {verification?.checkedAt && <p className="settings-hint">{t("agents.verification.lastChecked", { date: formatDateTime(verification.checkedAt) })}</p>}
-    {(error || verification?.message) && <p className="settings-error" role="alert">{error ? error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail }) : verification?.message}</p>}
+    {(error || verificationMessage) && <p className="settings-error" role="alert">{error ? error.detail === undefined ? t(error.key) : t(error.key, { detail: error.detail }) : verificationMessage}</p>}
     <p className="settings-hint">{t("agents.verification.hint")}</p>
     {disabled && <p className="settings-hint">{t("agents.verification.saveFirst")}</p>}
   </div>

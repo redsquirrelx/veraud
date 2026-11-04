@@ -152,7 +152,7 @@ external cancellation follow the [shared runtime](repository-runtime.md).
 ## Library API and code map
 
 ```python
-from server.agents.project_semantic_validation import ProjectSemanticValidationAgent
+from server.agents.project_analysis.project_semantic_validation import ProjectSemanticValidationAgent
 
 review = await ProjectSemanticValidationAgent(model).run(fresh_tools, architecture_result)
 ```

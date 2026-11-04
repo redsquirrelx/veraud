@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { act, renderHook } from "@testing-library/react"
 import { useAsyncAction } from "./useAsyncAction.ts"
+import { changeLanguage } from "../i18n/index.ts"
 
 function deferred() {
   let resolve = () => {}
@@ -91,6 +92,12 @@ describe("useAsyncAction", () => {
 
     expect(result.current.loading).toBe(false)
     expect(result.current.error).toBe("Timed out after 20ms")
+    try {
+      await changeLanguage("es")
+      expect(result.current.error).toBe("Tiempo de espera agotado tras 20 ms")
+    } finally {
+      await changeLanguage("en")
+    }
 
     gate.resolve()
     await act(async () => {

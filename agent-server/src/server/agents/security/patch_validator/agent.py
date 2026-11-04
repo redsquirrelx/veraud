@@ -1,8 +1,9 @@
-from typing import List
+
 from ..schemas import Finding
 
+
 class PatchValidatorAgent:
-    def validate_patches(self, findings: List[Finding]) -> List[Finding]:
+    def validate_patches(self, findings: list[Finding]) -> list[Finding]:
         for f in findings:
             if f.remediation.get("patch_code"):
                 code = f.remediation["patch_code"]

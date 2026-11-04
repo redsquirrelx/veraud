@@ -4,11 +4,10 @@ import type { ParseKeys } from "i18next"
 import { ApiError, listVersions, type VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { derivedStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 
-function describeFailure(failure: unknown, fallback: string): string {
-  if (failure instanceof ApiError) {
-    return failure.message
-  }
-  return fallback
+type AnalyzedVersionsFailure = { key: ParseKeys<"projects"> } | { detail: string }
+
+function describeFailure(failure: unknown, key: ParseKeys<"projects">): AnalyzedVersionsFailure {
+  return failure instanceof ApiError && failure.messageSource !== "client" ? { detail: failure.message } : { key }
 }
 
 /** Translation key for an analyzed-version status, or null when the backend
@@ -29,12 +28,13 @@ export function useAnalyzedVersions(projectId: number | null) {
   const [tracked, setTracked] = useState<number | null>(projectId)
   const [versions, setVersions] = useState<VersionAnalysisSummary[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [failure, setFailure] = useState<AnalyzedVersionsFailure | null>(null)
+  const error = failure === null ? "" : "detail" in failure ? failure.detail : t(failure.key)
 
   if (tracked !== projectId) {
     setTracked(projectId)
     setVersions([])
-    setError("")
+    setFailure(null)
   }
 
   const refresh = useCallback(async () => {
@@ -42,16 +42,16 @@ export function useAnalyzedVersions(projectId: number | null) {
       return
     }
     setLoading(true)
-    setError("")
+    setFailure(null)
     try {
       setVersions(await listVersions(projectId))
     } catch (failure) {
       setVersions([])
-      setError(describeFailure(failure, t("version.errors.loadAnalyzed")))
+      setFailure(describeFailure(failure, "version.errors.loadAnalyzed"))
     } finally {
       setLoading(false)
     }
-  }, [projectId, t])
+  }, [projectId])
 
   return { versions, loading, error, refresh }
 }

@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next"
 import { ChevronDownIcon } from "./icons.tsx"
+import "./Field.css"
+import "./MenuSurface.css"
 import "./FormControls.css"
 
 export interface ComboboxOption {
@@ -95,14 +97,14 @@ export function Combobox({ label, value, options, onChange, placeholder, disable
   }
 
   return (
-    <div className="ui-combobox" ref={root} data-invalid={Boolean(error)}>
-      <span id={`${id}-label`} className="ui-control-label">{label}</span>
+    <div className="ui-field ui-combobox" ref={root} data-invalid={Boolean(error)}>
+      <span id={`${id}-label`} className="ui-field-label ui-control-label">{label}</span>
       {name && <input type="hidden" name={name} value={value} disabled={disabled} />}
       <button ref={trigger} type="button" role="combobox" className="ui-combobox-trigger" aria-labelledby={`${id}-label`} aria-expanded={expanded} aria-controls={`${id}-list`} aria-haspopup="listbox" aria-activedescendant={expanded && active >= 0 ? `${id}-option-${active}` : undefined} aria-invalid={Boolean(error)} aria-describedby={message ? `${id}-message` : undefined} disabled={disabled} onKeyDown={keyDown} onBlur={(event) => { if (!root.current?.contains(event.relatedTarget as Node | null)) setOpen(false) }} onClick={() => expanded ? setOpen(false) : show()}>
         <span className={selected ? "" : "ui-control-description"}>{selected?.label ?? resolvedPlaceholder}</span>
         <span className="ui-combobox-chevron" data-open={expanded}><ChevronDownIcon /></span>
       </button>
-      <ul id={`${id}-list`} role="listbox" aria-labelledby={`${id}-label`} className="ui-combobox-menu" data-open={expanded} aria-hidden={!expanded} inert={!expanded}>
+      <ul id={`${id}-list`} role="listbox" aria-labelledby={`${id}-label`} className="ui-combobox-menu ui-menu-surface ui-menu-surface-compact" data-open={expanded} aria-hidden={!expanded} inert={!expanded}>
         {options.length === 0 && <li className="ui-combobox-empty">{t("ui.combobox.noOptions")}</li>}
         {options.map((option, index) => (
           <li key={option.value} id={`${id}-option-${index}`} role="option" aria-selected={option.value === value} aria-disabled={Boolean(option.disabled)} className="ui-combobox-option" data-active={active === index} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => { if (!option.disabled) setActive(index) }} onClick={() => pick(index)}>

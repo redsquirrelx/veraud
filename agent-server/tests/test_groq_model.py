@@ -3,8 +3,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from server.agents.models import groq
-from server.agents.models.groq import GroqModel
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app import execution_service
 from server.app.execution_service import (
@@ -13,6 +11,8 @@ from server.app.execution_service import (
     build_model,
 )
 from server.config.schemas import AgentSettings, ModelCredentials, ModelSettings
+from server.infrastructure.llm import groq
+from server.infrastructure.llm.groq import GroqModel
 
 
 def _settings(provider="groq", name="groq-test-model"):
@@ -32,7 +32,7 @@ def test_groq_client_settings_and_async_generation(monkeypatch):
     assert isinstance(model, GroqModel)
     constructor.assert_called_once_with(
         model="groq-test-model", temperature=0.2, max_tokens=1000,
-        api_key="test-key", base_url="https://api.groq.com/openai/v1",
+        api_key="test-key", base_url="https://api.groq.com/openai/v1", max_retries=0,
     )
     assert asyncio.run(model.generate("prompt")) is response
     client.ainvoke.assert_awaited_once_with("prompt")
@@ -68,7 +68,7 @@ def test_request_overrides_reach_groq_client(service, monkeypatch):
     assert timeout == 45
     constructor.assert_called_once_with(
         model="groq-test-model", temperature=0.3, max_tokens=2000,
-        api_key="request-key", base_url="https://api.groq.com/openai/v1",
+        api_key="request-key", base_url="https://api.groq.com/openai/v1", max_retries=0,
     )
 
 

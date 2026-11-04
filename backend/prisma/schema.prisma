@@ -71,18 +71,60 @@ model AgentExecution {
   createdAt    DateTime  @default(now()) @map("created_at")
   startedAt    DateTime? @map("started_at")
   finishedAt   DateTime? @map("finished_at")
+  cancellationRequestedAt DateTime? @map("cancellation_requested_at")
+  dispatchStartedAt DateTime? @map("dispatch_started_at")
   inputTokens  Int?      @map("input_tokens")
   outputTokens Int?      @map("output_tokens")
   estimatedTokens Int?  @map("estimated_tokens")
   interruptionReason String? @map("interruption_reason")
   error        String?
+  errorDetail  String? @map("error_detail")
   result       String?
   configurationSnapshot String? @map("configuration_snapshot")
+  invocationReceipts String @default("[]") @map("invocation_receipts")
+  eventStreams ExecutionEventStream[]
 
   evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
 
   @@map("agent_execution")
+}
+
+model ExecutionEventStream {
+  id String @id
+  executionId Int @map("execution_id")
+  runId String? @map("run_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  execution AgentExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  events ExecutionEvent[]
+
+  @@index([executionId])
+  @@map("execution_event_stream")
+}
+
+model ExecutionEvent {
+  id Int @id @default(autoincrement())
+  eventId String @unique @map("event_id")
+  streamId String @map("stream_id")
+  sequence Int
+  occurredAt DateTime @map("occurred_at")
+  receivedAt DateTime @default(now()) @map("received_at")
+  runId String? @map("run_id")
+  invocationId String? @map("invocation_id")
+  parentInvocationId String? @map("parent_invocation_id")
+  agentId String? @map("agent_id")
+  actionId String @map("action_id")
+  parentActionId String? @map("parent_action_id")
+  sourceId String? @map("source_id")
+  kind String
+  name String?
+  status String?
+  metadata String @default("{}")
+  stream ExecutionEventStream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  @@unique([streamId, sequence])
+  @@index([streamId, occurredAt, sequence])
+  @@map("execution_event")
 }
 
 model AiProvider {
@@ -122,6 +164,15 @@ model AiModel {
 
 model AgentSettings {
   agentType      String @id @map("agent_type")
+  catalogDeclared Boolean @default(false) @map("catalog_declared")
+  catalogName String? @map("catalog_name")
+  catalogRole String? @map("catalog_role")
+  requiresModel Boolean @default(false) @map("requires_model")
+  modelConfigurationAgentType String? @map("model_configuration_agent_type")
+  executionModes String @default("[]") @map("execution_modes")
+  qualityAttributes String @default("[]") @map("quality_attributes")
+  workflowIds String @default("[]") @map("workflow_ids")
+  availability String @default("not_executed")
   aiModelId      Int?   @map("ai_model_id")
   aiCredentialId Int?   @map("ai_credential_id")
   temperature    Decimal?
@@ -135,8 +186,28 @@ model AgentSettings {
   aiModel         AiModel?         @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
   aiCredential    AiCredential?    @relation(fields: [aiCredentialId], references: [id], onDelete: Restrict)
   agentExecutions AgentExecution[]
+  childLinks AgentHierarchy[] @relation("AgentParent")
+  parentLinks AgentHierarchy[] @relation("AgentChild")
 
   @@map("agent_settings")
+}
+
+model AgentHierarchy {
+  parentAgentType String @map("parent_agent_type")
+  childAgentType String @map("child_agent_type")
+  parent AgentSettings @relation("AgentParent", fields: [parentAgentType], references: [agentType], onDelete: Cascade, onUpdate: Cascade)
+  child AgentSettings @relation("AgentChild", fields: [childAgentType], references: [agentType], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([parentAgentType, childAgentType])
+  @@index([childAgentType])
+  @@map("agent_hierarchy")
+}
+
+model AuditSettings {
+  attribute String @id
+  options String @default("{}")
+
+  @@map("audit_settings")
 }
 
 model Task {
@@ -151,5 +222,22 @@ model Task {
 
   project Project @relation(fields: [projectId], references: [id])
 
+  graphExtraction GraphExtraction?
+
   @@map("task")
+}
+
+model GraphExtraction {
+  taskId     Int @id @map("task_id")
+  projectId  Int @map("project_id")
+  branch     String
+  commitHash String @map("commit_hash")
+  phase      String @default("queued")
+  error      String?
+  callbackHash String? @map("callback_hash")
+  createdAt  DateTime @default(now()) @map("created_at")
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, commitHash, taskId])
+  @@map("graph_extraction")
 }

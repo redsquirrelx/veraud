@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ApiError, getAgentExecution, requestProjectArchitecture, requestProjectFunctionalAdequacy, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import type { ParseKeys } from "i18next"
+import { ApiError, getAgentExecution, requestProjectArchitecture, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { mergeExecution } from "../../shared/agent-monitor/mergeExecution.ts"
@@ -14,11 +15,10 @@ function lastExecutionKey(projectId: number): string {
   return `analysis.lastExecution.${projectId}`
 }
 
-function describeFailure(failure: unknown, fallback: string): string {
-  if (failure instanceof ApiError) {
-    return failure.message
-  }
-  return fallback
+type AnalysisFailure = { key: ParseKeys<"projects"> } | { detail: string }
+
+function describeFailure(failure: unknown, key: ParseKeys<"projects">): AnalysisFailure {
+  return failure instanceof ApiError && failure.messageSource !== "client" ? { detail: failure.message } : { key }
 }
 
 function isFinished(execution: AgentExecution | null): boolean {
@@ -34,7 +34,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
   const [polled, setPolled] = useState<AgentExecution | null>(null)
   const [initialExecutions, setInitialExecutions] = useState<AgentExecution[]>([])
   const [starting, setStarting] = useState(false)
-  const [failure, setFailure] = useState("")
+  const [failure, setFailure] = useState<AnalysisFailure | null>(null)
   const [tracked, setTracked] = useState(false)
 
   // Switching projects drops the previous run (render-phase reset).
@@ -44,7 +44,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setPolled(null)
     setInitialExecutions([])
     setStarting(false)
-    setFailure("")
+    setFailure(null)
     setTracked(false)
   }
 
@@ -56,9 +56,10 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     if (liveExecution) latest = mergeExecution(latest, liveExecution)
     return latest
   }, [liveExecution, polled, seed])
+  const message = failure === null ? "" : "detail" in failure ? failure.detail : t(failure.key)
 
   let phase: AnalysisPhase = "idle"
-  if (failure !== "") {
+  if (failure !== null) {
     phase = "error"
   } else if (isFinished(execution)) {
     phase = "done"
@@ -116,7 +117,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
       return
     }
     setStarting(true)
-    setFailure("")
+    setFailure(null)
     setSeed(null)
     setPolled(null)
     setInitialExecutions([])
@@ -125,16 +126,14 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
       // The tracked row is the one that finishes last for the chosen
       // pipeline, so progress follows the run to completion.
       const option = pipelineById(pipelineId)
-      const response = option.endpoint === "functional-adequacy"
-        ? await requestProjectFunctionalAdequacy(projectId, branch, commitHash)
-        : await requestProjectArchitecture(projectId, branch, commitHash)
+      const response = await requestProjectArchitecture(projectId, branch, commitHash)
       const rows = Object.values(response.executions)
       setInitialExecutions(rows)
       const trackedRow = (response.executions as Record<string, AgentExecution>)[option.trackedStage] ?? rows[0]!
       localStorage.set(lastExecutionKey(projectId), trackedRow.id)
       setSeed(trackedRow)
     } catch (error) {
-      setFailure(describeFailure(error, t("analysis.errors.startFailed")))
+      setFailure(describeFailure(error, "analysis.errors.startFailed"))
     } finally {
       setStarting(false)
     }
@@ -148,14 +147,14 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     setPolled(null)
     setInitialExecutions([])
     setStarting(false)
-    setFailure("")
+    setFailure(null)
     setTracked(false)
   }
 
   /** Displays a stored run, e.g. picked from the analyzed versions. */
   function show(execution: AgentExecution | null) {
     setStarting(false)
-    setFailure("")
+    setFailure(null)
     setSeed(null)
     setPolled(execution)
     setInitialExecutions([])
@@ -169,7 +168,7 @@ export function useAnalysis(projectId: number | null, options?: { pollIntervalMs
     phase,
     execution,
     initialExecutions,
-    message: failure,
+    message,
     analyzing: phase === "starting" || phase === "tracking",
     tracked,
     start,

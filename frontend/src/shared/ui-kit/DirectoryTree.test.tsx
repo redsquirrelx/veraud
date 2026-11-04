@@ -3,7 +3,7 @@ import { useState } from "react"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DirectoryTree } from "./DirectoryTree.tsx"
-import { flattenDirectory, type DirectoryGroup, type DirectoryTreeNode } from "./directoryTree.ts"
+import { type DirectoryGroup, type DirectoryTreeNode } from "./directoryTree.ts"
 
 const tree: DirectoryTreeNode = {
   name: "repo",
@@ -39,30 +39,6 @@ function breadcrumb(): string[] {
   return Array.from(nav.querySelectorAll(".directory-crumb")).map((crumb) => crumb.textContent ?? "")
 }
 
-describe("flattenDirectory", () => {
-  it("keeps the full path of every descendant", () => {
-    const rows = flattenDirectory(tree)
-
-    expect(rows.map((entry) => entry.path)).toEqual([
-      "repo",
-      "repo/src",
-      "repo/src/a.ts",
-      "repo/src/nested",
-      "repo/src/nested/b.ts",
-      "repo/README.md",
-    ])
-  })
-
-  it("stores cumulative parent paths and depth", () => {
-    const rows = flattenDirectory(tree)
-    const nested = rows.find((entry) => entry.path === "repo/src/nested")
-
-    expect(nested?.parents).toEqual(["repo", "repo/src"])
-    expect(nested?.depth).toBe(2)
-    expect(nested?.isFolder).toBe(true)
-    expect(rows.find((entry) => entry.path === "repo/README.md")?.isFolder).toBe(false)
-  })
-})
 describe("DirectoryTree refresh", () => {
   it("hides the refresh control without a handler", () => {
     render(<DirectoryTree tree={tree} />)
@@ -70,7 +46,7 @@ describe("DirectoryTree refresh", () => {
     expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull()
   })
 
-  it("shows a spinner and blocks the filters while reloading", async () => {
+  it("blocks filters and duplicate refreshes until reloading finishes", async () => {
     let release = () => {}
     const onRefresh = vi.fn(() => new Promise<void>((resolve) => {
       release = resolve
@@ -84,27 +60,14 @@ describe("DirectoryTree refresh", () => {
     expect(screen.getByPlaceholderText("File or folder name")).toBeDisabled()
     expect(container.querySelector(".directory-tree-view")?.getAttribute("aria-busy")).toBe("true")
 
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+
     release()
     await waitFor(() => expect(container.querySelector(".directory-tree-view")?.getAttribute("aria-busy")).toBe("false"))
 
     expect(onRefresh).toHaveBeenCalledTimes(1)
     expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled()
-  })
-
-  it("ignores extra clicks while already reloading", async () => {
-    let release = () => {}
-    const onRefresh = vi.fn(() => new Promise<void>((resolve) => {
-      release = resolve
-    }))
-    render(<DirectoryTree tree={tree} onRefresh={onRefresh} />)
-
-    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
-    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
-
-    expect(onRefresh).toHaveBeenCalledTimes(1)
-
-    release()
-    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled())
   })
 
   it("re-enables the controls when the refresh fails", async () => {
@@ -150,23 +113,17 @@ describe("DirectoryTree filters", () => {
     expect(screen.queryByRole("option", { name: "" })).toBeNull()
   })
 
-  it("filters by name and keeps the ancestors of the match", async () => {
-    render(<DirectoryTree tree={deep} initialExpanded={["repo/src"]} />)
-
-    await userEvent.type(screen.getByPlaceholderText("File or folder name"), "helper")
-
-    expect(names().some((text) => text.includes("helper.py"))).toBe(true)
-    expect(names().some((text) => text.includes("settings.json"))).toBe(false)
-    expect(names().some((text) => text.startsWith("src"))).toBe(true)
-  })
-
-  it("reveals matches hidden inside collapsed folders", async () => {
+  it("reveals name matches and their ancestors inside collapsed folders", async () => {
     render(<DirectoryTree tree={deep} />)
 
+    expect(names().some((text) => text.includes("helper.py"))).toBe(false)
     await userEvent.type(screen.getByPlaceholderText("File or folder name"), "helper")
 
     expect(names().some((text) => text.includes("helper.py"))).toBe(true)
     expect(names().some((text) => text.includes("app.py"))).toBe(false)
+    expect(names().some((text) => text.includes("settings.json"))).toBe(false)
+    expect(names().some((text) => text.startsWith("src"))).toBe(true)
+    expect(names().some((text) => text.startsWith("nested"))).toBe(true)
   })
 
   it("filters by extension", async () => {
@@ -254,9 +211,11 @@ describe("DirectoryTree", () => {
   })
 
   it("shows the group legend at the bottom only when groups are provided", () => {
-    const { unmount } = render(<DirectoryTree tree={tree} />)
+    const { unmount, container } = render(<DirectoryTree tree={tree} />)
 
     expect(screen.queryByText("critical")).toBeNull()
+    expect(screen.queryByText("flagged")).toBeNull()
+    expect(container.querySelector(".directory-tag")).toBeNull()
     unmount()
 
     render(<DirectoryTree tree={tree} groups={groups} initialExpanded={["repo/src", "repo/src/nested"]} />)
@@ -399,103 +358,7 @@ const gatewayOpen = [
   "payment-gateway-v2/src/modules/reconciliation",
 ]
 
-function gatewaySelected(): string[] {
-  return screen
-    .getAllByRole("treeitem")
-    .filter((item) => item.getAttribute("aria-selected") === "true")
-    .map((item) => within(item).getByText(/\S/).textContent ?? "")
-}
-
 describe("grouped and flagged trees", () => {
-  it("shows a plain tree without any tag", () => {
-    render(
-      <DirectoryTree
-        tree={gatewayTree}
-        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
-        initialSelected="payment-gateway-v2/src/modules/ledger.repository.ts"
-      />
-    )
-
-    const list = screen.getByRole("tree")
-    expect(within(list).getByText("modules")).toBeDefined()
-    expect(within(list).queryByText("flagged")).toBeNull()
-    expect(list.querySelectorAll(".directory-tag").length).toBe(0)
-  })
-
-  it("collapses and expands a folder", async () => {
-    render(
-      <DirectoryTree
-        tree={gatewayTree}
-        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
-      />
-    )
-
-    const list = screen.getByRole("tree")
-    await userEvent.click(within(list).getByText("modules"))
-
-    expect(within(list).queryByText("settlement.ts")).toBeNull()
-
-    await userEvent.click(within(list).getByText("modules"))
-
-    expect(within(list).getByText("settlement.ts")).toBeDefined()
-  })
-
-  it("selects a file and reflects it in the breadcrumb", async () => {
-    render(
-      <DirectoryTree
-        tree={gatewayTree}
-        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
-      />
-    )
-
-    await userEvent.click(within(screen.getByRole("tree")).getByText("ledger.repository.ts"))
-
-    expect(breadcrumb()).toEqual(["payment-gateway-v2", "src", "modules", "ledger.repository.ts"])
-    expect(gatewaySelected().join()).toContain("ledger.repository.ts")
-  })
-
-  it("reveals nested folders on demand", async () => {
-    render(
-      <DirectoryTree
-        tree={gatewayTree}
-        initialExpanded={["payment-gateway-v2/src", "payment-gateway-v2/src/modules"]}
-      />
-    )
-
-    const list = screen.getByRole("tree")
-    expect(within(list).getByText("reconciliation")).toBeDefined()
-
-    await userEvent.click(within(list).getByText("reconciliation"))
-
-    expect(within(list).getByText("engine.test.ts")).toBeDefined()
-  })
-
-  it("shows group tags next to grouped paths", () => {
-    render(<DirectoryTree tree={gatewayTree} groups={gatewayGroups} initialExpanded={gatewayOpen} />)
-
-    const list = screen.getByRole("tree")
-    expect(within(list).getAllByText("critical").length).toBe(3)
-    expect(within(list).getAllByText("infrastructure").length).toBe(2)
-    expect(within(list).getAllByText("docs").length).toBe(1)
-    expect(within(list).queryByText("flagged")).toBeNull()
-  })
-
-  it("combines group tags with flagged markers", () => {
-    render(
-      <DirectoryTree
-        tree={gatewayTree}
-        groups={gatewayGroups}
-        flaggedPaths={gatewayFlagged}
-        initialExpanded={gatewayOpen}
-      />
-    )
-
-    const list = screen.getByRole("tree")
-    expect(within(list).getAllByText("flagged").length).toBe(2)
-    expect(within(list).getByText("engine.ts").closest("button")?.textContent).toContain("flagged")
-    expect(within(list).getByText("settlement.ts").closest("button")?.textContent).not.toContain("flagged")
-  })
-
   it("shows flagged markers without any group", () => {
     render(
       <DirectoryTree

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto"
 import type { AgentConfiguration } from "./agent-settings.repository.js"
+import type { ModelAccessErrorCode } from "./model-access-error.js"
 
 export interface AgentVerification {
   status: "not_verified" | "verified" | "failed"
   checkedAt: string | null
   message: string | null
+  reason?: ModelAccessErrorCode
 }
 
 export interface AgentRunConfig {

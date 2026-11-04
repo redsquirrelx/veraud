@@ -2,8 +2,8 @@
 
 `POST /api/projects/:id/architecture` runs the `project-architecture`
 pipeline (orientation, then architecture, then semantic_validation) on a
-checked-out version. `GET /api/projects/:id/versions` lists versions with every
-pipeline run stored for them, including a later functional-adequacy run.
+checked-out version. `GET /api/projects/:id/versions` lists versions with all
+three pipeline runs.
 
 Source of truth: `backend/src/modules/project/` (service, controller),
 `backend/src/modules/agent-execution/agent-execution.service.ts`
@@ -56,7 +56,7 @@ by the pipeline over HTTP callbacks. The internal `diagram_composition` node
 has no row; its output ships embedded in the architecture result.
 
 Each execution has the same shape as `GET /api/agent-executions/:id`.
-`GET /api/projects/:id/versions` returns every run stored per version and
-`derivedStatus` aggregates them (`Waiting` while any is open, `Failed` if any
-failed, `Completed` only when all complete). The UI tracks the
-**semantic_validation** row for the architecture pipeline; it finishes last.
+`GET /api/projects/:id/versions` returns all three runs per version and
+`derivedStatus` aggregates them (`Waiting` while any is open, `Failed` if
+any failed, `Completed` only when all three complete). The UI tracks the
+**semantic_validation** row: it finishes last.

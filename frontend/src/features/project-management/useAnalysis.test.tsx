@@ -132,27 +132,6 @@ describe("useAnalysis", () => {
     expect(result.current.execution?.agentType).toBe("semantic_validation")
   })
 
-  it("starts a functional-adequacy run and tracks its single stage", async () => {
-    const seen: string[] = []
-    const functional = { ...waiting, id: 21, agentType: "functional_adequacy" }
-    globalThis.fetch = (async (url: string) => {
-      seen.push(String(url))
-      return new Response(JSON.stringify({ versionId: 3, evaluationId: 7, executions: { functional_adequacy: functional } }), { status: 201 })
-    }) as typeof fetch
-    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
-
-    const { result } = renderHook(() => useAnalysis(2), { wrapper })
-
-    await act(async () => {
-      await result.current.start("main", "a".repeat(40), "functional-adequacy")
-    })
-
-    expect(seen.some((url) => url.includes("/api/projects/2/functional-adequacy"))).toBe(true)
-    expect(result.current.phase).toBe("tracking")
-    expect(result.current.execution?.id).toBe(21)
-    expect(result.current.execution?.agentType).toBe("functional_adequacy")
-  })
-
   it("reports a failed start with the backend message", async () => {
     globalThis.fetch = (async () => {
       return new Response(JSON.stringify({ message: "No agent type orientation is registered" }), { status: 422 })

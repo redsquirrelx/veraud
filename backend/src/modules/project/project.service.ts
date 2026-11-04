@@ -1,10 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { join, resolve, sep } from "node:path"
 import { GithubClient, RepoNotAccessibleError, parseGithubUrl } from "../../infrastructure/github-client/github.client.js"
 import { TaskService } from "../task/task.service.js"
-import { taskOutput, type TaskCommand } from "../../infrastructure/task-runner/task.runner.js"
+import { taskOutput, type GitCommand } from "../../infrastructure/task-runner/task.runner.js"
 import type { StoredAgentExecution } from "../agent-execution/agent-execution.repository.js"
-import type { FunctionalAdequacyExecutions, ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
+import type { ProjectArchitectureExecutions } from "../agent-execution/agent-execution.service.js"
 import type { ProjectStore, StoredProjectDetails } from "./project.repository.js"
 import { projectWorkspaceFolder } from "./project-workspace.js"
 
@@ -30,30 +32,19 @@ const HASH_PATTERN = /^[0-9a-fA-F]{7,40}$/
 const DEFAULT_LOG_LIMIT = 30
 const MAX_LOG_LIMIT = 100
 const MAX_FILE_BYTES = 512 * 1024
+const executeFile = promisify(execFile)
 
 export const ANALYSIS_EVALUATION_TYPE = "Analysis"
 
 /** Opens a pipeline run for an evaluation. Satisfied by AgentExecutionService. */
 export interface AnalysisRunner {
   openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest>
-  openFunctionalAdequacyPipelineForProject(projectId: number, branch: string, commitHash: string, requirements: FunctionalRequirement[]): Promise<FunctionalAdequacyAnalysisRequest>
-}
-
-export interface FunctionalRequirement {
-  requirement_id: string
-  description: string
 }
 
 export interface ProjectArchitectureAnalysisRequest {
   versionId: number
   evaluationId: number
   executions: ProjectArchitectureExecutions
-}
-
-export interface FunctionalAdequacyAnalysisRequest {
-  versionId: number
-  evaluationId: number
-  executions: FunctionalAdequacyExecutions
 }
 
 export interface VersionAnalysis {
@@ -156,7 +147,7 @@ export class ProjectService {
     const previousStatus = project.status
 
     let description: string
-    let command: TaskCommand
+    let command: GitCommand
 
     if (!hasFiles) {
       description = `cloning ${project.repositoryOwner}/${project.repositoryName}`
@@ -277,6 +268,39 @@ export class ProjectService {
     }
 
     return { path: cleanPath, content: buffer.toString("utf8"), size: stat.size }
+  }
+
+  /** Read Git objects, never the working tree or a moving branch. No checkout,
+   * fetch, filters, tasks or repository writes are performed. */
+  async readFileAtCommit(id: number, requestPath: string, commitHash: string) {
+    const path = assertValidFilePath(requestPath)
+    if (path.includes(":") || path.split("/").some((part) => part.toLowerCase() === ".git")) {
+      throw new InvalidGitRequestError("Path must be a repository-relative source file")
+    }
+    if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new ProjectFileError("The audited commit is not available")
+    const project = await this.projects.findById(id)
+    if (!project) throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    const cwd = join(this.workspaceDir, this.requireWorkspace(project))
+    const git = async (...args: string[]) => (await executeFile("git", ["--no-replace-objects", "--literal-pathspecs", ...args], {
+      cwd, encoding: "buffer", maxBuffer: MAX_FILE_BYTES + 1024, timeout: 10000, windowsHide: true,
+      env: { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" },
+    })).stdout
+    try {
+      const tree = (await git("ls-tree", "-z", `${commitHash}^{commit}`, "--", path)).toString("utf8")
+      const entry = /^(100644|100755) blob ([a-f0-9]{40})\t([^\0]+)\0$/.exec(tree)
+      if (!entry || entry[3] !== path) throw new ProjectFileError("The audited path is missing or is not a regular file")
+      const size = Number((await git("cat-file", "-s", entry[2]!)).toString("utf8").trim())
+      if (!Number.isSafeInteger(size) || size < 0 || size > MAX_FILE_BYTES) throw new ProjectFileError("File is too large to preview")
+      const buffer = await git("cat-file", "blob", entry[2]!)
+      if (buffer.length !== size || buffer.includes(0)) throw new ProjectFileError("File is not a text file")
+      let content: string
+      try { content = new TextDecoder("utf-8", { fatal: true }).decode(buffer) }
+      catch { throw new ProjectFileError("File is not UTF-8 text") }
+      return { path, content, size, commitHash: commitHash.toLowerCase() }
+    } catch (error) {
+      if (error instanceof ProjectFileError) throw error
+      throw new ProjectFileError("Could not read the file at the audited commit; the local Git history may be unavailable")
+    }
   }
 
   async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
@@ -400,45 +424,11 @@ export class ProjectService {
    * back Waiting; the pipeline reports each stage afterwards.
    */
   async analyzeProjectArchitecture(id: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
-    const cleanBranch = assertValidBranch(branch)
-    const cleanHash = assertValidHash(commitHash).toLowerCase()
-    const project = await this.projects.findById(id)
-
-    if (project === null) {
-      throw new ProjectNotFoundError(`Project ${id} does not exist`)
-    }
-
-    if (project.status === "SYNCING") {
-      throw new SyncInProgressError(
-        `Project ${project.repositoryOwner}/${project.repositoryName} is already syncing`
-      )
-    }
-
-    this.requireWorkspace(project)
-
-    const running = await this.projects.findOpenExecution(project.id, cleanHash)
-
-    if (running !== null) {
-      throw new AnalysisAlreadyRunningError(
-        `Version ${cleanBranch} at ${cleanHash.slice(0, 7)} is already being analyzed (execution ${running.id})`
-      )
-    }
-
+    const { project, cleanBranch, cleanHash } = await this.validateAnalysisTarget(id, branch, commitHash)
     return this.analyses.openProjectArchitecturePipelineForProject(project.id, cleanBranch, cleanHash)
   }
 
-  /**
-   * Runs functional adequacy on the selected version. Requirements are
-   * optional: without them the pipeline audits the repository exploratorily
-   * and needs no model configuration. Version selection and the fresh
-   * evaluation follow the same path as project architecture.
-   */
-  async analyzeProjectFunctionalAdequacy(
-    id: number,
-    branch: string,
-    commitHash: string,
-    requirements: FunctionalRequirement[],
-  ): Promise<FunctionalAdequacyAnalysisRequest> {
+  async validateAnalysisTarget(id: number, branch: string, commitHash: string) {
     const cleanBranch = assertValidBranch(branch)
     const cleanHash = assertValidHash(commitHash).toLowerCase()
     const project = await this.projects.findById(id)
@@ -463,7 +453,7 @@ export class ProjectService {
       )
     }
 
-    return this.analyses.openFunctionalAdequacyPipelineForProject(project.id, cleanBranch, cleanHash, requirements)
+    return { project, cleanBranch, cleanHash }
   }
 
   async listVersions(id: number): Promise<VersionAnalysis[]> {

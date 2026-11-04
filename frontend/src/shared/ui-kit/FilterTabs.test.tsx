@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { FilterTabs, type FilterOption } from "./FilterTabs.tsx"
 
@@ -16,11 +16,24 @@ function StatefulTabs() {
 }
 
 describe("FilterTabs", () => {
+  it("blocks click and keyboard selection while disabled", async () => {
+    const onChange = vi.fn()
+    render(<FilterTabs options={options} value="all" onChange={onChange} disabled />)
+    const all = screen.getByRole("tab", { name: "All (18)" })
+    const running = screen.getByRole("tab", { name: "Running (2)" })
+    expect(all).toBeDisabled()
+    expect(running).toBeDisabled()
+    await userEvent.click(running)
+    fireEvent.keyDown(all, { key: "ArrowRight" })
+    expect(onChange).not.toHaveBeenCalled()
+  })
   it("moves focus and selection with arrows, Home and End", async () => {
     const user = userEvent.setup()
     render(<StatefulTabs />)
     const all = screen.getByRole("tab", { name: "All (18)" })
     const running = screen.getByRole("tab", { name: "Running (2)" })
+    expect(all).toHaveAttribute("aria-selected", "true")
+    expect(running).toHaveAttribute("aria-selected", "false")
     all.focus()
     await user.keyboard("{ArrowRight}")
     expect(running).toHaveFocus()
@@ -31,13 +44,6 @@ describe("FilterTabs", () => {
     await user.keyboard("{End}{ArrowRight}")
     expect(all).toHaveFocus()
     expect(all).toHaveAttribute("aria-selected", "true")
-  })
-
-  it("marks the active tab", () => {
-    render(<StatefulTabs />)
-
-    expect(screen.getByRole("tab", { name: "All (18)" }).getAttribute("aria-selected")).toBe("true")
-    expect(screen.getByRole("tab", { name: "Running (2)" }).getAttribute("aria-selected")).toBe("false")
   })
 
   it("switches tabs on click", async () => {

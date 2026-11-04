@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
+import { formatDate } from "../../shared/i18n/format.ts"
+import { hiddenErrorMessage } from "../../infrastructure/http-client/publicErrors.ts"
 
 vi.mock("../../shared/ui-kit/MermaidDiagram.tsx", () => ({
   MermaidDiagram: ({ chart, label }: { chart: string; label: string }) => (
@@ -46,12 +48,24 @@ const gitTree = { files: ["src/index.ts", "README.md"], taskId: 6 }
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    return handler(String(input), init)
+    const url = String(input)
+    if (/\/audits\?limit=/.test(url)) {
+      const response = await handler(url.split("?")[0], init)
+      if (!response.ok) return response
+      const rows = await response.json()
+      const query = new URL(url, "http://localhost").searchParams
+      const limit = Number(query.get("limit"))
+      const offset = Number(query.get("offset"))
+      return new Response(JSON.stringify({ items: rows.slice(offset, offset + limit), total: rows.length, limit, offset,
+        hasRunning: rows.some((row: { executionStatus?: string }) => ["Waiting", "Running"].includes(row.executionStatus ?? "")) }), { status: 200 })
+    }
+    return handler(url, init)
   }) as typeof fetch
   globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 }
 
 function gitResponse(url: string, init?: RequestInit): Response | null {
+  if (url.includes("/graph?") && init?.method !== "POST") return new Response("null", { status: 200 })
   if (url.includes("/git/branches")) {
     return new Response(JSON.stringify(gitBranches), { status: 200 })
   }
@@ -82,6 +96,7 @@ function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] })
   let release = () => {}
   const seen: string[] = []
   stubFetch((url, init) => {
+    if (url.endsWith("/audits")) return new Response("[]", { status: 200 })
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
@@ -104,6 +119,8 @@ function renderDetail(entry: string) {
       <ToastProvider>
         <Routes>
           <Route path="projects/:id" element={<Navigate to="overview" replace />} />
+          <Route path="projects/:id/audits/:auditId" element={<ProjectDetailPage />} />
+          <Route path="projects/:id/audits/:auditId/evidence/:invocationId" element={<ProjectDetailPage />} />
           <Route path="projects/:id/:section" element={<ProjectDetailPage />} />
         </Routes>
         <Dock />
@@ -113,6 +130,120 @@ function renderDetail(entry: string) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("shows an empty structural graph in its own section, separate from audit setup", async () => {
+    stubProjects()
+    renderDetail("/projects/2/graph")
+
+    const graph = await screen.findByRole("region", { name: "Structural graph" })
+    expect(within(graph).getByRole("heading", { name: "Structural graph" })).toBeVisible()
+    expect(within(graph).getByText("Analyze the project to load the structural graph for the selected branch and commit.")).toBeVisible()
+    await waitFor(() => expect(within(graph).getByText("main")).toBeVisible())
+    expect(await within(graph).findByText("aaaaaaa")).toHaveAttribute("title", "a".repeat(40))
+    expect(within(graph).queryByRole("img")).toBeNull()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("heading", { name: "Quality audit" })).toBeNull()
+    expect(within(screen.getByLabelText("Project context")).getByRole("tab", { name: "Git" })).toBeVisible()
+
+    for (const section of ["Analysis", "Audits", "Overview", "Files"]) {
+      await userEvent.click(screen.getByRole("button", { name: section }))
+      expect(screen.queryByRole("region", { name: "Structural graph" })).toBeNull()
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Structural graph" }))
+    expect(await screen.findByRole("region", { name: "Structural graph" })).toBeVisible()
+  })
+
+  it("renders historical evidence and findings inside project details without reading the working copy", async () => {
+    const auditRequests: string[] = []
+    const fileRequests: string[] = []
+    const historicalRequests: string[] = []
+    stubFetch((url, init) => {
+      if (url.includes("/audits") && !url.endsWith("/file")) auditRequests.push(url)
+      if (url.endsWith("/audits/41/file")) {
+        historicalRequests.push(String(init?.body))
+        return new Response(JSON.stringify({ path: "src/service.ts", content: "// audited complete source\nexport const value = 1", size: 55, commitHash: "audited-commit" }), { status: 200 })
+      }
+      if (url.endsWith("/api/projects/2/file")) fileRequests.push(String(init?.body))
+      if (url.endsWith("/audits/41")) return new Response(JSON.stringify({ id: 41, branch: "main", commitHash: "audited-commit", executionStatus: "Completed", reportAvailable: true }), { status: 200 })
+      if (url.endsWith("/report/sections/quality_results")) return new Response(JSON.stringify({ section: "quality_results", data: {
+        findings: [{ id: "F-1", title: "Recorded responsibility finding", description: "Historical finding details", evidence_ids: ["E-1"] }],
+      } }), { status: 200 })
+      if (url.endsWith("/report/sections/annexes_and_traceability")) return new Response(JSON.stringify({ section: "annexes_and_traceability", data: {
+        executions: [{ invocation_id: "investigator-1", agent_id: "responsibility" }],
+        evidence_inventory: [{ id: "E-1", source: "src/service.ts", content: "Existing evidence content", commit: "audited-commit",
+          provenance: { invocation_id: "investigator-1", agent_id: "responsibility" } }],
+      } }), { status: 200 })
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/audits/41/evidence/investigator-1?agent=responsibility&name=Responsibility")
+    expect(await screen.findByRole("heading", { name: "Agent evidence" })).toBeVisible()
+    expect(screen.getByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(within(screen.getByLabelText("Project context")).queryByRole("tablist")).toBeNull()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeVisible()
+    expect(await screen.findByText("Responsibility")).toBeVisible()
+    expect(screen.getAllByText("investigator-1").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    await waitFor(() => expect(screen.getByRole("region", { name: "Read-only code viewer" })).toHaveTextContent("audited complete source"))
+    expect(auditRequests).toHaveLength(3)
+    expect(auditRequests[0]).toMatch(/\/audits\/41$/)
+    expect(auditRequests).toEqual(expect.arrayContaining([expect.stringMatching(/\/report\/sections\/annexes_and_traceability$/), expect.stringMatching(/\/report\/sections\/quality_results$/)]))
+    expect(fileRequests).toEqual([])
+    expect(historicalRequests).toEqual([JSON.stringify({ path: "src/service.ts" })])
+    expect(screen.queryByRole("button", { name: "Use recorded evidence" })).toBeNull()
+    expect(screen.getByText("Audited branch")).toBeVisible()
+    expect(screen.getByText("Audited commit")).toBeVisible()
+    await userEvent.click(await screen.findByRole("button", { name: "F-1 — Recorded responsibility finding" }))
+    expect(await screen.findByRole("dialog", { name: "Recorded responsibility finding" })).toHaveTextContent("Historical finding details")
+    expect(fileRequests).toEqual([])
+  }, 15000)
+
+  it("embeds configured executed-agent evidence in the audit results tab while keeping the project context", async () => {
+    const commit = "a".repeat(40)
+    const reads: string[] = []
+    stubFetch((url, init) => {
+      if (url.endsWith("/audits/41")) return new Response(JSON.stringify({ id: 41, branch: "main", commitHash: commit,
+        executionStatus: "Completed", reportAvailable: true, configurationAvailable: true }), { status: 200 })
+      if (url.endsWith("/audits/41/configuration")) return new Response(JSON.stringify({ configuration: {
+        version: 1, branch: "main", commitHash: commit, attributes: ["maintainability"], scopes: [{ id: "maintainability",
+          requiredAgents: [{ id: "responsibility", name: "Saved responsibility investigator" }], subcharacteristics: [], techniques: [], investigators: [] }],
+      }, invocations: [{ id: "inv-1", agentId: "responsibility", status: "completed" }] }), { status: 200 })
+      if (url.endsWith("/report/sections/annexes_and_traceability")) return new Response(JSON.stringify({ section: "annexes_and_traceability", data: {
+        executions: [{ invocation_id: "inv-1", agent_id: "responsibility" }], evidence_inventory: [{ id: "E-embedded", kind: "source", source: "Demo/src/example.ts",
+          commit, start_line: 1, end_line: 1, provenance: { invocation_id: "inv-1", agent_id: "responsibility" } }],
+      } }), { status: 200 })
+      if (url.endsWith("/report/sections/quality_results")) return new Response(JSON.stringify({ section: "quality_results", data: { findings: [
+        { id: "F-navigation", title: "Evidence navigation finding", evidence_ids: ["E-embedded"] },
+      ] } }), { status: 200 })
+      if (url.endsWith("/report/sections/executive_summary")) return new Response(JSON.stringify({ section: "executive_summary", data: {} }), { status: 200 })
+      if (url.endsWith("/audits/41/file")) {
+        reads.push(String(init?.body))
+        return new Response(JSON.stringify({ path: "src/example.ts", content: "export const audited = true", size: 27, commitHash: commit }), { status: 200 })
+      }
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/audits/41")
+    expect(await screen.findByRole("heading", { name: "Audit report · #41" })).toBeVisible()
+    expect(screen.queryByRole("region", { name: "Structural graph" })).toBeNull()
+    expect(within(screen.getByLabelText("Project context")).queryByRole("tablist")).toBeNull()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeVisible()
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }))
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Executed agent" }), "responsibility")
+    expect(await screen.findByText("E-embedded")).toBeVisible()
+    await waitFor(() => expect(screen.getByRole("region", { name: "Read-only code viewer" })).toHaveTextContent("export const audited = true"))
+    expect(screen.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(reads).toEqual([JSON.stringify({ path: "src/example.ts" })])
+    await userEvent.click(screen.getByRole("tab", { name: "Findings" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Evidence navigation finding" }))
+    await userEvent.click(screen.getByRole("link", { name: "View evidence E-embedded" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(screen.getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: /^E-embedded/ })).toHaveAttribute("aria-pressed", "true")
+    expect(reads).toHaveLength(1)
+  })
+
   it("keeps the contextual header and version selection mounted across project sections", async () => {
     stubProjects()
     renderDetail("/projects/2")
@@ -123,9 +254,11 @@ describe("ProjectDetailPage", () => {
     expect(controls.getByText("HTTPS")).toBeDefined()
     await waitFor(() => expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled())
     const branch = controls.getByRole("button", { name: "main" })
-    for (const section of ["Audits", "Files", "Overview"]) {
+    for (const section of ["Structural graph", "Audits", "Files", "Overview"]) {
       await userEvent.click(screen.getByRole("button", { name: section }))
       expect(screen.getByLabelText("Project context")).toBe(header)
+      expect(controls.getByRole("tab", { name: "Git" })).toBeVisible()
+      expect(controls.getByRole("tab", { name: /^Analyzed/ })).toBeVisible()
       expect(controls.getByRole("button", { name: "main" })).toBe(branch)
       expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled()
       expect(controls.getByRole("button", { name: "Sync" })).toBeEnabled()
@@ -140,6 +273,43 @@ describe("ProjectDetailPage", () => {
     }
   })
 
+  it("keeps distinct section icons and named destinations when the sidebar is collapsed", async () => {
+    stubProjects()
+    renderDetail("/projects/2")
+    await screen.findByRole("heading", { name: "acme/Demo" })
+
+    const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
+    const sections = within(navigation).getAllByRole("button")
+    expect(sections).toHaveLength(5)
+    const icons = sections.map((button) => {
+      const icon = button.querySelector("svg")!
+      expect(icon).toHaveAttribute("aria-hidden", "true")
+      expect(icon).toHaveAttribute("width", "16")
+      expect(icon).toHaveAttribute("height", "16")
+      return icon.innerHTML
+    })
+    expect(new Set(icons).size).toBe(sections.length)
+    for (const name of ["Home", "Settings", "Veraud"]) {
+      const globalIcon = screen.getByRole("link", { name }).querySelector("svg")!
+      expect(icons).not.toContain(globalIcon.innerHTML)
+    }
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    within(navigation).getAllByRole("button").forEach((button, index) => {
+      expect(button.querySelector("svg")).toBeVisible()
+      expect(button.querySelector("svg")!.innerHTML).toBe(icons[index])
+      expect(button.getAttribute("aria-label")).toBeTruthy()
+      expect(button).not.toHaveAttribute("title")
+    })
+    for (const button of within(navigation).getAllByRole("button")) {
+      await userEvent.hover(button)
+      expect(screen.getByRole("tooltip")).toHaveTextContent(button.getAttribute("aria-label")!)
+      await userEvent.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
+      await userEvent.unhover(button)
+    }
+  })
+
   it("shows the project header with sidebar", async () => {
     stubProjects()
     renderDetail("/projects/2")
@@ -148,13 +318,14 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByText("READY")).toBeDefined()
     expect(screen.getByText("HTTPS")).toBeDefined()
     expect(screen.getByText("Project")).toBeDefined()
-    expect(screen.getByText(`Last synced ${new Date("2026-01-02").toLocaleDateString()}`)).toBeDefined()
+    expect(screen.getByText(`Last synced ${formatDate("2026-01-02")}`)).toBeDefined()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDefined()
 
     const link = screen.getByRole("link", { name: "Open on GitHub" })
     expect(link.getAttribute("href")).toBe("https://github.com/acme/Demo")
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noreferrer")
+    expect(link).toHaveClass("ui-button", "ui-button-secondary")
   })
 
   it("shows SSH for a repository registered over SSH", async () => {
@@ -200,7 +371,7 @@ describe("ProjectDetailPage", () => {
     const callsBefore = branchCalls
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
-    expect(await screen.findByText(`Last synced ${new Date("2026-02-02").toLocaleDateString()}`)).toBeDefined()
+    expect(await screen.findByText(`Last synced ${formatDate("2026-02-02")}`)).toBeDefined()
     expect(await screen.findByText("Project acme/Demo synced")).toBeDefined()
     expect(branchCalls).toBeGreaterThan(callsBefore)
   })
@@ -375,15 +546,195 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(treeCalls).toBeGreaterThan(before))
   })
 
-  it("keeps the files placeholder for the audits section", async () => {
+  it("places audit setup in Analysis and keeps Audits for history", async () => {
     stubProjects()
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
-    expect(await screen.findByText("No analysis yet — pick a version and press Analyze")).toBeDefined()
+    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeDefined()
+    // No executable agent is configured by this fixture; defaults must not
+    // silently select an unavailable audit scope.
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Disabled")
+    expect(screen.queryByRole("checkbox", { name: "Maintainability" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Configure audit" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Project audits" })).not.toBeInTheDocument()
     expect(screen.queryByRole("tree")).toBeNull()
+
+    await userEvent.click(screen.getByRole("button", { name: "Configure audit" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    expect(await screen.findByRole("heading", { name: "Project audits" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Start audit" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Configure audit" })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
+  })
+
+  it("starts an independent graph Task from the header without invoking auditors", async () => {
+    const executions: string[] = []
+    const extractions: unknown[] = []
+    const graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Running", phase: "extracting", graphAvailable: false, error: null }
+    stubFetch((url, init) => {
+      if (url.endsWith("/graph") && init?.method === "POST") {
+        extractions.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify(graph), { status: 202 })
+      }
+      if (url.includes("/graph?")) return new Response(JSON.stringify(extractions.length ? graph : null), { status: 200 })
+      if (init?.method === "POST" && (url.includes("/audits") || url.includes("/agent-executions"))) executions.push(url)
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings") || url.endsWith("/api/projects/2/audits")) {
+        return new Response("[]", { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    expect(analyze).not.toHaveAttribute("aria-haspopup")
+    await waitFor(() => expect(analyze).toBeEnabled())
+    await userEvent.click(analyze)
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Quality audit" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeDisabled()
+    expect(extractions).toEqual([{ branch: "main", commitHash: "a".repeat(40) }])
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+    expect(executions).toEqual([])
+  })
+
+  it("reuses saved graphs, regenerates explicitly, retries descriptive failures and confirms completion once", async () => {
+    const posts: unknown[] = []
+    const sockets: EventTarget[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    let graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Succeded", phase: "completed", graphAvailable: true, previousGraphTaskId: null as number | null, error: null as string | null }
+    stubFetch((url, init) => {
+      if (url.includes("/graph?")) return new Response(JSON.stringify(graph), { status: 200 })
+      if (url.endsWith("/graph") && init?.method === "POST") {
+        posts.push(JSON.parse(String(init.body)))
+        graph = { ...graph, taskId: 81 + posts.length, status: "Running", phase: "extracting", graphAvailable: false, error: null }
+        return new Response(JSON.stringify(graph), { status: 202 })
+      }
+      if (url.includes("/api/tasks/active")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    async function notify() {
+      await act(async () => {
+        for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+          task: { id: graph.taskId, projectId: 2, kind: "graph.extract", status: graph.status, command: null, description: "Graphify", exitCode: null } }) }))
+      })
+    }
+    renderDetail("/projects/2/graph")
+    expect(await screen.findByRole("button", { name: "Regenerate graph" })).toBeEnabled()
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/81/artifact"))
+    const success = "The graph for aaaaaaa was generated and saved successfully."
+    expect(screen.queryByText(success)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
+    expect(posts).toEqual([])
+    await userEvent.click(screen.getByRole("button", { name: "Regenerate graph" }))
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeVisible()
+    expect(posts).toEqual([{ branch: "main", commitHash: "a".repeat(40), regenerate: true }])
+    graph = { ...graph, status: "Failed", phase: "failed", error: "timeout", previousGraphTaskId: 81 }
+    await notify()
+    expect(await screen.findByRole("alert")).toHaveTextContent("Graph extraction exceeded its time limit")
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/81/artifact"))
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByText("Extracting graph with Graphify")).toBeVisible()
+    expect(posts).toHaveLength(2)
+    graph = { ...graph, status: "Succeded", phase: "completed", graphAvailable: true, error: null }
+    await notify()
+    expect(await screen.findByText(success)).toBeVisible()
+    expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/83/artifact"))
+    await notify()
+    expect(screen.getAllByText(success)).toHaveLength(1)
+  })
+
+  it.each(["Succeded", "Failed"])("locks revision controls and audit start for project graph tasks until %s", async (terminalStatus) => {
+    const sockets: EventTarget[] = []
+    const dispatched: string[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    stubFetch((url, init) => {
+      if (url.endsWith("/api/agent-settings")) return new Response(JSON.stringify([{ agentType: "security", qualityAttributes: ["security"], workflowIds: [],
+        configured: true, configuration: null, availability: "available", requiresModel: true }]), { status: 200 })
+      if (url.includes("/api/audit-settings/")) return new Response(JSON.stringify({ schema: { type: "object", properties: {} }, values: {} }), { status: 200 })
+      if (url.includes("/api/tasks/active") || url.endsWith("/audits")) {
+        if (init?.method === "POST") dispatched.push(url)
+        return new Response("[]", { status: 200 })
+      }
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    async function notify(status: string, projectId = 2) {
+      await act(async () => {
+        for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+          task: { id: projectId * 100, projectId, kind: "graph.extract", status, command: null, description: "Graphify", exitCode: null } }) }))
+      })
+    }
+    renderDetail("/projects/2/analysis")
+    const audit = await screen.findByRole("button", { name: "Start audit" })
+    await waitFor(() => expect(audit).toBeEnabled())
+    await notify("Running", 3)
+    expect(audit).toBeEnabled()
+    await notify("Queued")
+    expect(audit).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeDisabled()
+    await userEvent.click(audit)
+    expect(dispatched).toEqual([])
+    await notify("Running")
+    expect(audit).toBeDisabled()
+    await notify(terminalStatus)
+    await waitFor(() => expect(audit).toBeEnabled())
+    expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "main" })).toBeEnabled()
+    expect(screen.getByRole("textbox", { name: "Search items" })).toBeEnabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeEnabled()
+  })
+
+  it.each([false, true])("opens dedicated audit results and keeps the Audits sidebar selected (direct: %s)", async (direct) => {
+    const audit = { id: 8, evaluationId: 4, runId: "original-run", branch: "report-branch", commitHash: "b".repeat(40), attributes: ["maintainability"],
+      executionStatus: "Completed", auditStatus: "partial", error: null, createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: true }
+    const requested: string[] = []
+    stubFetch((url, init) => {
+      requested.push(url)
+      if (url.includes("/api/tasks/active") || url.includes("/api/agent-settings")) return new Response("[]", { status: 200 })
+      if (url.endsWith("/api/projects/2/audits")) return new Response(JSON.stringify([audit]), { status: 200 })
+      if (url.endsWith("/api/projects/2/audits/8")) return new Response(JSON.stringify(audit), { status: 200 })
+      if (url.endsWith("/api/projects/2/audits/8/report/sections/executive_summary")) return new Response(JSON.stringify({
+        section: "executive_summary", data: { conclusion: "Saved audit result" },
+      }), { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail(direct ? "/projects/2/audits/8" : "/projects/2/audits")
+    if (!direct) await userEvent.click(await screen.findByRole("link", { name: "View details" }))
+    expect(await screen.findByRole("heading", { name: "Audit results · #8" })).toBeInTheDocument()
+    expect(await screen.findByText("Saved audit result")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
+    expect(screen.queryByRole("heading", { name: "Project audits" })).not.toBeInTheDocument()
+    const resultsHeader = within(screen.getByLabelText("Audit details"))
+    expect(resultsHeader.getByText("acme/Demo")).toBeInTheDocument()
+    expect(resultsHeader.getByText("report-branch")).toBeInTheDocument()
+    expect(resultsHeader.getByText("b".repeat(40))).toBeInTheDocument()
+    expect(requested.some((url) => url.endsWith("/audits/8/report"))).toBe(false)
+    if (direct) expect(requested.some((url) => url.endsWith("/api/projects/2/audits"))).toBe(false)
+    await userEvent.click(screen.getByRole("link", { name: "Back to audits" }))
+    expect(await screen.findByRole("heading", { name: "Project audits" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Audits" })).toHaveAttribute("aria-current", "page")
   })
 
   it("applies the selected version from the selectors above the header", async () => {
@@ -405,7 +756,7 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText("Version main at bbbbbbb applied")).toBeDefined()
   })
 
-  it("analyzes the applied version and shows the run in audits", async () => {
+  it("shows a stored pipeline and its captured configuration in Analysis", async () => {
     const seen: Array<{ url: string, body: unknown }> = []
     const waiting = (id: number, agentType: string, configuration: unknown = null) => ({
       id,
@@ -430,31 +781,27 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: { ...waiting(23, "semantic_validation"), configuration: captured },
-          },
-        }), { status: 201 })
+      if (init?.method === "POST" && url.endsWith("/architecture")) {
+        seen.push({ url, body: JSON.parse(String(init.body)) as unknown })
+      }
+      if (url.endsWith("/versions")) {
+        return new Response(JSON.stringify([{ id: 9, branch: "main", commitHash: "a".repeat(40),
+          evaluationId: 7, derivedStatus: "Waiting", executions: [waiting(21, "orientation"), waiting(22, "architecture"),
+            { ...waiting(23, "semantic_validation"), configuration: captured }] }]), { status: 200 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify({ ...waiting(23, "semantic_validation"), configuration: captured }), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
     renderDetail("/projects/2")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+    await userEvent.click(screen.getByRole("tab", { name: /Analyzed/ }))
+    await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
+    await userEvent.click(screen.getByRole("option", { name: "main @ aaaaaaa · Waiting" }))
 
-    expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
+    expect(seen).toEqual([])
 
     // The run shows in the header card spinner.
     expect(await screen.findByText("Analyzing the project")).toBeDefined()
@@ -462,17 +809,17 @@ describe("ProjectDetailPage", () => {
     // Sync stays disabled while the pipeline reads the checkout.
     expect(screen.getByRole("button", { name: "Sync" }).hasAttribute("disabled")).toBe(true)
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // The semantic_validation row finishes last, so it is the tracked run.
     expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
-    expect(screen.getAllByText("Waiting")).toHaveLength(3)
+    expect(within(screen.getByRole("heading", { name: "Quality audit" }).closest<HTMLElement>(".project-body")!).getAllByText("Waiting")).toHaveLength(3)
     expect(screen.getByRole("heading", { name: "Configuration used" })).toBeDefined()
     expect(screen.getByText("captured-model")).toBeDefined()
     expect(screen.getByText("captured-credential (#2)")).toBeDefined()
   })
 
-  it("starts the project-architecture pipeline from the Analyze menu tracking validation", async () => {
+  it("restores the last validation run without starting another pipeline", async () => {
     const seen: Array<{ url: string, body: unknown }> = []
     const waiting = (id: number, agentType: string) => ({
       id,
@@ -491,91 +838,20 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
+      if (init?.method === "POST" && url.endsWith("/architecture")) {
         seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      }
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    renderDetail("/projects/2")
+    window.localStorage.setItem("analysis.lastExecution.2", "23")
+    renderDetail("/projects/2/analysis")
 
-    await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
-    expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/architecture")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
-
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
-
-    // The semantic_validation row finishes last, so it is the tracked run.
     expect(await screen.findByText("semantic_validation run #23")).toBeDefined()
-    expect(screen.getAllByText("Waiting")).toHaveLength(3)
-  })
-
-  it("starts and renders a functional-adequacy run from the Analyze menu", async () => {
-    const seen: Array<{ url: string, body: unknown }> = []
-    const result = JSON.stringify({
-      evaluated_attribute: "functional_adequacy",
-      audit_mode: "exploratory",
-      score: 0,
-      score_applicable: false,
-      total_requirements: 0,
-      fulfilled_requirements: 0,
-      results: [],
-      capabilities: [{ capability_id: "cap-1", name: "list_products", kind: "function", description: "Lists products.", detection: "observed", evidence: [] }],
-      findings: [],
-      subattributes: [],
-      limitations: ["No requirements were supplied."],
-      recommendations: [],
-    })
-    stubFetch((url, init) => {
-      if (url.includes("/api/tasks/active")) {
-        return new Response(JSON.stringify([]), { status: 200 })
-      }
-      if (url.endsWith("/functional-adequacy")) {
-        seen.push({ url, body: JSON.parse(String(init?.body ?? "{}")) as unknown })
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            functional_adequacy: {
-              id: 31, evaluationId: 7, agentType: "functional_adequacy", status: "Completed", result,
-              error: null, inputTokens: null, outputTokens: null, createdAt: "2026-01-01", startedAt: "2026-01-01", finishedAt: "2026-01-01",
-            },
-          },
-        }), { status: 201 })
-      }
-      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
-    })
-    renderDetail("/projects/2")
-
-    await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Functional adequacy/ }))
-
-    expect(seen.length).toBe(1)
-    expect(seen[0]?.url).toContain("/api/projects/2/functional-adequacy")
-    expect(seen[0]?.body).toEqual({ branch: "main", commitHash: "a".repeat(40) })
-
-    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
-    expect(await screen.findByRole("heading", { name: "Functional adequacy" })).toBeDefined()
-    expect(screen.getByText("Exploratory audit")).toBeDefined()
-    expect(screen.getByText("list_products", { exact: false })).toBeDefined()
-    expect(screen.getByText("No requirements were supplied.")).toBeDefined()
+    expect(seen).toEqual([])
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
   })
 
   it("renders parsed orientation content once its run completes", async () => {    const orientationResult = JSON.stringify({
@@ -612,16 +888,8 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: completedOrientation,
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/21")) {
+        return new Response(JSON.stringify(completedOrientation), { status: 200 })
       }
       if (url.includes("/api/projects/2/versions")) {
         return new Response(JSON.stringify([{
@@ -641,18 +909,11 @@ describe("ProjectDetailPage", () => {
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    // A previous test may have left a tracked run behind; start clean so the
-    // menu is enabled and nothing restores mid-test.
-    window.localStorage.removeItem("analysis.lastExecution.2")
+    window.localStorage.setItem("analysis.lastExecution.2", "21")
     // Open the analysis section directly: result cards render there.
     renderDetail("/projects/2/analysis")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
     expect(await screen.findByText("orientation run #21")).toBeDefined()
     expect(await screen.findByText("Orientation")).toBeDefined()
     expect(await screen.findByText("A command-line tool.")).toBeDefined()
@@ -682,37 +943,48 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: completed(21, "orientation", null),
-            architecture: completed(22, "architecture", failedArchitecture),
-            semantic_validation: completed(23, "semantic_validation", null),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/22")) {
+        return new Response(JSON.stringify(completed(22, "architecture", failedArchitecture)), { status: 200 })
       }
       if (url.includes("/api/projects/2/versions")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    window.localStorage.removeItem("analysis.lastExecution.2")
+    window.localStorage.setItem("analysis.lastExecution.2", "22")
     renderDetail("/projects/2/analysis")
 
     await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
-
     expect(await screen.findByText("call_limit")).toBeDefined()
-    expect(await screen.findByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(screen.getByText(hiddenErrorMessage)).toBeVisible()
+    expect(screen.queryByText("Model-call limit reached.", { exact: false })).not.toBeInTheDocument()
     expect(await screen.findByText("Snapshot capped.")).toBeDefined()
   })
 
-  it("disables Analyze while a sync is running", async () => {
+  it("keeps graph extraction enabled after a completed sync task arrives over WebSocket", async () => {
+    const sockets: EventTarget[] = []
+    class TaskSocket extends EventTarget {
+      constructor() { super(); sockets.push(this) }
+      close() {}
+    }
+    stubProjects()
+    globalThis.WebSocket = TaskSocket as unknown as typeof WebSocket
+    renderDetail("/projects/2")
+    const analyze = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(analyze).toBeEnabled())
+    await act(async () => {
+      for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+        task: { id: 91, projectId: 2, kind: "pull", status: "Running", command: null, description: "Syncing", exitCode: null } }) }))
+    })
+    expect(analyze).toBeDisabled()
+    await act(async () => {
+      for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "task.updated",
+        task: { id: 91, projectId: 2, kind: "pull", status: "Succeded", command: null, description: "Synced", exitCode: 0 } }) }))
+    })
+    await waitFor(() => expect(analyze).toBeEnabled())
+  })
+
+  it("prevents starting graph extraction during sync while audit setup remains separate", async () => {
     stubFetch((url, init) => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
@@ -731,7 +1003,10 @@ describe("ProjectDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Sync" }))
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze" }).hasAttribute("disabled")).toBe(true))
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled()
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
+    expect(await screen.findByRole("heading", { name: "Quality audit" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
   })
 
   it("checks out an analyzed version and shows its stored run", async () => {
@@ -783,12 +1058,12 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText(`(HEAD detached at ${"b".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
     expect(seen[0]).toContain("b".repeat(40))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // The architect carries the final verdict, so a version with both rows
     // shows the architect run.
     expect(await screen.findByText("architect run #31")).toBeDefined()
-    expect(screen.getAllByText("Completed").length).toBe(2)
+    expect(within(screen.getByRole("heading", { name: "Quality audit" }).closest<HTMLElement>(".project-body")!).getAllByText("Completed")).toHaveLength(2)
 
     // A second pick moves the detached checkout without re-attaching first.
     await userEvent.click(screen.getByRole("button", { name: "Overview" }))
@@ -799,7 +1074,7 @@ describe("ProjectDetailPage", () => {
     expect(await screen.findByText(`(HEAD detached at ${"c".repeat(40)}) - select a branch to re-attach`)).toBeDefined()
     expect(seen[1]).toContain("c".repeat(40))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     // A version with only the analyzer row falls back to it.
     expect(await screen.findByText("analyzer run #22")).toBeDefined()
@@ -840,7 +1115,7 @@ describe("ProjectDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select an analyzed version" }))
     await userEvent.click(screen.getByRole("option", { name: "main @ bbbbbbb · Completed" }))
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByText("analyzer run #21")).toBeDefined()
     expect(screen.queryByText("Analysis completed")).toBeNull()
@@ -888,7 +1163,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByText("A command-line tool.")).toBeDefined()
     expect(screen.queryByText("Analyzing")).toBeNull()
 
-    await userEvent.click(screen.getByRole("button", { name: "Audits" }))
+    await userEvent.click(screen.getByRole("button", { name: "Analysis" }))
 
     expect(await screen.findByText("orientation run #21")).toBeDefined()
   })
@@ -911,29 +1186,18 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) {
         return new Response(JSON.stringify([]), { status: 200 })
       }
-      if (url.endsWith("/architecture")) {
-        return new Response(JSON.stringify({
-          versionId: 9,
-          evaluationId: 7,
-          executions: {
-            orientation: waiting(21, "orientation"),
-            architecture: waiting(22, "architecture"),
-            semantic_validation: waiting(23, "semantic_validation"),
-          },
-        }), { status: 201 })
+      if (url.includes("/agent-executions/23")) {
+        return new Response(JSON.stringify(waiting(23, "semantic_validation")), { status: 200 })
       }
       if (url.includes("/agent-executions/")) {
         return new Response(JSON.stringify({ message: "Agent execution not found" }), { status: 404 })
       }
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
+    window.localStorage.setItem("analysis.lastExecution.2", "23")
     renderDetail("/projects/2")
 
-    await screen.findByText("acme/Demo")
-    const analyze = await screen.findByRole("button", { name: "Analyze" })
-    await waitFor(() => expect(analyze.hasAttribute("disabled")).toBe(false))
-    await userEvent.click(analyze)
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Project architecture/ }))
+    await screen.findByText("Analyzing the project")
 
     const headerRow = screen.getByRole("heading", { name: "acme/Demo" }).parentElement
     if (headerRow === null) {

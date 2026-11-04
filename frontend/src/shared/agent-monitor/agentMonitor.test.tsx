@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { useContext, type ReactNode } from "react"
 import { AgentExecutionsProvider } from "./agentMonitor.tsx"
-import { useAgentExecutions } from "./useAgentExecutions.ts"
+import { AuditExecutionUpdateContext, useAgentExecutions } from "./useAgentExecutions.ts"
 
 const realWebSocket = globalThis.WebSocket
 const realFetch = globalThis.fetch
@@ -71,6 +71,65 @@ beforeEach(() => {
 })
 
 describe("AgentExecutionsProvider", () => {
+  it("merges cancellation responses and terminal events without reopening a confirmed audit", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    const { result } = renderHook(() => ({ executions: useAgentExecutions(), update: useContext(AuditExecutionUpdateContext) }), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: { ...opened, status: "Running" } }))
+    await waitFor(() => expect(result.current.executions).toHaveLength(1))
+    const requested = { id: 11, executionStatus: "Running", auditStatus: "cancelling", cancellationRequestedAt: "2026-10-30T12:00:00Z", finishedAt: null, error: null }
+    act(() => result.current.update(requested))
+    expect(result.current.executions[0]?.cancellationRequestedAt).toBe(requested.cancellationRequestedAt)
+    expect(result.current.executions[0]?.status).toBe("Running")
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: {
+      ...opened, status: "Completed", interruptionReason: "cancelled", finishedAt: "2026-10-30T12:01:00Z",
+      cancellationRequestedAt: requested.cancellationRequestedAt,
+    } }))
+    act(() => result.current.update(requested))
+    expect(result.current.executions[0]?.status).toBe("Completed")
+    expect(result.current.executions[0]?.interruptionReason).toBe("cancelled")
+    expect(result.current.executions[0]?.finishedAt).toBe("2026-10-30T12:01:00Z")
+  })
+  it("keeps live children and terminal usage when a stale hydration response arrives", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    let resolveInitial!: (response: Response) => void
+    globalThis.fetch = (() => new Promise<Response>((resolve) => { resolveInitial = resolve })) as typeof fetch
+    const child = { invocation_id: "child", parent_invocation_id: "manager", agent_id: "modularity", run_id: "audit",
+      status: "running", started_at: "2026-10-20T10:00:00Z", finished_at: null, input_tokens: 2, output_tokens: null, error: null }
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: { ...opened, invocations: [child] } }))
+    await waitFor(() => expect(resolveInitial).toBeDefined())
+    const finished = { ...child, status: "completed", finished_at: "2026-10-20T10:01:00Z", input_tokens: 20 }
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Running", invocations: [finished] } }))
+    resolveInitial(new Response(JSON.stringify({ ...opened, invocations: [child] })))
+    await waitFor(() => expect(result.current[0]?.invocations).toEqual([finished]))
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Running", invocations: [child] } }))
+    expect(result.current[0]?.invocations).toEqual([finished])
+  })
+  it("hydrates context and terminal audit output even when completion races the initial lookup", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    let resolveInitial!: (response: Response) => void
+    const initial = new Promise<Response>((resolve) => { resolveInitial = resolve })
+    let calls = 0
+    const context = { project: null, branch: null, commitHash: null, evaluationType: "QualityAudit",
+      qualityAttributes: ["maintainability"], workflowIds: ["quality-audit"] }
+    const output = JSON.stringify({ attributes: ["maintainability", "security"], status: "partial" })
+    globalThis.fetch = (async (input) => {
+      expect(String(input)).toContain("?monitor=true")
+      calls++
+      return calls === 1 ? initial : new Response(JSON.stringify({ ...opened, status: "Completed", result: output, monitorContext: context }))
+    }) as typeof fetch
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.opened", execution: opened }))
+    await waitFor(() => expect(calls).toBe(1))
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Completed", result: null } }))
+    resolveInitial(new Response(JSON.stringify({ ...opened, monitorContext: context })))
+    await waitFor(() => expect(result.current[0]?.result).toBe(output))
+    expect(result.current[0]?.status).toBe("Completed")
+    expect(result.current[0]?.monitorContext).toEqual(context)
+    act(() => FakeSocket.instances[0]?.push({ type: "agent-execution.updated", execution: { ...opened, status: "Completed", result: null } }))
+    expect(result.current[0]?.result).toBe(output)
+  })
+
   it("collects opened runs and applies later updates", async () => {
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 

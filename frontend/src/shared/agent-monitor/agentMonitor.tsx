@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { backendWsUrl, getAgentExecution, type AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
-import { mergeExecution } from "./mergeExecution.ts"
-import { AgentExecutionsContext } from "./useAgentExecutions.ts"
+import { mergeExecution, mergeInvocations } from "./mergeExecution.ts"
+import { AgentExecutionsContext, AuditExecutionUpdateContext } from "./useAgentExecutions.ts"
+import type { AuditCancellationResult } from "../../infrastructure/http-client/httpClient.ts"
 
 interface AgentExecutionEvent {
   type: string
@@ -23,6 +24,23 @@ function isAgentEvent(data: unknown): data is AgentExecutionEvent {
 
 export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children: ReactNode; retryMs?: number }) {
   const [executions, setExecutions] = useState<AgentExecution[]>([])
+  const updateAudit = useCallback((audit: AuditCancellationResult) => {
+    setExecutions((current) => current.map((execution) => {
+      if (execution.id !== audit.id) return execution
+      let result: Record<string, unknown> = {}
+      try {
+        const parsed: unknown = JSON.parse(execution.result ?? "{}")
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as typeof result
+      } catch { /* Retain the live metadata. */ }
+      return mergeExecution(execution, { ...execution, status: audit.executionStatus, error: audit.error,
+        errorDetail: audit.errorDetail ?? execution.errorDetail ?? null,
+        finishedAt: audit.finishedAt, cancellationRequestedAt: audit.cancellationRequestedAt,
+        interruptionReason: audit.auditStatus === "cancelled" ? "cancelled"
+          : audit.cancellationRequestedAt && ["Waiting", "Running"].includes(audit.executionStatus) ? "cancellation_requested" : null,
+        result: JSON.stringify({ ...result, status: audit.auditStatus, run_id: audit.runId ?? result.run_id }),
+      })
+    }))
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -32,6 +50,7 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     const knownIds = new Set<number>(Array.isArray(stored) ? stored.filter((id): id is number => Number.isInteger(id) && id > 0).slice(-50) : [])
     const hydrated = new Set<number>()
     const pending = new Set<number>()
+    const refreshAgain = new Set<number>()
     const revisions = new Map<number, number>()
 
     function apply(execution: AgentExecution, snapshotOnly = false) {
@@ -41,24 +60,29 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
         if (index === -1) return [...current, execution].sort((a, b) => a.id - b.id).slice(-50)
         const next = [...current]
         next[index] = snapshotOnly ? {
-          ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
+           ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
+            monitorContext: execution.monitorContext ?? current[index]?.monitorContext,
+            invocations: mergeInvocations(execution.invocations, current[index]?.invocations),
         } : mergeExecution(current[index], execution)
         return next
       })
     }
 
     async function refresh(id: number) {
-      if (pending.has(id)) return
+      if (pending.has(id)) { refreshAgain.add(id); return }
       pending.add(id)
       const revision = revisions.get(id) ?? 0
       try {
-        const execution = await getAgentExecution(id)
+        const execution = await getAgentExecution(id, true)
         if (execution.id !== id) return
         hydrated.add(id)
         apply(execution, revision !== (revisions.get(id) ?? 0))
       } catch {
         // A later event/reconnect can retry; transient HTTP failures keep the live row.
-      } finally { pending.delete(id) }
+      } finally {
+        pending.delete(id)
+        if (alive && refreshAgain.delete(id)) void refresh(id)
+      }
     }
 
     function restore() {
@@ -83,7 +107,9 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
       localStorage.set("agents.recentExecutionIds", [...knownIds])
       revisions.set(data.execution.id, (revisions.get(data.execution.id) ?? 0) + 1)
       apply(data.execution)
-      if (data.execution.configuration === undefined && !hydrated.has(data.execution.id)) void refresh(data.execution.id)
+      if (!hydrated.has(data.execution.id) || data.execution.status === "Completed" || data.execution.status === "Failed") {
+        void refresh(data.execution.id)
+      }
     }
 
     function schedule() {
@@ -129,5 +155,7 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     }
   }, [retryMs])
 
-  return <AgentExecutionsContext.Provider value={executions}>{children}</AgentExecutionsContext.Provider>
+  return <AuditExecutionUpdateContext.Provider value={updateAudit}>
+    <AgentExecutionsContext.Provider value={executions}>{children}</AgentExecutionsContext.Provider>
+  </AuditExecutionUpdateContext.Provider>
 }

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from server.agents.functional_adequacy.agent import FunctionalAdequacyAgent
+from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
 from server.agents.functional_adequacy.repository_adapter import (
     prepare_repository_input,
 )
@@ -25,6 +26,7 @@ class FakeModel:
 def build_agent():
     agent = FunctionalAdequacyAgent.__new__(FunctionalAdequacyAgent)
     agent.model = FakeModel()
+    agent.config = FunctionalAdequacyConfig()
     agent._graph = agent._build_graph()
     return agent
 

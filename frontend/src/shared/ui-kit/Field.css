@@ -1,0 +1,25 @@
+.ui-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.ui-field-label {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  z-index: 1;
+  padding: 0 4px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-label);
+  line-height: var(--line-height-relaxed);
+  pointer-events: none;
+}
+
+.ui-field:focus-within .ui-field-label { color: var(--color-focus); }
+.ui-field[data-invalid="true"] .ui-field-label { color: var(--color-error-text); }

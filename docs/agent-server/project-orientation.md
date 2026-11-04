@@ -70,7 +70,7 @@ No prompt/source content is printed by this diagnostic.
 ## Library Use
 
 ```python
-from server.agents.project_orientation import ProjectOrientationAgent
+from server.agents.project_analysis.project_orientation import ProjectOrientationAgent
 
 result = await ProjectOrientationAgent(model).run(tools)
 ```

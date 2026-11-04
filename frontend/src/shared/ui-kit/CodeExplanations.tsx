@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 import type { CodeExplanation } from "./codeViewer.ts"
 import "./CodeExplanations.css"
+import "./CodeReference.css"
 
 export function CodeExplanations({ items }: { items: CodeExplanation[] }) {
   const { t } = useTranslation("common")

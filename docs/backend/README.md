@@ -3,7 +3,7 @@
 ## HTTP API: the central reference
 
 Start the backend and open `http://<backend-host>:<backend-port>/docs`.
-Swagger UI describes all 32 HTTP operations, grouped by Projects, Project Git,
+Swagger UI describes all 30 HTTP operations, grouped by Projects, Project Git,
 Tasks, AI Providers, Agent Executions, Agent Settings and Status. `/docs/json` provides the
 OpenAPI 3.0.3 specification. ΓÇ£Try it outΓÇ¥ targets the backend origin serving the
 portal.
@@ -24,7 +24,6 @@ HTTP contracts. Update them alongside endpoint changes.
 - [AI providers, models and credentials](ai-providers.md).
 - [Agent discovery and saved configuration](agent-settings.md).
 - [Agent execution lifecycle and WebSocket events](agent-execution.md).
-- [Functional adequacy end-to-end integration](../EP-004-functional-adequacy.md#backend-integration).
 
 These Markdown documents explain behavior and system flows; consult Swagger for
 the current HTTP request/response definitions. WebSocket event contracts are

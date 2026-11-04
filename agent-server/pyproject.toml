@@ -2,27 +2,35 @@
 name = "agent-server"
 version = "0.0.0"
 description = "server for ai agents"
-readme = "../README.md"
+readme = "README.md"
 authors = [
     { name = "redsquirrelx", email = "redsquirrel.xi@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "deepagents>=0.7.23",
     "fastapi[standard]>=0.141.1",
     "google-genai>=2.27.0",
+    "graphifyy==0.9.100",
     "langchain>=1.4.3",
     "langchain-anthropic>=1.7.5",
+    "langchain-core>=1.6.10",
     "langchain-google-genai>=4.4.0",
     "langchain-openai>=1.6.6",
     "langgraph>=1.2.12",
     "langsmith>=0.14.1",
+    "httpx>=0.28.1",
+    "lxml>=6.1.3",
+    "openai>=3.31.0",
     "pydantic>=2.13.5",
+    "pydantic-core>=2.50.1",
     "pydantic-settings>=2.15.0",
+    "python-docx>=1.2.0,<2",
     "pyyaml>=6.0.3",
-    "tree-sitter>=0.26.0",
+    "sentence-transformers>=5,<6",
+    "tree-sitter>=0.25,<0.26",
     "tree-sitter-javascript>=0.25.0",
     "tree-sitter-typescript>=0.23.2",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
@@ -33,12 +41,16 @@ functional-adequacy = "server.run_functional_adequacy:main"
 project-semantic-validation = "server.run_project_semantic_validation:main"
 
 [build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-module-name = "server"
-module-root = "src"
+[tool.hatch.build.targets.wheel]
+packages = ["src/server", "config"]
+exclude = ["config/dev-agents.yaml", "config/dev-agents.yaml.template"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/server", "config", "pyproject.toml", "README.md"]
+exclude = ["config/dev-agents.yaml", "config/dev-agents.yaml.template"]
 
 [dependency-groups]
 dev = [

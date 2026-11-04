@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type { ParseKeys } from "i18next"
 import { ApiError, registerProject, type RegisteredProject } from "../../infrastructure/http-client/httpClient.ts"
 
 export type RegisterState = "idle" | "loading" | "success" | "error"
+type RegistrationMessage = { key: ParseKeys<"projects">, name?: string } | { detail: string } | null
 
 function isTimeout(error: unknown): boolean {
   const name = error instanceof Error || error instanceof DOMException ? error.name : ""
@@ -16,11 +18,13 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
   const [url, setUrl] = useState("")
   const [cooling, setCooling] = useState(false)
   const [state, setState] = useState<RegisterState>("idle")
-  const [message, setMessage] = useState("")
+  const [messageState, setMessageState] = useState<RegistrationMessage>(null)
   const [project, setProject] = useState<RegisteredProject | null>(null)
   const mounted = useRef(true)
   const pending = useRef(0)
   const coolingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const message = messageState === null ? "" : "detail" in messageState ? messageState.detail
+    : t(messageState.key, messageState.name === undefined ? {} : { name: messageState.name })
 
   useEffect(() => {
     mounted.current = true
@@ -54,7 +58,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
     }, SUBMIT_COOLDOWN_MS)
     pending.current += 1
     setState("loading")
-    setMessage("")
+    setMessageState(null)
     setProject(null)
     try {
       const created = await registerProject(trimmed, shallowClone)
@@ -62,7 +66,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
         return
       }
       setProject(created)
-      setMessage(t("registration.registered", { name: `${created.repositoryOwner}/${created.repositoryName}` }))
+      setMessageState({ key: "registration.registered", name: `${created.repositoryOwner}/${created.repositoryName}` })
       setState("success")
       options?.onRegistered?.()
     } catch (error) {
@@ -71,14 +75,14 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
       }
       setProject(null)
       if (error instanceof ApiError) {
-        setMessage(error.message)
+        setMessageState(error.messageSource === "client" ? { key: "registration.errors.unexpected" } : { detail: error.message })
       } else if (isTimeout(error)) {
-        setMessage(t("registration.errors.timeout"))
+        setMessageState({ key: "registration.errors.timeout" })
       } else if (error instanceof TypeError) {
-        setMessage(t("registration.errors.network"))
+        setMessageState({ key: "registration.errors.network" })
       } else {
         console.log(error)
-        setMessage(t("registration.errors.unexpected"))
+        setMessageState({ key: "registration.errors.unexpected" })
       }
       setState("error")
     } finally {
@@ -91,7 +95,7 @@ export function useRegisterProject(options?: { onRegistered?: () => void; shallo
 
   function reset() {
     setState("idle")
-    setMessage("")
+    setMessageState(null)
     setProject(null)
   }
 

@@ -6,23 +6,36 @@ Adding a pipeline means registering a `PipelineDefinition`, not writing a
 new service.
 """
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from ..api.schemas import ExecutionConfig
+from server.app.execution_config import ExecutionConfig
+from server.app.pipeline_contracts import PipelineDefinition
+from server.app.pipeline_registry import default_pipeline_registry
+from server.infrastructure.tracing import LangSmithTracingBackend, TracingBackend
+from server.services.execution_error_details import (
+    exception_error_detail,
+    result_error_detail,
+)
+
 from ..config.logs import get_logger
 from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
+from ..infrastructure.execution_events import bind_execution, record_execution
 from .callback_port import CallbackSink, default_callback_sink
-from .execution_service import AgentExecutionService, InvalidConfigError
-from .tracing_port import LangSmithTracingBackend, TracingBackend
+from .errors import InvalidConfigError
 from .usage_reporting import report_progress
 
 logger = get_logger("pipeline-service")
+
+if TYPE_CHECKING:
+    from ..blackboard.interface import Blackboard
+    from .execution_service import AgentExecutionService
 
 # The whole pipeline gets one deadline, like the dev runner's --timeout.
 DEFAULT_PIPELINE_TIMEOUT_SECONDS = 600
@@ -57,6 +70,7 @@ class GenericReportingHooks:
         self.partial_results: dict[int, BaseModel] = {}
 
     async def on_stage_start(self, stage: str) -> None:
+        bind_execution(self._ids[stage])
         if stage in self.started or stage in self.completed:
             return
         await self._mark_running(self._ids[stage])
@@ -72,6 +86,16 @@ class GenericReportingHooks:
     async def on_stage_progress(self, stage: str, usage: ExecutionProgress) -> None:
         await report_progress(self._callbacks, self._ids[stage], usage)
 
+    async def on_audit_start(self, stage: str, run_id: str) -> None:
+        if self._callbacks is not None:
+            await self._callbacks.mark_running(self._ids[stage], run_id)
+
+    async def on_invocation(self, stage: str, receipt: dict) -> None:
+        from ..infrastructure.callback.schemas import InvocationReceipt
+
+        if self._callbacks is not None:
+            await self._callbacks.invocation(self._ids[stage], InvocationReceipt.model_validate(receipt))
+
     def retain_partial(self, stage: str, result: BaseModel) -> None:
         self.partial_results[self._ids[stage]] = result
 
@@ -86,22 +110,22 @@ class GenericReportingHooks:
         )
         self.completed.add(stage)
 
-    async def close_failed(self, error: str) -> None:
+    async def close_failed(self, error: str, error_detail=None) -> None:
         """Close whatever the failure left unfinished."""
         pending = [name for name in self._order if name not in self.completed]
         for index, name in enumerate(pending):
             if index == 0:
-                await self._report_failure(self._ids[name], error)
+                await self._report_failure(self._ids[name], error, error_detail)
             else:
                 await self._report_failure(
-                    self._ids[name], f"Skipped: {pending[0]} failed ({error})"
+                    self._ids[name], f"Skipped: {pending[0]} failed ({error})", error_detail
                 )
 
-    async def fail_open(self, error: str) -> None:
+    async def fail_open(self, error: str, error_detail=None) -> None:
         for name in self._order:
             execution_id = self._ids[name]
             if execution_id in self.open_rows:
-                await self._report_failure(execution_id, error)
+                await self._report_failure(execution_id, error, error_detail)
 
     async def _mark_running(self, execution_id: int) -> None:
         if self._callbacks is None:
@@ -114,57 +138,26 @@ class GenericReportingHooks:
             return
         await self._callbacks.complete(
             execution_id,
-            ExecutionOutcome(status="Completed", result=result.model_dump_json(), **self.usage(execution_id)),
+            ExecutionOutcome(status="Completed", result=result.model_dump_json(),
+                error_detail=result_error_detail(result,
+                    agent_id=next((name for name, value in self._ids.items() if value == execution_id), None)),
+                **self.usage(execution_id)),
         )
         self.open_rows.discard(execution_id)
 
-    async def _report_failure(self, execution_id: int, error: str) -> None:
+    async def _report_failure(self, execution_id: int, error: str, error_detail=None) -> None:
         if self._callbacks is None:
             return
         await self._callbacks.complete(
             execution_id,
             ExecutionOutcome(
-                status="Failed", error=error,
+                status="Failed", error=error, error_detail=error_detail,
                 result=self.partial_results[execution_id].model_dump_json()
                 if execution_id in self.partial_results else None,
                 **self.usage(execution_id),
             ),
         )
         self.open_rows.discard(execution_id)
-
-
-@dataclass
-class PipelineDefinition:
-    """How to run one registered pipeline. New pipelines add an entry here.
-
-    The generic service only touches `name`, `stages`, and these callables:
-    stage/agent names, graph hook shapes and run lifecycles live in the
-    definition, never in the service. `ctx` is the definition's private
-    per-run state (e.g. snapshot, budget, models) threaded from
-    `build_agents` through `create_pipeline` into `run_pipeline`.
-    """
-
-    name: str
-    stages: list[str]
-    parse_input: Callable[[dict], Any]
-    build_agents: Callable[..., Any] = field(repr=False)
-    adapt_hooks: Callable[[GenericReportingHooks], Any] = field(repr=False)
-    create_pipeline: Callable[[dict[str, Any], Any, dict[str, Any]], Any] = field(repr=False)
-    run_pipeline: Callable[..., Any] = field(repr=False)
-    agent_types: dict[str, str] | None = None
-
-    def agent_type_for(self, stage: str) -> str:
-        return (self.agent_types or {}).get(stage, stage)
-
-
-def default_pipeline_registry() -> dict[str, PipelineDefinition]:
-    from .functional_adequacy_definition import functional_adequacy_definition
-    from .project_architecture_definition import project_architecture_definition
-
-    return {
-        "project-architecture": project_architecture_definition(),
-        "functional-adequacy": functional_adequacy_definition(),
-    }
 
 
 class GenericPipelineService:
@@ -177,7 +170,7 @@ class GenericPipelineService:
         tracing_backend: TracingBackend | None = None,
         registry: dict[str, PipelineDefinition] | None = None,
     ) -> None:
-        self._exec = execution_service or AgentExecutionService()
+        self._exec = execution_service
         self._callbacks_factory = callbacks_factory or _default_callbacks
         self._tracing = tracing_backend or LangSmithTracingBackend()
         self._registry = registry if registry is not None else default_pipeline_registry()
@@ -193,25 +186,60 @@ class GenericPipelineService:
         stage_configs: dict[str, ExecutionConfig] | None = None,
         execution_ids: dict[str, int] | None = None,
         timeout_seconds: int = DEFAULT_PIPELINE_TIMEOUT_SECONDS,
+        *,
+        blackboard: Blackboard | None = None,
+        audit_service=None,
     ) -> dict:
         """Run the named pipeline and return its stage outputs as plain dicts."""
+
         definition = self._registry.get(pipeline_name)
         if definition is None:
             raise UnknownPipelineError(f"Unknown pipeline: {pipeline_name!r}")
 
         parsed = definition.parse_input(input_data)
+        stages = definition.resolve_stages(parsed) if definition.resolve_stages else definition.stages
 
         if execution_ids is not None:
-            missing = [stage for stage in definition.stages if stage not in execution_ids]
+            missing = [stage for stage in stages if stage not in execution_ids]
             if missing:
                 raise InvalidConfigError(
                     f"Missing execution ids for stages: {', '.join(missing)}"
                 )
 
+        requires_executor = definition.requires_agent_execution_service
+        if requires_executor is None:
+            requires_executor = True  # compatibility for custom pipeline definitions
+        if requires_executor and self._exec is None:
+            from .execution_service import AgentExecutionService
+
+            self._exec = AgentExecutionService()
         agents, ctx = await definition.build_agents(
             self._exec, config, stage_configs, parsed, timeout_seconds
         )
+        try:
+            # Pipeline-private context is the explicit injection boundary. Definitions
+            # decide which of these optional request-scoped services they consume.
+            ctx = dict(ctx or {})
+            ctx["blackboard"] = blackboard
+            ctx["audit_service"] = audit_service
+            definition.bind_context(agents, ctx, blackboard, audit_service)
+            return await self._execute_prepared(
+                definition, pipeline_name, parsed, agents, ctx, config,
+                stage_configs, execution_ids, stages, timeout_seconds,
+            )
+        finally:
+            if definition.close_resources is not None:
+                try:
+                    await definition.close_resources(ctx)
+                except Exception as error:  # noqa: BLE001 - never mask pipeline outcome
+                    logger.warning("Pipeline %r resource cleanup failed (%s)", pipeline_name, type(error).__name__)
 
+
+    @record_execution
+    async def _execute_prepared(
+        self, definition, pipeline_name, parsed, agents, ctx, config, stage_configs,
+        execution_ids, stages, timeout_seconds,
+    ) -> dict:
         callbacks = self._callbacks_factory() if execution_ids is not None else None
         if execution_ids is not None and callbacks is None:
             logger.warning(
@@ -221,11 +249,19 @@ class GenericPipelineService:
 
         hooks: GenericReportingHooks | None = None
         graph_hooks: Any = None
-        if execution_ids is not None:
-            hooks = GenericReportingHooks(callbacks, execution_ids, definition.stages)
-            graph_hooks = definition.adapt_hooks(hooks)
+        try:
+            if execution_ids is not None:
+                hooks = GenericReportingHooks(callbacks, execution_ids, stages)
+                graph_hooks = definition.adapt_hooks(hooks)
 
-        pipeline = definition.create_pipeline(agents, graph_hooks, ctx)
+            pipeline = definition.create_pipeline(agents, graph_hooks, ctx)
+        except BaseException:
+            if callbacks is not None:
+                try:
+                    await callbacks.aclose()
+                except Exception as error:  # noqa: BLE001 - retain setup failure
+                    logger.warning("Pipeline callback cleanup failed (%s)", type(error).__name__)
+            raise
 
         try:
             return await self._tracing.wrap_pipeline(
@@ -236,14 +272,16 @@ class GenericPipelineService:
                 name=pipeline_name,
                 timeout_seconds=timeout_seconds,
             )
-        except TimeoutError:
+        except TimeoutError as error:
             logger.error("Pipeline %r timed out after %ss", pipeline_name, timeout_seconds)
             if hooks is not None:
-                await hooks.fail_open(f"Pipeline timed out after {timeout_seconds}s")
+                detail = exception_error_detail(error, agent_id=pipeline_name)
+                await hooks.fail_open(f"Pipeline timed out after {timeout_seconds}s", detail)
             raise
         except Exception as error:
             if hooks is not None:
-                await hooks.close_failed(str(error) or type(error).__name__)
+                detail = exception_error_detail(error, agent_id=pipeline_name)
+                await hooks.close_failed(detail.message, detail)
             raise
         finally:
             if callbacks is not None:

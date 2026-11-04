@@ -29,7 +29,7 @@ with JSON Schema null unions; Swagger converts these to OpenAPI 3.0-compatible
 schemas. Dates describe their ISO HTTP representation. Public response schemas
 omit internal database fields, including full API keys.
 
-All 32 explicit backend HTTP operations now reference response contracts and
+All 30 explicit backend HTTP operations now reference response contracts and
 include tags, summaries and descriptions. Input examples and service-level
 validation/default descriptions live alongside the route schemas. Response
 schemas participate in Fastify serialization; the existing integration tests

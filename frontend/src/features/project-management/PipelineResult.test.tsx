@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import {
-  FunctionalAdequacyResultView,
   OrientationResultView,
   PipelineRunStatus,
   ProjectArchitectureResultView,
@@ -9,13 +8,15 @@ import {
   StageStatusView,
 } from "./PipelineResult.tsx"
 import {
-  parseFunctionalAdequacyResult,
   parseOrientationResult,
   parseProjectArchitectureResult,
   parseSemanticValidationResult,
   parseStageStatus,
 } from "./pipelineResult.ts"
 import type { AgentExecution } from "../../infrastructure/http-client/httpClient.ts"
+import { changeLanguage } from "../../shared/i18n/index.ts"
+
+afterEach(async () => { await changeLanguage("en") })
 
 function execution(overrides: Record<string, unknown> = {}): AgentExecution {
   return {
@@ -39,7 +40,7 @@ describe("PipelineRunStatus", () => {
     render(<PipelineRunStatus execution={execution({ status: "Failed", error: "boom", result: null })} />)
     expect(screen.getByText("Failed")).toBeDefined()
     expect(screen.getByText("semantic_validation run #12")).toBeDefined()
-    expect(screen.getByText("boom")).toBeDefined()
+    expect(screen.getByText("Error details withheld because their safety could not be verified.")).toBeDefined()
   })
 })
 
@@ -206,6 +207,20 @@ describe("OrientationResultView", () => {
 })
 
 describe("ProjectArchitectureResultView", () => {
+  it("localizes only the fallback diagram title", async () => {
+    const report = JSON.parse(projectArchitectureWithDiagram)
+    report.architecture.diagram.title = ""
+    report.architecture_diagram.structure = {}
+    const summary = parseProjectArchitectureResult(JSON.stringify(report))!
+    expect(summary.diagramViews[0]?.title).toBe("")
+    render(<ProjectArchitectureResultView summary={summary} />)
+    expect(screen.getByRole("region", { name: "Architecture diagram" })).toBeInTheDocument()
+
+    await changeLanguage("es")
+
+    expect(screen.getByRole("region", { name: "Diagrama de arquitectura" })).toBeInTheDocument()
+  })
+
   it("renders independent diagram views with external color legends and deviation details", () => {
     const report = JSON.parse(projectArchitectureWithDiagram)
     const legend = [{ layer: "architect", status: "supported", color: "#dbeafe" }]
@@ -323,7 +338,7 @@ describe("StageStatusView", () => {
     expect(screen.getByText("Architecture")).toBeDefined()
     expect(screen.getByText("failed")).toBeDefined()
     expect(screen.getByText("call_limit")).toBeDefined()
-    expect(screen.getByText("Model-call limit reached.", { exact: false })).toBeDefined()
+    expect(screen.getByText("Error details withheld because their safety could not be verified.", { exact: false })).toBeDefined()
     expect(screen.getByText("Snapshot capped.")).toBeDefined()
   })
 
@@ -331,83 +346,5 @@ describe("StageStatusView", () => {
     render(<StageStatusView title="Architecture" result={null} execution={execution({ agentType: "architecture", status: "Waiting" })} />)
     expect(screen.getByText("architecture run #12")).toBeDefined()
     expect(screen.queryByText("Issues (")).toBeNull()
-  })
-})
-
-describe("FunctionalAdequacyResultView", () => {
-  const requirementsBased = JSON.stringify({
-    evaluated_attribute: "functional_adequacy",
-    audit_mode: "requirements_based",
-    score: 50,
-    score_applicable: true,
-    score_meaning: "Requirement score, not repository coverage.",
-    total_requirements: 2,
-    fulfilled_requirements: 1,
-    results: [
-      {
-        requirement_id: "RF-01",
-        description: "The catalog lists products",
-        status: "cumple",
-        justification: "The route returns the catalog.",
-        evidence: [{ fragment_id: "1:1-2", file_path: "src/catalog.py:1-2", similarity: 0.9, start_line: 1, end_line: 2, symbol: "list_products", snippet: "def list_products(): ..." }],
-      },
-      { requirement_id: "RF-02", description: "Only admins delete products", status: "evidencia_insuficiente", justification: "No authorization check was found.", evidence: [] },
-    ],
-    capabilities: [],
-    findings: [],
-    subattributes: [],
-    limitations: ["Static analysis only."],
-    recommendations: ["Add an authorization test."],
-  })
-
-  const exploratory = JSON.stringify({
-    evaluated_attribute: "functional_adequacy",
-    audit_mode: "exploratory",
-    score: 0,
-    score_applicable: false,
-    total_requirements: 0,
-    fulfilled_requirements: 0,
-    results: [],
-    capabilities: [{ capability_id: "cap-1", name: "list_products", kind: "function", description: "Lists products.", detection: "observed", route: "", evidence: [{ file_path: "src/catalog.py", start_line: 1, end_line: 2, symbol: "list_products" }] }],
-    findings: [{ finding_id: "f1", capability_id: "cap-1", capability_name: "list_products", attribute: "completitud", classification: "confirmado", justification: "Has a body.", criteria: "Non-empty static implementation.", evidence: [{ file_path: "src/auth.py", start_line: 4, end_line: 8, symbol: "require_admin" }] }],
-    subattributes: [{ attribute: "completitud", evaluated_capabilities: 1, confirmed: 1, probable: 0, unverified: 0, summary: "One capability was confirmed." }],
-    limitations: ["No requirements were supplied."],
-    recommendations: [],
-  })
-
-  it("parses requirement results and renders compliance", () => {
-    const summary = parseFunctionalAdequacyResult(requirementsBased)
-    if (summary === null) {
-      throw new Error("functional adequacy fixture must parse")
-    }
-    render(<FunctionalAdequacyResultView summary={summary} execution={execution({ agentType: "functional_adequacy" })} />)
-    expect(screen.getByText("Functional adequacy")).toBeDefined()
-    expect(screen.getByText("Requirements-based audit")).toBeDefined()
-    expect(screen.getByText("50% · 1/2 requirements")).toBeDefined()
-    expect(screen.getByText("Fulfilled")).toBeDefined()
-    expect(screen.getByText("Insufficient evidence")).toBeDefined()
-    expect(screen.getByText("src/catalog.py:1-2 (list_products)", { exact: false })).toBeDefined()
-    expect(screen.getByText("Add an authorization test.")).toBeDefined()
-  })
-
-  it("parses and renders an exploratory audit without a score", () => {
-    const summary = parseFunctionalAdequacyResult(exploratory)
-    if (summary === null) {
-      throw new Error("exploratory fixture must parse")
-    }
-    render(<FunctionalAdequacyResultView summary={summary} />)
-    expect(screen.getByText("Exploratory audit")).toBeDefined()
-    expect(screen.queryByText(/% ·/)).toBeNull()
-    expect(screen.getAllByText("list_products", { exact: false }).length).toBeGreaterThan(0)
-    expect(screen.getByText("Confirmed")).toBeDefined()
-    expect(screen.getByText("Completeness")).toBeDefined()
-    expect(screen.getByText("src/auth.py:4-8 (require_admin)", { exact: false })).toBeDefined()
-    expect(screen.getByText("No requirements were supplied.")).toBeDefined()
-  })
-
-  it("rejects unrelated or incomplete payloads", () => {
-    expect(parseFunctionalAdequacyResult(null)).toBeNull()
-    expect(parseFunctionalAdequacyResult(JSON.stringify({ evaluated_attribute: "architecture" }))).toBeNull()
-    expect(parseFunctionalAdequacyResult(JSON.stringify({ evaluated_attribute: "functional_adequacy", audit_mode: "unknown" }))).toBeNull()
   })
 })

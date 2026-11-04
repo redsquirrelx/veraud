@@ -1,0 +1,55 @@
+"""Compatibility re-exports for coordinator contracts."""
+
+from server.agents.maintainability.modularity.coordinator.schemas import (
+    Assignment,
+    ConsolidatedFinding,
+    EvidenceGap,
+    FindingContribution,
+    InvestigatorCapability,
+    InvestigatorId,
+    InvocationRecord,
+    ModularityAssessment,
+    ModularityConfig,
+    ModularityRequest,
+    ProposedGap,
+    RawInvocation,
+    Route,
+    SynthesisDraft,
+)
+from server.agents.maintainability.reusability.coordinator.schemas import (
+    Conclusion,
+    ContinuationDecision,
+    FindingRelationship,
+    InvestigationResult,
+    ReusabilityAssessment,
+    ReusabilityAssignment,
+    ReusabilityConfig,
+    ReusabilityConsolidatedFinding,
+    ReusabilityEvidenceGap,
+    ReusabilityFindingContribution,
+    ReusabilityInvestigatorCapability,
+    ReusabilityInvestigatorId,
+    ReusabilityInvocationRecord,
+    ReusabilityProposedGap,
+    ReusabilityRawInvocation,
+    ReusabilityRequest,
+    ReusabilityRoute,
+    ReusabilitySynthesisDraft,
+    ReusabilitySynthesisRound,
+)
+from server.runtimes.coordination.contracts import (
+    AgentCapability,
+    AgentFindingContribution,
+    AgentInvocation,
+    ConsolidatedKnowledge,
+    CoordinatorEvidenceGap,
+    CoordinatorResult,
+    CoordinatorSynthesis,
+    DelegationAssignment,
+    FindingGroup,
+    GapResolution,
+    ProposedEvidenceGap,
+    RawAgentInvocation,
+)
+
+__all__ = ['AgentCapability', 'AgentFindingContribution', 'AgentInvocation', 'Assignment', 'Conclusion', 'ConsolidatedFinding', 'ConsolidatedKnowledge', 'ContinuationDecision', 'CoordinatorEvidenceGap', 'CoordinatorResult', 'CoordinatorSynthesis', 'DelegationAssignment', 'EvidenceGap', 'FindingContribution', 'FindingGroup', 'FindingRelationship', 'GapResolution', 'InvestigationResult', 'InvestigatorCapability', 'InvestigatorId', 'InvocationRecord', 'ModularityAssessment', 'ModularityConfig', 'ModularityRequest', 'ProposedEvidenceGap', 'ProposedGap', 'RawAgentInvocation', 'RawInvocation', 'ReusabilityAssessment', 'ReusabilityAssignment', 'ReusabilityConfig', 'ReusabilityConsolidatedFinding', 'ReusabilityEvidenceGap', 'ReusabilityFindingContribution', 'ReusabilityInvestigatorCapability', 'ReusabilityInvestigatorId', 'ReusabilityInvocationRecord', 'ReusabilityProposedGap', 'ReusabilityRawInvocation', 'ReusabilityRequest', 'ReusabilityRoute', 'ReusabilitySynthesisDraft', 'ReusabilitySynthesisRound', 'Route', 'SynthesisDraft']

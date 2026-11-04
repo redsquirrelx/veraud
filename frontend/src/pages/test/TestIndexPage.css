@@ -10,16 +10,16 @@
   justify-content: space-between;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid #e2e8f0;
+  border: var(--border-width) solid var(--color-border);
   border-radius: 0.5rem;
-  background: #fff;
-  color: #0f172a;
+  background: var(--color-surface);
+  color: var(--color-text);
   text-decoration: none;
 }
 
 .test-index-link:hover {
-  border-color: #006194;
-  color: #006194;
+  border-color: var(--color-brand);
+  color: var(--color-brand);
 }
 
 .test-index-info {

@@ -38,6 +38,13 @@ describe("i18n resources", () => {
     expect(en("projects:selectedCount", { count: 2 })).toBe("2 projects selected")
     expect(es("projects:selectedCount", { count: 1 })).toBe("1 proyecto seleccionado")
     expect(es("projects:selectedCount", { count: 2 })).toBe("2 proyectos seleccionados")
+    expect(en("projects:qualityAudits.report.sourceReferences", { count: 0, formattedCount: "0" })).toBe("Source references (0)")
+    expect(en("projects:qualityAudits.report.sourceReferences", { count: 1, formattedCount: "1" })).toBe("Source reference (1)")
+    expect(es("projects:qualityAudits.report.sourceReferences", { count: 2, formattedCount: "2" })).toBe("Referencias de origen (2)")
+    expect(en("common:testPages.controls.modelCount", { count: 1 })).toBe("1 model")
+    expect(es("common:testPages.controls.modelCount", { count: 3 })).toBe("3 modelos")
+    expect(es("projects:qualityAudits.requirements.help", { minimum: 1, maximum: 100 }))
+      .toContain("1–100")
   })
 
   it("resolves regional variants and falls back to English for unsupported languages", () => {

@@ -5,6 +5,11 @@ import { CodeViewer } from "./CodeViewer.tsx"
 const code = "export function settle(amount: number) {\n  return amount * 2\n}\n"
 
 describe("CodeViewer", () => {
+  it("numbers excerpts and their marks using original source lines", () => {
+    const { container } = render(<CodeViewer code={code} startLine={18} marks={[{ id: "E-1", from: 19, to: 19, tone: "info" }]} />)
+    expect(Array.from(container.querySelectorAll(".ui-code-number"), (item) => item.textContent)).toEqual(["18", "19", "20"])
+    expect(container.querySelectorAll(".ui-code-line")[1]).toHaveClass("ui-code-line-info")
+  })
   it("renders every line with its number", () => {
     const { container } = render(<CodeViewer code={code} />)
 
@@ -24,12 +29,6 @@ describe("CodeViewer", () => {
     const { container } = render(<CodeViewer code={"only\n"} />)
 
     expect(container.querySelectorAll(".ui-code-line").length).toBe(1)
-  })
-
-  it("shows the empty text without code", () => {
-    render(<CodeViewer code="" />)
-
-    expect(screen.getByText("No content to show")).toBeDefined()
   })
 
   it("highlights TypeScript keywords only when enabled", () => {

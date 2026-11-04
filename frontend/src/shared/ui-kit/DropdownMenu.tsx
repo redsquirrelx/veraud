@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { CheckIcon, ChevronDownIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
-import "./DropdownMenu.css"
+import { useDropdownDisclosure } from "./useDropdownDisclosure.ts"
+import "./MenuSurface.css"
+import "./Dropdown.css"
 
 export interface DropdownMenuItem {
   id: string
@@ -28,66 +30,20 @@ interface DropdownMenuProps {
 export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, disabled = false, loading = false, loadingText, align = "start", emptyText }: DropdownMenuProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.dropdownMenu.noOptions")
-  const id = useId()
-  const [open, setOpen] = useState(false)
-  const root = useRef<HTMLDivElement>(null)
-  const trigger = useRef<HTMLButtonElement>(null)
   const inactive = disabled || loading
-  const expanded = open && !inactive
-  const pendingFocus = useRef<"first" | "last" | null>(null)
-
-  function close(restoreFocus = false) {
-    setOpen(false)
-    if (restoreFocus) trigger.current?.focus()
-  }
+  const { id, root, trigger, expanded, close, toggle, onKeyDown, onBlur } = useDropdownDisclosure({
+    inactive,
+    initialSelector: "[role='menuitem']",
+    navigationSelector: "[role='menuitem']:not(:disabled)",
+  })
 
   function choose(item: DropdownMenuItem) {
     close(true)
     onSelect(item.id)
   }
 
-  useEffect(() => {
-    if (!expanded) return
-    function outside(event: MouseEvent) {
-      if (!root.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", outside)
-    if (pendingFocus.current) {
-      const buttons = root.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']")
-      const index = pendingFocus.current === "first" ? 0 : (buttons?.length ?? 0) - 1
-      buttons?.[index]?.focus()
-      pendingFocus.current = null
-    }
-    return () => document.removeEventListener("mousedown", outside)
-  }, [expanded])
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape" && expanded) {
-      event.preventDefault()
-      close(true)
-      return
-    }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || inactive) return
-    event.preventDefault()
-    if (!expanded) {
-      pendingFocus.current = event.key === "ArrowUp" || event.key === "End" ? "last" : "first"
-      setOpen(true)
-      return
-    }
-    const buttons = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? [])
-    if (!buttons.length) return
-    const current = buttons.indexOf(event.target as HTMLButtonElement)
-    const next = event.key === "Home" ? 0
-      : event.key === "End" ? buttons.length - 1
-        : current < 0 ? (event.key === "ArrowUp" ? buttons.length - 1 : 0)
-          : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length
-    buttons[next]?.focus()
-  }
-
   return (
-    <div className="ui-dropdown-menu" ref={root} onKeyDown={handleKeyDown} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close()
-    }}>
+    <div className="ui-dropdown-menu" ref={root} onKeyDown={onKeyDown} onBlur={onBlur}>
       <button
         id={`${id}-trigger`}
         ref={trigger}
@@ -99,7 +55,7 @@ export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, 
         aria-label={loading && loadingText !== undefined ? loadingText : label}
         title={label}
         aria-controls={`${id}-menu`}
-        onClick={() => setOpen(!expanded)}
+        onClick={toggle}
       >
         {loading && loadingText === undefined && <Spinner size={12} tone="dark" />}
         {icon && !loading && <span aria-hidden="true">{icon}</span>}
@@ -107,7 +63,7 @@ export function DropdownMenu({ label, items, selectedId = null, onSelect, icon, 
         <span className="ui-dropdown-menu-chevron" data-open={expanded} aria-hidden="true"><ChevronDownIcon /></span>
       </button>
       {expanded && (
-        <div id={`${id}-menu`} className="ui-dropdown-menu-panel" data-align={align} role="menu" aria-labelledby={`${id}-trigger`}>
+        <div id={`${id}-menu`} className="ui-dropdown-menu-panel ui-menu-surface" data-align={align} role="menu" aria-labelledby={`${id}-trigger`}>
           {items.length === 0 ? <p className="ui-dropdown-menu-empty">{resolvedEmptyText}</p> : (
             <ul>
               {items.map((item) => {

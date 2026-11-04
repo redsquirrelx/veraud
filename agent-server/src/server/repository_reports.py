@@ -4,8 +4,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from .agents.project_architecture.schemas import ArchitectureResult
-from .agents.repository_runtime.responses import parse_json_value
+from server.project_analysis.project_architecture.schemas import ArchitectureResult
+
+from .runtimes.repository.responses import parse_json_value
 
 MAX_REPORT_BYTES = 2_000_000
 

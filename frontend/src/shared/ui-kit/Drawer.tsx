@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { XIcon } from "./icons.tsx"
+import { IconButton } from "./IconButton.tsx"
 import "./Drawer.css"
 
 export interface DrawerProps {
@@ -159,9 +160,9 @@ export function Drawer({ open, title, description, size = "default", closeOnOver
             <h2 id={`${id}-title`}>{title}</h2>
             {description && <p id={`${id}-description`}>{description}</p>}
           </div>
-          <button type="button" className="ui-drawer-close" aria-label={t("ui.close")} onClick={onClose}>
+          <IconButton className="ui-drawer-close" variant="ghost" size="sm" ariaLabel={t("ui.close")} onClick={onClose}>
             <XIcon size={16} />
-          </button>
+          </IconButton>
         </header>
         <div className="ui-drawer-body">{children}</div>
         {footer && <footer className="ui-drawer-footer">{footer}</footer>}

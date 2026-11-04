@@ -188,7 +188,7 @@ not silently inherit the older view.
 For direct agent callers:
 
 ```python
-from server.agents.project_architecture import render_diagram, render_mermaid
+from server.agents.project_analysis.project_architecture import render_diagram, render_mermaid
 
 artifact = render_diagram(architecture_result)  # no semantic review implied
 mermaid_source = render_mermaid(architecture_result.architecture)

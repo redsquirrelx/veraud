@@ -1,4 +1,6 @@
 import type { JSONSchema } from "json-schema-to-ts"
+import { invocationReceiptSchema } from "../../modules/agent-execution/invocationReceipt.js"
+import { executionErrorDetailSchema } from "../../modules/agent-execution/execution-error-detail.js"
 
 export const taskPayloadSchema = {
   $id: "TaskEventPayload",
@@ -25,16 +27,19 @@ export const agentExecutionPayloadSchema = {
   additionalProperties: false,
   required: ["id", "evaluationId", "agentType", "status", "result", "error", "inputTokens", "outputTokens", "createdAt", "startedAt", "finishedAt"],
   properties: {
+    invocations: { type: "array", items: invocationReceiptSchema },
     id: { type: "integer", description: "Execution identifier." },
     evaluationId: { type: ["integer", "null"], description: "Evaluation identifier; null for direct executions." },
     agentType: { type: "string", description: "Agent name." },
     status: { type: "string", description: "Lifecycle states: Waiting, Running, Completed, Failed." },
     result: { type: ["string", "null"], description: "Opaque serialized agent output. It remains a string, not a nested object." },
     error: { type: ["string", "null"], description: "Failure message." },
+    errorDetail: executionErrorDetailSchema,
     inputTokens: { type: ["integer", "null"], description: "Optional input token usage." },
     outputTokens: { type: ["integer", "null"], description: "Optional output token usage." },
     estimatedTokens: { type: ["integer", "null"], description: "Estimated usage, separate from provider-reported counts." },
     interruptionReason: { type: ["string", "null"], description: "Machine-readable interruption cause." },
+    cancellationRequestedAt: { type: ["string", "null"], format: "date-time", description: "Persisted request; does not confirm the audit has stopped." },
     createdAt: { type: "string", format: "date-time", description: "Creation timestamp, serialized from a Date." },
     startedAt: {
       anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],

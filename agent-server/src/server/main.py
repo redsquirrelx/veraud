@@ -1,10 +1,21 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .api.audits import router as audits_router
 from .api.executions import router as executions_router
+from .api.graphs import router as graphs_router
 from .api.pipelines import router as pipelines_router
 from .api.schemas import StatusResponse
+from .app.audit_service import AuditService
+from .app.graph_jobs import GraphJobs
+from .blackboard.impls.memory import MemoryBlackboard
+from .config.token_budget import token_budget_policy
+from .web.router import router as web_router
+from .web.router import static_files
 
 router = APIRouter(prefix="/api")
 
@@ -36,16 +47,46 @@ def get_status():
     return {"status": "ok", "service": "agent-server"}
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    import asyncio
+
+    from .app.callback_port import default_callback_sink
+    from .infrastructure.execution_event_buffer import execution_event_delivery_worker
+
+    token_budget_policy()
+    app.state.blackboard = MemoryBlackboard()
+    app.state.audit_service = AuditService(app.state.blackboard)
+    app.state.graph_jobs = GraphJobs()
+    stop_events = asyncio.Event()
+    event_delivery = asyncio.create_task(execution_event_delivery_worker(stop_events, default_callback_sink))
+    try:
+        yield
+    finally:
+        await app.state.graph_jobs.aclose()
+        await app.state.audit_service.aclose()
+        stop_events.set()
+        try:
+            await asyncio.wait_for(event_delivery, 3)
+        except TimeoutError:
+            pass  # Unacknowledged events exist only in memory and cannot survive shutdown.
+        del app.state.audit_service
+        del app.state.blackboard
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Veraud Agent Server API",
     description=(
         "HTTP API for discovering agents, inspecting their input and output "
         "schemas, and executing agents. Execution requests wait for the result; "
         "optional lifecycle callbacks report progress to the Veraud backend."
+        " Maintainability audits can also run asynchronously through /api/audits."
     ),
     version="0.0.0",
     openapi_tags=[
         {"name": "Status", "description": "Agent-server service health."},
+        {"name": "Audits", "description": "Asynchronous maintainability audits sharing the server Blackboard."},
         {
             "name": "Agents",
             "description": (
@@ -69,6 +110,10 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(executions_router)
 app.include_router(pipelines_router)
+app.include_router(audits_router)
+app.include_router(graphs_router)
+app.include_router(web_router)
+app.mount("/static", static_files, name="web_static")
 
 
 @app.exception_handler(RequestValidationError)

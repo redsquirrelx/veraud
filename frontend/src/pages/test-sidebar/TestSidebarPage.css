@@ -1,7 +1,7 @@
 .test-sidebar-page {
   display: flex;
   align-items: stretch;
-  background: #f2f3ff;
+  background: var(--color-surface-tint);
   min-height: calc(100vh - 48px);
 }
 

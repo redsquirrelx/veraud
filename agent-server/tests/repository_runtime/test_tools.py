@@ -4,14 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from server.agents.repository_runtime import (
+from server.runtimes.repository import (
     ExecutionBudget,
     RepositoryContext,
     RepositoryInput,
     RepositoryToolset,
     ToolLimits,
 )
-from server.agents.repository_runtime.access import RepositoryAccessError
+from server.runtimes.repository.access import RepositoryAccessError
 from server.services.repository_analysis import RepositoryAnalysisService
 
 
@@ -59,6 +59,43 @@ def toolset(checkout, *, budget=None, limits=None):
         ),
     )
     return RepositoryToolset(context, workspace_root=workspace, limits=limits)
+
+
+def test_execution_history_includes_uncharged_tool_rejections(checkout, tmp_path):
+    from server.infrastructure.execution_event_buffer import ExecutionEventBuffer
+    from server.infrastructure.execution_events import execution_event_scope
+
+    tools = toolset(checkout)
+    journal = ExecutionEventBuffer()
+    with execution_event_scope(1, buffer=journal):
+        tools.execute("list_files", {}, tool_call_id="first")
+        tools.execute("list_files", {}, tool_call_id="first")  # Duplicate ID is rejected before charging.
+        tools.execute("sk-fake-secret", {"password": "private"}, tool_call_id="invalid")
+    events = [event for _, _, event in journal.pending() if event["kind"] == "tool.finished"]
+    assert len(events) == 3
+    assert [event["status"] for event in events] == ["completed", "rejected", "rejected"]
+    assert events[-1]["name"] == "unknown_tool"
+    assert events[0]["sourceId"] == events[1]["sourceId"] == "first"
+    assert events[0]["actionId"] != events[1]["actionId"]
+    assert "private" not in str(events) and "sk-fake-secret" not in str(events)
+
+
+def test_descendants_share_actual_retrieval_usage_without_static_budget_division(checkout):
+    def read(child):
+        return child.execute("get_source_excerpt", {"path": "src/main.py", "start_line": 1, "end_line": 2}, tool_call_id="read")
+
+    sample = read(toolset(checkout))
+    assert sample.status == "ok"
+    size = len(sample.model_dump_json())
+    root = toolset(checkout, budget=ExecutionBudget(max_retrieved_characters=2 * size + 10))
+    children = [RepositoryToolset(root.context, workspace_root=checkout[0], retrieval_budget=root.retrieval_budget) for _ in range(3)]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(read, children))
+    delivered = [r for r in results if r.status == "ok"]
+    assert len(delivered) == 2
+    assert root.retrieval_budget.used == sum(len(r.model_dump_json()) for r in delivered) <= root.retrieval_budget.limit
+    assert [r.error.code for r in results if r.status != "ok"] == ["content_budget_exhausted"]
+    assert sum(len(child.retrieved_evidence) for child in children) == 2
 
 
 def call(tools, name, /, **arguments):
@@ -298,7 +335,7 @@ def test_invalid_arguments_unknown_tools_and_replayed_call_ids_are_controlled(ch
 
 
 def test_time_budget_prevents_delivery(checkout, monkeypatch):
-    from server.agents.repository_runtime import context as context_module
+    from server.runtimes.repository import context as context_module
 
     tools = toolset(checkout, budget=ExecutionBudget(max_elapsed_seconds=1))
     monkeypatch.setattr(

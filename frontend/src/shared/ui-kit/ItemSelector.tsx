@@ -2,7 +2,9 @@ import { useEffect, useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.tsx"
 import { Spinner } from "./Spinner.tsx"
-import "./ItemSelector.css"
+import "./Field.css"
+import "./ItemPicker.css"
+import "./MenuSurface.css"
 
 export interface ItemSelectorItem {
   id: string
@@ -24,6 +26,7 @@ interface ItemSelectorProps {
   loading?: boolean
   disabled?: boolean
   onOpen?: () => void
+  size?: "default" | "compact"
 }
 
 export function ItemSelector({
@@ -40,6 +43,7 @@ export function ItemSelector({
   loading = false,
   disabled = false,
   onOpen,
+  size = "default",
 }: ItemSelectorProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.itemSelector.empty")
@@ -96,7 +100,7 @@ export function ItemSelector({
   }
 
   return (
-    <div className="ui-item-selector" ref={root} onBlur={(event) => {
+    <div className="ui-field ui-item-selector" data-size={size} ref={root} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
     }} onKeyDown={(event) => {
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
@@ -114,7 +118,7 @@ export function ItemSelector({
         : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length
       options[next]?.focus()
     }}>
-      {label !== "" && <span id={`${id}-label`} className="ui-item-legend">{label}</span>}
+      {label !== "" && <span id={`${id}-label`} className="ui-field-label">{label}</span>}
       <button
         type="button"
         ref={trigger}
@@ -138,7 +142,7 @@ export function ItemSelector({
           </>
         )}
       </button>
-      <div id={`${id}-panel`} className={open ? "ui-item-panel ui-item-panel-open" : "ui-item-panel"} aria-hidden={!open} inert={!open}>
+      <div id={`${id}-panel`} className={`ui-item-panel ui-menu-surface${open ? " ui-item-panel-open" : ""}`} aria-hidden={!open} inert={!open}>
         {items.length === 0 && !hasMore ? (
           <p className="label">{resolvedEmptyText}</p>
         ) : (

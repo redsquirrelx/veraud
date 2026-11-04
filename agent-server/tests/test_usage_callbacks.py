@@ -1,17 +1,17 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
 from pydantic import BaseModel
 
-from server.agents.repository_runtime.model_runtime import ModelGateway
-from server.agents.repository_runtime.schemas import ExecutionBudget
 from server.api.schemas import ExecutionConfig
+from server.app import execution_service as execution_module
+from server.app.agent_registry import AgentRegistry
 from server.app.execution_service import AgentExecutionService
 from server.app.pipeline_service import GenericPipelineService, GenericReportingHooks
 from server.app.project_architecture_definition import ProjectArchitectureHooksAdapter
-from server.app.tracing_port import NoOpTracingBackend
 from server.app.usage_reporting import ReportingModel, gateway_progress
 from server.infrastructure.callback.client import CallbackClient
 from server.infrastructure.callback.schemas import (
@@ -19,6 +19,9 @@ from server.infrastructure.callback.schemas import (
     ExecutionOutcome,
     ExecutionProgress,
 )
+from server.infrastructure.tracing import NoOpTracingBackend
+from server.runtimes.repository.model_runtime import ModelGateway
+from server.runtimes.repository.schemas import ExecutionBudget
 
 
 class Recorder:
@@ -100,6 +103,79 @@ def test_single_agent_reports_live_usage_and_final_counts(fail):
     final = next(event[2] for event in sink.events if event[0] == "complete")
     assert (final.input_tokens, final.output_tokens) == (200, 40)
     assert final.status == ("Failed" if fail else "Completed")
+    if fail:
+        assert final.error_detail.agent_id == "test"
+        assert final.error_detail.exception_type == "ValueError"
+        assert final.error_detail.occurred_at is not None
+        assert "agent failed" not in final.error_detail.message
+    else:
+        assert final.error_detail is None
+
+
+def test_failed_direct_result_reports_incident_without_changing_delivery_semantics():
+    sink = Recorder()
+
+    class FailedOutput(BaseModel):
+        status: str = "failed"
+
+    class Agent:
+        model = Model()
+        input_schema = Output
+
+        async def run(self, payload):
+            await self.model.generate("first")
+            return FailedOutput()
+
+    service = AgentExecutionService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
+    service.build_agent = lambda *args: (Agent(), 60)
+    asyncio.run(service.run("test", ExecutionConfig(), {}, execution_id=42))
+    final = next(event[2] for event in sink.events if event[0] == "complete")
+    assert final.status == "Completed"  # Successful delivery is not successful audit coverage.
+    assert final.error_detail.agent_id == "test"
+    assert final.error_detail.code == "execution_failed"
+    assert (final.input_tokens, final.output_tokens) == (100, 20)
+
+
+def test_direct_execution_closes_the_model_client_after_completion(monkeypatch):
+    client = SimpleNamespace(aio=SimpleNamespace(aclose=AsyncMock()), close=Mock())
+    model = Model()
+    model.client = client
+
+    class Agent:
+        agent_type = "test"
+        input_schema = Output
+        output_schema = Output
+
+        def __init__(self, settings, model):
+            self.model = model
+            self.settings = settings
+            self.blackboard = None
+
+        async def run(self, _payload):
+            return Output()
+
+    registry = AgentRegistry()
+    registry.register("test", Agent)
+    monkeypatch.setattr(execution_module, "build_model", lambda *_args: model)
+
+    async def run():
+        service = AgentExecutionService(
+            registry=registry,
+            callbacks_factory=lambda: None,
+            tracing_backend=NoOpTracingBackend(),
+        )
+        await service.run(
+            "test",
+            ExecutionConfig(
+                model={"provider": "openai", "name": "offline"},
+                api_key="test-key",
+            ),
+            {},
+        )
+
+    asyncio.run(run())
+    client.aio.aclose.assert_awaited_once_with()
+    client.close.assert_called_once_with()
 
 
 def test_missing_usage_is_estimated_and_callback_failure_does_not_fail_generation():
@@ -170,11 +246,13 @@ def test_retry_usage_keeps_unknown_attempts_separate_from_reported_counts():
 
 
 def test_real_project_pipeline_reports_each_stage_and_closes_validation_last(tmp_path, monkeypatch):
-    from server.agents.project_architecture.smoke import ArchitectureSmokeModel
-    from server.agents.project_semantic_validation.smoke import (
+    from server.app import project_architecture_definition as definition
+    from server.project_analysis.project_architecture.smoke import (
+        ArchitectureSmokeModel,
+    )
+    from server.project_analysis.project_semantic_validation.smoke import (
         SemanticValidationSmokeModel,
     )
-    from server.app import project_architecture_definition as definition
 
     workspace = tmp_path / "workspace"
     repo = workspace / "repo"

@@ -99,6 +99,16 @@ def _repository_context(snapshot, fragments: list[CodeFragment]):
     )
 
 
+def prepare_snapshot_input(snapshot, requirements: list[FunctionalRequirement]) -> FunctionalAdequacyInput:
+    """Reuse the audit's retained snapshot, without reading a second revision."""
+    fragments = build_code_fragments(snapshot)
+    return FunctionalAdequacyInput(
+        requirements=requirements,
+        code_fragments=fragments,
+        repository_context=_repository_context(snapshot, fragments),
+    )
+
+
 async def prepare_repository_input(
     repository_path: str | Path,
     requirements: list[FunctionalRequirement],
@@ -128,10 +138,4 @@ async def prepare_repository_input(
             ),
         )
 
-    fragments = build_code_fragments(snapshot)
-
-    return FunctionalAdequacyInput(
-        requirements=requirements,
-        code_fragments=fragments,
-        repository_context=_repository_context(snapshot, fragments),
-    )
+    return prepare_snapshot_input(snapshot, requirements)

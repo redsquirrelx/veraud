@@ -1,3 +1,4 @@
+import "./Field.css"
 import "./TextInput.css"
 
 interface TextInputProps {
@@ -24,8 +25,8 @@ export function TextInput({ value, placeholder, label = "", type = "text", disab
   }
 
   return (
-    <div className="ui-text-input">
-      <span className="ui-item-legend">{label}</span>
+      <div className="ui-field ui-text-input">
+        <span className="ui-field-label">{label}</span>
       <input
         type={type}
         className="ui-input"

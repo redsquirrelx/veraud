@@ -65,16 +65,17 @@ describe("ItemList", () => {
   })
 
   it("accepts a custom template instead of the default one", () => {
+    const enriched = entries.map((item) => ({ ...item, provider: "OpenAI" }))
     render(
       <ItemList
-        items={entries}
+        items={enriched}
         selectedIds={[]}
         onSelectionChange={() => {}}
-        renderItem={(item) => <span>custom-{item.id}</span>}
+        renderItem={(item) => <span>custom-{item.id}-{item.provider}</span>}
       />
     )
 
-    expect(screen.getByText("custom-gpt-4o")).toBeDefined()
+    expect(screen.getByText("custom-gpt-4o-OpenAI")).toBeDefined()
     expect(screen.queryByText("OpenAI flagship")).toBeNull()
   })
 })

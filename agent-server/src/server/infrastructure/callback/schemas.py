@@ -1,6 +1,10 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from server.contracts.execution_error import ExecutionErrorDetail
+from server.contracts.public_errors import public_error_result, public_error_text
 
 
 class CallbackConfig(BaseModel):
@@ -46,12 +50,36 @@ class ExecutionOutcome(BaseModel):
     )
     result: str | None = Field(default=None, description="Serialized agent output")
     error: str | None = Field(default=None, description="Required when status is Failed")
+    error_detail: ExecutionErrorDetail | None = Field(default=None, alias="errorDetail")
     input_tokens: int | None = Field(default=None, ge=0, alias="inputTokens")
     output_tokens: int | None = Field(default=None, ge=0, alias="outputTokens")
     estimated_tokens: int | None = Field(default=None, ge=0, alias="estimatedTokens")
     interruption_reason: str | None = Field(default=None, alias="interruptionReason")
 
     model_config = ConfigDict(populate_by_name=True)
+
+    _public_error = field_validator("error", mode="before")(public_error_text)
+    _public_result = field_validator("result", mode="before")(public_error_result)
+
+
+class InvocationReceipt(BaseModel):
+    """Compact internal lifecycle; never contains prompts, evidence or credentials."""
+
+    invocation_id: str = Field(min_length=1, max_length=128)
+    parent_invocation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    run_id: str = Field(min_length=1, max_length=128)
+    status: Literal["running", "completed", "partial", "failed", "cancelled", "timeout"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    input_tokens: int | None = Field(default=None, ge=0, le=2147483647)
+    output_tokens: int | None = Field(default=None, ge=0, le=2147483647)
+    error: str | None = Field(default=None, max_length=2000)
+    error_detail: ExecutionErrorDetail | None = None
+    phase: str | None = Field(default=None, min_length=1, max_length=128)
+    phase_sequence: int = Field(default=0, ge=0, le=2147483647)
+
+    _public_error = field_validator("error", mode="before")(public_error_text)
 
 
 class CallbackResult(BaseModel):

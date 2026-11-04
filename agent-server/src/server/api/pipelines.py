@@ -1,16 +1,19 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, Field
 
-from ..app.execution_service import InvalidConfigError
+from server.api.schemas import DomainError, RequestValidationErrorResponse
+from server.app.execution_config import ExecutionConfig
+
+from ..app.errors import InvalidConfigError
 from ..app.pipeline_service import (
     GenericPipelineService,
     UnknownPipelineError,
     get_generic_pipeline_service,
 )
 from ..config.logs import get_logger
-from .schemas import DomainError, ExecutionConfig, RequestValidationErrorResponse
+from .dependencies import BlackboardDep
 
 logger = get_logger("api.pipelines")
 
@@ -41,7 +44,7 @@ class GenericPipelineRequest(BaseModel):
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
     stage_configs: dict[str, ExecutionConfig] | None = Field(
         default=None,
-        description="Per-stage overrides. When present, these replace the shared config for each stage.",
+        description="Per-stage model overrides; quality-audit requires explicit entries for all nine maintainability agents, including coordinators and investigators, when supplied.",
     )
     execution_ids: dict[str, Annotated[int, Field(ge=1)]] | None = Field(default=None)
     timeout_seconds: int = Field(
@@ -83,9 +86,11 @@ def list_pipelines(service: ServiceDep) -> list[str]:
     },
 )
 async def run_pipeline(
+    request: Request,
     name: Annotated[str, Path(description="Registered pipeline name from GET /api/pipelines.")],
     body: GenericPipelineRequest,
     service: ServiceDep,
+    blackboard: BlackboardDep,
 ) -> dict[str, Any]:
     """Run one registered pipeline and return its stage outputs."""
     logger.info(
@@ -102,6 +107,8 @@ async def run_pipeline(
             stage_configs=body.stage_configs,
             execution_ids=body.execution_ids,
             timeout_seconds=body.timeout_seconds,
+            blackboard=blackboard,
+            audit_service=request.app.state.audit_service,
         )
     except UnknownPipelineError as error:
         raise _http_error(NOT_FOUND, str(error)) from None
@@ -118,5 +125,6 @@ async def run_pipeline(
 
 
 def _http_error(status: int, detail: str) -> HTTPException:
+    detail = TIMEOUT_DETAIL if status == TIMED_OUT else "Pipeline request could not be completed."
     logger.warning("Pipeline request failed status=%d error=%s", status, detail)
     return HTTPException(status_code=status, detail=detail)

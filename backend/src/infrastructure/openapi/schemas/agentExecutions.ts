@@ -1,24 +1,40 @@
 import { configurationSchema } from "../../../modules/agent-settings/agent-settings.schemas.js"
+import { invocationReceiptSchema } from "../../../modules/agent-execution/invocationReceipt.js"
+import { executionErrorDetailSchema } from "../../../modules/agent-execution/execution-error-detail.js"
 
 export const agentExecutionSchema = {
   $id: "AgentExecution",
   type: "object",
   required: ["id", "evaluationId", "agentType", "status", "result", "error", "inputTokens", "outputTokens", "createdAt", "startedAt", "finishedAt"],
   properties: {
+    invocations: { type: "array", items: invocationReceiptSchema },
     id: { type: "integer" },
     evaluationId: { type: ["integer", "null"] },
     agentType: { type: "string" },
     status: { type: "string", enum: ["Waiting", "Running", "Completed", "Failed"] },
     result: { type: ["string", "null"], description: "Opaque serialized agent output, returned as a string rather than a JSON object." },
     error: { type: ["string", "null"] },
+    errorDetail: executionErrorDetailSchema,
     inputTokens: { type: ["integer", "null"] },
     outputTokens: { type: ["integer", "null"] },
     estimatedTokens: { type: ["integer", "null"], description: "Estimated usage, separate from provider-reported counts." },
     interruptionReason: { type: ["string", "null"] },
+    cancellationRequestedAt: { type: ["string", "null"], format: "date-time" },
     createdAt: { type: "string", format: "date-time" },
     startedAt: { type: ["string", "null"], format: "date-time" },
     finishedAt: { type: ["string", "null"], format: "date-time" },
     configuration: { ...configurationSchema, description: "Immutable configuration captured at execution start, without API keys. Null for historical executions." },
+    monitorContext: {
+      type: "object", description: "HTTP execution lookup context for the global monitor; absent from lightweight lifecycle events.",
+      required: ["project", "branch", "commitHash", "evaluationType", "qualityAttributes", "workflowIds"],
+      properties: {
+        project: { anyOf: [{ type: "null" }, { type: "object", required: ["id", "repositoryOwner", "repositoryName"], properties: {
+          id: { type: "integer" }, repositoryOwner: { type: "string" }, repositoryName: { type: "string" },
+        } }] },
+        branch: { type: ["string", "null"] }, commitHash: { type: ["string", "null"] }, evaluationType: { type: ["string", "null"] },
+        qualityAttributes: { type: "array", items: { type: "string" } }, workflowIds: { type: "array", items: { type: "string" } },
+      },
+    },
   },
 } as const
 

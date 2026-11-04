@@ -73,6 +73,23 @@ function branchDropdown(): HTMLElement {
 }
 
 describe("VersionSelector", () => {
+  it.each(["git", "analyzed"] as const)("locks %s version selection through the disabled prop", async (mode) => {
+    stubGit()
+    function Harness({ disabled }: { disabled: boolean }) {
+      const selection = useVersionSelector(2)
+      return <VersionSelector selection={selection} disabled={disabled} mode={mode} onModeChange={() => {}}
+        analyzed={{ versions: [], loading: false, error: "", selectedId: null, onSelect: () => {}, onRefresh: () => {} }} />
+    }
+    const { rerender } = render(<Harness disabled={false} />)
+    await screen.findByText(`On main at ${first.slice(0, 7)}`)
+    rerender(<Harness disabled />)
+    expect(screen.getByRole("tab", { name: "Git" })).toBeDisabled()
+    expect(screen.getByRole("tab", { name: /Analyzed/ })).toBeDisabled()
+    if (mode === "git") {
+      expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
+      expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
+    } else expect(screen.getByRole("button", { name: "Select an analyzed version" })).toBeDisabled()
+  })
   it("defaults to the main branch and its latest commit", async () => {
     stubGit()
     renderSelector()

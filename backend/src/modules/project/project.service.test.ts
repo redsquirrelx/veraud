@@ -121,6 +121,7 @@ function makeFakes(options: {
   const runner: TaskQueue = {
     async enqueue(task: QueuedTask): Promise<TaskResult> {
       calls.enqueued += 1
+      if (task.command.kind === "service") throw new Error("Expected a Git task")
       calls.commands.push(task.command)
       return options.clone ?? { status: "Succeded", exitCode: 0, logTrail: "" }
     },
@@ -128,7 +129,6 @@ function makeFakes(options: {
 
   const service = new ProjectService(projects, new TaskService(tasks, runner), github, workspaceDir, {
     openProjectArchitecturePipelineForProject: async () => { throw new Error("not used here") },
-    openFunctionalAdequacyPipelineForProject: async () => { throw new Error("not used here") },
   })
   return { service, projects, tasks, calls, workspaceDir }
 }
@@ -263,7 +263,6 @@ describe("ProjectService.registerProject", () => {
       join(tmpdir(), "veraud-unused"),
       {
         openProjectArchitecturePipelineForProject: async () => { throw new Error("must not open executions") },
-        openFunctionalAdequacyPipelineForProject: async () => { throw new Error("must not open executions") },
       }
     )
 

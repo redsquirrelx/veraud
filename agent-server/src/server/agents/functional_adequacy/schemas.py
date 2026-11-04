@@ -1,7 +1,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ComplianceStatus = Literal[
     "cumple",
@@ -37,8 +37,9 @@ DetectionKind = Literal["observed", "inferred"]
 class FunctionalRequirement(BaseModel):
     """Requisito funcional que será evaluado."""
 
-    requirement_id: str = Field(min_length=1)
-    description: str = Field(min_length=1)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    requirement_id: str = Field(min_length=1, max_length=128, pattern=r"\S")
+    description: str = Field(min_length=1, max_length=10000, pattern=r"\S")
 
 
 class CodeFragment(BaseModel):
@@ -90,7 +91,7 @@ class FunctionalAdequacyInput(BaseModel):
     """Datos recibidos por el agente."""
 
     requirements: list[FunctionalRequirement] = Field(
-        default_factory=list
+        default_factory=list, max_length=100
     )
     code_fragments: list[CodeFragment] = Field(
         default_factory=list

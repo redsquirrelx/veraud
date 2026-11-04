@@ -20,7 +20,8 @@ from server.app.pipeline_service import (
     UnknownPipelineError,
     get_generic_pipeline_service,
 )
-from server.app.tracing_port import NoOpTracingBackend
+from server.blackboard.impls.memory import MemoryBlackboard
+from server.infrastructure.tracing import NoOpTracingBackend
 from server.main import app
 
 
@@ -124,6 +125,17 @@ def _ids():
     return {"first": 11, "second": 12}
 
 
+def test_pipeline_injects_one_blackboard_into_all_stage_agents():
+    board = MemoryBlackboard()
+    first, second = StubAgent(_Output()), StubAgent(_Output())
+    service = _service(first, second)
+
+    asyncio.run(service.run("two-stage", {"root": "/repo"}, ExecutionConfig(), blackboard=board))
+
+    assert first.blackboard is board
+    assert second.blackboard is board
+
+
 class TestRegistry:
     def test_lists_registered_pipelines(self):
         service = _service(StubAgent(_Output()), StubAgent(_Output()))
@@ -196,8 +208,9 @@ class TestGenericFailure:
         else:  # pragma: no cover
             raise AssertionError("expected RuntimeError")
         completes = {c[1]: (c[2], c[3]) for c in sink.calls if c[0] == "complete"}
-        assert completes[11][0] == "Failed" and "boom" in (completes[11][1] or "")
-        assert completes[12][0] == "Failed" and "Skipped" in (completes[12][1] or "")
+        assert completes[11][0] == "Failed" and completes[11][1] == "An agent could not complete its execution."
+        assert "boom" not in (completes[11][1] or "")
+        assert completes[12][0] == "Failed" and completes[12][1] == "Error details withheld because their safety could not be verified."
 
     def test_timeout_fails_open_rows(self):
         async def slow(input_data):
@@ -235,7 +248,8 @@ class TestGenericRoute:
         def _override():
             app.dependency_overrides[get_generic_pipeline_service] = lambda: service
             try:
-                yield TestClient(app, raise_server_exceptions=False)
+                with TestClient(app, raise_server_exceptions=False) as client:
+                    yield client
             finally:
                 app.dependency_overrides.pop(get_generic_pipeline_service, None)
 
@@ -260,7 +274,12 @@ class TestGenericRoute:
                 stage_configs=None,
                 execution_ids=None,
                 timeout_seconds=600,
+                *,
+                blackboard=None,
+                audit_service=None,
             ):
+                assert blackboard is app.state.blackboard
+                assert audit_service is app.state.audit_service
                 seen.append(pipeline_name)
                 return {"first": {"kind": "library"}}
 

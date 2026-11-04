@@ -51,7 +51,6 @@ function serviceWith(rows: StoredProjectDetails[]) {
   }
   return new ProjectService(projects, null as never, new GithubClient(), "", {
     openProjectArchitecturePipelineForProject: async () => { throw new Error("not used here") },
-    openFunctionalAdequacyPipelineForProject: async () => { throw new Error("not used here") },
   })
 }
 

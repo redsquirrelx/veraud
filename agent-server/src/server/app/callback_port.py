@@ -16,13 +16,14 @@ from ..infrastructure.callback.schemas import (
     CallbackResult,
     ExecutionOutcome,
     ExecutionProgress,
+    InvocationReceipt,
 )
 
 
 class CallbackSink:
     """Port for reporting lifecycle events back to the backend."""
 
-    async def mark_running(self, execution_id: int) -> CallbackResult:
+    async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
         raise NotImplementedError
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
@@ -34,6 +35,12 @@ class CallbackSink:
     async def aclose(self) -> None:
         raise NotImplementedError
 
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return CallbackResult(acknowledged=False, error="invocation reporting unavailable")
+
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return CallbackResult(acknowledged=False, error="event reporting unavailable")
+
 
 class BackendCallbackSink(CallbackSink):
     """Production sink: forwards to the backend over HTTP."""
@@ -41,8 +48,8 @@ class BackendCallbackSink(CallbackSink):
     def __init__(self, client: CallbackClient) -> None:
         self._client = client
 
-    async def mark_running(self, execution_id: int) -> CallbackResult:
-        return await self._client.mark_running(execution_id)
+    async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
+        return await self._client.mark_running(execution_id, run_id) if run_id else await self._client.mark_running(execution_id)
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
         return await self._client.complete(execution_id, outcome)
@@ -53,11 +60,17 @@ class BackendCallbackSink(CallbackSink):
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def invocation(self, execution_id: int, receipt: InvocationReceipt) -> CallbackResult:
+        return await self._client.invocation(execution_id, receipt)
+
+    async def events(self, execution_id: int, events: list[dict]) -> CallbackResult:
+        return await self._client.events(execution_id, events)
+
 
 class NoOpCallbackSink(CallbackSink):
     """Test sink: records nothing, acknowledges nothing, never touches HTTP."""
 
-    async def mark_running(self, execution_id: int) -> CallbackResult:
+    async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
         return CallbackResult(acknowledged=False, error="noop sink")
 
     async def complete(self, execution_id: int, outcome: ExecutionOutcome) -> CallbackResult:
