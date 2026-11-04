@@ -26,13 +26,13 @@ export function AuditAttributeConfiguration({ attribute, catalog, draft, onChang
     return () => controller.abort()
   }, [advanced, attribute, draft.descriptor, loaded, attempt])
   const descriptor = draft.descriptor ?? loaded
-  const fields = descriptor ? configFields(descriptor.schema).filter((field) =>
+  const fields = descriptor ? configFields(descriptor.schema, attribute).filter((field) =>
     field.path[0] === "agent_defaults" || field.path[0] === (attribute === "security" ? "security_config" : "functional_config")) : []
   let valid = true
   try { if (descriptor) auditDraftValues(attribute, { descriptor, form: draft.form }) } catch { valid = false }
   return <div className="quality-audit-attribute-configuration">
-    <p className="label">{t(attribute === "security" ? "qualityAudits.setup.securityScope" : "qualityAudits.setup.functionalScope")}</p>
-    <AuditAttributeSummary attribute={attribute} catalog={catalog} />
+    <p className="label">{t(attribute === "security" ? "qualityAudits.setup.securityScope" : "qualityAudits.setup.functionalExploratoryScope")}</p>
+    <AuditAttributeSummary attribute={attribute} catalog={catalog} functionalMode={attribute === "functional_adequacy" ? "exploratory" : undefined} />
     <p className="label">{t("qualityAudits.setup.inheritedSettings")}</p>
     <Button variant="secondary" aria-expanded={advanced} onClick={() => setAdvanced((value) => !value)}>{t("qualityAudits.setup.advanced")}</Button>
     {advanced && <div>

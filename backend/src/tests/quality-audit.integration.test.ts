@@ -17,6 +17,89 @@ import { AgentTransportError } from "../infrastructure/agent-server-client/agent
 const selections = [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
   ["functional_adequacy"], ["maintainability", "functional_adequacy"], ["security", "functional_adequacy"],
   ["maintainability", "security", "functional_adequacy"]]
+
+for (const withSecurity of [false, true]) {
+  it(`runs exploratory functional adequacy through the unchanged audit endpoint without functional credentials (security: ${withSecurity})`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "veraud-functional-exploration-"))
+    const databaseUrl = `file:${join(dir, "test.db")}`
+    execSync("pnpm prisma migrate deploy", {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)), env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: "ignore",
+    })
+    const workspaceDir = join(dir, "workspace")
+    mkdirSync(join(workspaceDir, "555-acme-shop"), { recursive: true })
+    writeFileSync(join(workspaceDir, "555-acme-shop", "main.ts"), "export const value = 1")
+    const attributes = [...(withSecurity ? ["security"] : []), "functional_adequacy"]
+    let dispatched!: () => void
+    const dispatch = new Promise<void>((resolve) => { dispatched = resolve })
+    let finish!: (value: Record<string, AgentInput>) => void
+    const pending = new Promise<Record<string, AgentInput>>((resolve) => { finish = resolve })
+    let verifications = 0
+    let dispatches = 0
+    const { app, db } = await buildApp({ databaseUrl, workspaceDir, silent: true,
+      makeAgentCatalogSource: makeQualityAuditCatalogSource,
+      makeModelAccessVerifier: () => ({ verify: async () => { verifications++ } }),
+      makeAgentInvoker: () => ({ run: async () => ({}), runPipelineByName: async (pipeline, input, ids, configs) => {
+        dispatches++
+        assert.equal(pipeline, "quality-audit")
+        assert.deepEqual(input.attributes, attributes)
+        assert.deepEqual(Object.keys(configs), withSecurity ? ["security"] : [])
+        assert.deepEqual(Object.keys(ids), [withSecurity ? "security" : "functional_adequacy"])
+        assert.equal(input.commit_hash, "a".repeat(40))
+        assert.deepEqual(input.functional_requirements, withSecurity ? [] : undefined)
+        dispatched()
+        return pending
+      } }),
+    })
+    try {
+      const project = await db.project.create({ data: { githubRepositoryId: 555n, repositoryOwner: "acme", repositoryName: "shop", status: "READY" } })
+      if (withSecurity) {
+        const provider = await db.aiProvider.create({ data: { name: "test" } })
+        const model = await db.aiModel.create({ data: { name: "offline", aiProviderId: provider.id } })
+        const credential = await db.aiCredential.create({ data: { name: "test-key", apiKey: "secret-test-key", aiProviderId: provider.id } })
+        await db.agentSettings.update({ where: { agentType: "security" }, data: { aiModelId: model.id, aiCredentialId: credential.id } })
+      }
+      const url = `/api/projects/${project.id}/audits`
+      const body = { branch: "main", commitHash: "a".repeat(40), attributes, ...(withSecurity ? { functional_requirements: [] } : {}) }
+      if (!withSecurity) {
+        await db.agentSettings.update({ where: { agentType: "functional_adequacy" }, data: { availability: "not_executed" } })
+        assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
+        assert.equal(await db.evaluation.count(), 0, "Unavailable agents must not open deterministic audit rows")
+        await db.agentSettings.update({ where: { agentType: "functional_adequacy" }, data: { availability: "available" } })
+      }
+      const opened = await app.inject({ method: "POST", url, payload: body })
+      assert.equal(opened.statusCode, 202, opened.body)
+      assert.deepEqual(Object.keys(opened.json()).sort(), ["evaluationId", "executionId", "versionId"])
+      await dispatch
+      assert.equal(verifications, withSecurity ? 1 : 0)
+      const id = opened.json().executionId
+      assert.equal((await db.evaluation.findUniqueOrThrow({ where: { id: opened.json().evaluationId } })).type, "QualityAudit")
+      const row = await db.agentExecution.findUniqueOrThrow({ where: { id } })
+      if (!withSecurity) assert.equal(row.configurationSnapshot, null, "Never fabricate a model snapshot for deterministic execution")
+      assert.equal((await app.inject({ method: "POST", url, payload: body })).statusCode, 422)
+      assert.equal((await app.inject({ method: "POST", url: `/api/projects/${project.id}/functional-adequacy`, payload: body })).statusCode, 404)
+      const history = await app.inject({ url })
+      assert.equal(history.json().length, 1)
+      assert.deepEqual(history.json()[0].attributes, attributes)
+      finish({ audit: { attributes, status: "completed", run_id: "exploratory-run", report: { identification: { audit_id: "exploratory-run" } },
+        docx_base64: Buffer.from("PK-exploratory-report").toString("base64") } })
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if ((await db.agentExecution.findUniqueOrThrow({ where: { id } })).status === "Completed") break
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      assert.equal((await db.agentExecution.findUniqueOrThrow({ where: { id } })).status, "Completed")
+      assert.equal((await app.inject({ url: `${url}/${id}/report.docx` })).statusCode, 200)
+      assert.equal(dispatches, 1)
+      assert.equal((await app.inject({ method: "POST", url, payload: { ...body,
+        functional_requirements: [{ requirement_id: "REQ-001", description: "List items." }] } })).statusCode, 422,
+      "Requirements mode still needs its configured functional model")
+    } finally {
+      finish({})
+      await app.close()
+      await db.$disconnect()
+    }
+  })
+}
+
 for (const { attributes, disconnect } of [...selections.map((attributes) => ({ attributes, disconnect: false })),
   { attributes: ["maintainability"], disconnect: true }]) {
 it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP connection" : ""} and persists one partial report and Word artifact independently of architecture`, async () => {
@@ -82,7 +165,10 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     if (attributes.length === 1 && attributes[0] === "functional_adequacy") {
       const originalFetch = globalThis.fetch
       const saved = { audit_budget: { max_total_tokens: 300000000000 },
-        agent_defaults: { max_context_characters: 240000, max_output_tokens: 12000 }, functional_config: { retrieval_top_k: 3 } }
+        agent_defaults: { max_context_characters: 240000, max_output_tokens: 12000 }, functional_config: {
+          retrieval_top_k: 3, timeout_seconds: 45, max_wall_time_seconds: 90, provider_request_timeout_seconds: 8,
+          max_provider_retries: 2, provider_rate_limits: { requests_per_minute: 30, tokens_per_minute: 600000 },
+        } }
       globalThis.fetch = async (_url, init) => new Response(JSON.stringify(init?.method === "POST"
         ? { values: JSON.parse(String(init.body)) } : { schema: { type: "object" }, level: "developer" }))
       try {
@@ -92,10 +178,17 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
           "saved settings survive service recreation")
         assert.deepEqual((await service.get("security")).values, { audit_budget: saved.audit_budget },
           "shared budget is global while category operating overrides stay scoped")
-         assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
+          assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
           audit_budget: saved.audit_budget,
           attribute_options: { functional_adequacy: { agent_defaults: saved.agent_defaults, functional_config: saved.functional_config } },
-         })
+          })
+          const patched = await service.executionOptions(["functional_adequacy"], { functional_config: {
+            timeout_seconds: 20, provider_rate_limits: { requests_per_minute: null },
+          } })
+          assert.deepEqual(patched.attribute_options?.functional_adequacy?.functional_config, {
+            ...saved.functional_config, timeout_seconds: 20,
+            provider_rate_limits: { requests_per_minute: null, tokens_per_minute: 600000 },
+          }, "per-run functional limits override saved values without resetting another quota")
          await db.auditSettings.create({ data: { attribute: "security", options: JSON.stringify({
            security_config: { max_scan_files: 30, max_output_tokens: 6000 },
          }) } })
@@ -198,7 +291,7 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     if (attributes.includes("functional_adequacy")) {
       assert.deepEqual(seen?.functional_requirements, options.functional_requirements)
       const missing = await app.inject({ method: "POST", url, payload: { ...body, functional_requirements: undefined } })
-      assert.equal(missing.statusCode, 400)
+      assert.equal(missing.statusCode, 422, "exploration is valid but this revision already has a running audit")
       const duplicate = await app.inject({ method: "POST", url, payload: { ...body,
         functional_requirements: [options.functional_requirements![0], options.functional_requirements![0]] } })
       assert.equal(duplicate.statusCode, 400)

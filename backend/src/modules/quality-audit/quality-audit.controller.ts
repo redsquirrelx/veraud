@@ -54,14 +54,14 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
 
   app.post("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "Start a quality audit for a project revision",
-    description: "Run maintainability, security and functional adequacy, independently or together, with one report. Functional adequacy requires explicit functional_requirements. Configure model access for each selected attribute first. Optional operating patches are validated against agent-server's catalog.",
+    description: "Run maintainability, security and functional adequacy, independently or together, with one report. Functional adequacy without functional_requirements is exploratory and needs no model. Configure model access for attributes using a model. Optional operating patches are validated against agent-server's catalog.",
     params,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
       attributes: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security", "functional_adequacy"] } },
       maintainability_selection: { type: "object", minProperties: 1, maxProperties: 12,
         additionalProperties: { type: "array", maxItems: 12, uniqueItems: true, items: { type: "string", minLength: 1 } } },
-      functional_requirements: { type: "array", minItems: 1, maxItems: 100, items: {
+      functional_requirements: { type: "array", maxItems: 100, items: {
         type: "object", additionalProperties: false, required: ["requirement_id", "description"], properties: {
           requirement_id: { type: "string", minLength: 1, maxLength: 128, pattern: "\\S" },
           description: { type: "string", minLength: 1, maxLength: 10000, pattern: "\\S" },

@@ -81,10 +81,10 @@ export class QualityAuditService {
       throw new InvalidGitRequestError("maintainability_selection requires maintainability in attributes")
     }
     if (attributes.includes("functional_adequacy")) {
-      if (!requirements?.length || requirements.length > 100
+      if (requirements !== undefined && (requirements.length > 100
         || requirements.some((item) => !item.requirement_id?.trim() || !item.description?.trim())
-        || new Set(requirements.map((item) => item.requirement_id.trim())).size !== requirements.length) {
-        throw new InvalidGitRequestError("Functional adequacy requires 1–100 functional requirements with distinct IDs and nonempty descriptions")
+        || new Set(requirements.map((item) => item.requirement_id.trim())).size !== requirements.length)) {
+        throw new InvalidGitRequestError("Functional requirements must have distinct IDs and nonempty descriptions (maximum 100)")
       }
     } else if (requirements !== undefined) {
       throw new InvalidGitRequestError("functional_requirements requires functional_adequacy in attributes")
@@ -104,6 +104,11 @@ export class QualityAuditService {
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)
     const effective = this.settings ? await this.settings.executionOptions(attributes, options) : options
+    if (attributes.length === 1 && attributes[0] === "functional_adequacy" && !requirements?.length) {
+      const result = await this.repository.createExploratoryFunctionalAudit(project.id, cleanBranch, cleanHash)
+      await this.executions.dispatchExploratoryFunctionalAudit(result.executionId, cleanHash, effective)
+      return result
+    }
     return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, effective)
   }
 

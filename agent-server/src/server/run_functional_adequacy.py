@@ -23,7 +23,12 @@ def main(argv=None):
     parser.add_argument(
         "input",
         type=Path,
-        help="JSON con requisitos y, opcionalmente, fragmentos de código.",
+        nargs="?",
+        help=(
+            "JSON opcional con requisitos y, opcionalmente, fragmentos de "
+            "código. Si se omite junto con --repository, la auditoría es "
+            "exploratoria."
+        ),
     )
     parser.add_argument(
         "--repository",
@@ -42,13 +47,23 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
 
+    if args.input is None and args.repository is None:
+        parser.error(
+            "Debe proporcionar un repositorio (--repository) o un archivo "
+            "JSON de entrada."
+        )
+
     async def execute():
-        payload = json.loads(args.input.read_text(encoding="utf-8"))
+        payload = (
+            json.loads(args.input.read_text(encoding="utf-8"))
+            if args.input is not None
+            else {}
+        )
 
         if args.repository is not None:
             requirements = [
                 FunctionalRequirement.model_validate(item)
-                for item in payload["requirements"]
+                for item in payload.get("requirements", [])
             ]
             prepared = await prepare_repository_input(
                 args.repository,
@@ -56,15 +71,23 @@ def main(argv=None):
             )
             payload = prepared.model_dump()
 
+            mode = (
+                "basado en requisitos"
+                if prepared.requirements
+                else "exploratorio"
+            )
             print(
                 "Preparación automática completada: "
+                f"modo {mode}, "
                 f"{len(prepared.requirements)} requisitos, "
-                f"{len(prepared.code_fragments)} fragmentos."
+                f"{len(prepared.code_fragments)} fragmentos, "
+                f"{len(prepared.repository_context.capabilities) if prepared.repository_context else 0} "
+                "capacidades."
             )
 
         config = ExecutionConfig(
             model=ModelConfig(provider=args.provider, name=args.model),
-            api_key=os.environ["LLM_API_KEY"],
+            api_key=os.environ.get("LLM_API_KEY"),
             timeout_seconds=args.timeout,
         )
 
@@ -85,12 +108,26 @@ def main(argv=None):
 
     print("Auditoría de Adecuación Funcional finalizada.")
 
-    for item in result["results"]:
+    if result.get("audit_mode") == "exploratory":
         print(
-            f"Requisito: {item['requirement_id']} | "
-            f"Clasificación: {item['status']} | "
-            f"Evidencias: {len(item['evidence'])}"
+            "Modo exploratorio: "
+            f"{len(result.get('capabilities', []))} capacidades, "
+            f"{len(result.get('findings', []))} hallazgos."
         )
+        for summary in result.get("subattributes", []):
+            print(
+                f"{summary['attribute']}: "
+                f"{summary['confirmed']} confirmados, "
+                f"{summary['probable']} probables, "
+                f"{summary['unverified']} no verificados."
+            )
+    else:
+        for item in result["results"]:
+            print(
+                f"Requisito: {item['requirement_id']} | "
+                f"Clasificación: {item['status']} | "
+                f"Evidencias: {len(item['evidence'])}"
+            )
 
     print(f"Resultado guardado: {args.output}")
     return 0

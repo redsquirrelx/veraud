@@ -246,7 +246,7 @@ export class AgentExecutionService {
     const configurations = await this.settings.prepareExecution([
       ...(attributes.includes("maintainability") ? [MAINTAINABILITY_AGENT_TYPE] : []),
       ...(attributes.includes("security") ? [SECURITY_AGENT_TYPE] : []),
-      ...(attributes.includes("functional_adequacy") ? [FUNCTIONAL_ADEQUACY_AGENT_TYPE] : []),
+      ...(attributes.includes("functional_adequacy") && options.functional_requirements?.length ? [FUNCTIONAL_ADEQUACY_AGENT_TYPE] : []),
     ])
     const rootConfiguration = configurations.find((item) => item.agentType === agentType)!
     const configs: Record<string, AgentRunConfig> = {}
@@ -268,6 +268,13 @@ export class AgentExecutionService {
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
     void this.dispatchQualityAudit(execution, configs, commitHash, attributes, effectiveOptions)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
+  }
+
+  /** Domain adapter entry: the existing lifecycle owns dispatch, recovery and cancellation. */
+  async dispatchExploratoryFunctionalAudit(id: number, commitHash: string, options: AuditOperatingOptions) {
+    const execution = await this.require(id)
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    void this.dispatchQualityAudit(execution, {}, commitHash, [FUNCTIONAL_ADEQUACY_AGENT_TYPE], options)
   }
 
   private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {

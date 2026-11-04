@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.mocked(api.getQualityAudit).mockResolvedValue(historicalSummary)
   vi.mocked(operating.getAuditSettings).mockImplementation(async (attribute) => ({ schema: { type: "object", properties: {
     [attribute === "security" ? "security_config" : "functional_config"]: { type: "object", properties: {
-      [attribute === "security" ? "max_scan_files" : "retrieval_top_k"]: { type: "integer", minimum: 1, maximum: 100, default: 5 },
+      [attribute === "security" ? "max_scan_files" : "timeout_seconds"]: { type: "integer", minimum: 1, maximum: 100, default: 5 },
     } },
     audit_budget: { type: "object", properties: { max_total_tokens: { type: "integer" } } },
   } }, values: {} }))
@@ -56,7 +56,7 @@ function show() {
 
 async function toggleAttribute(name: string) {
   await userEvent.click(screen.getByRole("button", { name: "Configure audit" }))
-  await userEvent.click(screen.getByRole("checkbox", { name: `Enable ${name}` }))
+  await userEvent.click(screen.getByRole("checkbox", { name: `Enable ${name === "Functional adequacy" ? "Functional adequacy · exploratory" : name}` }))
   await userEvent.keyboard("{Escape}")
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
 }
@@ -349,7 +349,7 @@ describe("project quality audits", () => {
     expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
   })
 
-  it("configures security and functional run-only options and requirements inside the drawer", async () => {
+  it("configures security and exploratory time limits without exposing requirements", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
     show()
@@ -358,34 +358,78 @@ describe("project quality audits", () => {
     expect(operating.getAuditSettings).not.toHaveBeenCalled()
     await user.click(screen.getByRole("button", { name: "Configure audit" }))
     await user.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
-    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy" }))
-    await user.type(screen.getByRole("textbox", { name: "Functional requirements" }), "Allow exporting a report.")
+    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy · exploratory" }))
+    expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
     const security = within(screen.getByRole("button", { name: "Collapse Security" }).closest("section")!)
-    const functional = within(screen.getByRole("button", { name: "Collapse Functional adequacy" }).closest("section")!)
+    const functional = within(screen.getByRole("button", { name: "Collapse Functional adequacy · exploratory" }).closest("section")!)
     await user.click(security.getByRole("button", { name: "Advanced settings for this run (developer)" }))
     const scan = await security.findByRole("spinbutton", { name: "security_config · max_scan_files" })
     await user.type(scan, "25")
     await user.click(functional.getByRole("button", { name: "Advanced settings for this run (developer)" }))
-    await user.type(await functional.findByRole("spinbutton", { name: "functional_config · retrieval_top_k" }), "3")
+    await user.type(await functional.findByRole("spinbutton", { name: "functional_config · timeout_seconds" }), "3")
     expect(screen.queryByRole("spinbutton", { name: /audit_budget/ })).not.toBeInTheDocument()
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     await user.click(screen.getByRole("button", { name: "Configure audit" }))
     expect(screen.getByRole("spinbutton", { name: "security_config · max_scan_files" })).toHaveValue(25)
-    expect(screen.getByRole("textbox", { name: "Functional requirements" })).toHaveValue("Allow exporting a report.")
+    expect(screen.getByRole("spinbutton", { name: "functional_config · timeout_seconds" })).toHaveValue(3)
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     await user.click(screen.getByRole("button", { name: "Start audit" }))
     expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security", "functional_adequacy"], {
-      functional_requirements: [{ requirement_id: "REQ-001", description: "Allow exporting a report." }],
-      attribute_options: { security: { security_config: { max_scan_files: 25 } }, functional_adequacy: { functional_config: { retrieval_top_k: 3 } } },
+      functional_requirements: [],
+      attribute_options: { security: { security_config: { max_scan_files: 25 } }, functional_adequacy: { functional_config: { timeout_seconds: 3 } } },
     })
     vi.mocked(api.startQualityAudit).mockClear()
     await toggleAttribute("Security")
     await user.click(screen.getByRole("button", { name: "Start audit" }))
     expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["functional_adequacy"], {
-      functional_requirements: [{ requirement_id: "REQ-001", description: "Allow exporting a report." }],
-      attribute_options: { functional_adequacy: { functional_config: { retrieval_top_k: 3 } } },
+      functional_requirements: [],
+      attribute_options: { functional_adequacy: { functional_config: { timeout_seconds: 3 } } },
+    })
+    expect(operating.saveAuditSettings).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])("only exposes exploratory limits even when a functional model is configured (%s)", async (configured) => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 8 })
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.map((agent) => agent.agentType === "functional_adequacy" ? { ...agent, configured } : agent))
+    vi.mocked(operating.getAuditSettings).mockResolvedValue({ schema: { type: "object", properties: {
+      agent_defaults: { type: "object", properties: { max_tool_calls: { type: "integer", minimum: 0 } } },
+      functional_config: { type: "object", properties: {
+        timeout_seconds: { type: "number", exclusiveMinimum: 0 },
+        max_wall_time_seconds: { type: "number", exclusiveMinimum: 0 },
+        provider_request_timeout_seconds: { type: "number", exclusiveMinimum: 0 },
+        max_provider_retries: { type: "integer", minimum: 0, maximum: 8 },
+        provider_rate_limits: { type: "object", properties: {
+          requests_per_minute: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+          tokens_per_minute: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+        } },
+      } },
+    } }, values: { functional_config: { provider_rate_limits: { requests_per_minute: 42, tokens_per_minute: 700000 } } } })
+    show()
+    await screen.findByText("No audits recorded.")
+    await toggleAttribute("Maintainability")
+    await toggleAttribute("Security")
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy · exploratory" }))
+    expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Advanced settings for this run (developer)" }))
+    const timeout = await screen.findByRole("spinbutton", { name: "functional_config · timeout_seconds" })
+    expect(screen.queryByRole("spinbutton", { name: /max_tool_calls/ })).not.toBeInTheDocument()
+    await user.type(timeout, "0")
+    expect(screen.getByRole("alert")).toHaveTextContent("outside the allowed limits")
+    await user.clear(timeout)
+    await user.type(timeout, "47")
+    await user.type(screen.getByRole("spinbutton", { name: "functional_config · max_wall_time_seconds" }), "88")
+    expect(screen.queryByRole("spinbutton", { name: /provider_|max_model_calls|retrieval_top_k|embedding_model/ })).not.toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: "Start audit" }))
+    expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["functional_adequacy"], {
+      functional_requirements: [],
+      attribute_options: { functional_adequacy: { functional_config: { timeout_seconds: 47, max_wall_time_seconds: 88 } } },
     })
     expect(operating.saveAuditSettings).not.toHaveBeenCalled()
   })
@@ -484,7 +528,7 @@ describe("project quality audits", () => {
     expect(JSON.stringify(history)).toBe(original)
   })
 
-  it("restores ready scope defaults locally without saving global agent settings or clearing requirements", async () => {
+  it("restores ready scope defaults locally without revealing the hidden LLM mode", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(listAgentSettings).mockResolvedValue([
       ...readyAgents.filter((agent) => agent.agentType !== "security"),
@@ -504,7 +548,7 @@ describe("project quality audits", () => {
       show()
       await screen.findByText("No audits recorded.")
       await toggleAttribute("Functional adequacy")
-      await user.type(screen.getByRole("textbox", { name: "Functional requirements" }), "Keep this requirement.")
+      expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
       await user.click(screen.getByRole("button", { name: "Configure audit" }))
       await user.click(screen.getByRole("checkbox", { name: "Reusability" }))
       await user.click(screen.getAllByText("View investigators")[0]!)
@@ -520,15 +564,15 @@ describe("project quality audits", () => {
       expect(screen.getByRole("checkbox", { name: "Enable Security" })).not.toBeChecked()
       expect(screen.getByRole("checkbox", { name: "Unavailable" })).toBeDisabled()
       expect(screen.getByRole("checkbox", { name: "Unavailable" })).not.toBeChecked()
-      expect(screen.getByRole("checkbox", { name: "Enable Functional adequacy" })).not.toBeChecked()
+      expect(screen.getByRole("checkbox", { name: "Enable Functional adequacy · exploratory" })).not.toBeChecked()
       expect(screen.queryByText("Partial evaluation")).not.toBeInTheDocument()
       expect(listAgentSettings).toHaveBeenCalledOnce()
       expect(api.startQualityAudit).not.toHaveBeenCalled()
       expect(fetch).not.toHaveBeenCalled()
-      await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy" }))
+      await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy · exploratory" }))
       await user.keyboard("{Escape}")
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
-      expect(screen.getByRole("textbox", { name: "Functional requirements" })).toHaveValue("Keep this requirement.")
+      expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
     } finally { fetch.mockRestore() }
   })
 
@@ -565,9 +609,9 @@ describe("project quality audits", () => {
     await user.click(screen.getByRole("checkbox", { name: "Enable Maintainability" }))
     expect(screen.getByRole("button", { name: "Collapse Maintainability" })).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByRole("checkbox", { name: "Modularity" })).toBeChecked()
-    expect(screen.getByRole("button", { name: "Expand Functional adequacy" })).toBeDisabled()
-    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy" }))
-    expect(screen.getByRole("button", { name: "Collapse Functional adequacy" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Expand Functional adequacy · exploratory" })).toBeDisabled()
+    await user.click(screen.getByRole("checkbox", { name: "Enable Functional adequacy · exploratory" }))
+    expect(screen.getByRole("button", { name: "Collapse Functional adequacy · exploratory" })).toHaveAttribute("aria-expanded", "true")
     expect(api.startQualityAudit).not.toHaveBeenCalled()
   })
 
@@ -650,7 +694,7 @@ describe("project quality audits", () => {
 
     const drawer = screen.getByRole("dialog", { name: "Configure audit" })
     expect(within(drawer).getByRole("heading", { name: "Maintainability" })).toBeInTheDocument()
-    expect(within(drawer).getByRole("heading", { name: "Functional adequacy" })).toBeInTheDocument()
+    expect(within(drawer).getByRole("heading", { name: "Functional adequacy · exploratory" })).toBeInTheDocument()
     expect(within(drawer).getByRole("heading", { name: "Security" })).toBeInTheDocument()
     expect(within(drawer).getByRole("checkbox", { name: "Enable Security" })).not.toBeChecked()
     expect(api.startQualityAudit).not.toHaveBeenCalled()
@@ -673,7 +717,7 @@ describe("project quality audits", () => {
 
     const drawer = within(screen.getByRole("dialog"))
     expect(drawer.getByText("Enable at least one attribute in this panel to start the audit.")).toBeInTheDocument()
-    for (const name of ["Maintainability", "Security", "Functional adequacy"]) {
+    for (const name of ["Maintainability", "Security", "Functional adequacy · exploratory"]) {
       expect(drawer.getByRole("heading", { name })).toBeInTheDocument()
       expect(drawer.getByRole("checkbox", { name: `Enable ${name}` })).not.toBeChecked()
     }
@@ -695,7 +739,7 @@ describe("project quality audits", () => {
     expect(api.listQualityAudits).toHaveBeenCalledTimes(calls)
   })
 
-  it.each([false, true])("starts functional adequacy with explicit requirements (joint: %s)", async (joint) => {
+  it.each([false, true])("always starts exploratory functional adequacy (joint: %s)", async (joint) => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 12 })
     show()
@@ -705,16 +749,30 @@ describe("project quality audits", () => {
       await toggleAttribute("Security")
     }
     await toggleAttribute("Functional adequacy")
-    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
-    await userEvent.type(screen.getByRole("textbox", { name: "Functional requirements" }), "Allow sign in.\nValidate the password.")
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled()
+    expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40),
       [...(joint ? ["maintainability", "security"] : []), "functional_adequacy"], {
-        functional_requirements: [
-          { requirement_id: "REQ-001", description: "Allow sign in." },
-          { requirement_id: "REQ-002", description: "Validate the password." },
-        ],
+        functional_requirements: [],
       }))
+  })
+  it("starts exploration without a functional model and never exposes requirements", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 12 })
+    vi.mocked(listAgentSettings).mockResolvedValue(readyAgents.map((agent) => agent.agentType === "functional_adequacy"
+      ? { ...agent, configured: false } : agent))
+    show()
+    await screen.findByText("No audits recorded.")
+    await toggleAttribute("Maintainability")
+    await toggleAttribute("Security")
+    await toggleAttribute("Functional adequacy")
+    const start = screen.getByRole("button", { name: "Start audit" })
+    expect(start).toBeEnabled()
+    expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
+    await userEvent.click(start)
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40),
+      ["functional_adequacy"], { functional_requirements: [] }))
   })
   it("offers quality audits separately from Project Architecture in the Analyze menu", async () => {
     const onAnalyze = vi.fn()
@@ -755,6 +813,19 @@ describe("project quality audits", () => {
     expect(api.downloadQualityAuditReport).toHaveBeenCalledWith(5, 8)
   })
 
+  it("keeps historical functional audits generic instead of relabeling them as exploratory", async () => {
+    const historical = { ...historicalSummary, attributes: ["functional_adequacy"] }
+    const original = JSON.stringify(historical)
+    vi.mocked(api.listQualityAudits).mockResolvedValue([historical])
+    render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
+    const article = await screen.findByRole("article")
+    expect(within(article).getByRole("heading", { name: /Functional adequacy · #8/ })).toBeInTheDocument()
+    expect(article).not.toHaveTextContent("Functional adequacy · exploratory")
+    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(JSON.stringify(historical)).toBe(original)
+    expect(api.getQualityAuditReport).not.toHaveBeenCalled()
+  })
+
   it("starts security independently with the selected revision", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 9 })
@@ -774,7 +845,7 @@ describe("project quality audits", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
-    expect(screen.getByRole("region", { name: "Functional adequacy" })).toHaveTextContent("Disabled")
+    expect(screen.getByRole("region", { name: "Functional adequacy · exploratory" })).toHaveTextContent("Disabled")
     const settingsLink = screen.getByRole("link", { name: "Configure agents" })
     expect(settingsLink).toHaveClass("ui-button", "ui-button-secondary")
     expect(settingsLink).toHaveAttribute("href", "/settings")
@@ -810,7 +881,7 @@ describe("project quality audits", () => {
     expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/10")
   })
 
-  it("translates history links without changing selections, requirements, or API activity", async () => {
+  it("translates history links and the exploratory label without revealing LLM mode or making requests", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
       executionStatus: "Completed", auditStatus: "partial", error: null, runId: "report-run-id",
@@ -820,8 +891,7 @@ describe("project quality audits", () => {
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     await toggleAttribute("Functional adequacy")
-    const requirements = screen.getByRole("textbox", { name: "Functional requirements" })
-    await userEvent.type(requirements, "Requirement one.\nRequirement two.")
+    expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(api.getQualityAudit).not.toHaveBeenCalled()
     const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
@@ -831,8 +901,8 @@ describe("project quality audits", () => {
     expect(screen.getByRole("heading", { name: "Auditoría de calidad" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Ver detalles" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.getByRole("heading", { name: "Auditorías del proyecto" })).toBeInTheDocument()
-    expect(screen.getByRole("region", { name: "Adecuación funcional" })).toHaveTextContent("Activado")
-    expect(screen.getByRole("textbox", { name: "Requisitos funcionales" })).toHaveValue("Requirement one.\nRequirement two.")
+    expect(screen.getByRole("region", { name: "Adecuación funcional · exploratoria" })).toHaveTextContent("Activado")
+    expect(screen.queryByRole("textbox", { name: "Requisitos funcionales" })).not.toBeInTheDocument()
     expect(screen.getByText("report-run-id")).toBeInTheDocument()
     expect(api.startQualityAudit).not.toHaveBeenCalled()
     expect([vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]).toEqual(requestCounts)

@@ -6,6 +6,11 @@ from typing import Any
 
 from server.app.pipeline_contracts import PipelineDefinition, bind_no_context
 
+from ..agents.functional_adequacy.agent import FunctionalAdequacyAgent
+from ..agents.functional_adequacy.config import FunctionalAdequacyConfig
+from ..agents.functional_adequacy.schemas import FunctionalAdequacyInput
+from ..config.schemas import AgentSettings
+
 STAGE = "functional_adequacy"
 
 
@@ -48,12 +53,20 @@ async def run_functional_pipeline(
     if hooks is not None:
         await hooks.on_stage_start(STAGE)
 
-    result = await pipeline["service"].run(
-        agent_type=STAGE,
-        config=ctx["config"],
-        payload=parsed,
-        blackboard=ctx.get("blackboard"),
-    )
+    prepared = FunctionalAdequacyInput.model_validate(parsed)
+    if prepared.requirements:
+        result = await pipeline["service"].run(
+            agent_type=STAGE,
+            config=ctx["config"],
+            payload=prepared.model_dump(),
+            blackboard=ctx.get("blackboard"),
+        )
+    else:
+        # Deterministic domain path: do not alter the shared executor's model contract.
+        agent = FunctionalAdequacyAgent(AgentSettings(agent_id=STAGE,
+            timeout_seconds=FunctionalAdequacyConfig().timeout_seconds), model=None)
+        agent.blackboard = ctx.get("blackboard")
+        result = await agent.run(prepared)
 
     if hooks is not None:
         await hooks.on_stage_result(STAGE, result)

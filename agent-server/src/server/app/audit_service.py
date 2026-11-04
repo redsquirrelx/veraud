@@ -185,7 +185,7 @@ class AuditService:
         combined = len(attributes) > 1
         if "functional_adequacy" in attributes:
             try:
-                functional_requirements = FunctionalAdequacyInput(requirements=functional_requirements).requirements
+                functional_requirements = FunctionalAdequacyInput(requirements=functional_requirements or []).requirements
             except ValidationError:
                 raise InvalidConfigError("Functional adequacy requires distinct, nonempty functional_requirements.") from None
         elif functional_requirements is not None:
@@ -194,7 +194,9 @@ class AuditService:
             raise InvalidConfigError("Audits selecting maintainability require its request plus an optional security_request.")
         if security:
             request = security_request or (request if isinstance(request, SecurityAuditRequest) else SecurityAuditRequest())
-        validate_model_configs(agent_configs, attributes)
+        model_attributes = [attribute for attribute in attributes
+            if attribute != "functional_adequacy" or functional_requirements]
+        validate_model_configs(agent_configs, model_attributes)
         if security_config is not None and "security" not in attributes:
             raise InvalidConfigError("security_config requires security in attributes.")
         if not maintainability and call_limits is not None:
@@ -264,6 +266,11 @@ class AuditService:
                 timeout = config.timeout_seconds
                 if security and security_config is not None and "timeout_seconds" in security_config.model_fields_set:
                     timeout = min(timeout, limits.timeout_seconds)
+                if attributes == ["functional_adequacy"] and (
+                    functional_config is not None and "timeout_seconds" in functional_config.model_fields_set
+                    or "timeout_seconds" in ((attribute_options or {}).get("functional_adequacy", {}).get("functional_config") or {})
+                ):
+                    timeout = min(timeout, limits.timeout_seconds)
                 limits = validate_agent_config(audit_root(attributes),
                     {"timeout_seconds": timeout}, base=limits)
             except ValidationError:
@@ -291,26 +298,29 @@ class AuditService:
         except ValidationError:
             raise InvalidConfigError("Invalid per-agent output token override; use the runtime max_output_tokens constraints.") from None
         try:
-            validate_audit_output_capacity(limits)
+            if model_attributes:
+                validate_audit_output_capacity(limits)
             if "security" in attributes:
                 validate_audit_output_capacity(security_limits)
-            if "functional_adequacy" in attributes:
+            if functional_requirements:
                 validate_audit_output_capacity(functional_limits)
         except ValueError as error:
             raise InvalidConfigError(str(error)) from None
         root_config = (agent_configs or {}).get(audit_root(attributes), config)
-        if self._base_model_config is None:
+        if model_attributes and self._base_model_config is None:
             self._base_model_config = default_model_configuration()
         # The direct-run service used to be instantiated here only to resolve
         # configuration (also registering direct agents and initializing tracing).
         tracing.setup()
-        settings, credentials, _ = resolve_model_settings(
-            self._base_model_config,
-            agent_config,
-            root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
-        )
-        if settings.provider.lower() not in PROVIDERS:
-            raise InvalidConfigError("Unsupported model provider.")
+        settings = credentials = None
+        if model_attributes:
+            settings, credentials, _ = resolve_model_settings(
+                self._base_model_config,
+                agent_config,
+                root_config.model_copy(update={"timeout_seconds": limits.timeout_seconds}),
+            )
+            if settings.provider.lower() not in PROVIDERS:
+                raise InvalidConfigError("Unsupported model provider.")
         model_selections = {}
         for agent_type, selected in (agent_configs or {}).items():
             resolved, access, _ = resolve_model_settings(
@@ -382,7 +392,8 @@ class AuditService:
                 if security_request is not None:
                     scopes.append(security_request)
                 context_request = SimpleNamespace(objective="\n".join([*(scope.objective for scope in scopes),
-                    "Contrastar los requisitos funcionales suministrados con el código de la revisión seleccionada."]),
+                    ("Contrastar los requisitos funcionales suministrados con el código de la revisión seleccionada."
+                     if functional_requirements else "Explorar las capacidades funcionales de la revisión seleccionada sin requisitos explícitos.")]),
                     targets=list(dict.fromkeys(target for scope in scopes for target in scope.targets)))
             publish_audit_context(self.blackboard, identity, snapshot, context_request,
                 started_at=self._states[identity.run_id].created_at,
@@ -491,7 +502,8 @@ class AuditService:
                     security=attribute == "security",
                 )
                 selected, access = (model_selections or {}).get(agent_id, (settings, credentials))
-                model = audit_client(clients, selected, access, build_chat_model)
+                model = None if attribute == "functional_adequacy" and not selected_request else audit_client(
+                    clients, selected, access, build_chat_model)
                 if attribute == "functional_adequacy":
                     operation = run_functional_audit(snapshot, selected_request, policy, model,
                         self.blackboard, child, shared_tokens.fork(), deadline)
