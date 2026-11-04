@@ -2,19 +2,57 @@
 
 import hashlib
 from types import SimpleNamespace
+from typing import get_args
+
+from pydantic import BaseModel, ValidationError
+from pydantic_core import ErrorType
 
 from config.agents.model import AgentSettings
 
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
+from ...config.logs import get_logger
 from ...runtimes.coordination.schemas import Consumption
 from ...runtimes.invocation_reporting import report_invocation_phase
 from ...runtimes.repository.budgeted_model import BudgetedModel
+from . import schemas
 from .agent import FunctionalAdequacyAgent
 from .repository_adapter import MAX_FRAGMENTS, prepare_snapshot_input
 
+logger = get_logger("functional-adequacy-audit")
+
+
+def _log_validation_error(error):
+    """Log contract metadata only: never rejected inputs, messages or context."""
+    contracts = {name: value for name, value in vars(schemas).items()
+        if isinstance(value, type) and issubclass(value, BaseModel) and value is not BaseModel}
+    contracts.update({contract.__name__: contract for contract in (Assessment, Evidence, Finding, AgentSettings)})
+    contract = contracts.get(error.title)
+    allowed_fields = set()
+    if contract is not None:
+        schema = contract.model_json_schema()
+        allowed_fields.update(schema.get("properties", {}))
+        for definition in schema.get("$defs", {}).values():
+            allowed_fields.update(definition.get("properties", {}))
+    diagnostics = []
+    for item in error.errors(include_input=False, include_context=False, include_url=False)[:6]:
+        location = ".".join(str(part) if isinstance(part, int) or part in allowed_fields else "<field>"
+            for part in item["loc"]) or "response"
+        kind = item["type"] if item["type"] in get_args(ErrorType) else "validation_error"
+        diagnostics.append(f"{location}: {kind}")
+    logger.error("Functional adequacy contract validation failed: schema=%s; errors=%d; %s",
+        contract.__name__ if contract is not None else "<unknown>", error.error_count(), "; ".join(diagnostics))
+
 
 async def run_functional_audit(snapshot, requirements, limits, model, board, identity, tokens, timing):
+    try:
+        return await _run_functional_audit(snapshot, requirements, limits, model, board, identity, tokens, timing)
+    except ValidationError as error:
+        _log_validation_error(error)
+        raise
+
+
+async def _run_functional_audit(snapshot, requirements, limits, model, board, identity, tokens, timing):
     await report_invocation_phase("prepare")
     prepared = prepare_snapshot_input(snapshot, requirements)
     fragments = prepared.code_fragments

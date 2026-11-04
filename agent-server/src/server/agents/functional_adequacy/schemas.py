@@ -31,7 +31,7 @@ CapabilityKind = Literal[
     "class",
     "fragment",
 ]
-DetectionKind = Literal["observed", "inferred"]
+DetectionKind = Literal["declared", "observed", "inferred"]
 
 
 class FunctionalRequirement(BaseModel):
