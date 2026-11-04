@@ -22,8 +22,9 @@ const titles: Record<string, ParseKeys<"projects">> = {
 }
 
 /** Compact read-only projection of the same catalog and scope used by the drawer. */
-export function AuditAttributeSummary({ attribute, catalog, selection }: {
+export function AuditAttributeSummary({ attribute, catalog, selection, functionalMode }: {
   attribute: string, catalog: AuditAgentCatalog, selection?: Record<string, string[]>,
+  functionalMode?: "exploratory",
 }) {
   const { t } = useTranslation("projects")
   const { agents, loading, failed, retry } = catalog
@@ -35,7 +36,9 @@ export function AuditAttributeSummary({ attribute, catalog, selection }: {
 
   function chips(members: AgentSettings[]) {
     return <ul className="quality-attribute-investigator-chips">{members.map((agent) => <li key={agent.agentType}>
-      <Badge tone="neutral">{titles[agent.agentType] ? t(titles[agent.agentType]) : agent.name ?? agent.agentType}</Badge>
+      <Badge tone="neutral">{agent.agentType === "functional_adequacy" && functionalMode === "exploratory"
+        ? t("qualityAudits.summary.titles.functionalExploratory")
+        : titles[agent.agentType] ? t(titles[agent.agentType]) : agent.name ?? agent.agentType}</Badge>
     </li>)}</ul>
   }
 

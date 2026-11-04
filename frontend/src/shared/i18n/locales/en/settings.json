@@ -11,7 +11,7 @@
     "drawer": {
       "title": "Configure audit · {{category}}", "description": "Advanced operating configuration. Changes apply to future audits.",
       "sharedBudget": "Shared audit budget", "sharedBudgetHint": "One global token cap shared by all selected attributes. This setting is common to every audit category.",
-      "callLimits": "Hierarchy call limits", "securityOptions": "Security audit options", "functionalOptions": "Functional adequacy options",
+      "callLimits": "Hierarchy call limits", "securityOptions": "Security audit options", "functionalOptions": "Exploratory functional adequacy · execution limits",
       "agentDefaults": "Generic agent parameters", "agentDefaultsHint": "Applied to every agent in this category. max_output_tokens is the output token maximum per response, including managers and coordinators. An explicit individual value replaces the inherited value; no second model cap applies. In maintainability, model/tool call defaults apply to investigators; hierarchy limits above control manager and coordinator aggregate budgets.",
       "defaultsHint": "Leave a field empty to use server defaults. Exclusive settings of individual maintainability agents are configured separately.",
       "fields": {
@@ -36,7 +36,8 @@
     "synchronizingCatalog": "Synchronizing catalog…",
     "noCategories": "The saved catalog has no configurable quality categories. Synchronize the agent catalog to load the category cards.",
     "security": "Security",
-    "functionalAdequacy": "Functional adequacy",
+    "functionalAdequacy": "Functional adequacy · exploratory",
+    "functionalExploratoryDescription": "Static capability analysis without requirements, a model or credentials. Configure execution time limits here.",
     "allAgents": "Maintainability · all agents",
     "saved": "Audit configuration saved"
   },

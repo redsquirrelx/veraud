@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
@@ -22,6 +22,7 @@ import { useAuditStartMessages } from "./auditStartMessages.ts"
 import { useAuditHistoryLabels } from "./auditHistoryLabels.ts"
 import { AuditAttributeConfiguration } from "./AuditAttributeConfiguration.tsx"
 import { auditDraftValues, type AuditAttributeDraft } from "./auditOperatingSettingsApi.ts"
+import { FUNCTIONAL_AUDIT_MODES } from "./functionalAuditUi.ts"
 
 const attributeLabelKeys: Record<string, ParseKeys<"projects">> = {
   maintainability: "auditStatus.pipelines.maintainability",
@@ -58,7 +59,6 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
 }) {
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
-  const attributeId = useId()
   const agentCatalog = useAuditAgentCatalog(view !== "history")
   const startMessages = useAuditStartMessages()
   const historyLabels = useAuditHistoryLabels()
@@ -75,12 +75,8 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const [expandedAttributes, setExpandedAttributes] = useState<Record<string, boolean>>({ maintainability: true, security: true, functional_adequacy: false })
   const [maintainabilitySelection, setMaintainabilitySelection] = useState<Record<string, string[]> | undefined>()
   const invalidMaintainability = selected && maintainabilitySelection !== undefined && Object.keys(maintainabilitySelection).length === 0
-  const [requirementsText, setRequirementsText] = useState("")
   const [attributeDrafts, setAttributeDrafts] = useState<Record<string, AuditAttributeDraft>>({})
   const [configurationRevision, setConfigurationRevision] = useState(0)
-  const requirements = requirementsText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const invalidRequirements = functionalSelected && (requirements.length > 100
-    || requirements.some((description) => description.length > 10000))
   const [audits, setAudits] = useState<QualityAuditSummary[]>([])
   const [loadingAudits, setLoadingAudits] = useState(true)
   const [totalAudits, setTotalAudits] = useState(0)
@@ -133,11 +129,11 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   const configurationAttributes = [
     { id: "maintainability", selected, label: "auditStatus.pipelines.maintainability" },
     { id: "security", selected: securitySelected, label: "auditStatus.pipelines.security" },
-    { id: "functional_adequacy", selected: functionalSelected, label: "auditStatus.pipelines.functionalAdequacy" },
+    { id: "functional_adequacy", selected: functionalSelected, label: FUNCTIONAL_AUDIT_MODES.exploratory.labelKey },
   ] as const
   const selectedAttributes = configurationAttributes.filter((attribute) => attribute.selected).map((attribute) => attribute.id)
   const readinessIssues = auditReadiness(agentCatalog.agents, selectedAttributes).filter((issue) =>
-    issue.attribute !== "functional_adequacy" || requirements.length > 0 || issue.reason === "unavailable")
+    issue.attribute !== "functional_adequacy" || issue.reason === "unavailable")
   const ready = !agentCatalog.loading && !agentCatalog.failed && readinessIssues.length === 0
   let invalidOptions = false
   const attributeOptions: Record<string, Record<string, unknown>> = {}
@@ -149,20 +145,12 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
     } catch { invalidOptions = true }
   }
   const startBlocked = !canRun || !branch || !commitHash || !ready || !selectedAttributes.length
-    || invalidRequirements || invalidMaintainability || invalidOptions || starting || running
+    || invalidMaintainability || invalidOptions || starting || running
   const startBlocker = !branch || !commitHash ? startMessages.revision
     : !canRun ? startMessages.project
     : agentCatalog.loading ? tCommon("ui.loading")
     : !agentCatalog.failed && !selectedAttributes.length ? startMessages.selection
-    : invalidRequirements ? startMessages.requirements
     : starting ? t("qualityAudits.starting") : null
-  const requirementsEditor = <div className="quality-functional-requirements">
-    <label htmlFor={`${attributeId}-requirements`}>{t("qualityAudits.requirements.label")}</label>
-    <p id={`${attributeId}-requirements-help`} className="label">{t("qualityAudits.requirements.help", { minimum: 0, maximum: 100 })}</p>
-    <textarea id={`${attributeId}-requirements`} rows={6} value={requirementsText}
-      aria-describedby={`${attributeId}-requirements-help`} aria-invalid={invalidRequirements}
-      onChange={(event) => setRequirementsText(event.target.value)} />
-  </div>
 
   function setAttributeEnabled(id: string, checked: boolean) {
     setExpandedAttributes((current) => ({ ...current, [id]: checked }))
@@ -201,7 +189,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
   }
 
   async function start() {
-    if (!canRun || running || !ready || !branch || !commitHash || !selectedAttributes.length || invalidRequirements || invalidMaintainability || invalidOptions || starting) return
+    if (!canRun || running || !ready || !branch || !commitHash || !selectedAttributes.length || invalidMaintainability || invalidOptions || starting) return
     setStarting(true)
     setError(null)
     try {
@@ -216,7 +204,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         await startQualityAudit(projectId, branch, commitHash, attributes, {
           ...selectionOptions,
           ...operatingOptions,
-          functional_requirements: requirements.map((description, index) => ({ requirement_id: `REQ-${String(index + 1).padStart(3, "0")}`, description })),
+          functional_requirements: [],
         })
       } else if (Object.keys(selectionOptions).length || Object.keys(operatingOptions).length) await startQualityAudit(projectId, branch, commitHash, attributes, { ...selectionOptions, ...operatingOptions })
       else await startQualityAudit(projectId, branch, commitHash, attributes)
@@ -255,11 +243,11 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
             <div className="quality-attribute-status"><strong>{t(attribute.label)}</strong>
               <Badge tone={attribute.selected ? "success" : "neutral"}>{t(attribute.selected ? "qualityAudits.configuration.active" : "qualityAudits.configuration.inactive")}</Badge>
             </div>
-            {attribute.selected && <AuditAttributeSummary attribute={attribute.id} catalog={agentCatalog} selection={maintainabilitySelection} />}
+            {attribute.selected && <AuditAttributeSummary attribute={attribute.id} catalog={agentCatalog} selection={maintainabilitySelection}
+              functionalMode={attribute.id === "functional_adequacy" ? "exploratory" : undefined} />}
           </div>
         </section>)}
       </fieldset>
-      {functionalSelected && !configurationOpen && requirementsEditor}
       <div className="quality-audit-actions">
         <Button disabled={startBlocked} title={startBlocker ?? undefined} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
         <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
@@ -341,7 +329,6 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
             setSelected(Object.keys(selection).length > 0)
             if (!Object.keys(selection).length) setExpandedAttributes((current) => ({ ...current, maintainability: false }))
            }} /> : <>
-             {attribute.id === "functional_adequacy" && attribute.selected && configurationOpen && requirementsEditor}
              <AuditAttributeConfiguration key={`${configurationRevision}-${attribute.id}`} attribute={attribute.id} catalog={agentCatalog}
                draft={attributeDrafts[attribute.id] ?? { form: {} }}
                onChange={(draft) => setAttributeDrafts((current) => ({ ...current, [attribute.id]: draft }))} />

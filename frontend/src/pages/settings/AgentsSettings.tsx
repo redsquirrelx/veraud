@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParseKeys } from "i18next"
 import { ApiError, listAgentSettings, syncAgentSettings, type AgentSettings, type AiProviderDetail } from "../../infrastructure/http-client/httpClient.ts"
-import { Button, Panel, Spinner } from "../../shared/ui-kit/index.ts"
+import { Button, Card, Panel, Spinner } from "../../shared/ui-kit/index.ts"
 import { AgentSettingsCard } from "./AgentSettingsCard.tsx"
 import { AgentSettingsDrawer } from "./AgentSettingsDrawer.tsx"
 import { AuditSettingsDrawer } from "./AuditSettingsDrawer.tsx"
@@ -104,7 +104,8 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
       return representative ? [{ attribute, agent: representative, mixed: owners.some((agent) =>
         agent.configuration?.model.id !== representative.configuration?.model.id || agent.configuration?.credential.id !== representative.configuration?.credential.id) }] : []
     })
-  const cards = qualityCategories ? categories : agents.filter((agent) => !agentTypes || agentTypes.includes(agent.agentType))
+  const cards = qualityCategories ? categories : agents.filter((agent) => agent.agentType !== "functional_adequacy"
+    && (!agentTypes || agentTypes.includes(agent.agentType)))
     .map((agent) => ({ agent, attribute: undefined, mixed: false }))
 
   return (
@@ -127,7 +128,14 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
           <p className="settings-hint" role="status">{t(qualityCategories ? "audit.noCategories" : "agents.empty")}</p>
         ) : (
           <div className="settings-agents-grid">
-            {cards.map(({ agent, attribute, mixed }) => (
+            {cards.map(({ agent, attribute, mixed }) => attribute === "functional_adequacy" ? (
+              <Card key={attribute} className="settings-agent-card" layout="stack" gap="sm" align="start">
+                <div className="settings-agent-heading"><h3>{labels[attribute] ?? t("audit.functionalAdequacy")}</h3></div>
+                <p className="settings-hint">{t("audit.functionalExploratoryDescription")}</p>
+                <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: labels[attribute] ?? t("audit.functionalAdequacy") })}
+                  onClick={() => setSelectedCategory(attribute)}>{t("agents.card.configure")}</Button>
+              </Card>
+            ) : (
               <AgentSettingsCard
                 key={attribute ?? agent.agentType}
                 agent={agent}

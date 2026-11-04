@@ -1,4 +1,5 @@
 import { requestJson } from "../../infrastructure/http-client/httpClient.ts"
+import { isExploratoryFunctionalField } from "./functionalAuditUi.ts"
 
 export interface ConfigSchema {
   $ref?: string
@@ -9,6 +10,8 @@ export interface ConfigSchema {
   default?: unknown
   minimum?: number
   maximum?: number
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
   minLength?: number
   description?: string
 }
@@ -36,18 +39,22 @@ export function resolveSchema(schema: ConfigSchema, root: ConfigSchema): ConfigS
 
 export interface ConfigField { path: string[], schema: ConfigSchema }
 
-export function configFields(root: ConfigSchema): ConfigField[] {
+export function configFields(root: ConfigSchema, attribute?: string): ConfigField[] {
   const fields: ConfigField[] = []
   function visit(schema: ConfigSchema, path: string[]) {
     const resolved = resolveSchema(schema, root)
     if (resolved.properties) {
       for (const [name, child] of Object.entries(resolved.properties)) {
+        // Functional audits consume a retained snapshot, not repository tools.
+        // Keep accepting legacy shared patches, but do not offer an inert knob.
+        if (attribute === "functional_adequacy" && path[0] === "agent_defaults" && name === "max_tool_calls") continue
         // Legacy security-specific output values are normalized into agent_defaults.
         // Offer exactly one output control in the category drawer.
         if (name === "max_output_tokens" && path[0] === "security_config") continue
         visit(child, [...path, name])
       }
-    } else if (["integer", "number", "string"].includes(resolved.type ?? "")) fields.push({ path, schema: resolved })
+    } else if (["integer", "number", "string"].includes(resolved.type ?? "")
+      && (attribute !== "functional_adequacy" || isExploratoryFunctionalField(path))) fields.push({ path, schema: resolved })
   }
   visit(root, [])
   return fields
@@ -68,7 +75,9 @@ export function settingsValues(fields: ConfigField[], form: Record<string, strin
     const parsed = numeric ? Number(value) : value
     if (numeric && (!Number.isFinite(parsed) || (field.schema.type === "integer" && !Number.isSafeInteger(parsed))
       || (field.schema.minimum !== undefined && Number(parsed) < field.schema.minimum)
-      || (field.schema.maximum !== undefined && Number(parsed) > field.schema.maximum))) throw new Error(field.path.join("."))
+      || (field.schema.maximum !== undefined && Number(parsed) > field.schema.maximum)
+      || (field.schema.exclusiveMinimum !== undefined && Number(parsed) <= field.schema.exclusiveMinimum)
+      || (field.schema.exclusiveMaximum !== undefined && Number(parsed) >= field.schema.exclusiveMaximum))) throw new Error(field.path.join("."))
     let target = result
     for (const key of field.path.slice(0, -1)) target = (target[key] ??= {}) as Record<string, unknown>
     target[field.path.at(-1)!] = parsed
@@ -81,8 +90,31 @@ export interface AuditAttributeDraft {
   form: Record<string, string>
 }
 
+/** Saving the visible exploration controls must not erase the hidden LLM settings. */
+export function preserveHiddenSettings(descriptor: AuditSettingsDescriptor, fields: ConfigField[], form: Record<string, string>) {
+  const result = structuredClone(descriptor.values)
+  for (const { path } of fields) {
+    let target: Record<string, unknown> | undefined = result
+    for (const key of path.slice(0, -1)) {
+      const value: unknown = target?.[key]
+      target = value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined
+    }
+    if (target) delete target[path.at(-1)!]
+  }
+  function merge(target: Record<string, unknown>, patch: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        const current = target[key]
+        target[key] = merge(current !== null && typeof current === "object" ? current as Record<string, unknown> : {}, value as Record<string, unknown>)
+      } else target[key] = value
+    }
+    return target
+  }
+  return merge(result, settingsValues(fields, form))
+}
+
 export function auditDraftValues(attribute: string, draft?: AuditAttributeDraft) {
   if (!draft?.descriptor) return {}
-  return settingsValues(configFields(draft.descriptor.schema).filter((field) =>
+  return settingsValues(configFields(draft.descriptor.schema, attribute).filter((field) =>
     field.path[0] === "agent_defaults" || field.path[0] === (attribute === "security" ? "security_config" : "functional_config")), draft.form)
 }

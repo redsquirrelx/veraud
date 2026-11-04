@@ -7,42 +7,46 @@ import { AuditSettingsDrawer } from "./AuditSettingsDrawer.tsx"
 beforeAll(async () => { await initializeI18n("en") })
 afterEach(async () => { vi.unstubAllGlobals(); await changeLanguage("en") })
 
-it("loads saved values, accepts a large shared budget and saves category operating overrides", async () => {
+it("only edits exploratory time limits and preserves every hidden LLM setting on save", async () => {
   const schema = { type: "object", properties: {
     audit_budget: { type: "object", properties: { max_total_tokens: { type: "integer", minimum: 1000 } } },
-    functional_config: { type: "object", properties: { retrieval_top_k: { type: "integer", minimum: 1, maximum: 20 } } },
+    functional_config: { type: "object", properties: {
+      timeout_seconds: { type: "number", exclusiveMinimum: 0 },
+      max_wall_time_seconds: { type: "number", exclusiveMinimum: 0 },
+      retrieval_top_k: { type: "integer", minimum: 1, maximum: 20 },
+      embedding_model: { type: "string" }, provider_request_timeout_seconds: { type: "number" },
+    } },
     agent_defaults: { type: "object", properties: {
       max_context_characters: { type: "integer", minimum: 1000 },
       max_output_tokens: { type: "integer", minimum: 256, default: 4000 },
     } },
   } }
-  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ schema,
-    values: { functional_config: { retrieval_top_k: 3 }, agent_defaults: { max_output_tokens: 8000 } } })))
+  const hidden = { audit_budget: { max_total_tokens: 100000 }, agent_defaults: { max_output_tokens: 8000 },
+    functional_config: { timeout_seconds: 30, retrieval_top_k: 3, embedding_model: "saved-embedding-model",
+      provider_rate_limits: { requests_per_minute: null, tokens_per_minute: 700000 } } }
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ schema, values: hidden })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ values: {} })))
   vi.stubGlobal("fetch", fetch)
   const close = vi.fn()
-  render(<AuditSettingsDrawer attribute="functional_adequacy" label="Functional adequacy" open onClose={close} />)
-  const retrieval = await screen.findByLabelText("Maximum retrieved results")
-  expect(retrieval).toHaveValue(3)
-  const output = screen.getByLabelText("Maximum output tokens per call")
-  expect(output).toHaveValue(8000)
-  await userEvent.clear(output)
-  await userEvent.type(output, "255")
+  render(<AuditSettingsDrawer attribute="functional_adequacy" label="Functional adequacy · exploratory" open onClose={close} />)
+  const timeout = await screen.findByLabelText("timeout_seconds")
+  expect(timeout).toHaveValue(30)
+  expect(screen.queryByLabelText("Maximum retrieved results")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Maximum output tokens per call")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Shared total token budget")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("embedding_model")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("provider_request_timeout_seconds")).not.toBeInTheDocument()
+  await userEvent.clear(timeout)
+  await userEvent.type(timeout, "0")
   expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled()
-  await userEvent.clear(output)
-  await userEvent.type(output, "16000")
-  await userEvent.type(screen.getByLabelText("Shared total token budget"), "300000000000")
-  await userEvent.clear(retrieval)
-  await userEvent.type(retrieval, "0")
-  expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled()
-  await userEvent.clear(retrieval)
-  await userEvent.type(retrieval, "4")
+  await userEvent.clear(timeout)
+  await userEvent.type(timeout, "45")
+  await userEvent.type(screen.getByLabelText("max_wall_time_seconds"), "90")
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
   await waitFor(() => expect(close).toHaveBeenCalledOnce())
-  expect(fetch.mock.calls[1]?.[1]).toMatchObject({ method: "PUT", body: JSON.stringify({
-    audit_budget: { max_total_tokens: 300000000000 }, functional_config: { retrieval_top_k: 4 },
-    agent_defaults: { max_output_tokens: 16000 },
-  }) })
+  expect(fetch.mock.calls[1]?.[1]?.method).toBe("PUT")
+  expect(JSON.parse(fetch.mock.calls[1]?.[1]?.body)).toEqual({ ...hidden,
+    functional_config: { ...hidden.functional_config, timeout_seconds: 45, max_wall_time_seconds: 90 } })
 })
 
 it("cancels without saving loaded settings", async () => {

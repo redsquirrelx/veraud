@@ -137,15 +137,24 @@ describe("SettingsPage", () => {
       { status: 200, body: providers },
       { status: 200, body: rows.map((row) => ({ ...row, qualityAttributes: [] })) },
       { status: 200, body: rows },
+      { status: 200, body: rows },
     ])
     await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
     expect(await screen.findByText(/The saved catalog has no configurable quality categories/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Synchronize agent catalog" }))
     expect(await screen.findByRole("heading", { name: "Maintainability · all agents" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Security" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Functional adequacy" })).toBeInTheDocument()
+    const functional = screen.getByRole("heading", { name: "Functional adequacy · exploratory" }).closest<HTMLElement>(".settings-agent-card")!
+    expect(functional).toBeInTheDocument()
+    expect(within(functional).queryByRole("button", { name: "Select a model..." })).not.toBeInTheDocument()
+    expect(within(functional).queryByRole("button", { name: "Select a credential..." })).not.toBeInTheDocument()
+    expect(within(functional).queryByRole("button", { name: /Verify/ })).not.toBeInTheDocument()
+    expect(within(functional).getByRole("button", { name: "Configure Functional adequacy · exploratory" })).toBeInTheDocument()
     expect(calls.at(-1)).toMatchObject({ method: "POST", url: expect.stringContaining("/api/agent-settings/sync") })
     expect(screen.queryByText(/The saved catalog has no configurable quality categories/)).toBeNull()
+    await userEvent.click(screen.getByRole("tab", { name: "Agents" }))
+    await screen.findByRole("heading", { name: "maintainability_manager" })
+    expect(screen.queryByRole("heading", { name: "functional_adequacy" })).not.toBeInTheDocument()
   })
 
   it("edits a model through its existing modal, keeping the provider fixed", async () => {
