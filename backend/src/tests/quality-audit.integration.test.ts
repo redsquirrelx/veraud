@@ -165,7 +165,10 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
     if (attributes.length === 1 && attributes[0] === "functional_adequacy") {
       const originalFetch = globalThis.fetch
       const saved = { audit_budget: { max_total_tokens: 300000000000 },
-        agent_defaults: { max_context_characters: 240000, max_output_tokens: 12000 }, functional_config: { retrieval_top_k: 3 } }
+        agent_defaults: { max_context_characters: 240000, max_output_tokens: 12000 }, functional_config: {
+          retrieval_top_k: 3, timeout_seconds: 45, max_wall_time_seconds: 90, provider_request_timeout_seconds: 8,
+          max_provider_retries: 2, provider_rate_limits: { requests_per_minute: 30, tokens_per_minute: 600000 },
+        } }
       globalThis.fetch = async (_url, init) => new Response(JSON.stringify(init?.method === "POST"
         ? { values: JSON.parse(String(init.body)) } : { schema: { type: "object" }, level: "developer" }))
       try {
@@ -175,10 +178,17 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
           "saved settings survive service recreation")
         assert.deepEqual((await service.get("security")).values, { audit_budget: saved.audit_budget },
           "shared budget is global while category operating overrides stay scoped")
-         assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
+          assert.deepEqual(await service.executionOptions(["functional_adequacy"], {}), {
           audit_budget: saved.audit_budget,
           attribute_options: { functional_adequacy: { agent_defaults: saved.agent_defaults, functional_config: saved.functional_config } },
-         })
+          })
+          const patched = await service.executionOptions(["functional_adequacy"], { functional_config: {
+            timeout_seconds: 20, provider_rate_limits: { requests_per_minute: null },
+          } })
+          assert.deepEqual(patched.attribute_options?.functional_adequacy?.functional_config, {
+            ...saved.functional_config, timeout_seconds: 20,
+            provider_rate_limits: { requests_per_minute: null, tokens_per_minute: 600000 },
+          }, "per-run functional limits override saved values without resetting another quota")
          await db.auditSettings.create({ data: { attribute: "security", options: JSON.stringify({
            security_config: { max_scan_files: 30, max_output_tokens: 6000 },
          }) } })

@@ -266,6 +266,11 @@ class AuditService:
                 timeout = config.timeout_seconds
                 if security and security_config is not None and "timeout_seconds" in security_config.model_fields_set:
                     timeout = min(timeout, limits.timeout_seconds)
+                if attributes == ["functional_adequacy"] and (
+                    functional_config is not None and "timeout_seconds" in functional_config.model_fields_set
+                    or "timeout_seconds" in ((attribute_options or {}).get("functional_adequacy", {}).get("functional_config") or {})
+                ):
+                    timeout = min(timeout, limits.timeout_seconds)
                 limits = validate_agent_config(audit_root(attributes),
                     {"timeout_seconds": timeout}, base=limits)
             except ValidationError:
@@ -293,10 +298,11 @@ class AuditService:
         except ValidationError:
             raise InvalidConfigError("Invalid per-agent output token override; use the runtime max_output_tokens constraints.") from None
         try:
-            validate_audit_output_capacity(limits)
+            if model_attributes:
+                validate_audit_output_capacity(limits)
             if "security" in attributes:
                 validate_audit_output_capacity(security_limits)
-            if "functional_adequacy" in attributes:
+            if functional_requirements:
                 validate_audit_output_capacity(functional_limits)
         except ValueError as error:
             raise InvalidConfigError(str(error)) from None
