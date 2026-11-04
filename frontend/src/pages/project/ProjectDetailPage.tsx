@@ -25,6 +25,7 @@ import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
 import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
+import { ProjectAuditSummary } from "./ProjectAuditSummary.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
@@ -339,6 +340,7 @@ export function ProjectDetailPage() {
               )}
               </section>
             </Card>}
+            {activeSection === "overview" && <ProjectAuditSummary key={project.id} projectId={project.id} commitHash={activeHash} />}
             {activeSection === "overview" && analysis.execution !== null
               && (orientationSummary !== null || projectArchitectureSummary !== null
                 || semanticValidationSummary !== null) && (
