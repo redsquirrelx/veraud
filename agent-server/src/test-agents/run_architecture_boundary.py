@@ -11,7 +11,8 @@ Con clave, LangSmithTracingBackend registra el agente, grafo, nodos y llamadas L
 Sin clave, ejecuta normalmente sin tracing. Para ocultar código/prompts en las
 trazas: LANGSMITH_HIDE_INPUTS=true y LANGSMITH_HIDE_OUTPUTS=true en el .env.
 Realiza llamadas reales al proveedor (pueden generar costes). Muestra el plan y los resultados provisionales
-legible; --output json conserva la salida JSON completa. No
+legible; --output json muestra la salida JSON completa y --output-file RUTA
+guarda el resultado completo en un archivo UTF-8, independientemente del formato de consola. No
 escribe en el repositorio auditado. Ver --help para todas las opciones.
 """
 
@@ -111,10 +112,13 @@ async def run_audit(args, root, request, config, model, settings, *, tracing_bac
             provider=settings.provider,
             model=settings.name,
         )
+    serialized = json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    if getattr(args, "output_file", None):
+        Path(args.output_file).write_text(serialized + "\n", encoding="utf-8")
     if getattr(args, "output", "json") == "readable":
         print(render_boundary_plan(result))
     else:
-        print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        print(serialized)
 
 
 def render_boundary_plan(result):
@@ -200,6 +204,7 @@ def main():
     parser.add_argument("--max-files", type=int, default=2000)
     parser.add_argument("--output", choices=("readable", "json"), default="readable",
         help="Readable plan (default) or complete canonical JSON")
+    parser.add_argument("--output-file", help="Save the complete audit result as UTF-8 JSON at this path")
     asyncio.run(run(parser.parse_args()))
 
 
