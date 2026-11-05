@@ -48,7 +48,7 @@ class StartAuditRequest(AuditExecutionOptions):
     repository_path: str = Field(min_length=1, pattern=r"\S")
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
     attributes: QualityAttributes | None = None
-    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, min_length=1, max_length=100)
+    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, max_length=100)
     security_request: SecurityAuditRequest | None = Field(default=None,
         description="Security scope. With attributes, participates only when security is selected; without attributes, selects security for compatibility.")
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)

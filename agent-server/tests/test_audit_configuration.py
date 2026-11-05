@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from config.agents.execution import AgentExecutionConfig
-from server.app.audit_configuration import resolve_attribute_limits
+from server.app.audit_configuration import resolve_attribute_limits, validate_category
 from server.main import app
 
 
@@ -67,9 +67,12 @@ def test_drawer_rejects_output_reservations_that_cannot_fit_provider_tpm(attribu
     quota = configuration_type(identifier)().provider_rate_limits.tokens_per_minute
     with TestClient(app) as client:
         for output in (quota, 1000000):
+            values = {"agent_defaults": {"max_output_tokens": output}}
+            with pytest.raises(ValueError, match="tokens_per_minute"):
+                validate_category(attribute, values)
             response = client.post(f"/api/audits/configuration/{attribute}/validate",
-                json={"agent_defaults": {"max_output_tokens": output}})
+                json=values)
             assert response.status_code == 422
-            assert "tokens_per_minute" in response.json()["detail"]
+            assert isinstance(response.json()["detail"], str), "HTTP diagnostics retain the shared privacy policy"
         assert client.post(f"/api/audits/configuration/{attribute}/validate",
             json={"agent_defaults": {"max_output_tokens": 16000}}).status_code == 200

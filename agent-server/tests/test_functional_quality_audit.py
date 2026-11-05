@@ -113,9 +113,100 @@ def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts
     audit_environment.async_client.aclose.assert_awaited_once()
 
 
-@pytest.mark.parametrize("requirements", [None, [], [{"requirement_id": "same", "description": "One"},
+@pytest.mark.parametrize("requirements", [[{"requirement_id": "same", "description": "One"},
     {"requirement_id": "same", "description": "Two"}], [{"requirement_id": "blank", "description": " "}]])
 def test_functional_requirements_are_validated_before_audit_execution(requirements):
     with pytest.raises(InvalidConfigError):
         quality_audit_definition.parse_input({"root_path": "checkout", "commit_hash": "a" * 40,
             "attributes": ["functional_adequacy"], "functional_requirements": requirements})
+
+
+@pytest.mark.parametrize("requirements", [None, []])
+@pytest.mark.parametrize("with_security", [False, True])
+def test_exploration_reuses_snapshot_and_publishes_identical_agent_output_without_functional_model(
+        audit_environment, monkeypatch, requirements, with_security):
+    from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
+    from server.agents.functional_adequacy.repository_adapter import (
+        prepare_snapshot_input,
+    )
+    from server.config.schemas import AgentSettings
+
+    root = audit_environment.root
+    (root / "main.py").write_text("def entry():\n" + "    value = 1\n" * 50 + "    return value\n", encoding="utf-8")
+    commit = _committed_checkout(root)
+    monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
+    analyze = audit_service.RepositoryAnalysisService.analyze
+    snapshots = []
+
+    async def retain(self, request):
+        snapshot = await analyze(self, request)
+        snapshots.append(snapshot)
+        return snapshot
+
+    monkeypatch.setattr(audit_service.RepositoryAnalysisService, "analyze", retain)
+    attributes = [*(["security"] if with_security else []), "functional_adequacy"]
+    configs = {"security": ExecutionConfig(model={"provider": "openai", "name": "security"}, api_key="private-key")} if with_security else {}
+    if not with_security:
+        monkeypatch.setattr(audit_service, "default_model_configuration",
+            lambda: pytest.fail("Exploration must not load model defaults or credentials"))
+    sink = _RecordingSink()
+
+    async def run():
+        payload = (await GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend()).run(
+            "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": attributes,
+                "functional_requirements": requirements}, ExecutionConfig(), stage_configs=configs,
+            execution_ids={"security" if with_security else "functional_adequacy": 42}))["audit"]
+        assert len(snapshots) == 1, "All attributes must use the same retained revision"
+        direct = FunctionalAdequacyAgent(AgentSettings(agent_id="functional_adequacy", timeout_seconds=120), model=None,
+            config=FunctionalAdequacyConfig())
+        expected = await direct.run(prepare_snapshot_input(snapshots[0], []))
+        assessment = next(item for item in payload["blackboard"]["assessments"] if item["agent_id"] == "functional_adequacy")
+        assert assessment["details"]["functional_output"] == expected.model_dump(mode="json")
+        assert expected.audit_mode == "exploratory" and not expected.score_applicable
+        assert assessment["consumption"]["model_calls"] == 0
+        assert "%" not in assessment["summary"]
+        assert expected.findings
+        published = [item for item in payload["blackboard"]["findings"] if item["agent_id"] == "functional_adequacy"]
+        assert len(published) == len(expected.findings)
+        assert {item["details"]["subcharacteristic"] for item in published} == {
+            "functional_completeness", "functional_correctness", "functional_appropriateness"}
+        evidence_ids = {item["id"] for item in payload["blackboard"]["evidence"]}
+        assert all(set(item["evidence_ids"]) <= evidence_ids for item in published)
+        assert any(item["evidence_ids"] for item in published)
+        source_files = {item.path: item for item in snapshots[0].files}
+        for evidence in payload["blackboard"]["evidence"]:
+            if evidence["tool_call_id"] == "functional-exploration":
+                lines = source_files[evidence["source"]].content.splitlines()
+                assert evidence["content"] == "\n".join(lines[evidence["start_line"] - 1:evidence["end_line"]])
+        findings = [item for item in payload["report"]["quality_results"]["findings"] if item["quality_attribute"] == "functional_adequacy"]
+        assert len(findings) == len(published)
+        assert all(item["verification_status"] != "verified" for item in findings)
+        assert base64.b64decode(payload["docx_base64"]).startswith(b"PK")
+        phases = [receipt["phase"] for _, receipt in sink.invocations
+            if receipt["agent_id"] == "functional_adequacy" and receipt.get("phase")]
+        assert list(dict.fromkeys(phases)) == ["prepare", "exploratory_analysis", "build_exploratory_results"]
+
+    asyncio.run(run())
+    if not with_security:
+        audit_environment.factory.assert_not_called()
+
+
+def test_exploration_without_source_retains_uncertainty_in_audit_status(audit_environment, monkeypatch):
+    root = audit_environment.root
+    for source in root.glob("*.py"):
+        source.unlink()
+    (root / "README.md").write_text("Documentation only.\n", encoding="utf-8")
+    commit = _committed_checkout(root)
+    monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
+
+    async def run():
+        return (await GenericPipelineService(callbacks_factory=lambda: None, tracing_backend=NoOpTracingBackend()).run(
+            "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": ["functional_adequacy"]},
+            ExecutionConfig(), stage_configs={}))["audit"]
+
+    result = asyncio.run(run())
+    assert result["status"] == "partial"
+    assessment = next(item for item in result["blackboard"]["assessments"] if item["agent_id"] == "functional_adequacy")
+    assert assessment["termination_reason"] == "incomplete_evidence"
+    assert assessment["details"]["functional_output"]["capabilities"] == []
+    audit_environment.factory.assert_not_called()

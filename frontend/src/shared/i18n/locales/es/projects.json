@@ -107,7 +107,10 @@
     },
     "setup": {
       "securityScope": "Seguridad ejecuta las técnicas disponibles del catálogo. Su selección individual no está soportada por el ejecutor.",
-      "functionalScope": "La adecuación funcional contrasta los requisitos indicados con el código de la revisión seleccionada.",
+      "functionalScope": "La adecuación funcional contrasta los requisitos con la revisión seleccionada o explora capacidades estáticas cuando no se indican requisitos.",
+      "functionalExploratory": "Adecuación funcional · exploratoria",
+      "functionalRequirementsBased": "Adecuación funcional · basada en requisitos (LLM)",
+      "functionalExploratoryScope": "Análisis estático de capacidades funcionales sin requisitos, modelo ni credenciales. Solo aplican los límites de tiempo de ejecución; no se calcula un porcentaje de cumplimiento.",
       "inheritedSettings": "Se heredan los modelos, credenciales y parámetros guardados. El acceso al modelo se comprueba nuevamente al iniciar.",
       "advanced": "Parámetros avanzados de esta ejecución (desarrollador)",
       "runOnly": "Cambios locales para la próxima auditoría. Los campos vacíos heredan los valores guardados; no se modifican los ajustes globales.",
@@ -146,7 +149,7 @@
         "architectureBoundary": "Límites arquitectónicos", "responsibility": "Responsabilidades", "dependencyImpact": "Impacto de dependencias",
         "abstraction": "Abstracciones", "reuseOpportunity": "Oportunidades de reúso", "componentAdaptability": "Adaptabilidad",
         "sast": "Análisis estático", "secrets": "Secretos", "dependencies": "Dependencias", "enrichment": "Contexto",
-        "remediation": "Remediación", "validation": "Validación", "verification": "Verificación", "functional": "Verificación funcional"
+        "remediation": "Remediación", "validation": "Validación", "verification": "Verificación", "functional": "Verificación funcional", "functionalExploratory": "Análisis estático de capacidades"
       }
     },
     "title": "Auditoría de calidad",
@@ -155,11 +158,11 @@
     "attributes": {
       "maintainability": { "description": "Estructura del código y facilidad de evolución." },
       "security": { "description": "Riesgos y posibles vulnerabilidades del repositorio." },
-      "functionalAdequacy": { "description": "Contrasta requisitos funcionales con el código del repositorio." }
+      "functionalAdequacy": { "description": "Contrasta requisitos con el código o explora capacidades funcionales sin un modelo." }
     },
     "requirements": {
       "label": "Requisitos funcionales",
-      "help": "Escribe un requisito por línea ({{minimum}}–{{maximum}}). Se asignan identificadores como REQ-001 y se conserva cada resultado en el informe."
+      "help": "Escribe un requisito por línea ({{minimum}}–{{maximum}}). Déjalo vacío para una exploración estática sin modelo ni porcentaje de cumplimiento. Si indicas requisitos, se asignan identificadores como REQ-001."
     },
     "start": "Iniciar auditoría",
     "starting": "Iniciando…",

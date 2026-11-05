@@ -1,9 +1,38 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
 import type { AuditReportSection } from "./audit-report-sections.js"
+import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
+import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 
 /** Audit artifacts live in the existing version/evaluation/execution storage. */
 export class QualityAuditRepository {
   constructor(private db: PrismaClient) {}
+
+  /** The deterministic functional adapter has no model snapshot to prepare.
+   *  It uses the same QualityAudit rows and dispatch/cancellation lifecycle. */
+  async createExploratoryFunctionalAudit(projectId: number, branch: string, commitHash: string) {
+    return this.db.$transaction(async (tx) => {
+      const agent = await tx.agentSettings.findUnique({ where: { agentType: "functional_adequacy" },
+        select: { catalogDeclared: true, availability: true } })
+      if (!agent?.catalogDeclared || agent.availability !== "available") {
+        throw new AgentConfigurationError([{ agentType: "functional_adequacy", reason: "Agent is not available in the agent-server catalog" }])
+      }
+      const running = await tx.agentExecution.findFirst({ where: {
+        status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
+      } })
+      if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      const version = await tx.projectVersion.upsert({
+        where: { projectId_commitHash: { projectId, commitHash } },
+        create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
+      })
+      await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: "QualityAudit" } })
+      const execution = await tx.agentExecution.create({ data: {
+        evaluationId: evaluation.id, agentType: "functional_adequacy", status: "Waiting",
+        result: JSON.stringify({ attributes: ["functional_adequacy"] }),
+      } })
+      return { versionId: version.id, evaluationId: evaluation.id, executionId: execution.id }
+    })
+  }
 
   async projectExists(projectId: number) {
     return await this.db.project.findUnique({ where: { id: projectId }, select: { id: true } }) !== null

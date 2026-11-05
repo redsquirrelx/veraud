@@ -32,7 +32,7 @@ class QualityAuditInput(AuditExecutionOptions):
     request: MaintainabilityRequest = Field(default_factory=MaintainabilityRequest)
     maintainability_selection: dict[str, list[str]] | None = None
     security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
-    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, min_length=1, max_length=100)
+    functional_requirements: list[FunctionalRequirement] | None = Field(default=None, max_length=100)
 
 
 def parse_input(raw):
@@ -44,8 +44,8 @@ def parse_input(raw):
             parsed.request = MaintainabilityRequest.model_validate({**parsed.request.model_dump(),
                 "dimensions": list(parsed.maintainability_selection),
                 "investigator_selection": parsed.maintainability_selection})
-        if ("functional_adequacy" in parsed.attributes) != (parsed.functional_requirements is not None):
-            raise InvalidConfigError("Functional adequacy requires functional_requirements; omit them for other attributes.")
+        if "functional_adequacy" not in parsed.attributes and parsed.functional_requirements is not None:
+            raise InvalidConfigError("functional_requirements requires functional_adequacy in attributes.")
         if parsed.functional_requirements and len({item.requirement_id for item in parsed.functional_requirements}) != len(parsed.functional_requirements):
             raise InvalidConfigError("Functional requirement IDs must be distinct.")
         return parsed
@@ -119,7 +119,9 @@ class QualityAuditRunner:
 
 
 async def build_agents(exec_service, config, stage_configs, parsed, timeout_seconds):
-    validate_model_configs(stage_configs, parsed.attributes)
+    model_attributes = [attribute for attribute in parsed.attributes
+        if attribute != "functional_adequacy" or parsed.functional_requirements]
+    validate_model_configs(stage_configs, model_attributes)
     selected = (stage_configs or {}).get(audit_root(parsed.attributes), config)
     return {"maintainability_manager": QualityAuditRunner(selected, stage_configs)}, {}
 

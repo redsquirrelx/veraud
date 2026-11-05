@@ -4,7 +4,7 @@ import type { ParseKeys } from "i18next"
 import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import "../../shared/ui-kit/Field.css"
 import { Button, Drawer, Spinner } from "../../shared/ui-kit/index.ts"
-import { configFields, fieldValue, getAuditSettings, saveAuditSettings, settingsValues,
+import { configFields, fieldValue, getAuditSettings, saveAuditSettings, settingsValues, preserveHiddenSettings,
   type AuditSettingsDescriptor } from "./auditSettingsApi.ts"
 
 interface Props { attribute: string, label: string, open: boolean, onClose: () => void }
@@ -36,7 +36,7 @@ export function AuditSettingsDrawer({ attribute, label, open, onClose }: Props) 
     const controller = new AbortController()
     getAuditSettings(attribute, controller.signal).then((value) => {
       if (controller.signal.aborted) return
-      const values = Object.fromEntries(configFields(value.schema).map((field) => [field.path.join("."), fieldValue(value.values, field.path)]))
+      const values = Object.fromEntries(configFields(value.schema, attribute).map((field) => [field.path.join("."), fieldValue(value.values, field.path)]))
       setDescriptor(value); setForm(values); setInitial(values); setLoading(false)
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
@@ -47,7 +47,7 @@ export function AuditSettingsDrawer({ attribute, label, open, onClose }: Props) 
     })
     return () => controller.abort()
   }, [attribute, open, attempt])
-  const fields = descriptor ? configFields(descriptor.schema) : []
+  const fields = descriptor ? configFields(descriptor.schema, attribute) : []
   const dirty = JSON.stringify(form) !== JSON.stringify(initial)
   let valid = true
   try { settingsValues(fields, form) } catch { valid = false }
@@ -60,7 +60,11 @@ export function AuditSettingsDrawer({ attribute, label, open, onClose }: Props) 
   async function save() {
     if (!descriptor || !dirty || !valid || saving) return
     setSaving(true); setError(null)
-    try { await saveAuditSettings(attribute, settingsValues(fields, form)); onClose() }
+    try {
+      await saveAuditSettings(attribute, attribute === "functional_adequacy"
+        ? preserveHiddenSettings(descriptor, fields, form) : settingsValues(fields, form))
+      onClose()
+    }
     catch (cause) {
       setError(cause instanceof ApiError && cause.messageSource !== "client"
         ? { key: "audit.drawer.saveFailedWithDetail", detail: cause.message } : { key: "audit.drawer.saveFailed" })

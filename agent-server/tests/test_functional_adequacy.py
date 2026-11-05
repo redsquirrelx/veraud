@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from server.agents.functional_adequacy.agent import FunctionalAdequacyAgent
+from server.agents.functional_adequacy.agent import (
+    SBERT_DEPENDENCY_ERROR,
+    FunctionalAdequacyAgent,
+    SemanticRetrievalUnavailableError,
+)
 from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
 from server.agents.functional_adequacy.schemas import FunctionalAdequacyInput
 
@@ -27,6 +31,35 @@ def make_input(requirements, fragments):
         "requirements": requirements,
         "code_fragments": fragments,
     })
+
+
+def test_exploration_never_loads_semantic_retrieval_or_calls_a_model():
+    data = make_input([], [{"fragment_id": "CODE-001", "file_path": "routes.py:1-2",
+        "code": "def list_items():\n    return []"}])
+    with (
+        patch("server.agents.functional_adequacy.agent._get_sbert_model", side_effect=AssertionError("No SBERT")),
+        patch("server.agents.functional_adequacy.agent.traced_generate", side_effect=AssertionError("No LLM")),
+    ):
+        output = asyncio.run(build_agent().run(data))
+    assert output.audit_mode == "exploratory"
+    assert not output.score_applicable
+    assert {item.attribute for item in output.subattributes} == {"completitud", "correccion", "pertinencia"}
+
+
+def test_missing_semantic_retrieval_returns_the_branch_controlled_result():
+    data = make_input([{"requirement_id": "REQ-001", "description": "Allow login."}],
+        [{"fragment_id": "CODE-001", "file_path": "auth.py", "code": "def login(): return True"}])
+    with (
+        patch("server.agents.functional_adequacy.agent._get_sbert_model",
+            side_effect=SemanticRetrievalUnavailableError(SBERT_DEPENDENCY_ERROR)),
+        patch("server.agents.functional_adequacy.agent.traced_generate", side_effect=AssertionError("No evidence")),
+    ):
+        output = asyncio.run(build_agent().run(data))
+    assert output.audit_mode == "requirements_based"
+    assert output.score == 0
+    assert output.results[0].status == "evidencia_insuficiente"
+    assert SBERT_DEPENDENCY_ERROR in output.results[0].justification
+    assert SBERT_DEPENDENCY_ERROR in output.limitations
 
 
 def test_rejects_duplicate_requirement_ids():

@@ -107,7 +107,10 @@
     },
     "setup": {
       "securityScope": "Security runs the available catalog techniques. Selecting individual techniques is not supported by the executor.",
-      "functionalScope": "Functional adequacy checks the supplied requirements against the selected code revision.",
+      "functionalScope": "Functional adequacy checks supplied requirements against the selected revision, or explores static capabilities when no requirements are supplied.",
+      "functionalExploratory": "Functional adequacy · exploratory",
+      "functionalRequirementsBased": "Functional adequacy · requirements-based (LLM)",
+      "functionalExploratoryScope": "Static analysis of functional capabilities without requirements, a model or credentials. Only execution time limits apply; no compliance percentage is calculated.",
       "inheritedSettings": "Saved models, credentials and operating settings are inherited. Model access is checked again when starting.",
       "advanced": "Advanced settings for this run (developer)",
       "runOnly": "Local changes for the next audit. Empty fields inherit saved values; global settings are not changed.",
@@ -146,7 +149,7 @@
         "architectureBoundary": "Architectural boundaries", "responsibility": "Responsibilities", "dependencyImpact": "Dependency impact",
         "abstraction": "Abstractions", "reuseOpportunity": "Reuse opportunities", "componentAdaptability": "Adaptability",
         "sast": "Static analysis", "secrets": "Secrets", "dependencies": "Dependencies", "enrichment": "Context",
-        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification"
+        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification", "functionalExploratory": "Static capability analysis"
       }
     },
     "title": "Quality audit",
@@ -155,11 +158,11 @@
     "attributes": {
       "maintainability": { "description": "Code structure and ease of evolution." },
       "security": { "description": "Repository risks and potential vulnerabilities." },
-      "functionalAdequacy": { "description": "Compare functional requirements with the repository code." }
+      "functionalAdequacy": { "description": "Compare requirements with repository code, or explore functional capabilities without a model." }
     },
     "requirements": {
       "label": "Functional requirements",
-      "help": "Enter one requirement per line ({{minimum}}–{{maximum}}). IDs such as REQ-001 are assigned, and each result is included in the report."
+      "help": "Enter one requirement per line ({{minimum}}–{{maximum}}). Leave empty for static exploration without a model or compliance percentage. IDs such as REQ-001 are assigned when requirements are supplied."
     },
     "start": "Start audit",
     "starting": "Starting…",
