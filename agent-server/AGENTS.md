@@ -33,6 +33,7 @@ These rules apply to `agent-server/`. All paths below are relative to that direc
 4. Each agent MUST retain its domain decisions, specialized contracts and graph topology.
 5. Code extraction MUST preserve existing nodes, routes and termination rules unless a functional change is requested.
 6. `src/server/agents/` MUST contain exactly `maintainability/`, `functional_adequacy/` and `security/` as source packages. Project analysis, reporting, examples and neutral contracts MUST remain outside it.
+   Maintainability's integrated participants live under `maintainability/v1/`. `maintainability/v2/` contains only an independent architecture-boundary copy and MUST NOT be registered or integrated.
 7. Canonical schemas for a maintainability investigator/coordinator/manager MUST live with that participant. Neutral envelopes MUST live in `contracts/` or `runtimes/coordination/contracts.py`; compatibility re-exports MUST point to the same classes and MUST NOT be used by production consumers.
 8. `src/server/runtimes/`, `contracts/` and `infrastructure/` MUST NOT import `app/` or `api/`. FastAPI and composition modules may depend inward on those packages.
 9. Discovery/configuration catalogs may import implementation modules lazily to describe contracts; they MUST NOT instantiate agents, models, repositories or toolsets.

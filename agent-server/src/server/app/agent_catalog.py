@@ -74,11 +74,11 @@ def _definitions(service):
     """Return descriptors and optional typed input/output contracts, lazily."""
     from server.app.pipeline_registry import default_pipeline_registry
 
-    from ..agents.maintainability.manager.registry import COORDINATORS
-    from ..agents.maintainability.modularity.coordinator.registry import (
+    from ..agents.maintainability.v1.manager.registry import COORDINATORS
+    from ..agents.maintainability.v1.modularity.coordinator.registry import (
         INVESTIGATORS as MODULARITY,
     )
-    from ..agents.maintainability.reusability.coordinator.registry import (
+    from ..agents.maintainability.v1.reusability.coordinator.registry import (
         INVESTIGATORS as REUSABILITY,
     )
     from .audit_models import MAINTAINABILITY_AGENT_TYPES
@@ -118,8 +118,8 @@ def _definitions(service):
     add("maintainability_manager", "MaintainabilityManagerAgent", "manager", ["audit", "pipeline"],
         "Coordinates the implemented maintainability dimensions over one audit snapshot.",
         config="maintainability_manager", workflows=["quality-audit"], attributes=["maintainability"], children=COORDINATORS,
-        request=_symbol("maintainability.manager.schemas", "MaintainabilityRequest"),
-        result=_symbol("maintainability.manager.schemas", "MaintainabilityReport"))
+        request=_symbol("maintainability.v1.manager.schemas", "MaintainabilityRequest"),
+        result=_symbol("maintainability.v1.manager.schemas", "MaintainabilityReport"))
     for identifier, spec in COORDINATORS.items():
         investigators = MODULARITY if identifier == "modularity" else REUSABILITY
         add(identifier, spec.agent_class.__name__, "coordinator", ["internal"],

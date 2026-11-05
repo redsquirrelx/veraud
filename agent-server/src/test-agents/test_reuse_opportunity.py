@@ -15,13 +15,13 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.reusability.reuse_opportunity import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
     ReuseOpportunityConfig,
     ReuseOpportunityRequest,
     ReuseOpportunityResult,
 )
-from server.agents.maintainability.reusability.reuse_opportunity.discovery import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity.discovery import (
     discover,
     features,
     source_characteristics,

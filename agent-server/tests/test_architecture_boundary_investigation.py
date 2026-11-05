@@ -9,15 +9,15 @@ from test_architecture_boundary_planning import cycles, tools_for
 
 from config.agents import InvestigationConfig
 from config.agents.catalog import describe_agent_config, describe_developer_agent_config
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.architecture_boundary.execution import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.execution import (
     BoundaryExecution,
 )
-from server.agents.maintainability.modularity.architecture_boundary.schemas import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.schemas import (
     BoundaryResult,
 )
 from server.blackboard.identity import AuditIdentity

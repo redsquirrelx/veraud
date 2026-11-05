@@ -23,12 +23,12 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.responsibility import (
+from server.agents.maintainability.v1.modularity.responsibility import (
     ResponsibilityAgent,
     ResponsibilityConfig,
     ResponsibilityRequest,
 )
-from server.agents.maintainability.modularity.responsibility.schemas import (
+from server.agents.maintainability.v1.modularity.responsibility.schemas import (
     ResponsibilityResult,
 )
 from server.config.schemas import ModelSettings

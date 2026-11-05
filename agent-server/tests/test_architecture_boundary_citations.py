@@ -7,12 +7,12 @@ import pytest
 from langchain_core.messages import AIMessage
 from test_architecture_boundary_planning import cycles, tools_for
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.architecture_boundary.execution import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.execution import (
     BoundaryExecution,
 )
 

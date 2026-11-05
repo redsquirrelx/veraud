@@ -16,16 +16,16 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.reusability.component_adaptability import (
+from server.agents.maintainability.v1.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
     ComponentAdaptabilityConfig,
     ComponentAdaptabilityRequest,
     ComponentAdaptabilityResult,
 )
-from server.agents.maintainability.reusability.component_adaptability.discovery import (
+from server.agents.maintainability.v1.reusability.component_adaptability.discovery import (
     discover,
 )
-from server.agents.maintainability.reusability.component_adaptability.schemas import (
+from server.agents.maintainability.v1.reusability.component_adaptability.schemas import (
     InspectionDecision,
 )
 from server.runtimes.investigation.schemas import AuditResult

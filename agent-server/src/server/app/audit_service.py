@@ -39,12 +39,12 @@ from server.services.audit_diagnostics import execution_diagnostics
 from ..agents.functional_adequacy.audit import run_functional_audit
 from ..agents.functional_adequacy.config import FunctionalAdequacyConfig
 from ..agents.functional_adequacy.schemas import FunctionalAdequacyInput
-from ..agents.maintainability.manager import (
+from ..agents.maintainability.v1.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityRequest,
 )
-from ..agents.maintainability.manager.validation import validate_call_capacity
+from ..agents.maintainability.v1.manager.validation import validate_call_capacity
 from ..agents.security.audit import (
     SecurityAuditRequest,
     run_security_audit,

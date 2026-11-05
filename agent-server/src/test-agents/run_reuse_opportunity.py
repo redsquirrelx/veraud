@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.reusability.reuse_opportunity import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
     ReuseOpportunityConfig,
     ReuseOpportunityRequest,

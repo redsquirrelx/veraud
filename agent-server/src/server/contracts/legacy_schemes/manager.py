@@ -1,6 +1,6 @@
 """Compatibility re-exports for maintainability manager contracts."""
 
-from server.agents.maintainability.manager.schemas import (
+from server.agents.maintainability.v1.manager.schemas import (
     _MODULARITY_RESULTS,
     AssessmentLink,
     AssessmentSynthesis,

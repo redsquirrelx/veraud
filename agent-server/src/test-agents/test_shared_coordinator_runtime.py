@@ -4,15 +4,17 @@ import ast
 from importlib.util import resolve_name
 from pathlib import Path
 
-from server.agents.maintainability.manager.agent import MaintainabilityManagerExecution
-from server.agents.maintainability.modularity.coordinator.agent import (
+from server.agents.maintainability.v1.manager.agent import (
+    MaintainabilityManagerExecution,
+)
+from server.agents.maintainability.v1.modularity.coordinator.agent import (
     ModularityAgent,
     ModularityExecution,
 )
-from server.agents.maintainability.modularity.coordinator.schemas import (
+from server.agents.maintainability.v1.modularity.coordinator.schemas import (
     Consumption as LegacyConsumption,
 )
-from server.agents.maintainability.reusability.coordinator.agent import (
+from server.agents.maintainability.v1.reusability.coordinator.agent import (
     ReusabilityAgent,
     ReusabilityExecution,
 )

@@ -12,7 +12,7 @@ from server.reporting.schemas import ReportGenerationSummary
 from server.reporting.snapshot import BlackboardSnapshot, report_from_snapshot
 
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
-from ..agents.maintainability.manager import MaintainabilityRequest
+from ..agents.maintainability.v1.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_attributes import QualityAttributes
 from ..app.audit_configuration import category_type, validate_category

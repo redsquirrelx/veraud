@@ -6,19 +6,19 @@ import pytest
 from test_architecture_boundary_citations import Model, audit, conclusion
 from test_architecture_boundary_planning import cycles, tools_for
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     AuditRequest,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.architecture_boundary.execution import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.execution import (
     BoundaryExecution,
 )
-from server.agents.maintainability.modularity.architecture_boundary.schemas import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.schemas import (
     BoundaryCandidate,
     BoundaryInvestigationResult,
     BoundaryResult,
 )
-from server.agents.maintainability.modularity.architecture_boundary.synthesis import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.synthesis import (
     consolidate_candidates,
 )
 

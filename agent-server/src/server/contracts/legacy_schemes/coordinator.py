@@ -1,6 +1,6 @@
 """Compatibility re-exports for coordinator contracts."""
 
-from server.agents.maintainability.modularity.coordinator.schemas import (
+from server.agents.maintainability.v1.modularity.coordinator.schemas import (
     Assignment,
     ConsolidatedFinding,
     EvidenceGap,
@@ -16,7 +16,7 @@ from server.agents.maintainability.modularity.coordinator.schemas import (
     Route,
     SynthesisDraft,
 )
-from server.agents.maintainability.reusability.coordinator.schemas import (
+from server.agents.maintainability.v1.reusability.coordinator.schemas import (
     Conclusion,
     ContinuationDecision,
     FindingRelationship,

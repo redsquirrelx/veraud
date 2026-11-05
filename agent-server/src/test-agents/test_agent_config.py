@@ -74,7 +74,7 @@ def test_local_configuration_is_a_single_file_only_for_agent_specific_policy():
     assert AGENT_CONFIGS["modularity"].shared_config is CoordinatorConfig
     assert AGENT_CONFIGS["reusability"].shared_config is CoordinatorConfig
     manager = configuration_type("maintainability_manager")
-    assert manager.__module__ == "server.agents.maintainability.manager.config"
+    assert manager.__module__ == "server.agents.maintainability.v1.manager.config"
     assert "max_attempts_per_dimension" in manager.model_fields
     for spec in AGENT_CONFIGS.values():
         agent_root = agents_root / spec.package.replace(".", "/")
@@ -153,7 +153,7 @@ def test_configuration_sources_and_legacy_model_contracts_are_identical():
 
 
 def test_panel_validated_values_and_prompt_override_drive_the_real_investigator_graph(tmp_path):
-    from server.agents.maintainability.modularity.architecture_boundary import (
+    from server.agents.maintainability.v1.modularity.architecture_boundary import (
         ArchitectureBoundaryAgent,
     )
 

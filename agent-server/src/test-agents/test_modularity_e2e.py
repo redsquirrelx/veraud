@@ -36,12 +36,14 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
+from server.agents.maintainability.v1.modularity.coordinator.registry import (
+    INVESTIGATORS,
+)
 from server.infrastructure.tracing import LangSmithTracingBackend
 from server.runtimes.investigation.schemas import (
     Criterion,
@@ -247,7 +249,7 @@ def test_e2e_one_round_real_investigators(audit_repository):
 
 @pytest.mark.parametrize("responsibility_limited", [False, True])
 def test_manager_collection_reuses_real_child_publications_and_tool_measurements(audit_repository, responsibility_limited):
-    from server.agents.maintainability.manager import (
+    from server.agents.maintainability.v1.manager import (
         MaintainabilityConfig,
         MaintainabilityManagerAgent,
         MaintainabilityRequest,

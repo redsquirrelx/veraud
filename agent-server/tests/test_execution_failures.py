@@ -8,8 +8,8 @@ from config.agents.audit import (
     apply_audit_call_limits,
     apply_audit_defaults,
 )
-from server.agents.maintainability.manager.config import MaintainabilityConfig
-from server.agents.maintainability.manager.validation import validate_call_capacity
+from server.agents.maintainability.v1.manager.config import MaintainabilityConfig
+from server.agents.maintainability.v1.manager.validation import validate_call_capacity
 from server.services.audit_diagnostics import execution_diagnostics
 from server.services.execution_failures import (
     ExecutionValidationError,

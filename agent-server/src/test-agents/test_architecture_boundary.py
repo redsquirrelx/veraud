@@ -12,7 +12,7 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,

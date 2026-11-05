@@ -108,7 +108,7 @@ def test_missing_implementation_and_boundary_evidence_can_close_inconclusive(tmp
 
 
 def test_investigation_prompt_requires_inference_and_positive_scoped_legitimacy_without_named_patterns_as_proof():
-    prompt = (Path(__file__).parents[1] / "src/server/agents/maintainability/modularity/architecture_boundary/prompts/investigate.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parents[1] / "src/server/agents/maintainability/v1/modularity/architecture_boundary/prompts/investigate.md").read_text(encoding="utf-8")
     inference = prompt.split("Boundary inference", 1)[1].split("Cycle reasoning", 1)[0]
     cycles = " ".join(prompt.split("Cycle reasoning", 1)[1].split("Closing the investigation", 1)[0].split())
     closure = prompt.split("Closing the investigation", 1)[1]

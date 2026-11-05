@@ -25,13 +25,15 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.dependency_impact import (
+from server.agents.maintainability.v1.modularity.dependency_impact import (
     DependencyImpactAgent,
     DependencyImpactConfig,
     DependencyImpactRequest,
     DependencyImpactResult,
 )
-from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
+from server.agents.maintainability.v1.modularity.responsibility import (
+    ResponsibilityAgent,
+)
 from server.config.schemas import ModelSettings
 from server.contracts.legacy_schemes.base import Hypothesis
 from server.infrastructure.tracing import NoOpTracingBackend

@@ -1,20 +1,25 @@
 # Maintainability agents
 
-Agents are grouped by their place in the audit hierarchy:
+V1 remains the integrated audit hierarchy. V2 contains only an independent copy
+of architecture boundary; it is not registered in catalogs, runners or audits.
 
 ```text
 maintainability/
-├── manager/
-├── modularity/
-│   ├── coordinator/
-│   ├── responsibility/
-│   ├── architecture_boundary/
-│   └── dependency_impact/
-└── reusability/
-    ├── coordinator/
-    ├── component_adaptability/
-    ├── reuse_opportunity/
-    └── abstraction/
+├── v1/
+│   ├── manager/
+│   ├── modularity/
+│   │   ├── coordinator/
+│   │   ├── responsibility/
+│   │   ├── architecture_boundary/
+│   │   └── dependency_impact/
+│   └── reusability/
+│       ├── coordinator/
+│       ├── component_adaptability/
+│       ├── reuse_opportunity/
+│       └── abstraction/
+└── v2/
+    └── modularity/
+        └── architecture_boundary/
 ```
 
 ## Reading the code
@@ -27,7 +32,7 @@ Start with the smallest module that answers your question:
 | Graph nodes, routes and domain execution policy | `execution.py` |
 | Candidate selection before investigation | `discovery.py`, where present |
 | Consolidation, synthesis projections and proposal checks | `synthesis.py`, where present |
-| Manager accounting, nested provenance and coverage checks | `manager/validation.py` |
+| Manager accounting, nested provenance and coverage checks | `v1/manager/validation.py` |
 | Agent-specific request/result contracts | Local `schemas.py` (canonical definitions) |
 | Neutral investigator envelope and evidence contracts | [`../../contracts/audit.py`](../../contracts/audit.py) |
 | Generic delegation/synthesis envelopes | [`../../runtimes/coordination/contracts.py`](../../runtimes/coordination/contracts.py) |
@@ -53,11 +58,11 @@ modularity, reusability and manager bind their own graphs over that neutral runt
 Import from the concrete agent package, for example:
 
 ```python
-from server.agents.maintainability.manager import MaintainabilityManagerAgent
-from server.agents.maintainability.modularity.coordinator import ModularityAgent
-from server.agents.maintainability.modularity.architecture_boundary import ArchitectureBoundaryAgent
-from server.agents.maintainability.reusability.coordinator import ReusabilityAgent
-from server.agents.maintainability.reusability.abstraction import AbstractionAgent
+from server.agents.maintainability.v1.manager import MaintainabilityManagerAgent
+from server.agents.maintainability.v1.modularity.coordinator import ModularityAgent
+from server.agents.maintainability.v1.modularity.architecture_boundary import ArchitectureBoundaryAgent
+from server.agents.maintainability.v1.reusability.coordinator import ReusabilityAgent
+from server.agents.maintainability.v1.reusability.abstraction import AbstractionAgent
 ```
 
 Execution remains `await agent.run(fresh_toolset, typed_request)`. Standalone runners

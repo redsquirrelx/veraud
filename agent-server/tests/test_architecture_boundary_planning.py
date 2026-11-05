@@ -10,13 +10,13 @@ from pydantic import ValidationError
 
 from config.agents import InvestigationConfig
 from config.agents.catalog import describe_agent_config, validate_developer_agent_config
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     AuditResult,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.architecture_boundary.planning import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.planning import (
     balance_candidates,
     candidate_rank,
 )
@@ -459,7 +459,7 @@ def test_token_admission_is_preserved(tmp_path, finite_token_budget):
 
 
 def test_planning_timeout_does_not_become_success(tmp_path, monkeypatch):
-    from server.agents.maintainability.modularity.architecture_boundary.execution import (
+    from server.agents.maintainability.v1.modularity.architecture_boundary.execution import (
         BoundaryExecution,
     )
 

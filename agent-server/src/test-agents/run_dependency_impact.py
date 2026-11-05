@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.modularity.dependency_impact import (
+from server.agents.maintainability.v1.modularity.dependency_impact import (
     DependencyImpactAgent,
     DependencyImpactConfig,
     DependencyImpactRequest,

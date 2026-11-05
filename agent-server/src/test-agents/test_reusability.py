@@ -11,18 +11,20 @@ from types import SimpleNamespace
 import pytest
 from test_architecture_boundary import NativeStructuredModel, fingerprints, toolset
 
-from server.agents.maintainability.reusability.coordinator import (
+from server.agents.maintainability.v1.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
     ReusabilityConfig,
     ReusabilityRequest,
 )
-from server.agents.maintainability.reusability.coordinator.agent import (
+from server.agents.maintainability.v1.reusability.coordinator.agent import (
     ReusabilityExecution,
     route_after_synthesis,
 )
-from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
-from server.agents.maintainability.reusability.coordinator.schemas import Route
+from server.agents.maintainability.v1.reusability.coordinator.registry import (
+    INVESTIGATORS,
+)
+from server.agents.maintainability.v1.reusability.coordinator.schemas import Route
 from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.coordination.execution import CoordinatorExecution
 from server.runtimes.investigation.schemas import InvestigationConfig

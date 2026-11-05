@@ -27,7 +27,7 @@ from server.agents.finding_resolution.diagnostics import (
     safe_arguments,
     safe_text,
 )
-from server.agents.maintainability.modularity.architecture_boundary.schemas import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.schemas import (
     BoundaryFinding,
 )
 from server.config.logs import get_logger

@@ -11,7 +11,7 @@ from server.app.pipeline_contracts import PipelineDefinition, bind_no_context
 from server.reporting.docx import render_audit_report_docx
 
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
-from ..agents.maintainability.manager import MaintainabilityRequest
+from ..agents.maintainability.v1.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root

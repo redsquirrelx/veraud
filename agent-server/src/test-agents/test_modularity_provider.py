@@ -18,26 +18,30 @@ from pydantic import ValidationError
 from test_architecture_boundary import ScriptedModel, toolset
 from test_modularity_e2e import assert_live_success
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.agent import (
+from server.agents.maintainability.v1.modularity.coordinator.agent import (
     ModularityExecution,
 )
-from server.agents.maintainability.modularity.coordinator.schemas import SynthesisDraft
-from server.agents.maintainability.modularity.dependency_impact import (
+from server.agents.maintainability.v1.modularity.coordinator.schemas import (
+    SynthesisDraft,
+)
+from server.agents.maintainability.v1.modularity.dependency_impact import (
     DependencyImpactAgent,
 )
-from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
-from server.agents.maintainability.reusability.component_adaptability import (
+from server.agents.maintainability.v1.modularity.responsibility import (
+    ResponsibilityAgent,
+)
+from server.agents.maintainability.v1.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
 )
-from server.agents.maintainability.reusability.reuse_opportunity import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity import (
     ReuseOpportunityAgent,
 )
 from server.contracts.legacy_schemes.investigator import BoundaryReview

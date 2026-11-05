@@ -25,7 +25,7 @@ from langchain.chat_models import init_chat_model
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     AuditRequest,
     BoundaryConfig,
