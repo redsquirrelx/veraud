@@ -20,13 +20,13 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.reusability.abstraction import (
+from server.agents.maintainability.v1.reusability.abstraction import (
     AbstractionAgent,
     AbstractionConfig,
     AbstractionRequest,
     AbstractionResult,
 )
-from server.agents.maintainability.reusability.abstraction.discovery import discover
+from server.agents.maintainability.v1.reusability.abstraction.discovery import discover
 from server.config.schemas import ModelSettings
 from server.infrastructure.tracing import NoOpTracingBackend
 from server.runtimes.investigation.agent import InvestigationExecution
@@ -329,7 +329,7 @@ def test_missing_critical_review_cannot_leave_confirmed_hypothesis(repo):
 
 
 def test_compaction_preserves_assessment_citations_and_original_history(repo):
-    from server.agents.maintainability.reusability.abstraction.schemas import (
+    from server.agents.maintainability.v1.reusability.abstraction.schemas import (
         AbstractionEvaluation,
     )
 

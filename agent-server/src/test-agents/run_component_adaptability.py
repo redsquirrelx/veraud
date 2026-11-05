@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.reusability.component_adaptability import (
+from server.agents.maintainability.v1.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
     ComponentAdaptabilityConfig,
     ComponentAdaptabilityRequest,

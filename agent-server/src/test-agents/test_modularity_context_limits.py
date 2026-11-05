@@ -6,14 +6,16 @@ import pytest
 from langchain_core.messages import HumanMessage
 from test_architecture_boundary import ScriptedModel, toolset
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
 )
-from server.agents.maintainability.modularity.coordinator import ModularityConfig
-from server.agents.maintainability.modularity.dependency_impact import (
+from server.agents.maintainability.v1.modularity.coordinator import ModularityConfig
+from server.agents.maintainability.v1.modularity.dependency_impact import (
     DependencyImpactAgent,
 )
-from server.agents.maintainability.modularity.responsibility import ResponsibilityAgent
+from server.agents.maintainability.v1.modularity.responsibility import (
+    ResponsibilityAgent,
+)
 from server.runtimes.investigation.schemas import Review
 
 

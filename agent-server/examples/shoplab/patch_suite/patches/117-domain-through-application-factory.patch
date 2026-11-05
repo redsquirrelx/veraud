@@ -1,0 +1,25 @@
+diff --git a/src/shoplab/application/notifier_factory.py b/src/shoplab/application/notifier_factory.py
+new file mode 100644
+index 0000000..70322bf
+--- /dev/null
++++ b/src/shoplab/application/notifier_factory.py
+@@ -0,0 +1,5 @@
++from shoplab.infrastructure.console_notifier import ConsoleNotifier
++
++
++def notifier_for_special_orders() -> ConsoleNotifier:
++    return ConsoleNotifier()
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..a2b3f45 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -1,7 +1,7 @@
+ from shoplab.domain.models import Order
+-from shoplab.infrastructure.console_notifier import ConsoleNotifier
++from shoplab.application.notifier_factory import notifier_for_special_orders
+ 
+ 
+ def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
++    notifier = notifier_for_special_orders()
+     notifier.send(order, f"Special handling for {order.order_id}")

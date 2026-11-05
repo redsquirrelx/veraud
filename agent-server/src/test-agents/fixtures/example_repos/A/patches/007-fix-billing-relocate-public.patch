@@ -1,0 +1,33 @@
+diff --git a/src/shoplab/billing/__init__.py b/src/shoplab/billing/__init__.py
+index 8e813fb..d013f8e 100644
+--- a/src/shoplab/billing/__init__.py
++++ b/src/shoplab/billing/__init__.py
+@@ -1,3 +1,3 @@
+-from shoplab.billing.service import charge
++from shoplab.billing.payments import charge
+ 
+ __all__ = ["charge"]
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/payments.py
+similarity index 54%
+rename from src/shoplab/billing/service.py
+rename to src/shoplab/billing/payments.py
+index dfffadd..62928a8 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/payments.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from shoplab.inventory import available_stock
+ 
+ 
+ @dataclass(frozen=True)
+@@ -12,6 +12,4 @@ class Receipt:
+ 
+ 
+ def charge(order: Order) -> Receipt:
+-    # A payment module is reading another module's concrete backing state.
+-    units = _store.STOCK.get(order.sku, 0)
+-    return Receipt(order.order_id, order_total(order), units)
++    return Receipt(order.order_id, order_total(order), available_stock(order.sku))

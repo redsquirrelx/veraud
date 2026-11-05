@@ -21,17 +21,17 @@ from test_maintainability_manager import BASE, Events
 from test_modularity_e2e import ProviderScenario
 from test_reusability_e2e import SimulatedProvider
 
-from server.agents.maintainability.manager import (
+from server.agents.maintainability.v1.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityReport,
     MaintainabilityRequest,
 )
-from server.agents.maintainability.reusability.abstraction import AbstractionRequest
-from server.agents.maintainability.reusability.component_adaptability import (
+from server.agents.maintainability.v1.reusability.abstraction import AbstractionRequest
+from server.agents.maintainability.v1.reusability.component_adaptability import (
     ComponentAdaptabilityRequest,
 )
-from server.agents.maintainability.reusability.reuse_opportunity import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity import (
     ReuseOpportunityRequest,
 )
 from server.infrastructure.tracing import LangSmithTracingBackend

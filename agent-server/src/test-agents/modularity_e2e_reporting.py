@@ -1,6 +1,8 @@
 """Test-only progress reporting from actual invocation events and assessment records."""
 
-from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
+from server.agents.maintainability.v1.modularity.coordinator.registry import (
+    INVESTIGATORS,
+)
 from server.infrastructure.tracing import NoOpTracingBackend, TracingBackend
 
 

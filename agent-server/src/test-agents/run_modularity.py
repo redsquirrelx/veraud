@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,

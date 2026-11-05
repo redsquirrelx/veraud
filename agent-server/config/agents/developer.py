@@ -2,7 +2,7 @@
 
 from typing import ClassVar
 
-from pydantic import Field, model_validator
+from pydantic import Field, StrictBool, model_validator
 
 from .budgets import CallBudgetConfig, ExecutionTimingConfig
 from .provider import ProviderRetryConfig
@@ -18,6 +18,10 @@ class AgentDeveloperConfig(CallBudgetConfig, ExecutionTimingConfig, ProviderRetr
     """Implementation bounds, transport tuning, enabled tools and cognitive prompts."""
 
     prompt_nodes: ClassVar[tuple[str, ...]] = ()
+    unlimited_model_calls: StrictBool = Field(default=False,
+        description="Disable model-attempt count admission for this execution. Usage, tokens, time and provider retry protections remain active.")
+    unlimited_tool_calls: StrictBool = Field(default=False,
+        description="Disable tool-call count admission for this execution, including its repository toolset. Usage remains accounted; time, tokens and retrieval limits still apply.")
     bounds: ClassVar = {"max_model_calls": {"ge": 4, "le": 100}, "max_tool_calls": {"le": 200}}
     max_schema_retries: int = Field(default=1, ge=0, le=2, description="Additional structured-output correction attempts.")
     max_schema_recovery_attempts: int = Field(default=2, ge=0, le=6,

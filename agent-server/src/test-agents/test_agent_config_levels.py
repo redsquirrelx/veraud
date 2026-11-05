@@ -125,7 +125,7 @@ def test_shared_configuration_fields_have_one_source_declaration():
 def test_presets_preserve_effective_bounds_and_do_not_mutate_shared_fields():
     from config.agents import InvestigationConfig
     from config.agents.budgets import TokenBudgetConfig
-    from server.agents.maintainability.modularity.coordinator import (
+    from server.agents.maintainability.v1.modularity.coordinator import (
         ModularityConfig,
     )
     from server.runtimes.repository.schemas import ExecutionBudget

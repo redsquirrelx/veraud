@@ -13,19 +13,19 @@ from test_architecture_boundary import NativeStructuredModel, fingerprints, tool
 from test_modularity import factory as modularity_factory
 from test_reusability import factory as reusability_factory
 
-from server.agents.maintainability.manager import (
+from server.agents.maintainability.v1.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityReport,
     MaintainabilityRequest,
 )
-from server.agents.maintainability.manager.agent import (
+from server.agents.maintainability.v1.manager.agent import (
     MaintainabilityManagerExecution,
     coverage_router,
 )
-from server.agents.maintainability.manager.registry import COORDINATORS
-from server.agents.maintainability.manager.schemas import RawAssessment
-from server.agents.maintainability.modularity.coordinator.schemas import Consumption
+from server.agents.maintainability.v1.manager.registry import COORDINATORS
+from server.agents.maintainability.v1.manager.schemas import RawAssessment
+from server.agents.maintainability.v1.modularity.coordinator.schemas import Consumption
 from server.blackboard.identity import AuditIdentity
 from server.blackboard.impls.memory import MemoryBlackboard
 from server.infrastructure.tracing import NoOpTracingBackend

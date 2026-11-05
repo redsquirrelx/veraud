@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.reusability.abstraction import (
+from server.agents.maintainability.v1.reusability.abstraction import (
     AbstractionAgent,
     AbstractionConfig,
     AbstractionRequest,

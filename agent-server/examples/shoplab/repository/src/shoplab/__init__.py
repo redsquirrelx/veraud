@@ -1,0 +1,1 @@
+"""Tiny sample shop package."""

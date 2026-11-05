@@ -1,0 +1,54 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..b70d41c 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from shoplab.inventory import stock_engine
+ 
+ 
+ @dataclass(frozen=True)
+@@ -13,5 +13,5 @@ class Receipt:
+ 
+ def charge(order: Order) -> Receipt:
+     # A payment module is reading another module's concrete backing state.
+-    units = _store.STOCK.get(order.sku, 0)
++    units = stock_engine.STOCK.get(order.sku, 0)
+     return Receipt(order.order_id, order_total(order), units)
+diff --git a/src/shoplab/inventory/api.py b/src/shoplab/inventory/api.py
+index 4987bae..bc6f3f0 100644
+--- a/src/shoplab/inventory/api.py
++++ b/src/shoplab/inventory/api.py
+@@ -1,9 +1,9 @@
+-from shoplab.inventory import _store
++from shoplab.inventory import stock_engine
+ 
+ 
+ def available_stock(sku: str) -> int:
+-    return _store.read(sku)
++    return stock_engine.read(sku)
+ 
+ 
+ def reserve_stock(sku: str, count: int) -> bool:
+-    return _store.decrement(sku, count)
++    return stock_engine.decrement(sku, count)
+diff --git a/src/shoplab/inventory/_store.py b/src/shoplab/inventory/stock_engine.py
+similarity index 100%
+rename from src/shoplab/inventory/_store.py
+rename to src/shoplab/inventory/stock_engine.py
+diff --git a/tests/test_shop.py b/tests/test_shop.py
+index 6795f8a..f414f89 100644
+--- a/tests/test_shop.py
++++ b/tests/test_shop.py
+@@ -2,7 +2,7 @@ import unittest
+ from shoplab.application.checkout import process_order
+ from shoplab.domain.models import Order
+ from shoplab.inventory import available_stock
+-from shoplab.inventory._store import STOCK
++from shoplab.inventory.stock_engine import STOCK
+ 
+ 
+ class TestShop(unittest.TestCase):

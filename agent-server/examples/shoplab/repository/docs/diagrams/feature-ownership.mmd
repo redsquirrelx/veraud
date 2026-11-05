@@ -1,0 +1,14 @@
+flowchart TB
+    UI[Checkout client] --> AP[Application orchestration]
+    AP --> INV[Inventory public API]
+    AP --> ORD[Orders public API]
+    AP --> BILL[Billing public API]
+    subgraph I[Inventory ownership]
+      INV --> Store[Inventory backing store]
+    end
+    subgraph O[Orders ownership]
+      ORD --> OrderLogic[Order logic]
+    end
+    subgraph B[Billing ownership]
+      BILL --> BillingLogic[Billing logic]
+    end

@@ -112,7 +112,7 @@ class InvestigationAgent:
         with execution.timing.stage("investigation"):
             state = await execution.graph.ainvoke(
                 execution.initial_state(),
-                {"recursion_limit": 4 * self.config.max_model_calls + 20},
+                {"recursion_limit": math.inf if execution.config.unlimited_model_calls else 4 * self.config.max_model_calls + 20},
             )
         result = state["result"]
         if publication is not None and execution.timing.publication_allowed:
@@ -156,10 +156,14 @@ class InvestigationExecution:
                 wall_deadline=tools.context.started_at + min(budget.max_elapsed_seconds, config.max_wall_time_seconds),
                 cancellation_grace_seconds=config.cancellation_grace_seconds)
         self.timing = tools.timing
-        self.call_limit = min(config.max_model_calls, budget.max_model_calls)
+        self.call_limit = math.inf if config.unlimited_model_calls else min(config.max_model_calls, budget.max_model_calls)
         if self.call_limit < 4:
             raise ValueError("The repository budget must permit at least four model calls.")
-        self.tool_limit = min(config.max_tool_calls, budget.max_tool_calls)
+        if config.unlimited_tool_calls:
+            self.tool_limit = math.inf
+            tools.tool_call_limit = None
+        else:
+            self.tool_limit = min(config.max_tool_calls, budget.max_tool_calls)
         self.token_limit = (config.max_total_tokens if tools.token_budget is not None else
                             min(config.max_total_tokens, budget.max_total_tokens, budget.max_tokens_per_objective))
         self.model, self.invoke_options, self.output_limit = prepare_chat_model(model,
@@ -246,9 +250,9 @@ class InvestigationExecution:
             "missing_information": state["missing_information"],
             "evidence_recovery_tasks": self.evidence_recovery_tasks,
             "next_source_reads": self.uninspected_source_reads(),
-            "remaining_model_calls": max(0, self.call_limit - self.calls),
-            "remaining_investigation_calls": max(0, self.call_limit - self.calls - self.closing_call_reserve),
-            "remaining_tool_calls": max(0, self.tool_limit - self.tools.budget_usage.tool_calls),
+            "remaining_model_calls": None if math.isinf(self.call_limit) else max(0, self.call_limit - self.calls),
+            "remaining_investigation_calls": None if math.isinf(self.call_limit) else max(0, self.call_limit - self.calls - self.closing_call_reserve),
+            "remaining_tool_calls": None if math.isinf(self.tool_limit) else max(0, self.tool_limit - self.tools.budget_usage.tool_calls),
         }
 
     def uninspected_source_reads(self):

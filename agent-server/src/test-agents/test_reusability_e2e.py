@@ -36,13 +36,15 @@ from test_reuse_opportunity import evaluation as reuse_evaluate
 from test_reuse_opportunity import plan as reuse_plan
 from test_reuse_opportunity import review as reuse_review
 
-from server.agents.maintainability.reusability.coordinator import (
+from server.agents.maintainability.v1.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
     ReusabilityConfig,
     ReusabilityRequest,
 )
-from server.agents.maintainability.reusability.coordinator.registry import INVESTIGATORS
+from server.agents.maintainability.v1.reusability.coordinator.registry import (
+    INVESTIGATORS,
+)
 from server.infrastructure.tracing import LangSmithTracingBackend
 from server.runtimes.investigation.schemas import InvestigationConfig
 

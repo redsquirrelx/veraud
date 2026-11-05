@@ -12,16 +12,16 @@ from test_modularity import config as modularity_config
 from test_modularity import result as modularity_result
 from test_reusability import config, execute, factory, fake_result, tools
 
-from server.agents.maintainability.manager.synthesis import (
+from server.agents.maintainability.v1.manager.synthesis import (
     assessment_indexes,
     synthesis_context,
 )
-from server.agents.maintainability.modularity.coordinator import ModularityAgent
-from server.agents.maintainability.reusability.component_adaptability import (
+from server.agents.maintainability.v1.modularity.coordinator import ModularityAgent
+from server.agents.maintainability.v1.reusability.component_adaptability import (
     ComponentAdaptabilityAgent,
     ComponentAdaptabilityConfig,
 )
-from server.agents.maintainability.reusability.coordinator import (
+from server.agents.maintainability.v1.reusability.coordinator import (
     ReusabilityAgent,
     ReusabilityAssessment,
     ReusabilityRequest,
@@ -114,7 +114,7 @@ def test_same_source_repair_requires_final_validation_of_original_commitment(rep
         from test_maintainability_manager import config as manager_config
         from test_maintainability_manager import tools as manager_tools
 
-        from server.agents.maintainability.manager import (
+        from server.agents.maintainability.v1.manager import (
             MaintainabilityManagerAgent,
             MaintainabilityRequest,
         )
@@ -209,7 +209,7 @@ def test_modularity_closes_only_the_validated_same_source_component_repair(repo,
         from test_maintainability_manager import config as manager_config
         from test_maintainability_manager import tools as manager_tools
 
-        from server.agents.maintainability.manager import (
+        from server.agents.maintainability.v1.manager import (
             MaintainabilityManagerAgent,
             MaintainabilityReport,
             MaintainabilityRequest,
@@ -240,7 +240,9 @@ def test_modularity_closes_only_the_validated_same_source_component_repair(repo,
         modularity = next(s for a in document.quality_results.attributes for s in a.subcharacteristics if s.id == "modularity")
         assert modularity.status == "completed"
         assert document.annexes_and_traceability.generation.historical_assessment_ids
-        from server.agents.maintainability.manager.validation import validate_accounting
+        from server.agents.maintainability.v1.manager.validation import (
+            validate_accounting,
+        )
         from server.services.execution_failures import ExecutionValidationError
 
         tampered = after.result.model_copy(update={"invocations": [
@@ -307,7 +309,7 @@ def test_conditional_qualifications_survive_conclusions_and_manager_projection(r
     assert contribution["conditions"] == conditions
     assert contribution["sharing_boundary"] == "A parsing helper only; caller policy remains separate."
     assert contribution["unknowns"] == ["Caller compatibility is unread."]
-    from server.agents.maintainability.manager.synthesis import qualified_summary
+    from server.agents.maintainability.v1.manager.synthesis import qualified_summary
 
     summary = qualified_summary("Extract immediately: caller compatibility is guaranteed.", findings)
     assert "Extract immediately" not in summary

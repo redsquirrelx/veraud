@@ -211,6 +211,7 @@ class RepositoryToolset:
         self.commit_verifications = {}
         self._call_ids: set[str] = set()
         self._tool_calls = 0
+        self.tool_call_limit = context.input.budget.max_tool_calls
         self._retrieved_characters = 0
         self._lock = self.retrieval_budget.lock
         self._tool_measurements: list[ToolMeasurement] = []
@@ -339,7 +340,7 @@ class RepositoryToolset:
                     "time_budget_exhausted",
                     "The execution time budget is exhausted.",
                 )
-            if self._tool_calls >= budget.max_tool_calls:
+            if self.tool_call_limit is not None and self._tool_calls >= self.tool_call_limit:
                 return self._error(
                     name,
                     tool_call_id,

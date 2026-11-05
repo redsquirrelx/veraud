@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from run_architecture_boundary import load_test_model, run_audit
 
-from server.agents.maintainability.manager import (
+from server.agents.maintainability.v1.manager import (
     MaintainabilityConfig,
     MaintainabilityManagerAgent,
     MaintainabilityRequest,

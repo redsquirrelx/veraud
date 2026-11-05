@@ -1,0 +1,13 @@
+diff --git a/src/shoplab/billing/__init__.py b/src/shoplab/billing/__init__.py
+index 8e813fb..d013f8e 100644
+--- a/src/shoplab/billing/__init__.py
++++ b/src/shoplab/billing/__init__.py
+@@ -1,3 +1,3 @@
+-from shoplab.billing.service import charge
++from shoplab.billing.payments import charge
+ 
+ __all__ = ["charge"]
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/payments.py
+similarity index 100%
+rename from src/shoplab/billing/service.py
+rename to src/shoplab/billing/payments.py

@@ -1,0 +1,31 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..d07752c 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from shoplab.billing.stock_access import raw_available_units
+ 
+ 
+ @dataclass(frozen=True)
+@@ -13,5 +13,5 @@ class Receipt:
+ 
+ def charge(order: Order) -> Receipt:
+     # A payment module is reading another module's concrete backing state.
+-    units = _store.STOCK.get(order.sku, 0)
++    units = raw_available_units(order.sku)
+     return Receipt(order.order_id, order_total(order), units)
+diff --git a/src/shoplab/billing/stock_access.py b/src/shoplab/billing/stock_access.py
+new file mode 100644
+index 0000000..0ad9dc2
+--- /dev/null
++++ b/src/shoplab/billing/stock_access.py
+@@ -0,0 +1,5 @@
++from shoplab.inventory import _store
++
++
++def raw_available_units(sku: str) -> int:
++    return _store.STOCK.get(sku, 0)

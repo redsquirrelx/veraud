@@ -1,0 +1,36 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..9d3464d 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from shoplab.inventory import available_stock
+ 
+ 
+ @dataclass(frozen=True)
+@@ -12,6 +12,5 @@ class Receipt:
+ 
+ 
+ def charge(order: Order) -> Receipt:
+-    # A payment module is reading another module's concrete backing state.
+-    units = _store.STOCK.get(order.sku, 0)
++    units = available_stock(order.sku)
+     return Receipt(order.order_id, order_total(order), units)
+diff --git a/src/shoplab/domain/checkout.py b/src/shoplab/domain/checkout.py
+index 76699ed..67e515f 100644
+--- a/src/shoplab/domain/checkout.py
++++ b/src/shoplab/domain/checkout.py
+@@ -1,7 +1,8 @@
+ from shoplab.domain.models import Order
++from shoplab.domain.ports import Notifier
+ from shoplab.infrastructure.console_notifier import ConsoleNotifier
+ 
+ 
+-def send_special_confirmation(order: Order) -> None:
+-    notifier = ConsoleNotifier()
++def send_special_confirmation(order: Order, notifier: Notifier | None = None) -> None:
++    notifier = notifier or ConsoleNotifier()
+     notifier.send(order, f"Special handling for {order.order_id}")

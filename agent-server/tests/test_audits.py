@@ -49,7 +49,7 @@ def test_http_cancellation_retains_evidence_and_does_not_cancel_sibling(audit_en
 
 
 def test_cancellation_before_first_task_turn_prevents_repository_and_model_work(audit_environment, monkeypatch):
-    from server.agents.maintainability.manager import MaintainabilityRequest
+    from server.agents.maintainability.v1.manager import MaintainabilityRequest
     from server.app.execution_config import ExecutionConfig
 
     analyze = AsyncMock()
@@ -69,7 +69,7 @@ def test_cancellation_before_first_task_turn_prevents_repository_and_model_work(
 
 
 def test_late_work_stays_cancelling_and_cannot_start_new_stages(audit_environment, monkeypatch):
-    from server.agents.maintainability.manager import (
+    from server.agents.maintainability.v1.manager import (
         MaintainabilityConfig,
         MaintainabilityRequest,
     )
@@ -193,7 +193,7 @@ def test_http_starts_without_waiting_and_manager_uses_the_server_blackboard(audi
 
 
 def test_absolute_audit_deadline_expires_even_while_all_work_is_waiting_for_quota(audit_environment, monkeypatch):
-    from server.agents.maintainability.manager import (
+    from server.agents.maintainability.v1.manager import (
         MaintainabilityConfig,
         MaintainabilityRequest,
     )
@@ -252,7 +252,7 @@ def test_terminal_results_and_errors_are_recorded_and_clients_closed(audit_envir
     monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
 
     async def execute():
-        from server.agents.maintainability.manager import MaintainabilityRequest
+        from server.agents.maintainability.v1.manager import MaintainabilityRequest
         from server.api.schemas import ExecutionConfig
 
         service = AuditService(MemoryBlackboard())
@@ -333,7 +333,7 @@ def test_timeout_is_recorded_and_releases_clients(audit_environment, monkeypatch
     monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
 
     async def execute():
-        from server.agents.maintainability.manager import MaintainabilityRequest
+        from server.agents.maintainability.v1.manager import MaintainabilityRequest
         from server.api.schemas import ExecutionConfig
 
         service = AuditService(MemoryBlackboard())
@@ -419,15 +419,15 @@ def test_undersized_hierarchy_call_limit_is_rejected_before_scheduling(audit_env
 @pytest.mark.parametrize("global_tokens", [None, 3000000])
 @pytest.mark.parametrize("tool_overrides", [False, True])
 def test_common_developer_defaults_reach_the_full_hierarchy_and_repository_budget(audit_environment, monkeypatch, global_tokens, tool_overrides):
-    from server.agents.maintainability.manager.config import MaintainabilityConfig
-    from server.agents.maintainability.manager.execution import (
+    from server.agents.maintainability.v1.manager.config import MaintainabilityConfig
+    from server.agents.maintainability.v1.manager.execution import (
         MaintainabilityManagerExecution,
     )
-    from server.agents.maintainability.manager.registry import COORDINATORS
-    from server.agents.maintainability.modularity.coordinator.registry import (
+    from server.agents.maintainability.v1.manager.registry import COORDINATORS
+    from server.agents.maintainability.v1.modularity.coordinator.registry import (
         INVESTIGATORS as MODULARITY,
     )
-    from server.agents.maintainability.reusability.coordinator.registry import (
+    from server.agents.maintainability.v1.reusability.coordinator.registry import (
         INVESTIGATORS as REUSABILITY,
     )
     from server.runtimes.coordination.execution import CoordinatorExecution
@@ -518,7 +518,7 @@ def test_invalid_global_token_cap_is_rejected_before_scheduling(audit_environmen
 
 def test_partial_defaults_preserve_agent_specific_values():
     from config.agents.audit import AuditAgentDefaults, apply_audit_defaults
-    from server.agents.maintainability.manager import MaintainabilityConfig
+    from server.agents.maintainability.v1.manager import MaintainabilityConfig
 
     original = MaintainabilityConfig()
     context_only = apply_audit_defaults(original, AuditAgentDefaults(max_context_characters=160000))
@@ -536,7 +536,7 @@ def test_partial_defaults_preserve_agent_specific_values():
 
 def test_shutdown_cancels_audit_that_has_not_started_yet(audit_environment):
     async def execute():
-        from server.agents.maintainability.manager import MaintainabilityRequest
+        from server.agents.maintainability.v1.manager import MaintainabilityRequest
         from server.api.schemas import ExecutionConfig
 
         service = AuditService(MemoryBlackboard())
@@ -665,7 +665,7 @@ def test_shutdown_waits_for_cleanup_of_a_completed_audit(audit_environment, monk
     monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
 
     async def execute():
-        from server.agents.maintainability.manager import MaintainabilityRequest
+        from server.agents.maintainability.v1.manager import MaintainabilityRequest
         from server.api.schemas import ExecutionConfig
 
         entered, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
