@@ -42,6 +42,7 @@
     "git": "Git",
     "analyzed": "Analizadas",
     "loadingBranches": "Cargando ramas",
+    "loadingVersion": "Cargando versión (rama y commit)…",
     "applying": "Aplicando versión",
     "detachedNotice": "(HEAD desvinculado en {{hash}}): selecciona una rama para volver a vincularlo",
     "appliedNotice": "En {{branch}} en {{shortHash}}",

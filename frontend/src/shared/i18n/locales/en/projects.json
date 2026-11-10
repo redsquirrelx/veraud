@@ -42,6 +42,7 @@
     "git": "Git",
     "analyzed": "Analyzed",
     "loadingBranches": "Loading branches",
+    "loadingVersion": "Loading version (branch and commit)…",
     "applying": "Applying version",
     "detachedNotice": "(HEAD detached at {{hash}}) - select a branch to re-attach",
     "appliedNotice": "On {{branch}} at {{shortHash}}",

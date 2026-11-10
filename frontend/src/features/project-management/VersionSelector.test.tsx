@@ -73,6 +73,20 @@ function branchDropdown(): HTMLElement {
 }
 
 describe("VersionSelector", () => {
+  it("shows a spinner and message while the version is loading", async () => {
+    globalThis.fetch = (async (input: unknown) => {
+      const url = String(input)
+      if (url.includes("/git/branches")) return new Promise<Response>(() => {})
+      if (url.includes("/git/log")) {
+        return new Response(JSON.stringify({ branch: "main", commits: [{ commitHash: first, subject: "second commit" }], limit: 30, offset: 0, taskId: 2 }), { status: 200 })
+      }
+      return new Response(JSON.stringify([]), { status: 200 })
+    }) as typeof fetch
+    renderSelector()
+
+    expect(await screen.findByText("Loading version (branch and commit)…")).toBeDefined()
+    expect(document.querySelector(".version-loading .ui-spinner")).not.toBeNull()
+  })
   it.each(["git", "analyzed"] as const)("locks %s version selection through the disabled prop", async (mode) => {
     stubGit()
     function Harness({ disabled }: { disabled: boolean }) {
