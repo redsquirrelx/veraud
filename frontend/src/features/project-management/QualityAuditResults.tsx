@@ -148,13 +148,13 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
           {!pending && audit.reportAvailable && <Button variant="secondary" disabled={downloading} onClick={() => void download()}>{downloading ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>}
         </div>
         {audit.error && <p role="alert">{publicErrorText(audit.error)}</p>}
-        {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
+        {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} repositoryName={repositoryName ?? ""} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
       </>}
     </>}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-findings`} aria-labelledby={`${tabsId}-tab-findings`} hidden={activeTab !== "findings"} tabIndex={0}>
       {activeTab === "findings" && (loading ? <Spinner /> : pending || (error !== null && audit === null) ? null : audit?.reportAvailable
-        ? <QualityAuditFindingsPanel resource={qualityResults} />
+        ? <QualityAuditFindingsPanel resource={qualityResults} projectId={projectId} repositoryName={repositoryName ?? ""} />
         : <p className="label">{t("qualityAudits.results.noReport")}</p>)}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-evidence`} aria-labelledby={`${tabsId}-tab-evidence`} hidden={activeTab !== "evidence"} tabIndex={0}>

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Badge, Button, Drawer } from "../../shared/ui-kit/index.ts"
 import { evidenceDisplayKind, evidenceFilePath, findingsForEvidence, type AgentEvidence } from "./auditAgentEvidence.ts"
 import { AuditEvidenceCode } from "./AuditEvidenceCode.tsx"
-import { FindingDetails } from "./QualityAuditFindings.tsx"
+import { FindingDetails, FindingSeverity } from "./QualityAuditFindings.tsx"
 import { ReportValue } from "./QualityAuditReport.tsx"
 
 /** Selection over loaded evidence, with optional on-demand checkout file access. */
@@ -79,8 +79,10 @@ export function AuditEvidenceBrowser({ evidence, projectId = null, auditId, repo
             onClick={() => setFindingId(String(item.id))}>{String(item.id)}{typeof item.title === "string" ? ` — ${item.title}` : ""}</Button></li>)}</ul>)}
       </section>}
     </section>
-    <Drawer open={finding !== undefined} title={typeof finding?.title === "string" ? finding.title : findingId ?? t("linkedFindings")} onClose={() => setFindingId(null)}>
+    <Drawer open={finding !== undefined} title={typeof finding?.title === "string" ? finding.title : findingId ?? t("linkedFindings")}
+      size="inspector" headerExtra={finding ? <FindingSeverity finding={finding} /> : undefined} onClose={() => setFindingId(null)}>
       {finding && <FindingDetails key={String(finding.id)} finding={finding} renderDetails={(item) => <ReportValue value={item} />}
+        projectId={projectId ?? null} repositoryName={repositoryName ?? ""}
         onEvidenceNavigate={() => setFindingId(null)} />}
     </Drawer>
   </div>
