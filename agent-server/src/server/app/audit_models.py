@@ -1,10 +1,10 @@
 """Model-selection validation for the implemented maintainability hierarchy."""
 
-from ..agents.maintainability.manager.registry import COORDINATORS
-from ..agents.maintainability.modularity.coordinator.registry import (
+from ..agents.maintainability.v1.manager.registry import COORDINATORS
+from ..agents.maintainability.v1.modularity.coordinator.registry import (
     INVESTIGATORS as MODULARITY_INVESTIGATORS,
 )
-from ..agents.maintainability.reusability.coordinator.registry import (
+from ..agents.maintainability.v1.reusability.coordinator.registry import (
     INVESTIGATORS as REUSABILITY_INVESTIGATORS,
 )
 from .errors import InvalidConfigError

@@ -82,8 +82,8 @@ agent-server/config/agents/
     levels.py       level-specific models and validated user-edit application
     model.py        resolved model/settings/credentials for existing model clients
     catalog.py      per-agent descriptions and validation entry points
-agent-server/src/server/agents/maintainability/<dimension>/<agent>/config.py
-agent-server/src/server/agents/maintainability/manager/config.py
+agent-server/src/server/agents/maintainability/v1/<dimension>/<agent>/config.py
+agent-server/src/server/agents/maintainability/v1/manager/config.py
 agent-server/src/server/project_analysis/<agent>/config.py
 ```
 
@@ -297,6 +297,6 @@ They therefore use `config.agents.CoordinatorConfig` directly without empty loca
 The manager does have exclusive settings: `max_attempts_per_dimension`, its
 `synthesize_assessments` prompt-node policy, hierarchy-level default budgets/bounds and
 the coordinator-child envelope preset. They live in
-`src/server/agents/maintainability/manager/config.py`, inheriting common declarations.
+`src/server/agents/maintainability/v1/manager/config.py`, inheriting common declarations.
 Any future coordinator-only setting belongs in that coordinator's own `config.py`,
 not in this shared directory.

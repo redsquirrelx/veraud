@@ -1,0 +1,42 @@
+diff --git a/src/shoplab/billing/service.py b/src/shoplab/billing/service.py
+index dfffadd..e6cfe92 100644
+--- a/src/shoplab/billing/service.py
++++ b/src/shoplab/billing/service.py
+@@ -1,7 +1,7 @@
+ from dataclasses import dataclass
+ from shoplab.domain.models import Order
+ from shoplab.domain.pricing import order_total
+-from shoplab.inventory import _store
++from shoplab.inventory import public_stock
+ 
+ 
+ @dataclass(frozen=True)
+@@ -13,5 +13,5 @@ class Receipt:
+ 
+ def charge(order: Order) -> Receipt:
+     # A payment module is reading another module's concrete backing state.
+-    units = _store.STOCK.get(order.sku, 0)
++    units = public_stock.get(order.sku, 0)
+     return Receipt(order.order_id, order_total(order), units)
+diff --git a/src/shoplab/inventory/__init__.py b/src/shoplab/inventory/__init__.py
+index c0865c1..14f1c8c 100644
+--- a/src/shoplab/inventory/__init__.py
++++ b/src/shoplab/inventory/__init__.py
+@@ -1,3 +1,3 @@
+-from shoplab.inventory.api import available_stock, reserve_stock
++from shoplab.inventory.api import available_stock, reserve_stock, public_stock
+ 
+-__all__ = ["available_stock", "reserve_stock"]
++__all__ = ["available_stock", "reserve_stock", "public_stock"]
+diff --git a/src/shoplab/inventory/api.py b/src/shoplab/inventory/api.py
+index 4987bae..be92631 100644
+--- a/src/shoplab/inventory/api.py
++++ b/src/shoplab/inventory/api.py
+@@ -1,5 +1,7 @@
+ from shoplab.inventory import _store
+ 
++public_stock = _store.STOCK
++
+ 
+ def available_stock(sku: str) -> int:
+     return _store.read(sku)

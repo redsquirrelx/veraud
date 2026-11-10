@@ -30,7 +30,7 @@ flowchart TD
 | Direct `/api/agents/run` execution and provider overrides | `src/server/api/executions.py`, `src/server/app/execution_service.py` | `src/server/app/{execution_config,model_configuration}.py`, `src/server/infrastructure/llm/` |
 | A new/changed named workflow | `src/server/app/pipeline_contracts.py`, `pipeline_registry.py`, matching `*_definition.py` | `src/server/pipelines/`, `src/server/api/pipelines.py` |
 | Audit acceptance, status, cancel, report-generation retention | `src/server/app/audit_service.py`, `audit_state.py` | `src/server/app/audit_resources.py`, `quality_audit_definition.py`, `src/server/blackboard/` |
-| Maintainability policy or topology | `src/server/agents/maintainability/<participant>/` | `src/server/runtimes/{investigation,coordination}/` |
+| Maintainability policy or topology | `src/server/agents/maintainability/v1/<participant>/` (integrated); `v2/modularity/architecture_boundary/` (unregistered copy) | `src/server/runtimes/{investigation,coordination}/` |
 | Functional adequacy retrieval or verification | `src/server/agents/functional_adequacy/agent.py`, `audit.py`, local `schemas.py` | `repository_adapter.py`, `config.py`, `prompts/` |
 | Security scanning/remediation | `src/server/agents/security/audit.py` and component package | `security/config.py`, `runtimes/repository/` |
 | Project orientation/architecture/semantic pipeline | `src/server/project_analysis/` | `src/server/pipelines/`, `src/server/app/project_architecture_definition.py` |

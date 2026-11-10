@@ -1,0 +1,3060 @@
+{
+  "repository_id": "fixture_A",
+  "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+  "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+  "objective": "Investigate dependencies that may contradict architectural boundaries inferred from code and structural relationships.",
+  "plan": {
+    "objectives": [
+      "Investigate dependencies that may contradict architectural boundaries inferred from code and structural relationships."
+    ],
+    "components": [
+      "src/shoplab/orders/__init__.py",
+      "src/shoplab/orders/service.py",
+      "src/shoplab/inventory/allocator.py",
+      "src/shoplab/inventory/api.py",
+      "src/shoplab/inventory/__init__.py",
+      "src/shoplab/application/checkout.py",
+      "src/shoplab/domain/checkout.py",
+      "src/shoplab/billing/service.py",
+      "src/shoplab/domain/models.py",
+      "src/shoplab/app.py",
+      "src/shoplab/infrastructure/console_notifier.py",
+      "src/shoplab/inventory/_store.py"
+    ],
+    "hypotheses": [],
+    "investigations": [
+      {
+        "id": "investigation:da57ce84e14ee8d370cf70a2",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/orders/__init__.py",
+          "src/shoplab/orders/service.py",
+          "src/shoplab/inventory/allocator.py"
+        ],
+        "structural_signal": {
+          "kind": "cycle",
+          "observed": [
+            "The resolved module graph contains a strongly connected component of 3 modules; displayed endpoints are bounded seeds, not necessarily the entire cycle.",
+            "Indexed type_only edges=0; a cycle remains without type_only edges=True. Conditional imports may still be present."
+          ],
+          "inference": "Potentially independent modules may be involved; conditional/type-only edges and legitimacy require inspection.",
+          "relationships": [
+            {
+              "id": "relationship:43af962b38b28ad01be8fd76",
+              "source_id": "file:9a50ab4e7ff302c83f1744ed",
+              "target_id": "file:9dd470e11d62f80956f2fc63",
+              "source_path": "src/shoplab/orders/__init__.py",
+              "target_path": "src/shoplab/orders/service.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:720334bd13d143758c82a8eb",
+              "source_id": "file:9dd470e11d62f80956f2fc63",
+              "target_id": "file:b2f51a23346d780d97db07d9",
+              "source_path": "src/shoplab/orders/service.py",
+              "target_path": "src/shoplab/inventory/allocator.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:72ab6acb9c630d90958d67b8",
+              "source_id": "file:b2f51a23346d780d97db07d9",
+              "target_id": "file:9dd470e11d62f80956f2fc63",
+              "source_path": "src/shoplab/inventory/allocator.py",
+              "target_path": "src/shoplab/orders/service.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:87f29678c62c9242dd3d1f07",
+              "source_id": "file:b2f51a23346d780d97db07d9",
+              "target_id": "file:9a50ab4e7ff302c83f1744ed",
+              "source_path": "src/shoplab/inventory/allocator.py",
+              "target_path": "src/shoplab/orders/__init__.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [],
+          "entrypoint_ids": [],
+          "basis": "corroborated",
+          "integration_links": []
+        },
+        "question": "Which mechanisms connect the indexed cyclic module group seeded by src/shoplab/orders/__init__.py, src/shoplab/orders/service.py, src/shoplab/inventory/allocator.py, and do declarations or actual usage support a boundary that the cycle crosses?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established",
+          "Cycle edges, conditional/type-only imports and the extent of the strongly connected component"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/orders/__init__.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:9a50ab4e7ff302c83f1744ed",
+              "target_id": "file:9dd470e11d62f80956f2fc63",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:fd3e6169077e6d6daa66a7a5",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/inventory/api.py",
+          "src/shoplab/inventory/__init__.py"
+        ],
+        "structural_signal": {
+          "kind": "cycle",
+          "observed": [
+            "The resolved module graph contains a strongly connected component of 2 modules; displayed endpoints are bounded seeds, not necessarily the entire cycle.",
+            "Indexed type_only edges=0; a cycle remains without type_only edges=True. Conditional imports may still be present."
+          ],
+          "inference": "Potentially independent modules may be involved; conditional/type-only edges and legitimacy require inspection.",
+          "relationships": [
+            {
+              "id": "relationship:c3770417340a3b0b05c79069",
+              "source_id": "file:84cd4f85a501c9faa57f720d",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "source_path": "src/shoplab/inventory/api.py",
+              "target_path": "src/shoplab/inventory/__init__.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:fa5f351c4e32754a14c3a919",
+              "source_id": "file:a09dcba18f709b1be36b9c85",
+              "target_id": "file:84cd4f85a501c9faa57f720d",
+              "source_path": "src/shoplab/inventory/__init__.py",
+              "target_path": "src/shoplab/inventory/api.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [],
+          "entrypoint_ids": [],
+          "basis": "corroborated",
+          "integration_links": []
+        },
+        "question": "Which mechanisms connect the indexed cyclic module group seeded by src/shoplab/inventory/api.py, src/shoplab/inventory/__init__.py, and do declarations or actual usage support a boundary that the cycle crosses?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established",
+          "Cycle edges, conditional/type-only imports and the extent of the strongly connected component"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/inventory/api.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:84cd4f85a501c9faa57f720d",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:7c625d73604e618cf7524fc3",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/application/checkout.py",
+          "src/shoplab/domain/checkout.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=3."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:ab99bcf05e759fa12f31d60e",
+              "source_id": "file:2efc390f62a6dc64dd487b27",
+              "target_id": "file:ec245d4f67183c1ebb4974a9",
+              "source_path": "src/shoplab/application/checkout.py",
+              "target_path": "src/shoplab/domain/checkout.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:1bd756edc2bb3483b6ce8405",
+            "symbol:5882658237aa1a2e943f8d0a"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/application/checkout.py → src/shoplab/domain/checkout.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/application/checkout.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:2efc390f62a6dc64dd487b27",
+              "target_id": "file:ec245d4f67183c1ebb4974a9",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:03c5f18ce595f5aff7bdafef",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/billing/service.py",
+          "src/shoplab/domain/models.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=2."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:e1a68d3e8fb5a38064fc25a6",
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "source_path": "src/shoplab/billing/service.py",
+              "target_path": "src/shoplab/domain/models.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:5a83bb8bd4d8db1aa770ec25",
+            "symbol:80c677056d4f10c6f0198000"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/billing/service.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/billing/service.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:41590217cdc51e97bf742194",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/app.py",
+          "src/shoplab/application/checkout.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:cd37f682637b2543704ee4c3",
+              "source_id": "file:17facb9442e043834480972b",
+              "target_id": "file:2efc390f62a6dc64dd487b27",
+              "source_path": "src/shoplab/app.py",
+              "target_path": "src/shoplab/application/checkout.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:1bd756edc2bb3483b6ce8405",
+            "symbol:37bfcd3275950107887569eb"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/app.py → src/shoplab/application/checkout.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/app.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:17facb9442e043834480972b",
+              "target_id": "file:2efc390f62a6dc64dd487b27",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:42fb0d97f35f66ef21ae9219",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/domain/checkout.py",
+          "src/shoplab/infrastructure/console_notifier.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:924cb66c2e1c00cfedb646fb",
+              "source_id": "file:ec245d4f67183c1ebb4974a9",
+              "target_id": "file:02a0fcd05c525b8fb202164c",
+              "source_path": "src/shoplab/domain/checkout.py",
+              "target_path": "src/shoplab/infrastructure/console_notifier.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:5882658237aa1a2e943f8d0a",
+            "symbol:5d12a8cf65fbbef1a78dd649"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/domain/checkout.py → src/shoplab/infrastructure/console_notifier.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/domain/checkout.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:ec245d4f67183c1ebb4974a9",
+              "target_id": "file:02a0fcd05c525b8fb202164c",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:49f406743f19332981a705f8",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/orders/service.py",
+          "src/shoplab/domain/models.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:b24bd74d5fa8725b6c5a6a18",
+              "source_id": "file:9dd470e11d62f80956f2fc63",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "source_path": "src/shoplab/orders/service.py",
+              "target_path": "src/shoplab/domain/models.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:5a83bb8bd4d8db1aa770ec25",
+            "symbol:5fe0aae18c0c3a2ee403af18"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/orders/service.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/orders/service.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:9dd470e11d62f80956f2fc63",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:69cae1cc6378031992f9888a",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/infrastructure/console_notifier.py",
+          "src/shoplab/domain/models.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=2."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:7b15d8bd5a80d893e9c8313d",
+              "source_id": "file:02a0fcd05c525b8fb202164c",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "source_path": "src/shoplab/infrastructure/console_notifier.py",
+              "target_path": "src/shoplab/domain/models.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:5a83bb8bd4d8db1aa770ec25",
+            "symbol:5d12a8cf65fbbef1a78dd649"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/infrastructure/console_notifier.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/infrastructure/console_notifier.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:02a0fcd05c525b8fb202164c",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:73bfa3e66483d7a9430bbb02",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/application/checkout.py",
+          "src/shoplab/infrastructure/console_notifier.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:6c75d0e16e89c85eccf32fcf",
+              "source_id": "file:2efc390f62a6dc64dd487b27",
+              "target_id": "file:02a0fcd05c525b8fb202164c",
+              "source_path": "src/shoplab/application/checkout.py",
+              "target_path": "src/shoplab/infrastructure/console_notifier.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:1bd756edc2bb3483b6ce8405",
+            "symbol:5d12a8cf65fbbef1a78dd649"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/application/checkout.py → src/shoplab/infrastructure/console_notifier.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/application/checkout.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:2efc390f62a6dc64dd487b27",
+              "target_id": "file:02a0fcd05c525b8fb202164c",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:c65e43b074adb3bdfbc9012a",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/billing/service.py",
+          "src/shoplab/inventory/__init__.py",
+          "src/shoplab/inventory/_store.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=False; distinct module-pair interactions=2."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:e0d654b68d6ef2e10bd1254e",
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "source_path": "src/shoplab/billing/service.py",
+              "target_path": "src/shoplab/inventory/__init__.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:c1d2ea1070392fd47bbfda1e",
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:12ea9d101f0bb082d73519b3",
+              "source_path": "src/shoplab/billing/service.py",
+              "target_path": "src/shoplab/inventory/_store.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:80c677056d4f10c6f0198000"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/billing/service.py → src/shoplab/inventory/__init__.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/billing/service.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:27d8dec4ddfc4100af0e4536",
+        "priority": "medium",
+        "scope": [
+          "src/shoplab/app.py",
+          "src/shoplab/domain/models.py"
+        ],
+        "structural_signal": {
+          "kind": "component_boundary",
+          "observed": [
+            "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+          ],
+          "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+          "relationships": [
+            {
+              "id": "relationship:06ceab432aa81533c4189f66",
+              "source_id": "file:17facb9442e043834480972b",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "source_path": "src/shoplab/app.py",
+              "target_path": "src/shoplab/domain/models.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [
+            "symbol:37bfcd3275950107887569eb",
+            "symbol:5a83bb8bd4d8db1aa770ec25"
+          ],
+          "entrypoint_ids": [],
+          "basis": "indexed",
+          "integration_links": []
+        },
+        "question": "What mechanism connects src/shoplab/app.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/app.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:17facb9442e043834480972b",
+              "target_id": "file:b3f8be43fe7e41019b3a322f",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      },
+      {
+        "id": "investigation:728992c1c793faffef9df44e",
+        "priority": "low",
+        "scope": [
+          "src/shoplab/billing/service.py",
+          "src/shoplab/inventory/_store.py",
+          "src/shoplab/orders/service.py",
+          "src/shoplab/inventory/__init__.py",
+          "src/shoplab/application/checkout.py"
+        ],
+        "structural_signal": {
+          "kind": "encapsulation",
+          "observed": [
+            "An indexed public_api candidate (detection=inferred) has multiple external callers; another interaction targets a different module in the same directory/project group."
+          ],
+          "inference": "The public API label may itself be inferred. Whether the alternate path bypasses a meaningful interface is an open question.",
+          "relationships": [
+            {
+              "id": "relationship:c1d2ea1070392fd47bbfda1e",
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:12ea9d101f0bb082d73519b3",
+              "source_path": "src/shoplab/billing/service.py",
+              "target_path": "src/shoplab/inventory/_store.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:98ffc26a21607ea5e9fcc6ab",
+              "source_id": "file:9dd470e11d62f80956f2fc63",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "source_path": "src/shoplab/orders/service.py",
+              "target_path": "src/shoplab/inventory/__init__.py",
+              "kind": "from_import"
+            },
+            {
+              "id": "relationship:a7c94034af96861f65c9422b",
+              "source_id": "file:2efc390f62a6dc64dd487b27",
+              "target_id": "file:a09dcba18f709b1be36b9c85",
+              "source_path": "src/shoplab/application/checkout.py",
+              "target_path": "src/shoplab/inventory/__init__.py",
+              "kind": "from_import"
+            }
+          ],
+          "symbol_ids": [],
+          "entrypoint_ids": [
+            "entrypoint:40a27d9af61dc431514a66ef"
+          ],
+          "basis": "inferred",
+          "integration_links": []
+        },
+        "question": "Does src/shoplab/billing/service.py → src/shoplab/inventory/_store.py (from_import) bypass a meaningful public contract, or is it a legitimate alternative access path?",
+        "evidence_needed": [
+          "Source and target declarations and actual dependency mechanism",
+          "Technical boundary declarations and supported dependency directions, if any",
+          "Comparable interactions, public access paths and legitimate exceptions",
+          "Material limitations when an endpoint or boundary cannot be established"
+        ],
+        "investigation_strategy": [
+          {
+            "tool": "find_symbols",
+            "arguments": {
+              "file_path": "src/shoplab/billing/service.py",
+              "limit": 10
+            }
+          },
+          {
+            "tool": "list_relationships",
+            "arguments": {
+              "source_id": "file:bb006abff1ab066900118457",
+              "target_id": "file:12ea9d101f0bb082d73519b3",
+              "kind": "from_import",
+              "limit": 10
+            }
+          }
+        ],
+        "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+        "scope_kind": "internal",
+        "project_ids": [
+          "project:cdb4ee2aea69cc6a83331bbe"
+        ]
+      }
+    ],
+    "limitations": [
+      "Investigation conclusions and candidates are provisional, not compliance verdicts. No critical review is performed.",
+      "Indexed dependencies are structural navigation, not proof of runtime coupling or an architectural rule.",
+      "Directory/module groups are provisional; names alone do not establish boundaries.",
+      "The accessible symbol index does not expose an exhaustive export/visibility map; public entrypoint labels may be inferred.",
+      "Import absence does not exclude HTTP/RPC/WebSocket integration. Lightweight discovery supports literal clients/routes/listeners only; dynamic wiring, mounts and unscanned files remain unresolved."
+    ],
+    "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70"
+  },
+  "findings": [
+    {
+      "id": "candidate:domain_infrastructure_dependency",
+      "title": "Domain layer directly depends on infrastructure implementation",
+      "description": "The domain logic in checkout.py directly references ConsoleNotifier from the infrastructure package, violating the principle that domain code should be independent of concrete infrastructure details.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "evidence_ids": [
+        "retrieval:b3edd5495f30f1b5f58ae593",
+        "retrieval:c79283ca3b2314c16954b7d8"
+      ],
+      "justification": "Layered architectures such as Clean Architecture require domain code to depend solely on domain abstractions or models, leaving concrete infrastructure wiring to outer layers.",
+      "modularity_impact": "Couples the domain layer directly to a concrete console notification implementation, preventing easy substitution or mocking without modifying domain source code.",
+      "severity": "medium",
+      "confidence": 0.9,
+      "recommendation": "Introduce an abstract notifier interface in the domain layer and inject the implementation or depend on inversion of control principles.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "evidence": [
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "76699edeb8a48975fabe170b3e1494ba4d8261db",
+          "id": "retrieval:b3edd5495f30f1b5f58ae593",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/domain/checkout.py",
+          "file_id": "file:ec245d4f67183c1ebb4974a9",
+          "content_hash": "b3323c18e8dad0fb6fe3c699d10aad47817f0463bb8cf43349b8ce40cfaf6677",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 7,
+          "symbol_ids": [
+            "symbol:5882658237aa1a2e943f8d0a"
+          ],
+          "tool_call_id": "boundary-investigate-64bdeef57d33423d8ccc00ae079d0305"
+        },
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "ffe10e4939c7866ce8262f55471c27e048203653",
+          "id": "retrieval:c79283ca3b2314c16954b7d8",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/infrastructure/console_notifier.py",
+          "file_id": "file:02a0fcd05c525b8fb202164c",
+          "content_hash": "85f470de4fb08b549fbfd7957bf816b604d0e8168e5478bac13a443e7b2bb7d4",
+          "kind": "source",
+          "start_line": 3,
+          "end_line": 7,
+          "symbol_ids": [
+            "symbol:5d12a8cf65fbbef1a78dd649",
+            "symbol:85212d7b4176f312d55376a6"
+          ],
+          "tool_call_id": "boundary-investigate-1de7611edac34921bf6d87bfc1b4d7c3"
+        }
+      ],
+      "validation_status": "insufficient_evidence",
+      "review_rationale": "Provisional investigation candidate; no critical review or acceptance was performed.",
+      "claim_check": null,
+      "validation_issues": []
+    },
+    {
+      "id": "candidate:billing-inventory-store-access",
+      "title": "Billing service accesses inventory internal backing state directly",
+      "description": "The billing module imports `_store` directly and reads `_store.STOCK` instead of interacting through the public inventory API.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "justification": "The inventory module explicitly defines a public API in its `__init__.py` (`available_stock`, `reserve_stock`), but billing bypasses it to read internal module state directly.",
+      "modularity_impact": "Tight coupling between the billing service and the inventory module's internal data representation.",
+      "severity": "medium",
+      "confidence": 0.95,
+      "recommendation": "Refactor `src/shoplab/billing/service.py` to use `available_stock` or appropriate functions from the inventory public API instead of accessing `_store.STOCK` directly.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "evidence": [
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+          "id": "retrieval:47718d677b1fdbef0082936c",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/billing/service.py",
+          "file_id": "file:bb006abff1ab066900118457",
+          "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 17,
+          "symbol_ids": [
+            "symbol:80c677056d4f10c6f0198000",
+            "symbol:9e71d68b7d34fdabf799620d"
+          ],
+          "tool_call_id": "boundary-investigate-d21c2a6acb804670b53120ee0bbd355b"
+        },
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "3bdc8b392e4bd6e131941a5f8c5b5caa8483cb95",
+          "id": "retrieval:ef2b42a61709b9be5338bbdb",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/inventory/_store.py",
+          "file_id": "file:12ea9d101f0bb082d73519b3",
+          "content_hash": "0e82369bccb5f3a213ac4d9518b7893add824807735735a5489daf3b312ac7c5",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 13,
+          "symbol_ids": [
+            "symbol:2f881a7da82f7e0e8ce58279",
+            "symbol:40adbcc04a7ff5a975e8f5ad"
+          ],
+          "tool_call_id": "boundary-investigate-4b50ebfa2cbe4f6fbec851b3ae140bdb"
+        },
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "c0865c11eb4b64845fa3c0a28f39aa3217dd0ad1",
+          "id": "retrieval:1398d9a93928218d3d0dbed2",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/inventory/__init__.py",
+          "file_id": "file:a09dcba18f709b1be36b9c85",
+          "content_hash": "ba75db5f29249a563f4ebae8dda0621ad50e50b9dfc0e29dd4cfc414ba319ce3",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 3,
+          "symbol_ids": [],
+          "tool_call_id": "boundary-investigate-51d4230e58d245a7b8594d55bce58184"
+        }
+      ],
+      "validation_status": "insufficient_evidence",
+      "review_rationale": "Provisional investigation candidate; no critical review or acceptance was performed.",
+      "claim_check": null,
+      "validation_issues": []
+    },
+    {
+      "id": "candidate:inventory-encapsulation-bypass",
+      "title": "Billing module bypasses inventory public API and accesses private backing store directly",
+      "description": "src/shoplab/billing/service.py imports the private module _store from inventory and directly inspects the underlying STOCK dictionary, bypassing the public abstraction boundary exposed by inventory/__init__.py.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py",
+        "src/shoplab/inventory/__init__.py"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "justification": "Inventory exposes a public export surface (`__all__ = ['available_stock', 'reserve_stock']`), establishing an integration boundary. Rather than using these functions, billing directly accesses `_store.STOCK`.",
+      "modularity_impact": "Tight coupling between the billing service and inventory internal data structures, breaking internal module encapsulation.",
+      "severity": "medium",
+      "confidence": 0.95,
+      "recommendation": "Refactor src/shoplab/billing/service.py to use the public inventory API functions (e.g., available_stock) instead of importing _store directly.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "evidence": [
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+          "id": "retrieval:47718d677b1fdbef0082936c",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/billing/service.py",
+          "file_id": "file:bb006abff1ab066900118457",
+          "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 17,
+          "symbol_ids": [
+            "symbol:80c677056d4f10c6f0198000",
+            "symbol:9e71d68b7d34fdabf799620d"
+          ],
+          "tool_call_id": "boundary-investigate-d21c2a6acb804670b53120ee0bbd355b"
+        },
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "3bdc8b392e4bd6e131941a5f8c5b5caa8483cb95",
+          "id": "retrieval:ef2b42a61709b9be5338bbdb",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/inventory/_store.py",
+          "file_id": "file:12ea9d101f0bb082d73519b3",
+          "content_hash": "0e82369bccb5f3a213ac4d9518b7893add824807735735a5489daf3b312ac7c5",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 13,
+          "symbol_ids": [
+            "symbol:2f881a7da82f7e0e8ce58279",
+            "symbol:40adbcc04a7ff5a975e8f5ad"
+          ],
+          "tool_call_id": "boundary-investigate-4b50ebfa2cbe4f6fbec851b3ae140bdb"
+        },
+        {
+          "commit_verification": "exact",
+          "git_blob_id": "c0865c11eb4b64845fa3c0a28f39aa3217dd0ad1",
+          "id": "retrieval:1398d9a93928218d3d0dbed2",
+          "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+          "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+          "path": "src/shoplab/inventory/__init__.py",
+          "file_id": "file:a09dcba18f709b1be36b9c85",
+          "content_hash": "ba75db5f29249a563f4ebae8dda0621ad50e50b9dfc0e29dd4cfc414ba319ce3",
+          "kind": "source",
+          "start_line": 1,
+          "end_line": 3,
+          "symbol_ids": [],
+          "tool_call_id": "boundary-investigate-51d4230e58d245a7b8594d55bce58184"
+        }
+      ],
+      "validation_status": "insufficient_evidence",
+      "review_rationale": "Provisional investigation candidate; no critical review or acceptance was performed.",
+      "claim_check": null,
+      "validation_issues": []
+    }
+  ],
+  "hypotheses": [],
+  "missing_information": [],
+  "limitations": [
+    "Investigation conclusions and candidates are provisional, not compliance verdicts. No critical review is performed.",
+    "Indexed dependencies are structural navigation, not proof of runtime coupling or an architectural rule.",
+    "Directory/module groups are provisional; names alone do not establish boundaries.",
+    "The accessible symbol index does not expose an exhaustive export/visibility map; public entrypoint labels may be inferred.",
+    "Import absence does not exclude HTTP/RPC/WebSocket integration. Lightweight discovery supports literal clients/routes/listeners only; dynamic wiring, mounts and unscanned files remain unresolved.",
+    "No formal architectural rules or documentation were present in the repository to establish prohibited boundaries.",
+    "Analysis is limited to the specified files and their immediate relationships within the snapshot.",
+    "No formal architectural rules or configuration constraints are declared in the codebase to restrict application-layer imports of infrastructure modules.",
+    "investigate: response_schema attempt 1/1: ValidationError (response: dependency_endpoints_source_not_inspected)",
+    "Analysis is limited to the provided source code snapshot and defined commit scope.",
+    "Coverage is bounded; absence of findings does not establish architectural compliance."
+  ],
+  "termination_reason": "investigations_completed",
+  "deferred_stages": [],
+  "model_calls": 14,
+  "tool_calls": 26,
+  "iterations": 12,
+  "accounted_tokens": 59579,
+  "estimated_tokens": 0,
+  "evidence": [
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "5d0434367242487290bc17113d5c319f7741ab2a",
+      "id": "retrieval:8892e5f58ee807dc3b1610bd",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/orders/__init__.py",
+      "file_id": "file:9a50ab4e7ff302c83f1744ed",
+      "content_hash": "876148769261c3439a3a0bd784569a0f5fcdb1ba6ee5bd8184beb91c35a43481",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-9b21df7f9acc4a688eeb2afd1877c9f2"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "5d0434367242487290bc17113d5c319f7741ab2a",
+      "id": "retrieval:68f0d485a5ece2815156b336",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/orders/__init__.py",
+      "file_id": "file:9a50ab4e7ff302c83f1744ed",
+      "content_hash": "876148769261c3439a3a0bd784569a0f5fcdb1ba6ee5bd8184beb91c35a43481",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 3,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-4839d28b23634ac39f97614da5a410b9"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "5714f165e515edc674d397141f6ed0d6bf6617f2",
+      "id": "retrieval:91ab59bfedf8f125db80c99f",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/orders/service.py",
+      "file_id": "file:9dd470e11d62f80956f2fc63",
+      "content_hash": "af5a8dee69a18c0e984879b941e38bf8564dedb865d12dcbf5a6613b313e69ff",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 10,
+      "symbol_ids": [
+        "symbol:5fe0aae18c0c3a2ee403af18",
+        "symbol:f0b6c41ccf87ea00b1daf1ab"
+      ],
+      "tool_call_id": "boundary-investigate-85f0651ec1fe414b97961d8c0f163228"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "4b090ccb2f5716f90a0c28d9789889cdb74a31f3",
+      "id": "retrieval:1767be3ffa22cb210b7a9f92",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/inventory/allocator.py",
+      "file_id": "file:b2f51a23346d780d97db07d9",
+      "content_hash": "85e434643b6dda4b951b5f46a7fb63ca7df5347f819f318eeefa1ac6e1f9c229",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 8,
+      "symbol_ids": [
+        "symbol:0f6386d817e4e4111a02a7e3"
+      ],
+      "tool_call_id": "boundary-investigate-858da741c58144639178a9d4a1809927"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "4987baebe2374893aa5c66fb3839d2514f1df031",
+      "id": "retrieval:32aaf3cb3994728e8a99a9c9",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/inventory/api.py",
+      "file_id": "file:84cd4f85a501c9faa57f720d",
+      "content_hash": "9801a775f63c50bef5fb881965bf6efeee0786cef116913f013a1a1ed2633005",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-9c8ca85ade704585b704eba7cca84b4f"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "4987baebe2374893aa5c66fb3839d2514f1df031",
+      "id": "retrieval:49606df06451b2d4194db767",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/inventory/api.py",
+      "file_id": "file:84cd4f85a501c9faa57f720d",
+      "content_hash": "9801a775f63c50bef5fb881965bf6efeee0786cef116913f013a1a1ed2633005",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 9,
+      "symbol_ids": [
+        "symbol:49d009280d661ac9dc186d00",
+        "symbol:a6abdd15fc5dc27a64101def"
+      ],
+      "tool_call_id": "boundary-investigate-c12391e395f34d3ead78de3d6a34c819"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "c0865c11eb4b64845fa3c0a28f39aa3217dd0ad1",
+      "id": "retrieval:1398d9a93928218d3d0dbed2",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/inventory/__init__.py",
+      "file_id": "file:a09dcba18f709b1be36b9c85",
+      "content_hash": "ba75db5f29249a563f4ebae8dda0621ad50e50b9dfc0e29dd4cfc414ba319ce3",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 3,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-51d4230e58d245a7b8594d55bce58184"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ab027ad0bd299de61863c4c9ca3006033b43b935",
+      "id": "retrieval:3862831bf33aae3ab23cc976",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/application/checkout.py",
+      "file_id": "file:2efc390f62a6dc64dd487b27",
+      "content_hash": "a8b6f203029f23e270fb1eb301f9639a3fd578ed4d351c97e6615ac7ffc66eba",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-d6b6e9b347c44abe95b7368aed1bfb7d"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ab027ad0bd299de61863c4c9ca3006033b43b935",
+      "id": "retrieval:1ae207ed85d802a6d9b06de8",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/application/checkout.py",
+      "file_id": "file:2efc390f62a6dc64dd487b27",
+      "content_hash": "a8b6f203029f23e270fb1eb301f9639a3fd578ed4d351c97e6615ac7ffc66eba",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 17,
+      "symbol_ids": [
+        "symbol:1bd756edc2bb3483b6ce8405"
+      ],
+      "tool_call_id": "boundary-investigate-ff7005e1d0d94c2e8a8de2f73a279539"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "76699edeb8a48975fabe170b3e1494ba4d8261db",
+      "id": "retrieval:91e17002ff1314c22e32dd09",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/domain/checkout.py",
+      "file_id": "file:ec245d4f67183c1ebb4974a9",
+      "content_hash": "b3323c18e8dad0fb6fe3c699d10aad47817f0463bb8cf43349b8ce40cfaf6677",
+      "kind": "source",
+      "start_line": 2,
+      "end_line": 7,
+      "symbol_ids": [
+        "symbol:5882658237aa1a2e943f8d0a"
+      ],
+      "tool_call_id": "boundary-investigate-d5cd3fb5d2614cee9266f5be717f6935"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+      "id": "retrieval:b43b7d5e32a364e76628f1ac",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/billing/service.py",
+      "file_id": "file:bb006abff1ab066900118457",
+      "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-adb2ef150a0d41678ccef76a585522c6"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+      "id": "retrieval:47718d677b1fdbef0082936c",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/billing/service.py",
+      "file_id": "file:bb006abff1ab066900118457",
+      "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 17,
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:9e71d68b7d34fdabf799620d"
+      ],
+      "tool_call_id": "boundary-investigate-d21c2a6acb804670b53120ee0bbd355b"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "5a7af174aefa8a27916781c91d15aa8f4667c2a6",
+      "id": "retrieval:5f7c812c36bb22e83f332c9f",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/domain/models.py",
+      "file_id": "file:b3f8be43fe7e41019b3a322f",
+      "content_hash": "7aa12020e576ca796829c406cab4b637214a23434ef3c2208a3ea821d43c0de8",
+      "kind": "source",
+      "start_line": 8,
+      "end_line": 13,
+      "symbol_ids": [
+        "symbol:5a83bb8bd4d8db1aa770ec25",
+        "symbol:7468227ea1d17f888819a721"
+      ],
+      "tool_call_id": "boundary-investigate-41e4c8244bd2418ab0d237edb5ce6856"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "2be28056d06cfff633389ad32db8135c9e1075ae",
+      "id": "retrieval:8a811e3fbbbb6a4f34d7d8e9",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/app.py",
+      "file_id": "file:17facb9442e043834480972b",
+      "content_hash": "947ea18cb4000fc9f717293c1ef88f781bfd62483f3fa73410f6f31f7dc8a2ed",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-c8fa6ba62180445a8252c9167512ee19"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "2be28056d06cfff633389ad32db8135c9e1075ae",
+      "id": "retrieval:0939213f649296840e8f7868",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/app.py",
+      "file_id": "file:17facb9442e043834480972b",
+      "content_hash": "947ea18cb4000fc9f717293c1ef88f781bfd62483f3fa73410f6f31f7dc8a2ed",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 11,
+      "symbol_ids": [
+        "symbol:37bfcd3275950107887569eb"
+      ],
+      "tool_call_id": "boundary-investigate-0be4f919093c4b36bbbd82604da0da6e"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "76699edeb8a48975fabe170b3e1494ba4d8261db",
+      "id": "retrieval:a8b7ad5d0f7d0f2b9c16d2cc",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/domain/checkout.py",
+      "file_id": "file:ec245d4f67183c1ebb4974a9",
+      "content_hash": "b3323c18e8dad0fb6fe3c699d10aad47817f0463bb8cf43349b8ce40cfaf6677",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-3fb1f927bffb4f6f999021b124910ccf"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "76699edeb8a48975fabe170b3e1494ba4d8261db",
+      "id": "retrieval:b3edd5495f30f1b5f58ae593",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/domain/checkout.py",
+      "file_id": "file:ec245d4f67183c1ebb4974a9",
+      "content_hash": "b3323c18e8dad0fb6fe3c699d10aad47817f0463bb8cf43349b8ce40cfaf6677",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 7,
+      "symbol_ids": [
+        "symbol:5882658237aa1a2e943f8d0a"
+      ],
+      "tool_call_id": "boundary-investigate-64bdeef57d33423d8ccc00ae079d0305"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ffe10e4939c7866ce8262f55471c27e048203653",
+      "id": "retrieval:c79283ca3b2314c16954b7d8",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/infrastructure/console_notifier.py",
+      "file_id": "file:02a0fcd05c525b8fb202164c",
+      "content_hash": "85f470de4fb08b549fbfd7957bf816b604d0e8168e5478bac13a443e7b2bb7d4",
+      "kind": "source",
+      "start_line": 3,
+      "end_line": 7,
+      "symbol_ids": [
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6"
+      ],
+      "tool_call_id": "boundary-investigate-1de7611edac34921bf6d87bfc1b4d7c3"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "5714f165e515edc674d397141f6ed0d6bf6617f2",
+      "id": "retrieval:c8e3a177850fa790f399d8ad",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/orders/service.py",
+      "file_id": "file:9dd470e11d62f80956f2fc63",
+      "content_hash": "af5a8dee69a18c0e984879b941e38bf8564dedb865d12dcbf5a6613b313e69ff",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-e087518f0eb2465b9bdc781e93ba41d2"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ffe10e4939c7866ce8262f55471c27e048203653",
+      "id": "retrieval:5413a04b0609a2b9e768505c",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/infrastructure/console_notifier.py",
+      "file_id": "file:02a0fcd05c525b8fb202164c",
+      "content_hash": "85f470de4fb08b549fbfd7957bf816b604d0e8168e5478bac13a443e7b2bb7d4",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-13c1b21b1b67456c901f3877a165b6fc"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ffe10e4939c7866ce8262f55471c27e048203653",
+      "id": "retrieval:a34da1cff50bc7fafa5fcf1b",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/infrastructure/console_notifier.py",
+      "file_id": "file:02a0fcd05c525b8fb202164c",
+      "content_hash": "85f470de4fb08b549fbfd7957bf816b604d0e8168e5478bac13a443e7b2bb7d4",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 7,
+      "symbol_ids": [
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6"
+      ],
+      "tool_call_id": "boundary-investigate-b39f07ece430482697922bd2f8c3333b"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "ab027ad0bd299de61863c4c9ca3006033b43b935",
+      "id": "retrieval:d04050157158985b3404d285",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/application/checkout.py",
+      "file_id": "file:2efc390f62a6dc64dd487b27",
+      "content_hash": "a8b6f203029f23e270fb1eb301f9639a3fd578ed4d351c97e6615ac7ffc66eba",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-5ded4a81ca35496aa978a3004b3a7905"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+      "id": "retrieval:55549932970ac471e4244a8c",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/billing/service.py",
+      "file_id": "file:bb006abff1ab066900118457",
+      "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-eaff6f66a6e44ae489d56e0086a20523"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "3bdc8b392e4bd6e131941a5f8c5b5caa8483cb95",
+      "id": "retrieval:ef2b42a61709b9be5338bbdb",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/inventory/_store.py",
+      "file_id": "file:12ea9d101f0bb082d73519b3",
+      "content_hash": "0e82369bccb5f3a213ac4d9518b7893add824807735735a5489daf3b312ac7c5",
+      "kind": "source",
+      "start_line": 1,
+      "end_line": 13,
+      "symbol_ids": [
+        "symbol:2f881a7da82f7e0e8ce58279",
+        "symbol:40adbcc04a7ff5a975e8f5ad"
+      ],
+      "tool_call_id": "boundary-investigate-4b50ebfa2cbe4f6fbec851b3ae140bdb"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "2be28056d06cfff633389ad32db8135c9e1075ae",
+      "id": "retrieval:521d524bda91b4f5a2fe5983",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/app.py",
+      "file_id": "file:17facb9442e043834480972b",
+      "content_hash": "947ea18cb4000fc9f717293c1ef88f781bfd62483f3fa73410f6f31f7dc8a2ed",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-16f971cba5d640aa8f9899fdc4aa9dcd"
+    },
+    {
+      "commit_verification": "exact",
+      "git_blob_id": "dfffaddf16ea3625d3814321bc86ecc6c3dc89ce",
+      "id": "retrieval:1d58c6548e577d9d2c31d636",
+      "snapshot_hash": "624050b5e6689871fb401ceb2511d93692ca80c87c8d0907a75978228d64bc70",
+      "commit": "9bc960ec821efd68a241dd0dcfa0b7bec86816b8",
+      "path": "src/shoplab/billing/service.py",
+      "file_id": "file:bb006abff1ab066900118457",
+      "content_hash": "cd57fe8b7e1920576c9a48d0f0e7f4e930200d39bb4ec326299b1188f6874b88",
+      "kind": "metadata",
+      "start_line": null,
+      "end_line": null,
+      "symbol_ids": [],
+      "tool_call_id": "boundary-investigate-44bb9867d3fb4d16b08ad30f11973b5a"
+    }
+  ],
+  "request_fingerprint": "",
+  "investigation_coverage": {
+    "counts": {
+      "files": 21,
+      "symbols": 20,
+      "resolved_relationships": 33,
+      "unresolved_relationships": 0,
+      "type_only_relationships": 0,
+      "excluded_nonproduction_files": 1
+    },
+    "selected": 12,
+    "candidate_menu": 12,
+    "exhaustive": false,
+    "by_project": [
+      {
+        "project_id": "project:cdb4ee2aea69cc6a83331bbe",
+        "root": ".",
+        "eligible_files": 21,
+        "excluded_nonproduction_files": 1,
+        "eligible_relationships": 33,
+        "unresolved_relationships": 0,
+        "type_only_relationships": 0,
+        "non_type_only_relationships": 33,
+        "index_status": "relationships_available",
+        "candidates_generated": 13,
+        "internal_candidates_generated": 13,
+        "internal_candidates_after_dedup": 12,
+        "component_seeds_without_boundary_support": 9,
+        "candidates_after_dedup": 12,
+        "candidates_deduplicated": 1,
+        "menu_candidates": 12,
+        "selected": 12,
+        "model_selected": 12,
+        "internal_selected": 12,
+        "internal_menu_candidates": 12,
+        "integration_selected": 0,
+        "candidates_omitted": 0,
+        "selection_status": "selected"
+      }
+    ],
+    "applications_detected": [
+      {
+        "project_id": "project:cdb4ee2aea69cc6a83331bbe",
+        "root": ".",
+        "eligible_files": 21
+      }
+    ],
+    "selection_bias_detected": false,
+    "selection_rebalanced": false,
+    "selection_reordered": false,
+    "selection_added_ids": [],
+    "selection_removed_ids": [],
+    "selected_by_scope": {
+      "internal": 12
+    },
+    "selected_by_type": {
+      "cycle": 2,
+      "component_boundary": 9,
+      "encapsulation": 1
+    },
+    "opportunities": {
+      "generated_by_type": {
+        "cycle": 2,
+        "encapsulation": 2,
+        "component_boundary": 9
+      },
+      "generated_by_scope": {
+        "internal": 13
+      },
+      "deduplicated": 1,
+      "quality_discarded_relationship_seeds": 9,
+      "menu_budget_omitted": 0,
+      "internal_relationships": 33,
+      "cross_application_imports": 0,
+      "context_budget_omitted": 0
+    },
+    "integrations": {
+      "scanned_files": 20,
+      "scanned_characters": 3873,
+      "scan_omitted_files": 0,
+      "parse_failures": 0,
+      "matched_clients": 0,
+      "ambiguous_clients": 0,
+      "unresolved_clients": 0,
+      "indexed_endpoints": 0,
+      "discovered_endpoints": 0,
+      "listener_bindings": 0,
+      "generated_opportunities": 0,
+      "by_project": [
+        {
+          "project_id": "project:cdb4ee2aea69cc6a83331bbe",
+          "client_declarations": 0,
+          "exposed_endpoints": 0,
+          "listener_bindings": 0,
+          "integration_opportunities": 0
+        }
+      ]
+    }
+  },
+  "claim_checks": [],
+  "critical_review": null,
+  "failed_evaluation_attempt": null,
+  "evaluation_attempt_issues": [],
+  "evaluation_evidence_status": "not_evaluated",
+  "evaluated_evidence_ids": [],
+  "pending_evaluation_evidence_ids": [],
+  "investigation_tasks": [
+    {
+      "id": "investigation:da57ce84e14ee8d370cf70a2",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/orders/__init__.py",
+        "src/shoplab/orders/service.py",
+        "src/shoplab/inventory/allocator.py"
+      ],
+      "structural_signal": {
+        "kind": "cycle",
+        "observed": [
+          "The resolved module graph contains a strongly connected component of 3 modules; displayed endpoints are bounded seeds, not necessarily the entire cycle.",
+          "Indexed type_only edges=0; a cycle remains without type_only edges=True. Conditional imports may still be present."
+        ],
+        "inference": "Potentially independent modules may be involved; conditional/type-only edges and legitimacy require inspection.",
+        "relationships": [
+          {
+            "id": "relationship:43af962b38b28ad01be8fd76",
+            "source_id": "file:9a50ab4e7ff302c83f1744ed",
+            "target_id": "file:9dd470e11d62f80956f2fc63",
+            "source_path": "src/shoplab/orders/__init__.py",
+            "target_path": "src/shoplab/orders/service.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:720334bd13d143758c82a8eb",
+            "source_id": "file:9dd470e11d62f80956f2fc63",
+            "target_id": "file:b2f51a23346d780d97db07d9",
+            "source_path": "src/shoplab/orders/service.py",
+            "target_path": "src/shoplab/inventory/allocator.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:72ab6acb9c630d90958d67b8",
+            "source_id": "file:b2f51a23346d780d97db07d9",
+            "target_id": "file:9dd470e11d62f80956f2fc63",
+            "source_path": "src/shoplab/inventory/allocator.py",
+            "target_path": "src/shoplab/orders/service.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:87f29678c62c9242dd3d1f07",
+            "source_id": "file:b2f51a23346d780d97db07d9",
+            "target_id": "file:9a50ab4e7ff302c83f1744ed",
+            "source_path": "src/shoplab/inventory/allocator.py",
+            "target_path": "src/shoplab/orders/__init__.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [],
+        "entrypoint_ids": [],
+        "basis": "corroborated",
+        "integration_links": []
+      },
+      "question": "Which mechanisms connect the indexed cyclic module group seeded by src/shoplab/orders/__init__.py, src/shoplab/orders/service.py, src/shoplab/inventory/allocator.py, and do declarations or actual usage support a boundary that the cycle crosses?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established",
+        "Cycle edges, conditional/type-only imports and the extent of the strongly connected component"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/orders/__init__.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:9a50ab4e7ff302c83f1744ed",
+            "target_id": "file:9dd470e11d62f80956f2fc63",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:fd3e6169077e6d6daa66a7a5",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/inventory/api.py",
+        "src/shoplab/inventory/__init__.py"
+      ],
+      "structural_signal": {
+        "kind": "cycle",
+        "observed": [
+          "The resolved module graph contains a strongly connected component of 2 modules; displayed endpoints are bounded seeds, not necessarily the entire cycle.",
+          "Indexed type_only edges=0; a cycle remains without type_only edges=True. Conditional imports may still be present."
+        ],
+        "inference": "Potentially independent modules may be involved; conditional/type-only edges and legitimacy require inspection.",
+        "relationships": [
+          {
+            "id": "relationship:c3770417340a3b0b05c79069",
+            "source_id": "file:84cd4f85a501c9faa57f720d",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "source_path": "src/shoplab/inventory/api.py",
+            "target_path": "src/shoplab/inventory/__init__.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:fa5f351c4e32754a14c3a919",
+            "source_id": "file:a09dcba18f709b1be36b9c85",
+            "target_id": "file:84cd4f85a501c9faa57f720d",
+            "source_path": "src/shoplab/inventory/__init__.py",
+            "target_path": "src/shoplab/inventory/api.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [],
+        "entrypoint_ids": [],
+        "basis": "corroborated",
+        "integration_links": []
+      },
+      "question": "Which mechanisms connect the indexed cyclic module group seeded by src/shoplab/inventory/api.py, src/shoplab/inventory/__init__.py, and do declarations or actual usage support a boundary that the cycle crosses?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established",
+        "Cycle edges, conditional/type-only imports and the extent of the strongly connected component"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/inventory/api.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:84cd4f85a501c9faa57f720d",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:7c625d73604e618cf7524fc3",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=3."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:ab99bcf05e759fa12f31d60e",
+            "source_id": "file:2efc390f62a6dc64dd487b27",
+            "target_id": "file:ec245d4f67183c1ebb4974a9",
+            "source_path": "src/shoplab/application/checkout.py",
+            "target_path": "src/shoplab/domain/checkout.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:1bd756edc2bb3483b6ce8405",
+          "symbol:5882658237aa1a2e943f8d0a"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/application/checkout.py → src/shoplab/domain/checkout.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/application/checkout.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:2efc390f62a6dc64dd487b27",
+            "target_id": "file:ec245d4f67183c1ebb4974a9",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:03c5f18ce595f5aff7bdafef",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=2."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:e1a68d3e8fb5a38064fc25a6",
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "source_path": "src/shoplab/billing/service.py",
+            "target_path": "src/shoplab/domain/models.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:5a83bb8bd4d8db1aa770ec25",
+          "symbol:80c677056d4f10c6f0198000"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/billing/service.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/billing/service.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:41590217cdc51e97bf742194",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/app.py",
+        "src/shoplab/application/checkout.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:cd37f682637b2543704ee4c3",
+            "source_id": "file:17facb9442e043834480972b",
+            "target_id": "file:2efc390f62a6dc64dd487b27",
+            "source_path": "src/shoplab/app.py",
+            "target_path": "src/shoplab/application/checkout.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:1bd756edc2bb3483b6ce8405",
+          "symbol:37bfcd3275950107887569eb"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/app.py → src/shoplab/application/checkout.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/app.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:17facb9442e043834480972b",
+            "target_id": "file:2efc390f62a6dc64dd487b27",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:42fb0d97f35f66ef21ae9219",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:924cb66c2e1c00cfedb646fb",
+            "source_id": "file:ec245d4f67183c1ebb4974a9",
+            "target_id": "file:02a0fcd05c525b8fb202164c",
+            "source_path": "src/shoplab/domain/checkout.py",
+            "target_path": "src/shoplab/infrastructure/console_notifier.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:5882658237aa1a2e943f8d0a",
+          "symbol:5d12a8cf65fbbef1a78dd649"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/domain/checkout.py → src/shoplab/infrastructure/console_notifier.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/domain/checkout.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:ec245d4f67183c1ebb4974a9",
+            "target_id": "file:02a0fcd05c525b8fb202164c",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:49f406743f19332981a705f8",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/orders/service.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:b24bd74d5fa8725b6c5a6a18",
+            "source_id": "file:9dd470e11d62f80956f2fc63",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "source_path": "src/shoplab/orders/service.py",
+            "target_path": "src/shoplab/domain/models.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:5a83bb8bd4d8db1aa770ec25",
+          "symbol:5fe0aae18c0c3a2ee403af18"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/orders/service.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/orders/service.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:9dd470e11d62f80956f2fc63",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:69cae1cc6378031992f9888a",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/infrastructure/console_notifier.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=2."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:7b15d8bd5a80d893e9c8313d",
+            "source_id": "file:02a0fcd05c525b8fb202164c",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "source_path": "src/shoplab/infrastructure/console_notifier.py",
+            "target_path": "src/shoplab/domain/models.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:5a83bb8bd4d8db1aa770ec25",
+          "symbol:5d12a8cf65fbbef1a78dd649"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/infrastructure/console_notifier.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/infrastructure/console_notifier.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:02a0fcd05c525b8fb202164c",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:73bfa3e66483d7a9430bbb02",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:6c75d0e16e89c85eccf32fcf",
+            "source_id": "file:2efc390f62a6dc64dd487b27",
+            "target_id": "file:02a0fcd05c525b8fb202164c",
+            "source_path": "src/shoplab/application/checkout.py",
+            "target_path": "src/shoplab/infrastructure/console_notifier.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:1bd756edc2bb3483b6ce8405",
+          "symbol:5d12a8cf65fbbef1a78dd649"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/application/checkout.py → src/shoplab/infrastructure/console_notifier.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/application/checkout.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:2efc390f62a6dc64dd487b27",
+            "target_id": "file:02a0fcd05c525b8fb202164c",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:c65e43b074adb3bdfbc9012a",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/__init__.py",
+        "src/shoplab/inventory/_store.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=False; distinct module-pair interactions=2."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:e0d654b68d6ef2e10bd1254e",
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "source_path": "src/shoplab/billing/service.py",
+            "target_path": "src/shoplab/inventory/__init__.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:c1d2ea1070392fd47bbfda1e",
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:12ea9d101f0bb082d73519b3",
+            "source_path": "src/shoplab/billing/service.py",
+            "target_path": "src/shoplab/inventory/_store.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:80c677056d4f10c6f0198000"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/billing/service.py → src/shoplab/inventory/__init__.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/billing/service.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:27d8dec4ddfc4100af0e4536",
+      "priority": "medium",
+      "scope": [
+        "src/shoplab/app.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "structural_signal": {
+        "kind": "component_boundary",
+        "observed": [
+          "A resolved dependency joins different module groups; declarations at both endpoints=True; distinct module-pair interactions=1."
+        ],
+        "inference": "Module grouping is a provisional boundary, not a rule. Inspect the code-supported contract, access path and dependency direction; an ordinary legitimate interaction is a valid outcome.",
+        "relationships": [
+          {
+            "id": "relationship:06ceab432aa81533c4189f66",
+            "source_id": "file:17facb9442e043834480972b",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "source_path": "src/shoplab/app.py",
+            "target_path": "src/shoplab/domain/models.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [
+          "symbol:37bfcd3275950107887569eb",
+          "symbol:5a83bb8bd4d8db1aa770ec25"
+        ],
+        "entrypoint_ids": [],
+        "basis": "indexed",
+        "integration_links": []
+      },
+      "question": "What mechanism connects src/shoplab/app.py → src/shoplab/domain/models.py (from_import), and does code or actual usage support a relevant boundary, or is this an ordinary legitimate interaction?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/app.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:17facb9442e043834480972b",
+            "target_id": "file:b3f8be43fe7e41019b3a322f",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    },
+    {
+      "id": "investigation:728992c1c793faffef9df44e",
+      "priority": "low",
+      "scope": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py",
+        "src/shoplab/orders/service.py",
+        "src/shoplab/inventory/__init__.py",
+        "src/shoplab/application/checkout.py"
+      ],
+      "structural_signal": {
+        "kind": "encapsulation",
+        "observed": [
+          "An indexed public_api candidate (detection=inferred) has multiple external callers; another interaction targets a different module in the same directory/project group."
+        ],
+        "inference": "The public API label may itself be inferred. Whether the alternate path bypasses a meaningful interface is an open question.",
+        "relationships": [
+          {
+            "id": "relationship:c1d2ea1070392fd47bbfda1e",
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:12ea9d101f0bb082d73519b3",
+            "source_path": "src/shoplab/billing/service.py",
+            "target_path": "src/shoplab/inventory/_store.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:98ffc26a21607ea5e9fcc6ab",
+            "source_id": "file:9dd470e11d62f80956f2fc63",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "source_path": "src/shoplab/orders/service.py",
+            "target_path": "src/shoplab/inventory/__init__.py",
+            "kind": "from_import"
+          },
+          {
+            "id": "relationship:a7c94034af96861f65c9422b",
+            "source_id": "file:2efc390f62a6dc64dd487b27",
+            "target_id": "file:a09dcba18f709b1be36b9c85",
+            "source_path": "src/shoplab/application/checkout.py",
+            "target_path": "src/shoplab/inventory/__init__.py",
+            "kind": "from_import"
+          }
+        ],
+        "symbol_ids": [],
+        "entrypoint_ids": [
+          "entrypoint:40a27d9af61dc431514a66ef"
+        ],
+        "basis": "inferred",
+        "integration_links": []
+      },
+      "question": "Does src/shoplab/billing/service.py → src/shoplab/inventory/_store.py (from_import) bypass a meaningful public contract, or is it a legitimate alternative access path?",
+      "evidence_needed": [
+        "Source and target declarations and actual dependency mechanism",
+        "Technical boundary declarations and supported dependency directions, if any",
+        "Comparable interactions, public access paths and legitimate exceptions",
+        "Material limitations when an endpoint or boundary cannot be established"
+      ],
+      "investigation_strategy": [
+        {
+          "tool": "find_symbols",
+          "arguments": {
+            "file_path": "src/shoplab/billing/service.py",
+            "limit": 10
+          }
+        },
+        {
+          "tool": "list_relationships",
+          "arguments": {
+            "source_id": "file:bb006abff1ab066900118457",
+            "target_id": "file:12ea9d101f0bb082d73519b3",
+            "kind": "from_import",
+            "limit": 10
+          }
+        }
+      ],
+      "completion_condition": "The scoped interaction and relevant boundary have been examined, including legitimate explanations, or material limitations are documented; finding a defect is not required.",
+      "scope_kind": "internal",
+      "project_ids": [
+        "project:cdb4ee2aea69cc6a83331bbe"
+      ]
+    }
+  ],
+  "investigation_progress": [
+    {
+      "investigation_id": "investigation:da57ce84e14ee8d370cf70a2",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 4,
+      "accounted_tokens": 4684
+    },
+    {
+      "investigation_id": "investigation:fd3e6169077e6d6daa66a7a5",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 3,
+      "accounted_tokens": 3843
+    },
+    {
+      "investigation_id": "investigation:7c625d73604e618cf7524fc3",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 3,
+      "accounted_tokens": 3916
+    },
+    {
+      "investigation_id": "investigation:03c5f18ce595f5aff7bdafef",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 3,
+      "accounted_tokens": 3981
+    },
+    {
+      "investigation_id": "investigation:41590217cdc51e97bf742194",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 2,
+      "accounted_tokens": 4030
+    },
+    {
+      "investigation_id": "investigation:42fb0d97f35f66ef21ae9219",
+      "status": "finding_candidate",
+      "model_calls": 1,
+      "tool_calls": 3,
+      "accounted_tokens": 4475
+    },
+    {
+      "investigation_id": "investigation:49f406743f19332981a705f8",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 1,
+      "accounted_tokens": 3919
+    },
+    {
+      "investigation_id": "investigation:69cae1cc6378031992f9888a",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 2,
+      "accounted_tokens": 3976
+    },
+    {
+      "investigation_id": "investigation:73bfa3e66483d7a9430bbb02",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 1,
+      "accounted_tokens": 4237
+    },
+    {
+      "investigation_id": "investigation:c65e43b074adb3bdfbc9012a",
+      "status": "finding_candidate",
+      "model_calls": 2,
+      "tool_calls": 2,
+      "accounted_tokens": 8958
+    },
+    {
+      "investigation_id": "investigation:27d8dec4ddfc4100af0e4536",
+      "status": "no_finding",
+      "model_calls": 1,
+      "tool_calls": 1,
+      "accounted_tokens": 3941
+    },
+    {
+      "investigation_id": "investigation:728992c1c793faffef9df44e",
+      "status": "finding_candidate",
+      "model_calls": 1,
+      "tool_calls": 1,
+      "accounted_tokens": 6134
+    }
+  ],
+  "investigation_results": [
+    {
+      "investigation_id": "investigation:da57ce84e14ee8d370cf70a2",
+      "status": "no_finding",
+      "summary": "Investigated the cyclic module group among src/shoplab/orders/__init__.py, src/shoplab/orders/service.py, and src/shoplab/inventory/allocator.py, and found no violation of code-backed architectural boundaries.",
+      "justification": "The cycle involves standard Python module imports and calls between the orders service and inventory allocator. src/shoplab/orders/__init__.py re-exports functions from service.py, service.py imports allocator to delegate order creation, and allocator.py imports service to check order fulfillment. There are no explicit architectural restrictions, layering rules, or forbidden dependency directions declared in the code that prohibit this integration pattern.",
+      "components": [
+        "src/shoplab/orders/__init__.py",
+        "src/shoplab/orders/service.py",
+        "src/shoplab/inventory/allocator.py"
+      ],
+      "symbol_ids": [
+        "symbol:5fe0aae18c0c3a2ee403af18",
+        "symbol:f0b6c41ccf87ea00b1daf1ab",
+        "symbol:0f6386d817e4e4111a02a7e3"
+      ],
+      "relationship_ids": [
+        "relationship:43af962b38b28ad01be8fd76"
+      ],
+      "evidence_ids": [
+        "retrieval:68f0d485a5ece2815156b336",
+        "retrieval:91ab59bfedf8f125db80c99f",
+        "retrieval:1767be3ffa22cb210b7a9f92"
+      ],
+      "candidates": [],
+      "limitations": [
+        "No formal architectural rules or documentation were present in the repository to establish prohibited boundaries."
+      ]
+    },
+    {
+      "investigation_id": "investigation:fd3e6169077e6d6daa66a7a5",
+      "status": "no_finding",
+      "summary": "The strongly connected component between src/shoplab/inventory/api.py and src/shoplab/inventory/__init__.py forms a standard package initialization structure where the package init imports public API functions to expose them at the package level, and api.py imports internal state modules. No structural boundaries are crossed.",
+      "justification": "Python packages routinely expose internal API functions via their __init__.py. The import cycle between package __init__.py and module api.py is a normal packaging pattern and does not cross architectural boundaries or layers.",
+      "components": [
+        "src/shoplab/inventory/api.py",
+        "src/shoplab/inventory/__init__.py"
+      ],
+      "symbol_ids": [],
+      "relationship_ids": [],
+      "evidence_ids": [
+        "retrieval:49606df06451b2d4194db767",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:7c625d73604e618cf7524fc3",
+      "status": "no_finding",
+      "summary": "Investigation of the interaction from src/shoplab/application/checkout.py to src/shoplab/domain/checkout.py shows an ordinary legitimate module import and function call.",
+      "justification": "The application layer module src/shoplab/application/checkout.py imports send_special_confirmation from the domain layer module src/shoplab/domain/checkout.py and invokes it within process_order. There is no code-declared boundary restriction or architectural rule prohibiting the application layer from depending on the domain layer; in fact, standard layered architecture principles typically permit or encourage application layers to depend on domain layers.",
+      "components": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/domain/checkout.py"
+      ],
+      "symbol_ids": [
+        "symbol:1bd756edc2bb3483b6ce8405",
+        "symbol:5882658237aa1a2e943f8d0a"
+      ],
+      "relationship_ids": [
+        "relationship:ab99bcf05e759fa12f31d60e"
+      ],
+      "evidence_ids": [
+        "retrieval:1ae207ed85d802a6d9b06de8",
+        "retrieval:91e17002ff1314c22e32dd09"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:03c5f18ce595f5aff7bdafef",
+      "status": "no_finding",
+      "summary": "The interaction from src/shoplab/billing/service.py to src/shoplab/domain/models.py is an ordinary legitimate import of the Order domain model used for typing and function parameter annotations in billing services.",
+      "justification": "The billing service imports the Order model from domain models via a standard Python `from shoplab.domain.models import Order` statement. This is a normal, expected architectural dependency where a service/application layer depends on core domain models. No architectural rules, restrictions, or forbidden boundaries are violated by this upward/inward reference.",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:9e71d68b7d34fdabf799620d",
+        "symbol:5a83bb8bd4d8db1aa770ec25",
+        "symbol:7468227ea1d17f888819a721"
+      ],
+      "relationship_ids": [
+        "relationship:e1a68d3e8fb5a38064fc25a6"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:5f7c812c36bb22e83f332c9f"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:41590217cdc51e97bf742194",
+      "status": "no_finding",
+      "summary": "src/shoplab/app.py imports and calls process_order from src/shoplab/application/checkout.py, which is a standard entrypoint/application layer interaction rather than an architectural violation.",
+      "justification": "The interaction flows from the entry point module (app.py) into the application service layer (checkout.py), which aligns with typical layered architecture dependency direction (presentation/entrypoint calling application services). Code analysis shows a direct public function import and call, fully supported by the codebase without any prohibited boundary crossings.",
+      "components": [
+        "src/shoplab/app.py",
+        "src/shoplab/application/checkout.py"
+      ],
+      "symbol_ids": [
+        "symbol:37bfcd3275950107887569eb",
+        "symbol:1bd756edc2bb3483b6ce8405"
+      ],
+      "relationship_ids": [
+        "relationship:cd37f682637b2543704ee4c3"
+      ],
+      "evidence_ids": [
+        "retrieval:0939213f649296840e8f7868",
+        "retrieval:1ae207ed85d802a6d9b06de8"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:42fb0d97f35f66ef21ae9219",
+      "status": "finding_candidate",
+      "summary": "The domain module src/shoplab/domain/checkout.py imports and instantiates an infrastructure component src/shoplab/infrastructure/console_notifier.py directly, violating Clean Architecture layer dependency directions.",
+      "justification": "Clean Architecture dictates that dependencies must point inwards from infrastructure and adapters toward the domain core. However, src/shoplab/domain/checkout.py directly imports and instantiates ConsoleNotifier from shoplab.infrastructure.console_notifier, creating an outward/downward dependency from the domain layer to the infrastructure layer.",
+      "components": [
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "symbol_ids": [
+        "symbol:5882658237aa1a2e943f8d0a",
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6"
+      ],
+      "relationship_ids": [
+        "relationship:924cb66c2e1c00cfedb646fb"
+      ],
+      "evidence_ids": [
+        "retrieval:b3edd5495f30f1b5f58ae593",
+        "retrieval:c79283ca3b2314c16954b7d8"
+      ],
+      "candidates": [
+        {
+          "id": "candidate:domain_infrastructure_dependency",
+          "title": "Domain layer directly depends on infrastructure implementation",
+          "description": "The domain logic in checkout.py directly references ConsoleNotifier from the infrastructure package, violating the principle that domain code should be independent of concrete infrastructure details.",
+          "criterion_id": "architectural-boundaries",
+          "kind": "violation",
+          "components": [
+            "src/shoplab/domain/checkout.py",
+            "src/shoplab/infrastructure/console_notifier.py"
+          ],
+          "evidence_ids": [
+            "retrieval:b3edd5495f30f1b5f58ae593",
+            "retrieval:c79283ca3b2314c16954b7d8"
+          ],
+          "justification": "Layered architectures such as Clean Architecture require domain code to depend solely on domain abstractions or models, leaving concrete infrastructure wiring to outer layers.",
+          "modularity_impact": "Couples the domain layer directly to a concrete console notification implementation, preventing easy substitution or mocking without modifying domain source code.",
+          "severity": "medium",
+          "confidence": 0.9,
+          "recommendation": "Introduce an abstract notifier interface in the domain layer and inject the implementation or depend on inversion of control principles.",
+          "inferred_boundary": "Domain layer must not depend on infrastructure layer implementations.",
+          "contradictory_dependency": "src/shoplab/domain/checkout.py imports and instantiates ConsoleNotifier from src/shoplab/infrastructure/console_notifier.py.",
+          "technical_basis": "Observed import statement and instantiation inside src/shoplab/domain/checkout.py pointing directly to src/shoplab/infrastructure/console_notifier.py.",
+          "symbol_ids": [
+            "symbol:5882658237aa1a2e943f8d0a",
+            "symbol:5d12a8cf65fbbef1a78dd649",
+            "symbol:85212d7b4176f312d55376a6"
+          ],
+          "relationship_ids": [
+            "relationship:924cb66c2e1c00cfedb646fb"
+          ]
+        }
+      ],
+      "limitations": [
+        "Analysis is limited to the specified files and their immediate relationships within the snapshot."
+      ]
+    },
+    {
+      "investigation_id": "investigation:49f406743f19332981a705f8",
+      "status": "no_finding",
+      "summary": "The import connection from src/shoplab/orders/service.py to src/shoplab/domain/models.py is an ordinary, legitimate interaction importing the Order domain model class to type hint and process order creation.",
+      "justification": "src/shoplab/orders/service.py uses a standard from_import statement to import `Order` from `shoplab.domain.models`, utilizing it directly in the parameter typing of `create_order(order: Order)`. The domain models layer is designed to be shared and consumed by application/service layers such as orders, representing an expected and standard dependency direction rather than an architectural violation.",
+      "components": [
+        "src/shoplab/orders/service.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "symbol_ids": [
+        "symbol:5fe0aae18c0c3a2ee403af18",
+        "symbol:f0b6c41ccf87ea00b1daf1ab",
+        "symbol:5a83bb8bd4d8db1aa770ec25",
+        "symbol:7468227ea1d17f888819a721"
+      ],
+      "relationship_ids": [
+        "relationship:b24bd74d5fa8725b6c5a6a18"
+      ],
+      "evidence_ids": [
+        "retrieval:91ab59bfedf8f125db80c99f",
+        "retrieval:5f7c812c36bb22e83f332c9f"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:69cae1cc6378031992f9888a",
+      "status": "no_finding",
+      "summary": "The dependency from src/shoplab/infrastructure/console_notifier.py to src/shoplab/domain/models.py is an ordinary, legitimate interaction where an infrastructure adapter (ConsoleNotifier) imports and uses a domain entity (Order) for type annotation and attribute access in its notification method.",
+      "justification": "Clean Architecture and standard layered design principles typically expect infrastructure layers to depend inward on domain models and ports, rather than the domain depending on infrastructure. The import statement 'from shoplab.domain.models import Order' follows this correct inward dependency direction. There is no architectural boundary violation here; infrastructure components are expected to reference domain models to perform domain-specific operations.",
+      "components": [
+        "src/shoplab/infrastructure/console_notifier.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "symbol_ids": [
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6",
+        "symbol:5a83bb8bd4d8db1aa770ec25",
+        "symbol:7468227ea1d17f888819a721"
+      ],
+      "relationship_ids": [
+        "relationship:7b15d8bd5a80d893e9c8313d"
+      ],
+      "evidence_ids": [
+        "retrieval:a34da1cff50bc7fafa5fcf1b",
+        "retrieval:5f7c812c36bb22e83f332c9f"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:73bfa3e66483d7a9430bbb02",
+      "status": "no_finding",
+      "summary": "The application layer directly instantiates an infrastructure notifier, but no code-supported architectural boundary prohibits application-to-infrastructure dependencies in this codebase.",
+      "justification": "src/shoplab/application/checkout.py imports ConsoleNotifier from src/shoplab/infrastructure/console_notifier.py via a standard Python from_import and instantiates it directly to send order confirmations. Although this crosses architectural layers (application to infrastructure), the repository contains no dependency injection framework, interface restrictions, or explicit boundary rules prohibiting this direct usage. Thus, the interaction is ordinary and legitimate within the current project layout.",
+      "components": [
+        "src/shoplab/application/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "symbol_ids": [
+        "symbol:1bd756edc2bb3483b6ce8405",
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6"
+      ],
+      "relationship_ids": [
+        "relationship:6c75d0e16e89c85eccf32fcf"
+      ],
+      "evidence_ids": [
+        "retrieval:1ae207ed85d802a6d9b06de8",
+        "retrieval:c79283ca3b2314c16954b7d8"
+      ],
+      "candidates": [],
+      "limitations": [
+        "No formal architectural rules or configuration constraints are declared in the codebase to restrict application-layer imports of infrastructure modules."
+      ]
+    },
+    {
+      "investigation_id": "investigation:c65e43b074adb3bdfbc9012a",
+      "status": "finding_candidate",
+      "summary": "src/shoplab/billing/service.py bypasses the public API of the inventory component by importing _store directly and reading concrete backing state (STOCK).",
+      "justification": "src/shoplab/billing/service.py imports `_store` directly from the inventory module group rather than using the public API exposed in src/shoplab/inventory/__init__.py (available_stock, reserve_stock). This reaches behind the component boundary into internal storage state.",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py"
+      ],
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:9e71d68b7d34fdabf799620d",
+        "symbol:2f881a7da82f7e0e8ce58279",
+        "symbol:40adbcc04a7ff5a975e8f5ad"
+      ],
+      "relationship_ids": [
+        "relationship:e0d654b68d6ef2e10bd1254e"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "candidates": [
+        {
+          "id": "candidate:billing-inventory-store-access",
+          "title": "Billing service accesses inventory internal backing state directly",
+          "description": "The billing module imports `_store` directly and reads `_store.STOCK` instead of interacting through the public inventory API.",
+          "criterion_id": "architectural-boundaries",
+          "kind": "violation",
+          "components": [
+            "src/shoplab/billing/service.py",
+            "src/shoplab/inventory/_store.py"
+          ],
+          "evidence_ids": [
+            "retrieval:47718d677b1fdbef0082936c",
+            "retrieval:ef2b42a61709b9be5338bbdb",
+            "retrieval:1398d9a93928218d3d0dbed2"
+          ],
+          "justification": "The inventory module explicitly defines a public API in its `__init__.py` (`available_stock`, `reserve_stock`), but billing bypasses it to read internal module state directly.",
+          "modularity_impact": "Tight coupling between the billing service and the inventory module's internal data representation.",
+          "severity": "medium",
+          "confidence": 0.95,
+          "recommendation": "Refactor `src/shoplab/billing/service.py` to use `available_stock` or appropriate functions from the inventory public API instead of accessing `_store.STOCK` directly.",
+          "inferred_boundary": "Inventory module internal state and public API boundary",
+          "contradictory_dependency": "Direct import and access of `shoplab.inventory._store` from `src/shoplab/billing/service.py`",
+          "technical_basis": "Code inspection of `src/shoplab/billing/service.py` reveals `from shoplab.inventory import _store` and `units = _store.STOCK.get(order.sku, 0)`, which bypasses the defined public exports in `src/shoplab/inventory/__init__.py`.",
+          "symbol_ids": [
+            "symbol:80c677056d4f10c6f0198000",
+            "symbol:2f881a7da82f7e0e8ce58279"
+          ],
+          "relationship_ids": [
+            "relationship:e0d654b68d6ef2e10bd1254e"
+          ]
+        }
+      ],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:27d8dec4ddfc4100af0e4536",
+      "status": "no_finding",
+      "summary": "src/shoplab/app.py imports the Order model from src/shoplab/domain/models.py to instantiate an order and call process_order.",
+      "justification": "In a typical application/entrypoint structure, the entrypoint or UI layer instantiates domain models and delegates business logic to application services. Importing domain models directly into `app.py` is a standard and expected interaction, and no code-supported architectural rule forbids it.",
+      "components": [
+        "src/shoplab/app.py",
+        "src/shoplab/domain/models.py"
+      ],
+      "symbol_ids": [
+        "symbol:37bfcd3275950107887569eb",
+        "symbol:5a83bb8bd4d8db1aa770ec25",
+        "symbol:7468227ea1d17f888819a721"
+      ],
+      "relationship_ids": [
+        "relationship:06ceab432aa81533c4189f66"
+      ],
+      "evidence_ids": [
+        "retrieval:0939213f649296840e8f7868",
+        "retrieval:5f7c812c36bb22e83f332c9f"
+      ],
+      "candidates": [],
+      "limitations": []
+    },
+    {
+      "investigation_id": "investigation:728992c1c793faffef9df44e",
+      "status": "finding_candidate",
+      "summary": "src/shoplab/billing/service.py imports and reads private backing state from src/shoplab/inventory/_store.py, bypassing the inventory package's public API contract defined in src/shoplab/inventory/__init__.py.",
+      "justification": "The inventory package exposes a defined public API via src/shoplab/inventory/__init__.py exposing available_stock and reserve_stock. However, src/shoplab/billing/service.py bypasses this public integration boundary by importing `_store` directly and accessing `_store.STOCK.get(...)` to read concrete backing state.",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py",
+        "src/shoplab/inventory/__init__.py"
+      ],
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:9e71d68b7d34fdabf799620d",
+        "symbol:2f881a7da82f7e0e8ce58279",
+        "symbol:40adbcc04a7ff5a975e8f5ad"
+      ],
+      "relationship_ids": [
+        "relationship:c1d2ea1070392fd47bbfda1e"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "candidates": [
+        {
+          "id": "candidate:inventory-encapsulation-bypass",
+          "title": "Billing module bypasses inventory public API and accesses private backing store directly",
+          "description": "src/shoplab/billing/service.py imports the private module _store from inventory and directly inspects the underlying STOCK dictionary, bypassing the public abstraction boundary exposed by inventory/__init__.py.",
+          "criterion_id": "architectural-boundaries",
+          "kind": "violation",
+          "components": [
+            "src/shoplab/billing/service.py",
+            "src/shoplab/inventory/_store.py",
+            "src/shoplab/inventory/__init__.py"
+          ],
+          "evidence_ids": [
+            "retrieval:47718d677b1fdbef0082936c",
+            "retrieval:ef2b42a61709b9be5338bbdb",
+            "retrieval:1398d9a93928218d3d0dbed2"
+          ],
+          "justification": "Inventory exposes a public export surface (`__all__ = ['available_stock', 'reserve_stock']`), establishing an integration boundary. Rather than using these functions, billing directly accesses `_store.STOCK`.",
+          "modularity_impact": "Tight coupling between the billing service and inventory internal data structures, breaking internal module encapsulation.",
+          "severity": "medium",
+          "confidence": 0.95,
+          "recommendation": "Refactor src/shoplab/billing/service.py to use the public inventory API functions (e.g., available_stock) instead of importing _store directly.",
+          "inferred_boundary": "Inventory public module export surface via __init__.py",
+          "contradictory_dependency": "Direct from_import of _store and direct access to _store.STOCK from billing/service.py",
+          "technical_basis": "src/shoplab/inventory/__init__.py defines public functions, while src/shoplab/billing/service.py uses `from shoplab.inventory import _store` and reads `_store.STOCK.get(...)` directly.",
+          "symbol_ids": [
+            "symbol:80c677056d4f10c6f0198000",
+            "symbol:2f881a7da82f7e0e8ce58279"
+          ],
+          "relationship_ids": [
+            "relationship:c1d2ea1070392fd47bbfda1e"
+          ]
+        }
+      ],
+      "limitations": [
+        "Analysis is limited to the provided source code snapshot and defined commit scope."
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate:domain_infrastructure_dependency",
+      "title": "Domain layer directly depends on infrastructure implementation",
+      "description": "The domain logic in checkout.py directly references ConsoleNotifier from the infrastructure package, violating the principle that domain code should be independent of concrete infrastructure details.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/domain/checkout.py",
+        "src/shoplab/infrastructure/console_notifier.py"
+      ],
+      "evidence_ids": [
+        "retrieval:b3edd5495f30f1b5f58ae593",
+        "retrieval:c79283ca3b2314c16954b7d8"
+      ],
+      "justification": "Layered architectures such as Clean Architecture require domain code to depend solely on domain abstractions or models, leaving concrete infrastructure wiring to outer layers.",
+      "modularity_impact": "Couples the domain layer directly to a concrete console notification implementation, preventing easy substitution or mocking without modifying domain source code.",
+      "severity": "medium",
+      "confidence": 0.9,
+      "recommendation": "Introduce an abstract notifier interface in the domain layer and inject the implementation or depend on inversion of control principles.",
+      "inferred_boundary": "Domain layer must not depend on infrastructure layer implementations.",
+      "contradictory_dependency": "src/shoplab/domain/checkout.py imports and instantiates ConsoleNotifier from src/shoplab/infrastructure/console_notifier.py.",
+      "technical_basis": "Observed import statement and instantiation inside src/shoplab/domain/checkout.py pointing directly to src/shoplab/infrastructure/console_notifier.py.",
+      "symbol_ids": [
+        "symbol:5882658237aa1a2e943f8d0a",
+        "symbol:5d12a8cf65fbbef1a78dd649",
+        "symbol:85212d7b4176f312d55376a6"
+      ],
+      "relationship_ids": [
+        "relationship:924cb66c2e1c00cfedb646fb"
+      ]
+    },
+    {
+      "id": "candidate:billing-inventory-store-access",
+      "title": "Billing service accesses inventory internal backing state directly",
+      "description": "The billing module imports `_store` directly and reads `_store.STOCK` instead of interacting through the public inventory API.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "justification": "The inventory module explicitly defines a public API in its `__init__.py` (`available_stock`, `reserve_stock`), but billing bypasses it to read internal module state directly.",
+      "modularity_impact": "Tight coupling between the billing service and the inventory module's internal data representation.",
+      "severity": "medium",
+      "confidence": 0.95,
+      "recommendation": "Refactor `src/shoplab/billing/service.py` to use `available_stock` or appropriate functions from the inventory public API instead of accessing `_store.STOCK` directly.",
+      "inferred_boundary": "Inventory module internal state and public API boundary",
+      "contradictory_dependency": "Direct import and access of `shoplab.inventory._store` from `src/shoplab/billing/service.py`",
+      "technical_basis": "Code inspection of `src/shoplab/billing/service.py` reveals `from shoplab.inventory import _store` and `units = _store.STOCK.get(order.sku, 0)`, which bypasses the defined public exports in `src/shoplab/inventory/__init__.py`.",
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:2f881a7da82f7e0e8ce58279"
+      ],
+      "relationship_ids": [
+        "relationship:e0d654b68d6ef2e10bd1254e"
+      ]
+    },
+    {
+      "id": "candidate:inventory-encapsulation-bypass",
+      "title": "Billing module bypasses inventory public API and accesses private backing store directly",
+      "description": "src/shoplab/billing/service.py imports the private module _store from inventory and directly inspects the underlying STOCK dictionary, bypassing the public abstraction boundary exposed by inventory/__init__.py.",
+      "criterion_id": "architectural-boundaries",
+      "kind": "violation",
+      "components": [
+        "src/shoplab/billing/service.py",
+        "src/shoplab/inventory/_store.py",
+        "src/shoplab/inventory/__init__.py"
+      ],
+      "evidence_ids": [
+        "retrieval:47718d677b1fdbef0082936c",
+        "retrieval:ef2b42a61709b9be5338bbdb",
+        "retrieval:1398d9a93928218d3d0dbed2"
+      ],
+      "justification": "Inventory exposes a public export surface (`__all__ = ['available_stock', 'reserve_stock']`), establishing an integration boundary. Rather than using these functions, billing directly accesses `_store.STOCK`.",
+      "modularity_impact": "Tight coupling between the billing service and inventory internal data structures, breaking internal module encapsulation.",
+      "severity": "medium",
+      "confidence": 0.95,
+      "recommendation": "Refactor src/shoplab/billing/service.py to use the public inventory API functions (e.g., available_stock) instead of importing _store directly.",
+      "inferred_boundary": "Inventory public module export surface via __init__.py",
+      "contradictory_dependency": "Direct from_import of _store and direct access to _store.STOCK from billing/service.py",
+      "technical_basis": "src/shoplab/inventory/__init__.py defines public functions, while src/shoplab/billing/service.py uses `from shoplab.inventory import _store` and reads `_store.STOCK.get(...)` directly.",
+      "symbol_ids": [
+        "symbol:80c677056d4f10c6f0198000",
+        "symbol:2f881a7da82f7e0e8ce58279"
+      ],
+      "relationship_ids": [
+        "relationship:c1d2ea1070392fd47bbfda1e"
+      ]
+    }
+  ],
+  "candidate_origins": {
+    "candidate:domain_infrastructure_dependency": [
+      {
+        "investigation_id": "investigation:42fb0d97f35f66ef21ae9219",
+        "candidate_id": "candidate:domain_infrastructure_dependency"
+      }
+    ],
+    "candidate:billing-inventory-store-access": [
+      {
+        "investigation_id": "investigation:c65e43b074adb3bdfbc9012a",
+        "candidate_id": "candidate:billing-inventory-store-access"
+      }
+    ],
+    "candidate:inventory-encapsulation-bypass": [
+      {
+        "investigation_id": "investigation:728992c1c793faffef9df44e",
+        "candidate_id": "candidate:inventory-encapsulation-bypass"
+      }
+    ]
+  },
+  "next_phase": null,
+  "consumption_by_phase": {
+    "plan_investigation": {
+      "model_calls": 1,
+      "tool_calls": 0,
+      "accounted_tokens": 3485,
+      "estimated_tokens": 0,
+      "retrieved_characters": 0
+    },
+    "investigate": {
+      "model_calls": 13,
+      "tool_calls": 26,
+      "accounted_tokens": 56094,
+      "estimated_tokens": 0,
+      "retrieved_characters": 28093
+    },
+    "synthesis": {
+      "model_calls": 0,
+      "tool_calls": 0,
+      "accounted_tokens": 0,
+      "estimated_tokens": 0,
+      "retrieved_characters": 0
+    },
+    "finalize": {
+      "model_calls": 0,
+      "tool_calls": 0,
+      "accounted_tokens": 0,
+      "estimated_tokens": 0,
+      "retrieved_characters": 0
+    }
+  },
+  "continuation_usage": {}
+}

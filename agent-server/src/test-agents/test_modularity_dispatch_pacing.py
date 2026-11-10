@@ -9,12 +9,12 @@ import pytest
 from test_architecture_boundary import NativeStructuredModel, toolset
 from test_modularity import result
 
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.agent import (
+from server.agents.maintainability.v1.modularity.coordinator.agent import (
     ModularityExecution,
 )
 from server.infrastructure.tracing import NoOpTracingBackend

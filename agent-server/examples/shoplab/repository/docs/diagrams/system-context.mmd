@@ -1,0 +1,9 @@
+flowchart LR
+    Clerk[Retail clerk] --> CLI[ShopLab CLI]
+    Client[Development API client] --> HTTP[WSGI adapter]
+    CLI --> App[ShopLab Commerce process]
+    HTTP --> App
+    App --> Catalog[Local catalog adapter]
+    App --> Promotions[Local promotion adapter]
+    App --> Rates[Local shipping rate adapter]
+    App --> Storage[Local quote store]

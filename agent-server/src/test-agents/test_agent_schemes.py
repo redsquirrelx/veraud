@@ -25,16 +25,16 @@ from server.contracts.legacy_schemes import base, coordinator, investigator, man
     ("manager", "MaintainabilityReport", manager.MaintainabilityReport),
 ])
 def test_legacy_exports_are_the_canonical_classes(module, old_name, canonical):
-    path = module if module.startswith("server.") else f"server.agents.maintainability.{module}.schemas"
+    path = module if module.startswith("server.") else f"server.agents.maintainability.v1.{module}.schemas"
     assert getattr(importlib.import_module(path), old_name) is canonical
 
 
 def test_all_registered_outputs_use_the_category_envelopes():
-    from server.agents.maintainability.manager.registry import COORDINATORS
-    from server.agents.maintainability.modularity.coordinator.registry import (
+    from server.agents.maintainability.v1.manager.registry import COORDINATORS
+    from server.agents.maintainability.v1.modularity.coordinator.registry import (
         INVESTIGATORS as modularity,
     )
-    from server.agents.maintainability.reusability.coordinator.registry import (
+    from server.agents.maintainability.v1.reusability.coordinator.registry import (
         INVESTIGATORS as reusability,
     )
 
@@ -49,7 +49,7 @@ def test_all_registered_outputs_use_the_category_envelopes():
 
 
 def test_reusability_capability_uses_its_own_investigator_ids():
-    from server.agents.maintainability.reusability.coordinator.schemas import (
+    from server.agents.maintainability.v1.reusability.coordinator.schemas import (
         InvestigatorCapability,
         ReusabilityInvestigatorCapability,
     )
@@ -95,9 +95,9 @@ import sys
 importlib.import_module('server.contracts.legacy_schemes.{category}')
 assert not any(name.startswith('server.agents.maintainability.') and name.endswith('.agent')
                for name in sys.modules), sorted(sys.modules)
-from server.agents.maintainability.manager import MaintainabilityManagerAgent
-from server.agents.maintainability.modularity.coordinator import ModularityAgent
-from server.agents.maintainability.reusability.coordinator import ReusabilityAgent
+from server.agents.maintainability.v1.manager import MaintainabilityManagerAgent
+from server.agents.maintainability.v1.modularity.coordinator import ModularityAgent
+from server.agents.maintainability.v1.reusability.coordinator import ReusabilityAgent
 """
     result = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

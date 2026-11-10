@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from config.agents.budgets import TokenBudgetConfig
 from config.agents.catalog import describe_agent_config, validate_agent_config
 from config.agents.developer import AgentDeveloperConfig
-from server.agents.maintainability.manager import MaintainabilityRequest
+from server.agents.maintainability.v1.manager import MaintainabilityRequest
 from server.agents.security.audit import SecurityAuditRequest
 from server.agents.security.config import SecurityAuditConfig, SecurityAuditOverrides
 from server.api.schemas import ExecutionConfig

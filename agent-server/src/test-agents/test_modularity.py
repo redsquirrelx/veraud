@@ -12,20 +12,22 @@ from test_architecture_boundary import (
     toolset,
 )
 
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
 )
-from server.agents.maintainability.modularity.coordinator.agent import (
+from server.agents.maintainability.v1.modularity.coordinator.agent import (
     route_after_synthesis,
 )
-from server.agents.maintainability.modularity.coordinator.registry import INVESTIGATORS
-from server.agents.maintainability.modularity.coordinator.schemas import (
+from server.agents.maintainability.v1.modularity.coordinator.registry import (
+    INVESTIGATORS,
+)
+from server.agents.maintainability.v1.modularity.coordinator.schemas import (
     Assignment,
     EvidenceGap,
     InvocationRecord,
 )
-from server.agents.maintainability.modularity.coordinator.synthesis import (
+from server.agents.maintainability.v1.modularity.coordinator.synthesis import (
     actionable,
     consolidate,
     detect_contradictions,

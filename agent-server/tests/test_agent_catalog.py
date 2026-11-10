@@ -8,11 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from config.agents.catalog import describe_agent_config, list_agent_configs
-from server.agents.maintainability.manager.registry import COORDINATORS
-from server.agents.maintainability.modularity.coordinator.registry import (
+from server.agents.maintainability.v1.manager.registry import COORDINATORS
+from server.agents.maintainability.v1.modularity.coordinator.registry import (
     INVESTIGATORS as MODULARITY,
 )
-from server.agents.maintainability.reusability.coordinator.registry import (
+from server.agents.maintainability.v1.reusability.coordinator.registry import (
     INVESTIGATORS as REUSABILITY,
 )
 from server.api.executions import router

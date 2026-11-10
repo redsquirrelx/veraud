@@ -1,6 +1,6 @@
 """Compatibility re-exports for existing investigator-contract imports."""
 
-from server.agents.maintainability.modularity.architecture_boundary.schemas import (
+from server.agents.maintainability.v1.modularity.architecture_boundary.schemas import (
     ArchitectureBoundaryRequest,
     BaseAuditRequest,
     BoundaryClaimCheck,
@@ -13,7 +13,7 @@ from server.agents.maintainability.modularity.architecture_boundary.schemas impo
     BoundarySupport,
     BoundaryVerification,
 )
-from server.agents.maintainability.modularity.dependency_impact.schemas import (
+from server.agents.maintainability.v1.modularity.dependency_impact.schemas import (
     DependencyAssessment,
     DependencyComponentReference,
     DependencyHypothesisReview,
@@ -30,7 +30,7 @@ from server.agents.maintainability.modularity.dependency_impact.schemas import (
     InvestigatedImpact,
     dependency_impact_criteria,
 )
-from server.agents.maintainability.modularity.responsibility.schemas import (
+from server.agents.maintainability.v1.modularity.responsibility.schemas import (
     ComponentAssessment,
     InvestigatedComponent,
     Responsibility,
@@ -44,7 +44,7 @@ from server.agents.maintainability.modularity.responsibility.schemas import (
     ResponsibilityReview,
     responsibility_criteria,
 )
-from server.agents.maintainability.reusability.abstraction.schemas import (
+from server.agents.maintainability.v1.reusability.abstraction.schemas import (
     AbstractionAssessment,
     AbstractionCandidate,
     AbstractionCandidateTarget,
@@ -65,7 +65,7 @@ from server.agents.maintainability.reusability.abstraction.schemas import (
     InvestigatedAbstraction,
     Participant,
 )
-from server.agents.maintainability.reusability.component_adaptability.schemas import (
+from server.agents.maintainability.v1.reusability.component_adaptability.schemas import (
     AdaptabilityCandidate,
     AdaptabilityCoverage,
     AdaptabilityEvaluation,
@@ -91,7 +91,7 @@ from server.agents.maintainability.reusability.component_adaptability.schemas im
     ToolName,
     UsageInspection,
 )
-from server.agents.maintainability.reusability.reuse_opportunity.schemas import (
+from server.agents.maintainability.v1.reusability.reuse_opportunity.schemas import (
     CallerInspection,
     CandidateLocation,
     Classification,

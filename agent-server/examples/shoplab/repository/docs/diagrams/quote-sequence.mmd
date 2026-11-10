@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor Customer
+    participant UI as CLI / WSGI
+    participant Q as QuoteOrder
+    participant Cat as ProductCatalog
+    participant Promo as PromotionCatalog
+    participant Ship as ShippingRateProvider
+    participant Store as QuoteRecorder
+    Customer->>UI: quote request
+    UI->>Q: execute(request)
+    Q->>Cat: get(sku)
+    Cat-->>Q: Product
+    opt discount code present
+        Q->>Promo: find(code)
+        Promo-->>Q: Promotion
+    end
+    Q->>Ship: price_cents(parcel)
+    Ship-->>Q: delivery cost
+    Q->>Store: save(quote)
+    Q-->>UI: QuoteResult
+    UI-->>Customer: serialized quote

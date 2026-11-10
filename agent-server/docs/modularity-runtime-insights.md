@@ -3,7 +3,7 @@
 ## Investigators and workflow
 
 - `ModularityAgent` coordinates the existing `ArchitectureBoundaryAgent`,
-  `ResponsibilityAgent`, and `DependencyImpactAgent` under `agents/maintainability/`.
+  `ResponsibilityAgent`, and `DependencyImpactAgent` under `agents/maintainability/v1/`.
 - The initial round assigns work to all three. Follow-up rounds target unresolved
   questions; they do not necessarily invoke all three investigators.
 - Each invocation has a unique ID, including repeated calls to the same investigator.

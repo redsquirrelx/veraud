@@ -11,16 +11,16 @@ from test_architecture_boundary import ScriptedModel, toolset
 from test_modularity_e2e import ProviderScenario, request
 from test_modularity_provider import rate_limit
 
-from server.agents.maintainability.modularity.architecture_boundary import (
+from server.agents.maintainability.v1.modularity.architecture_boundary import (
     ArchitectureBoundaryAgent,
     BoundaryConfig,
 )
-from server.agents.maintainability.modularity.coordinator import (
+from server.agents.maintainability.v1.modularity.coordinator import (
     ModularityAgent,
     ModularityConfig,
     ModularityRequest,
 )
-from server.agents.maintainability.modularity.coordinator.agent import (
+from server.agents.maintainability.v1.modularity.coordinator.agent import (
     ModularityExecution,
 )
 from server.infrastructure.tracing import NoOpTracingBackend
