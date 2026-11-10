@@ -6,13 +6,16 @@ import "./AgentTokenUsage.css"
 export type AgentTokenUsageData = Pick<AgentExecution, "agentType" | "inputTokens" | "outputTokens" | "estimatedTokens" | "interruptionReason"> & {
   id: number | string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
+  invocations?: Pick<NonNullable<AgentExecution["invocations"]>[number], "input_tokens" | "output_tokens">[] | null
 }
 
 export function AgentTokenUsage({ execution }: { execution: AgentTokenUsageData }) {
   const { t } = useTranslation("agents")
   const format = (value: number) => formatNumber(value, { maximumFractionDigits: 1 })
-  const input = execution.inputTokens
-  const output = execution.outputTokens
+  const invokedInputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
+  const invokedOutputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.output_tokens === "number" ? [receipt.output_tokens] : [])
+  const input = execution.inputTokens ?? (invokedInputs.length ? invokedInputs.reduce((sum, value) => sum + value, 0) : null)
+  const output = execution.outputTokens ?? (invokedOutputs.length ? invokedOutputs.reduce((sum, value) => sum + value, 0) : null)
   const estimated = execution.estimatedTokens ?? 0
   const reported = input != null || output != null || estimated > 0
   const total = (input ?? 0) + (output ?? 0) + estimated

@@ -264,9 +264,9 @@ export async function requestProjectArchitecture(id: number, branch: string, com
   })
 }
 
-export async function getAgentExecution(executionId: number, monitor = false): Promise<AgentExecution> {
+export async function getAgentExecution(executionId: number, monitor = false, signal?: AbortSignal): Promise<AgentExecution> {
   return requestJson(`/api/agent-executions/${executionId}${monitor ? "?monitor=true" : ""}`,
-    "Could not load the agent execution", undefined, false)
+    "Could not load the agent execution", { signal }, false)
 }
 
 export interface VersionAnalysisSummary {
