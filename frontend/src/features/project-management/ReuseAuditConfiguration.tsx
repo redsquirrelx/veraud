@@ -6,9 +6,10 @@ import { getQualityAuditConfiguration } from "./qualityAuditApi.ts"
 import { reuseAuditSelection, type ReusedAuditSelection } from "./reuseAuditSelection.ts"
 import { listAgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 
-export function ReuseAuditConfiguration({ projectId, auditId, available, catalog, lazyCatalog = false, disabled, onReuse }: {
+export function ReuseAuditConfiguration({ projectId, auditId, available, catalog, lazyCatalog = false, disabled, onReuse, hideTrigger = false, onRegisterReuse }: {
   projectId: number, auditId: number, available: boolean, catalog: AuditAgentCatalog,
   lazyCatalog?: boolean, disabled: boolean, onReuse: (selection: ReusedAuditSelection) => void,
+  hideTrigger?: boolean, onRegisterReuse?: (reuse: () => Promise<void>) => void,
 }) {
   const { t } = useTranslation("projects")
   const [loading, setLoading] = useState(false)
@@ -38,10 +39,13 @@ export function ReuseAuditConfiguration({ projectId, auditId, available, catalog
     }
   }
 
+  // Keep the latest trigger registered for menu-driven reuse in the history explorer.
+  useEffect(() => { onRegisterReuse?.(reuse) })
+
   return <div className="quality-audit-reuse">
-    <Button variant="secondary" disabled={!available || (!lazyCatalog && (catalog.loading || catalog.failed)) || disabled} loading={loading}
+    {!hideTrigger && <Button variant="secondary" disabled={!available || (!lazyCatalog && (catalog.loading || catalog.failed)) || disabled} loading={loading}
       title={!available ? t("qualityAudits.configurationHistory.unavailable") : undefined}
-      onClick={() => void reuse()}>{t("qualityAudits.configurationHistory.reuse")}</Button>
+      onClick={() => void reuse()}>{t("qualityAudits.configurationHistory.reuse")}</Button>}
     {failed && <p className="label" role="alert">{t("qualityAudits.configurationHistory.reuseFailed")}</p>}
   </div>
 }

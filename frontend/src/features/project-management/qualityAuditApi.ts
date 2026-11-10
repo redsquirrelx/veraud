@@ -34,6 +34,7 @@ export interface AuditRunConfiguration {
   commitHash: string
   attributes: string[]
   scopes: AuditAttributeScope[]
+  architectureContext?: { executionId: number; projectVersionId: number; schemaVersion: string; executionStatus: string }
 }
 export interface AuditConfigurationHistory {
   configuration: AuditRunConfiguration | null
