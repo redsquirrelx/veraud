@@ -12,7 +12,7 @@ interface GraphState {
 
 function emptyState(key: string): GraphState { return { key, graph: null, starting: false, error: null, completedTaskId: null } }
 
-export function useProjectGraph(projectId: number | null, branch: string | null, commitHash: string | null, tasks: ActiveTask[]) {
+export function useProjectGraph(projectId: number | null, branch: string | null, commitHash: string | null, tasks: ActiveTask[], watch = false) {
   const key = `${projectId}:${commitHash}`
   const [stored, setState] = useState<GraphState>(() => emptyState(key))
   // Never display the previous revision while the next request is loading.
@@ -48,7 +48,7 @@ export function useProjectGraph(projectId: number | null, branch: string | null,
             completedTaskId: completed ? next.taskId : previous.completedTaskId,
             error: previous.error === "startError" ? "startError" : null }
         })
-        if (next === null || next.status === "Queued" || next.status === "Running") timer = setTimeout(() => void refresh(), 3000)
+        if (watch || next === null || next.status === "Queued" || next.status === "Running") timer = setTimeout(() => void refresh(), 3000)
       } catch {
         if (!controller.signal.aborted) {
           setState((current) => ({ ...(current.key === key ? current : emptyState(key)), error: "loadError" }))
@@ -58,7 +58,7 @@ export function useProjectGraph(projectId: number | null, branch: string | null,
     }
     void refresh()
     return () => { controller.abort(); if (timer) clearTimeout(timer) }
-  }, [projectId, commitHash, key, taskEvent, revision])
+  }, [projectId, commitHash, key, taskEvent, revision, watch])
 
   const start = useCallback(async (regenerate = false) => {
     if (projectId === null || branch === null || commitHash === null || startLock.current) return

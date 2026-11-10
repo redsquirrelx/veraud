@@ -20,7 +20,7 @@ import {
   parseSemanticValidationResult,
   verdictTone,
 } from "../../features/project-management/pipelineResult.ts"
-import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView } from "../../shared/ui-kit/index.ts"
+import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView, Modal } from "../../shared/ui-kit/index.ts"
 import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
 import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
@@ -35,12 +35,13 @@ import { projectGraphArtifactUrl } from "../../features/project-management/proje
 import { graphErrorMessageKey } from "../../features/project-management/graphMessages.ts"
 import { QualityAudits } from "../../features/project-management/QualityAudits.tsx"
 import { QualityAuditResults } from "../../features/project-management/QualityAuditResults.tsx"
+import { StructuralGraph } from "../../features/project-management/StructuralGraph.tsx"
 import { AuditAgentEvidence } from "../../features/project-management/AuditAgentEvidence.tsx"
 import { useProjectFile } from "../../features/project-management/useProjectFile.ts"
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
-import { formatDate, formatNumber } from "../../shared/i18n/format.ts"
+import { formatDate, formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import "./ProjectDetailPage.css"
 
 const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
@@ -78,6 +79,8 @@ export function ProjectDetailPage() {
   const notifiedExecution = useRef<number | null>(null)
   const refreshedExecution = useRef<number | null>(null)
   const analyzedVersions = analyzed.versions.filter((item) => item.evaluationId !== null)
+  const [fileModalOpen, setFileModalOpen] = useState(false)
+  const [symbolRange, setSymbolRange] = useState<{ from: number; to: number | null; key: string } | null>(null)
   const selectedAnalyzed = analyzedVersions.find((item) => item.id === analyzedId) ?? null
   const refreshFiles = files.refresh
   const clearPreview = preview.clear
@@ -140,6 +143,12 @@ export function ProjectDetailPage() {
       if (error instanceof ApiError && error.messageSource !== "client") {
         pushToast("error", error.message)
       } else {
+  function openGraphFile(path: string, range?: { from: number; to: number | null }) {
+    openFile(path)
+    setSymbolRange(range ? { ...range, key: `${path}:${range.from}:${Date.now()}` } : null)
+    setFileModalOpen(true)
+  }
+
         pushToast("error", t("detail.sync.errorFallback"))
       }
     } finally {
@@ -383,20 +392,22 @@ export function ProjectDetailPage() {
              {activeSection === "graph" && auditId === undefined && (
                <Card className="project-body-card project-overview-card project-overview-summary" layout="stack" gap="sm" align="stretch">
                  <section className="project-structural-graph" aria-label={t("structuralGraph.title")}>
-                   <h2 className="audit-title">{t("structuralGraph.title")}</h2>
-                   <div className="audit-status-row">
-                     <span className="label">{t("version.branchLabel")}</span>
-                     <Badge tone="neutral">{activeBranch ?? t("structuralGraph.noSelection")}</Badge>
-                     <span className="label">{t("version.commitLabel")}</span>
-                     <Badge tone="neutral"><span className="mono" title={activeHash ?? undefined}>{activeHash?.slice(0, 7) ?? t("structuralGraph.noSelection")}</span></Badge>
-                   </div>
-                    <div className="project-structural-graph-empty">
-                      <p className="label">{graphT("independent")}</p>
-                      {graphExtraction.running && <Spinner />}
-                       {graphExtraction.graph !== null ? <p role={graphExtraction.graph.status === "Failed" ? "alert" : "status"}>{graphT(graphExtraction.graph.status === "Failed" ? graphErrorMessageKey(graphExtraction.graph.error) : graphExtraction.graph.phase)}</p>
-                        : !graphExtraction.starting && <p className="label">{t("structuralGraph.empty")}</p>}
-                      {graphExtraction.error !== null && <p role="alert">{graphT(graphExtraction.error)}</p>}
-                       {graphArtifactTaskId !== null && <a href={projectGraphArtifactUrl(project.id, graphArtifactTaskId)} download="graph.json">{graphT("download")}</a>}
+                   <div className="graph-head">
+                     <h2 className="audit-title" title={graphT("independent")}>{t("structuralGraph.title")}</h2>
+                     <div className="graph-meta">
+                       <Badge tone="neutral" title={t("version.branchLabel")}>{activeBranch ?? t("structuralGraph.noSelection")}</Badge>
+                       <Badge tone="neutral" title={t("version.commitLabel")}><span className="mono" title={activeHash ?? undefined}>{activeHash?.slice(0, 7) ?? t("structuralGraph.noSelection")}</span></Badge>
+                       {graphExtraction.graph?.createdAt ? <Badge tone="neutral" title={graphT("generatedAt", { date: "" }).split("{{date}}")[0].trim() || "…"}><time dateTime={graphExtraction.graph.createdAt}>{formatDateTime(graphExtraction.graph.createdAt)}</time></Badge> : null}
+                     </div>
+                     <div className="graph-actions">
+                       {(graphExtraction.running || graphExtraction.graph?.status === "Failed" || graphExtraction.error !== null) && (
+                         <span className="graph-status" role={graphExtraction.graph?.status === "Failed" || graphExtraction.error !== null ? "alert" : "status"}>
+                           {graphExtraction.running && <Spinner />}
+                           {graphExtraction.graph !== null && (graphExtraction.running || graphExtraction.graph.status === "Failed") ? graphT(graphExtraction.graph.status === "Failed" ? graphErrorMessageKey(graphExtraction.graph.error) : graphExtraction.graph.phase) : graphExtraction.error !== null ? graphT(graphExtraction.error) : ""}
+                         </span>
+                       )}
+                       {graphArtifactTaskId !== null && <a className="graph-download" href={projectGraphArtifactUrl(project.id, graphArtifactTaskId)} download="graph.json">{graphT("download")}</a>}
+                       {graphArtifactTaskId === null && graphExtraction.graph?.status !== "Failed" && graphExtraction.error === null && !graphExtraction.running && !graphExtraction.starting && activeHash !== null && activeBranch !== null && <Button onClick={() => void graphExtraction.start(false)} disabled={!canAnalyze || graphExtraction.running}>{graphT("generate")}</Button>}
                        {graphArtifactTaskId !== null && graphExtraction.graph?.status !== "Failed" && <Button variant="secondary" onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("regenerate")}</Button>}
                        {(graphExtraction.graph?.status === "Failed" || graphExtraction.error !== null) && <Button onClick={() => void graphExtraction.start(true)} disabled={!canAnalyze || graphExtraction.running}>{graphT("retry")}</Button>}
                    </div>
@@ -432,7 +443,26 @@ export function ProjectDetailPage() {
                   <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
                     {projectArchitectureSummary !== null
                       ? <ProjectArchitectureResultView summary={projectArchitectureSummary} execution={projectArchitectureExec} />
+                     </div>
                       : <StageStatusView title={t("pipeline.architectureTitle")} result={projectArchitectureExec.result} execution={projectArchitectureExec} />}
+                   {graphArtifactTaskId === null && !graphExtraction.starting && graphExtraction.graph === null && <div className="project-structural-graph-empty"><p className="label">{t("structuralGraph.empty")}</p></div>}
+                    {graphArtifactTaskId !== null && <div className="project-structural-graph-content">
+                      {graphArtifactTaskId !== null && <StructuralGraph key={graphArtifactTaskId} projectId={project.id} taskId={graphArtifactTaskId} commitHash={graphExtraction.graph?.commitHash ?? activeHash ?? ""} onOpenFile={openGraphFile} />}
+                   </div>}
+                    <Modal size="wide" open={fileModalOpen} label={preview.file?.path ?? t("structuralGraph.title")} title={preview.file?.path ?? t("structuralGraph.title")} onClose={() => setFileModalOpen(false)}>
+                      {preview.loading && preview.file === null ? (
+                        <div className="files-loading" role="status" aria-label={t("detail.files.loading")}>
+                          <Spinner />
+                          <span className="label">{t("detail.files.loadingFile")}</span>
+                        </div>
+                      ) : preview.error !== "" ? (
+                        <p className="files-error">{preview.error}</p>
+                      ) : preview.file === null ? (
+                        <p className="label files-empty">{t("detail.files.selectFile")}</p>
+                      ) : (
+                        <CodeViewer code={preview.file.content} language={fileLanguage(preview.file.path)} highlight marks={symbolRange ? [{ id: "symbol", from: symbolRange.from, to: symbolRange.to ?? symbolRange.from, tone: "info", note: preview.file.path }] : []} scrollToLine={symbolRange?.from} scrollTargetKey={symbolRange?.key} />
+                      )}
+                    </Modal>
                   </Card>
                 )}
                 {semanticValidationExec !== null && (

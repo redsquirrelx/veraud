@@ -61,6 +61,22 @@
   color: var(--color-text-description);
 }
 
+.project-structural-graph-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.project-structural-graph-content > p {
+  margin: 0;
+}
+
+.project-structural-graph-content > a,
+.project-structural-graph-content > button {
+  align-self: flex-start;
+}
+
 .project-body-card.project-overview-card {
   padding: 0.875rem 1rem;
 }
@@ -276,4 +292,22 @@
   .audit-head-right .audit-status-row { justify-content: flex-start; }
   .audit-configuration dl { grid-template-columns: minmax(0, 1fr); gap: 0.375rem; }
   .audit-configuration dd { margin-bottom: 0.5rem; }
+}
+
+/* Compact graph section header: title + meta badges + actions in one row. */
+.project-structural-graph { gap: 0.5rem; }
+.graph-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem 0.75rem; min-width: 0; }
+.graph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; min-width: 0; }
+.graph-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-left: auto; }
+.graph-status { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 12px; color: var(--color-text-secondary); }
+.graph-download { font-size: 12px; color: var(--color-brand); }
+.project-structural-graph-empty { min-height: 140px; padding: 1rem; }
+@media (max-width: 1100px) {
+  .graph-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .graph-meta { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 540px) {
+  .graph-head { grid-template-columns: minmax(0, 1fr); }
+  .graph-meta { grid-row: auto; }
+  .graph-actions { margin-left: 0; justify-content: flex-start; }
 }
