@@ -14,6 +14,7 @@ export interface AuditRunConfiguration {
   commitHash: string
   attributes: string[]
   scopes: AuditAttributeScope[]
+  architectureContext?: { executionId: number; projectVersionId: number; schemaVersion: string; executionStatus: string }
 }
 
 /** Immutable selection metadata only: never copy credentials or transport options. */

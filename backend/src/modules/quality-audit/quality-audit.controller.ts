@@ -6,7 +6,7 @@ import { configurationIssuesSchema } from "../agent-settings/agent-settings.sche
 import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
 import { executionErrorDetailSchema } from "../agent-execution/execution-error-detail.js"
 import { AnalysisAlreadyRunningError, InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, SyncInProgressError, WorkspaceMissingError } from "../project/project.service.js"
-import { AuditEvidenceUnavailableError, AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
+import { ArchitectureContextRequiredError, ArchitectureContextUnavailableError, AuditEvidenceUnavailableError, AuditNotFoundError, AuditReportUnavailableError, type QualityAuditService } from "./quality-audit.service.js"
 import { auditReportSections } from "./audit-report-sections.js"
 
 const params = {
@@ -30,15 +30,43 @@ const summary = objectResponse({
 })
 
 function failure(error: unknown) {
-  if (error instanceof ProjectNotFoundError || error instanceof AuditNotFoundError) return 404
+  if (error instanceof ProjectNotFoundError || error instanceof AuditNotFoundError || error instanceof ArchitectureContextUnavailableError) return 404
   if (error instanceof InvalidGitRequestError) return 400
   if (error instanceof AgentConfigurationError || error instanceof AnalysisAlreadyRunningError
     || error instanceof SyncInProgressError || error instanceof WorkspaceMissingError
-    || error instanceof UnknownExecutionTargetError || error instanceof AuditReportUnavailableError || error instanceof ProjectFileError) return 422
+     || error instanceof ArchitectureContextRequiredError || error instanceof UnknownExecutionTargetError || error instanceof AuditReportUnavailableError || error instanceof ProjectFileError) return 422
   throw error
 }
 
 export function registerQualityAuditRoutes(app: FastifyInstance, service: QualityAuditService) {
+  app.get("/api/projects/:id/architecture-context", { schema: {
+    tags: ["Projects"], summary: "Check saved architecture context for a project revision", params,
+    querystring: { type: "object", additionalProperties: false, required: ["commitHash"], properties: {
+      commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
+    } },
+    response: { 200: objectResponse({ projectId: { type: "integer" }, commitHash: { type: "string" }, available: { type: "boolean" },
+      executionId: { type: ["integer", "null"] }, executionStatus: { type: ["string", "null"], enum: ["complete", "partial", null] } }),
+      ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    reply.header("Cache-Control", "no-store")
+    try { return await service.architectureContext(Number((request.params as { id: string }).id), (request.query as { commitHash: string }).commitHash) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+  app.get("/api/projects/:id/architecture-context/content", { schema: {
+    tags: ["Projects"], summary: "Read saved architecture context content for a project revision", params,
+    querystring: { type: "object", additionalProperties: false, required: ["commitHash"], properties: {
+      commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
+    } },
+    response: { 200: objectResponse({ projectId: { type: "integer" }, commitHash: { type: "string" },
+      executionId: { type: "integer" }, executionStatus: { type: "string", enum: ["complete", "partial"] },
+      schemaVersion: { type: "string" }, createdAt: { type: "string", format: "date-time" },
+      data: { type: "object", additionalProperties: true } }),
+      ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    reply.header("Cache-Control", "no-store")
+    try { return await service.architectureContextContent(Number((request.params as { id: string }).id), (request.query as { commitHash: string }).commitHash) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
   app.post("/api/projects/:id/audits/:auditId/cancel", { schema: {
     tags: ["Projects"], summary: "Request cancellation of a project audit",
     description: "Persists an idempotent cancellation request. Pending dispatch is blocked; active runs are cancelled by agent-server. A request alone does not confirm cancellation.",
@@ -54,13 +82,14 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
 
   app.post("/api/projects/:id/audits", { schema: {
     tags: ["Projects"], summary: "Start a quality audit for a project revision",
-    description: "Run maintainability, security and functional adequacy, independently or together, with one report. Functional adequacy without functional_requirements is exploratory and needs no model. Configure model access for attributes using a model. Optional operating patches are validated against agent-server's catalog.",
+     description: "Run maintainability, security and functional adequacy independently or together. Maintainability requires a saved usable architecture context for the exact project/commit; the backend injects it automatically and rejects manual request input. Functional adequacy without functional_requirements is exploratory and needs no model. Optional operating patches are validated against agent-server's catalog.",
     params,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash", "attributes"], properties: {
       branch: branchInput, commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
       attributes: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: { type: "string", enum: ["maintainability", "security", "functional_adequacy"] } },
       maintainability_selection: { type: "object", minProperties: 1, maxProperties: 12,
         additionalProperties: { type: "array", maxItems: 12, uniqueItems: true, items: { type: "string", minLength: 1 } } },
+       request: { not: {}, description: "Server-owned: maintainability loads the saved architecture context for this version. Manual request input is not accepted." },
       functional_requirements: { type: "array", maxItems: 100, items: {
         type: "object", additionalProperties: false, required: ["requirement_id", "description"], properties: {
           requirement_id: { type: "string", minLength: 1, maxLength: 128, pattern: "\\S" },

@@ -2,10 +2,34 @@ import type { PrismaClient } from "../../generated/prisma/client.js"
 import type { AuditReportSection } from "./audit-report-sections.js"
 import { UnknownExecutionTargetError } from "../agent-execution/agent-execution.repository.js"
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
+import { architectureContextResult } from "../agent-execution/architecture-context.js"
 
 /** Audit artifacts live in the existing version/evaluation/execution storage. */
 export class QualityAuditRepository {
   constructor(private db: PrismaClient) {}
+
+  /** Most recent usable immutable artifact for exactly this project revision.
+   * A failed regeneration does not invalidate an earlier valid context. */
+  async architectureContext(projectId: number, commitHash: string) {
+    let cursor: number | undefined
+    while (true) {
+      const artifacts = await this.db.architectureContextArtifact.findMany({
+        where: { projectVersion: { projectId, commitHash }, executionStatus: { in: ["complete", "partial"] },
+          execution: { agentType: "architecture_context", status: "Completed",
+            evaluation: { projectVersion: { projectId, commitHash } } },
+          ...(cursor === undefined ? {} : { executionId: { lt: cursor } }),
+        }, orderBy: { executionId: "desc" }, take: 20,
+      })
+      for (const artifact of artifacts) {
+        try {
+          const parsed = architectureContextResult(artifact.result, commitHash)
+          if (parsed.schemaVersion === artifact.schemaVersion && parsed.executionStatus === artifact.executionStatus) return artifact
+        } catch { /* Corrupted/legacy artifacts are not a prerequisite. */ }
+      }
+      if (artifacts.length < 20) return null
+      cursor = artifacts.at(-1)!.executionId
+    }
+  }
 
   /** The deterministic functional adapter has no model snapshot to prepare.
    *  It uses the same QualityAudit rows and dispatch/cancellation lifecycle. */

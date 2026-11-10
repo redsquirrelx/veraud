@@ -13,6 +13,7 @@ import { auditResponseSerialization } from "./helpers/responseSerializationAudit
 import type { AgentInput, PipelineInput } from "../infrastructure/agent-server-client/agent-server.client.js"
 import type { AuditRunConfiguration } from "../modules/quality-audit/audit-run-configuration.js"
 import { AgentTransportError } from "../infrastructure/agent-server-client/agent-server.client.js"
+import { seedArchitectureContext } from "./helpers/architectureContext.js"
 
 const selections = [["maintainability"], ["security"], ["maintainability", "security"], ["security", "maintainability"],
   ["functional_adequacy"], ["maintainability", "functional_adequacy"], ["security", "functional_adequacy"],
@@ -244,6 +245,7 @@ it(`runs a ${attributes.join("+")} audit${disconnect ? " after losing its HTTP c
       await db.agentSettings.update({ where: { agentType: selected === "maintainability" ? "maintainability_manager" : selected },
         data: { aiModelId: model.id, aiCredentialId: selected === "security" ? securityCredential.id : credential.id } })
     }
+    if (attributes.includes("maintainability")) await seedArchitectureContext(db, projectId, hash)
     const opened = await app.inject({ method: "POST", url, payload: body })
     assert.equal(opened.statusCode, 202, opened.body)
     executionId = opened.json().executionId

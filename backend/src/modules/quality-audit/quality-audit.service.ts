@@ -12,6 +12,8 @@ import { auditReportSections, type AuditReportSection } from "./audit-report-sec
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
 export class AuditEvidenceUnavailableError extends Error {}
+export class ArchitectureContextRequiredError extends Error {}
+export class ArchitectureContextUnavailableError extends Error {}
 
 type AuditRow = NonNullable<Awaited<ReturnType<QualityAuditRepository["find"]>>>
 interface AuditArtifacts {
@@ -72,6 +74,7 @@ export class QualityAuditService {
   }
 
   async start(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
+    if (options.request !== undefined) throw new InvalidGitRequestError("Maintainability input is loaded from the saved architecture context, not from the client")
     if (!attributes.length || new Set(attributes).size !== attributes.length
       || attributes.some((attribute) => !["maintainability", "security", "functional_adequacy"].includes(attribute))) {
       throw new InvalidGitRequestError("Select distinct supported quality attributes: maintainability, security, functional_adequacy")
@@ -103,13 +106,39 @@ export class QualityAuditService {
     }
     if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
     const { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(projectId, branch, commitHash)
-    const effective = this.settings ? await this.settings.executionOptions(attributes, options) : options
+    const context = attributes.includes("maintainability") ? await this.repository.architectureContext(project.id, cleanHash) : null
+    if (attributes.includes("maintainability") && !context) {
+      throw new ArchitectureContextRequiredError("Run Analyze to generate architecture context for this project version before auditing maintainability")
+    }
+    const configured = this.settings ? await this.settings.executionOptions(attributes, options) : options
+    const effective = context ? { ...configured, request: { documented_architecture: JSON.parse(context.result) as Record<string, unknown> } } : configured
     if (attributes.length === 1 && attributes[0] === "functional_adequacy" && !requirements?.length) {
       const result = await this.repository.createExploratoryFunctionalAudit(project.id, cleanBranch, cleanHash)
       await this.executions.dispatchExploratoryFunctionalAudit(result.executionId, cleanHash, effective)
       return result
     }
-    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, effective)
+    return this.executions.openQualityAudit(project.id, cleanBranch, cleanHash, attributes, effective, context ? {
+      executionId: context.executionId, projectVersionId: context.projectVersionId,
+      schemaVersion: context.schemaVersion, executionStatus: context.executionStatus,
+    } : undefined)
+  }
+
+  async architectureContext(projectId: number, commitHash: string) {
+    if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
+    if (!await this.repository.projectExists(projectId)) throw new ProjectNotFoundError("Project not found")
+    const context = await this.repository.architectureContext(projectId, commitHash.toLowerCase())
+    return { projectId, commitHash: commitHash.toLowerCase(), available: context !== null,
+      executionId: context?.executionId ?? null, executionStatus: context?.executionStatus ?? null }
+  }
+
+  async architectureContextContent(projectId: number, commitHash: string) {
+    if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
+    if (!await this.repository.projectExists(projectId)) throw new ProjectNotFoundError("Project not found")
+    const context = await this.repository.architectureContext(projectId, commitHash.toLowerCase())
+    if (!context) throw new ArchitectureContextUnavailableError("Architecture context not available for this project version")
+    return { projectId, commitHash: commitHash.toLowerCase(), executionId: context.executionId,
+      executionStatus: context.executionStatus, schemaVersion: context.schemaVersion, createdAt: context.createdAt,
+      data: JSON.parse(context.result) as Record<string, unknown> }
   }
 
   async list(projectId: number, pagination?: { limit: number, offset: number }) {
