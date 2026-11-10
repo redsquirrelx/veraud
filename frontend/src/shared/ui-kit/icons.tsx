@@ -258,3 +258,13 @@ export function PencilIcon({ size = 14 }: IconProps) {
     </svg>
   )
 }
+
+export function WrapIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M2 4h8m0 0-3-3m3 3-3 3" />
+      <path d="M2 8h12" />
+      <path d="M2 12h6" />
+    </svg>
+  )
+}

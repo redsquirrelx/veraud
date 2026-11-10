@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { CodeIcon, DatabaseIcon, ListIcon, LockIcon, TypeIcon } from "./icons.tsx"
+import { CodeIcon, DatabaseIcon, ListIcon, LockIcon, TypeIcon, WrapIcon } from "./icons.tsx"
+import { IconButton } from "./IconButton.tsx"
 import { Spinner } from "./Spinner.tsx"
 import {
   buildMarkIndex,
@@ -31,6 +32,8 @@ interface CodeViewerProps {
   scrollToLine?: number
   /** A changed selection can request the same line again without remounting. */
   scrollTargetKey?: string
+  /** Start with wrapped lines; the user can still toggle it off per viewer. */
+  initialWrapLines?: boolean
 }
 
 interface CodeLineProps {
@@ -63,7 +66,7 @@ const CodeLine = memo(function CodeLine({ line, number, grammar, mark }: CodeLin
   )
 })
 
-function FileBar({ code, grammar }: { code: string, grammar: string | null }) {
+function FileBar({ code, grammar, wrapped, onToggleWrap }: { code: string, grammar: string | null, wrapped: boolean, onToggleWrap: () => void }) {
   const { t } = useTranslation("common")
   const bytes = new TextEncoder().encode(code).length
   const lines = splitLines(code).length
@@ -75,11 +78,23 @@ function FileBar({ code, grammar }: { code: string, grammar: string | null }) {
       <span className="ui-code-meta"><CodeIcon size={12} />{grammar === null ? t("ui.codeViewer.plainText") : languageLabel(grammar)}</span>
       <span className="ui-code-meta"><TypeIcon size={12} />UTF-8</span>
       <span className="ui-code-meta ui-code-readonly"><LockIcon size={12} />{t("ui.codeViewer.readOnly")}</span>
+      {code !== "" && (
+        <IconButton
+          variant={wrapped ? "outline" : "ghost"}
+          size="sm"
+          className="ui-code-wrap-toggle"
+          ariaLabel={t("ui.codeViewer.wrapLines")}
+          aria-pressed={wrapped}
+          onClick={onToggleWrap}
+        >
+          <WrapIcon size={14} />
+        </IconButton>
+      )}
     </div>
   )
 }
 
-export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText, startLine = 1, scrollToLine, scrollTargetKey }: CodeViewerProps) {
+export function CodeViewer({ code, language = "", highlight = false, marks = [], emptyText, startLine = 1, scrollToLine, scrollTargetKey, initialWrapLines = false }: CodeViewerProps) {
   const { t } = useTranslation("common")
   const resolvedEmptyText = emptyText ?? t("ui.codeViewer.noContent")
   const firstLine = Number.isInteger(startLine) && startLine > 0 ? startLine : 1
@@ -87,6 +102,7 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
   const marked = useMemo(() => buildMarkIndex(marks), [marks])
   const lines = useMemo(() => splitLines(code), [code])
   const [rendered, setRendered] = useState<number | null>(null)
+  const [wrapped, setWrapped] = useState(initialWrapLines)
   const [renderedFor, setRenderedFor] = useState(code)
   const renderGeneration = useRef(0)
   const body = useRef<HTMLPreElement>(null)
@@ -147,8 +163,8 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
 
   if (code === "") {
     return (
-      <div className="ui-code-viewer">
-        <FileBar code={code} grammar={grammar} />
+      <div className={`ui-code-viewer${wrapped ? " ui-code-viewer-wrapped" : ""}`}>
+        <FileBar code={code} grammar={grammar} wrapped={wrapped} onToggleWrap={() => setWrapped((value) => !value)} />
         <p className="label ui-code-empty">{resolvedEmptyText}</p>
       </div>
     )
@@ -157,8 +173,8 @@ export function CodeViewer({ code, language = "", highlight = false, marks = [],
   const visible = rendered === null ? lines : lines.slice(0, rendered)
 
   return (
-    <div className="ui-code-viewer">
-      <FileBar code={code} grammar={grammar} />
+    <div className={`ui-code-viewer${wrapped ? " ui-code-viewer-wrapped" : ""}`}>
+      <FileBar code={code} grammar={grammar} wrapped={wrapped} onToggleWrap={() => setWrapped((value) => !value)} />
       <pre ref={body} className="ui-code-body" aria-label={t("ui.codeViewer.fileContent")}>
         <code>
           {visible.map((line, index) => (
