@@ -23,7 +23,7 @@ export function gitEnvironment(remote: boolean, base: NodeJS.ProcessEnv = proces
     "-o NumberOfPasswordPrompts=0",
     "-o ConnectTimeout=15",
     "-o ConnectionAttempts=1",
-    "-o StrictHostKeyChecking=yes",
+    "-o StrictHostKeyChecking=accept-new",
   ].join(" ")
 
   return {

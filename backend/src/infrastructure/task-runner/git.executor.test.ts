@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { describeGitCommand, executeGit, formatCommand, gitArgv, gitEnvironment, gitExecutionOptions, REMOTE_GIT_TIMEOUT_MS, touchesProjectStatus } from "./git.executor.js"
 
 describe("git executor", () => {
-  it("makes remote Git operations non-interactive and retains the external SSH environment", () => {
+  it("accepts new SSH hosts non-interactively and retains the external SSH environment", () => {
     const env = gitEnvironment(true, {
       PATH: "external-path",
       SSH_AUTH_SOCK: "external-agent-socket",
@@ -20,7 +20,7 @@ describe("git executor", () => {
     assert.equal(env.SSH_AUTH_SOCK, "external-agent-socket")
     assert.equal(env.HOME, "/home/user")
     assert.match(env.GIT_SSH_COMMAND ?? "", /^ssh -i \/home\/user\/\.ssh\/work-key /)
-    for (const option of ["BatchMode=yes", "NumberOfPasswordPrompts=0", "ConnectTimeout=15", "ConnectionAttempts=1", "StrictHostKeyChecking=yes"]) {
+    for (const option of ["BatchMode=yes", "NumberOfPasswordPrompts=0", "ConnectTimeout=15", "ConnectionAttempts=1", "StrictHostKeyChecking=accept-new"]) {
       assert.ok(env.GIT_SSH_COMMAND?.includes(`-o ${option}`), `missing ${option}`)
     }
     assert.equal(gitEnvironment(false, env), env)
