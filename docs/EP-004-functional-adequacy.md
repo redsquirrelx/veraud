@@ -423,7 +423,7 @@ uv run pytest tests/test_functional_adequacy.py \
   tests/test_functional_adequacy_repository_adapter.py -q
 ```
 
-Verified result: **74 passed**.
+Verified result: **83 passed**.
 
 The propagation tests cover direct calls to `NotImplementedError`, `pass`, and `...`; a single intermediate method; a multi-level chain; cycle prevention; ambiguous calls without propagation; an unrelated skeleton that must not affect an implemented method; and line-level evidence for every call in a transitive chain.
 
