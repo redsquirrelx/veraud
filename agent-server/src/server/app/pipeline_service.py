@@ -8,7 +8,6 @@ new service.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
@@ -24,10 +23,17 @@ from server.services.execution_error_details import (
     result_error_detail,
 )
 
+from ..agent_services.budgeting.policy import wait_for
+from ..agent_services.execution_tracking.callback.schemas import (
+    ExecutionOutcome,
+    ExecutionProgress,
+)
+from ..agent_services.execution_tracking.events import bind_execution, record_execution
+from ..agent_services.execution_tracking.observer import (
+    CallbackSink,
+    default_callback_sink,
+)
 from ..config.logs import get_logger
-from ..infrastructure.callback.schemas import ExecutionOutcome, ExecutionProgress
-from ..infrastructure.execution_events import bind_execution, record_execution
-from .callback_port import CallbackSink, default_callback_sink
 from .errors import InvalidConfigError
 from .usage_reporting import report_progress
 
@@ -91,7 +97,9 @@ class GenericReportingHooks:
             await self._callbacks.mark_running(self._ids[stage], run_id)
 
     async def on_invocation(self, stage: str, receipt: dict) -> None:
-        from ..infrastructure.callback.schemas import InvocationReceipt
+        from ..agent_services.execution_tracking.callback.schemas import (
+            InvocationReceipt,
+        )
 
         if self._callbacks is not None:
             await self._callbacks.invocation(self._ids[stage], InvocationReceipt.model_validate(receipt))
@@ -265,7 +273,7 @@ class GenericPipelineService:
 
         try:
             return await self._tracing.wrap_pipeline(
-                asyncio.wait_for(
+                wait_for(
                     definition.run_pipeline(pipeline, parsed, ctx),
                     timeout_seconds,
                 ),

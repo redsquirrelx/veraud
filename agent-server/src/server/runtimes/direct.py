@@ -27,6 +27,8 @@ class BaseAgent[AgentInput: BaseModel, AgentOutput: BaseModel](ABC):
         self.settings = settings
         self.model = model
         self.blackboard = blackboard
+        # Optional host-owned usage reporting for agents using a ModelGateway.
+        self.on_usage = None
 
     @classmethod
     def system_prompt(cls) -> str:

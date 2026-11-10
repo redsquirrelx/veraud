@@ -51,8 +51,10 @@ def get_status():
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     import asyncio
 
-    from .app.callback_port import default_callback_sink
-    from .infrastructure.execution_event_buffer import execution_event_delivery_worker
+    from .agent_services.execution_tracking.buffer import (
+        execution_event_delivery_worker,
+    )
+    from .agent_services.execution_tracking.observer import default_callback_sink
 
     token_budget_policy()
     app.state.blackboard = MemoryBlackboard()

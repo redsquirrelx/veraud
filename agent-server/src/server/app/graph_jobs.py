@@ -5,14 +5,17 @@ from __future__ import annotations
 import asyncio
 import secrets
 
-from server.app.callback_port import backend_url
+from server.agent_services.execution_tracking.callback.client import (
+    CallbackClient,
+    build_callback_config,
+)
+from server.agent_services.execution_tracking.observer import backend_url
 from server.config.logs import get_logger
 from server.config.settings import (
     GraphSettings,
     resolve_graphs_root,
     resolve_workspace_root,
 )
-from server.infrastructure.callback.client import CallbackClient, build_callback_config
 from server.services.graph_extraction import (
     GraphExtractionError,
     GraphExtractionService,
