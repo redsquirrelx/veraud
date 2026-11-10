@@ -9,10 +9,17 @@ import pytest
 
 from server.agents.functional_adequacy.agent import FunctionalAdequacyAgent
 from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
+from server.agents.functional_adequacy.exploratory import (
+    _looks_like_stub,
+    evaluate_capabilities,
+    is_stub_capability,
+)
 from server.agents.functional_adequacy.repository_adapter import (
     prepare_repository_input,
 )
 from server.agents.functional_adequacy.schemas import (
+    EvidenceLocation,
+    FunctionalCapability,
     FunctionalRequirement,
 )
 from server.app.pipeline_service import GenericPipelineService
@@ -419,3 +426,100 @@ def test_cli_accepts_repository_without_input_json(tmp_path, monkeypatch):
     assert (
         captured["input_data"]["repository_context"]["capabilities"]
     )
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "pass",
+        "pass  # TODO",
+        "...",
+        "raise NotImplementedError",
+        'raise NotImplementedError("pending")',
+        'throw new Error("not implemented")',
+        "def pending():\n    pass",
+        'def documented():\n    """Pendiente de implementar."""',
+        "def commented():\n    # TODO implementar\n    # FIXME pendiente",
+    ],
+)
+def test_looks_like_stub_detects_incomplete_implementations(snippet):
+    assert _looks_like_stub(snippet) is True
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "return check_password(username, password)",
+        "return bypass_checks(user)",
+        "return passphrase",
+        "return score >= 60",
+        "return compass.bearing()",
+        'return "please pass"',
+        "return sum(...values)",
+        "return a + b  # TODO tune",
+        'return data.get("password")',
+        "todo_list.append(1)",
+        "TODO_LIST = []",
+        'throw new Error("Invalid input")',
+    ],
+)
+def test_looks_like_stub_ignores_legitimate_identifiers(snippet):
+    assert _looks_like_stub(snippet) is False
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "def calculate(): return 10",
+        "async def fetch_data(): return await get_data()",
+        "function calculate() { return 10; }",
+        "async function fetch_data() { return await getData(); }",
+        "export function calculate() { return 10; }",
+    ],
+)
+def test_looks_like_stub_keeps_single_line_implementations(snippet):
+    assert _looks_like_stub(snippet) is False
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "def pending(): pass",
+        "def pending(): ...",
+        "def pending(): raise NotImplementedError",
+        'function pending() { throw new Error("not implemented"); }',
+    ],
+)
+def test_looks_like_stub_detects_single_line_stubs(snippet):
+    assert _looks_like_stub(snippet) is True
+
+
+def test_real_password_implementation_is_not_stub_and_is_confirmed():
+    capability = FunctionalCapability(
+        capability_id="symbol:authenticate",
+        name="authenticate",
+        kind="function",
+        description="Autentica usuarios con nombre y contraseña.",
+        detection="observed",
+        evidence=[
+            EvidenceLocation(
+                file_path="src/auth.py",
+                start_line=3,
+                end_line=4,
+                symbol="authenticate",
+                snippet=(
+                    "def authenticate(username, password):\n"
+                    "    return check_password(username, password)"
+                ),
+            )
+        ],
+    )
+
+    assert is_stub_capability(capability) is False
+
+    findings = {
+        finding.attribute: finding
+        for finding in evaluate_capabilities([capability])
+    }
+    assert findings["completitud"].classification == "confirmado"
+    assert findings["correccion"].classification == "confirmado"

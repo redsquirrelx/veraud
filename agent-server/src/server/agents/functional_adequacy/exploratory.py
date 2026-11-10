@@ -66,6 +66,31 @@ PYTHON_MAIN_RE = re.compile(
     re.MULTILINE,
 )
 
+PYTHON_PASS_RE = re.compile(r"^pass(?:\s*#.*)?$")
+PYTHON_ELLIPSIS_STATEMENT_RE = re.compile(r"^\.\.\.(?:\s*#.*)?$")
+PYTHON_NOT_IMPLEMENTED_RE = re.compile(
+    r"^raise\s+NotImplementedError\b"
+)
+PYTHON_DOCSTRING_START_RE = re.compile(
+    r"^[rRuUbB]{0,2}('''|\"\"\")"
+)
+PYTHON_INLINE_DEF_RE = re.compile(
+    r"^(?:async\s+)?def\s+[A-Za-z_]\w*\s*\("
+)
+JS_INLINE_FUNCTION_RE = re.compile(
+    r"^(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+"
+    r"[A-Za-z_$][\w$]*\s*\("
+)
+JS_THROW_RE = re.compile(
+    r"^throw\s+new\s+[A-Za-z_$][\w$]*\s*\(\s*"
+    r"(?P<quote>['\"`])(?P<message>.*?)(?P=quote)\s*\)"
+    r"\s*;?\s*(?://.*)?$"
+)
+NOT_IMPLEMENTED_MESSAGE_RE = re.compile(
+    r"\b(?:not[\s_-]*(?:yet[\s_-]+)?implemented|unimplemented)\b",
+    re.IGNORECASE,
+)
+
 CLASSIFICATION_CRITERIA = {
     "confirmado": (
         "Existe evidencia observada, rastreable y no ambigua de la "
@@ -548,33 +573,141 @@ def extract_fragment_capabilities(
     return capabilities
 
 
+def _is_stub_statement(line: str) -> bool:
+    if (
+        PYTHON_PASS_RE.match(line)
+        or PYTHON_ELLIPSIS_STATEMENT_RE.match(line)
+        or PYTHON_NOT_IMPLEMENTED_RE.match(line)
+    ):
+        return True
+
+    throw_match = JS_THROW_RE.match(line)
+    return bool(
+        throw_match is not None
+        and NOT_IMPLEMENTED_MESSAGE_RE.search(throw_match.group("message"))
+    )
+
+
+def _matching_delimiter(
+    text: str,
+    start: int,
+    opener: str,
+    closer: str,
+) -> int:
+    depth = 0
+    for index in range(start, len(text)):
+        char = text[index]
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
+
+
+def _python_inline_body(line: str) -> str:
+    open_paren = line.find("(")
+    close_paren = _matching_delimiter(line, open_paren, "(", ")")
+    if close_paren == -1:
+        return ""
+    colon_index = line.find(":", close_paren + 1)
+    if colon_index == -1:
+        return ""
+    return line[colon_index + 1 :].strip()
+
+
+def _javascript_inline_body(line: str) -> str:
+    open_paren = line.find("(")
+    close_paren = _matching_delimiter(line, open_paren, "(", ")")
+    if close_paren == -1:
+        return ""
+    open_brace = line.find("{", close_paren + 1)
+    if open_brace == -1:
+        return ""
+    close_brace = line.rfind("}")
+    if close_brace <= open_brace:
+        return ""
+    return line[open_brace + 1 : close_brace].strip()
+
+
+def _inline_declaration_body(line: str) -> str | None:
+    if PYTHON_INLINE_DEF_RE.match(line):
+        return _python_inline_body(line)
+    if JS_INLINE_FUNCTION_RE.match(line):
+        return _javascript_inline_body(line)
+    return None
+
+
 def _looks_like_stub(snippets: str) -> bool:
     body_lines = []
+    docstring_delimiter: str | None = None
+    in_block_comment = False
+
     for line in snippets.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith(("#", "//", "/*", "*", "'''", '"""')):
+
+        if docstring_delimiter is not None:
+            if docstring_delimiter in stripped:
+                docstring_delimiter = None
             continue
+
+        if in_block_comment:
+            if "*/" in stripped:
+                in_block_comment = False
+            continue
+
+        if stripped.startswith(("#", "//")):
+            continue
+
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_block_comment = True
+            continue
+
+        docstring_match = PYTHON_DOCSTRING_START_RE.match(stripped)
+        if docstring_match is not None:
+            delimiter = docstring_match.group(1)
+            if delimiter not in stripped[docstring_match.end() :]:
+                docstring_delimiter = delimiter
+            continue
+
+        if stripped.startswith("*"):
+            continue
+
+        inline_body = _inline_declaration_body(stripped)
+        if inline_body is not None:
+            if not inline_body:
+                continue
+            if inline_body.startswith(("#", "//", "/*")):
+                continue
+            if PYTHON_DOCSTRING_START_RE.match(inline_body) is not None:
+                continue
+            stripped = inline_body
+
         body_lines.append(stripped)
 
     if not body_lines:
         return True
 
-    stub_markers = (
-        "pass",
-        "...",
-        "raise NotImplementedError",
-        "throw new Error",
-        "TODO",
-        "FIXME",
-    )
     meaningful = [
         line
         for line in body_lines
-        if not any(marker in line for marker in stub_markers)
-        and not line.startswith(("def ", "async def ", "class ", "function "))
-        and line not in ("{", "}")
+        if not _is_stub_statement(line)
+        and not line.startswith(
+            (
+                "def ",
+                "async def ",
+                "class ",
+                "function ",
+                "async function ",
+                "export function ",
+                "@",
+            )
+        )
+        and line not in ("{", "}", "};")
     ]
     return not meaningful
 
