@@ -71,6 +71,24 @@
     "noSelection": "Not selected"
   },
   "analyze": {
+    "pipeline": {
+      "title": "Project analysis pipeline",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed. No subsequent steps were executed. You can retry Analyze.",
+      "step": "Step {{index}} of {{total}}: {{name}}",
+      "structuralGraph": "Generate structural graph",
+      "architectureContext": "Extract architecture context",
+      "contextAgent": "Architecture Context",
+      "contextConfigurationError": "The graph step finished. Architecture Context could not start: configure its model and credential, and verify model access in agent settings. Then retry Analyze.",
+      "graphStepFailed": "The structural graph step could not complete. Architecture Context was not started.",
+      "contextStepFailed": "The graph step finished, but Architecture Context could not start or finish. Retry Analyze to reuse the graph and retry this step.",
+      "contextChecking": "Checking architecture context for this version…",
+      "contextCheckFailed": "Could not check architecture context. Maintainability is disabled until verification succeeds.",
+      "contextRequired": "Run Analyze to generate architecture context for this project version before auditing maintainability.",
+      "context_complete": "Architecture context saved for this version with complete documentary coverage. This is not a compliance assessment.",
+      "context_partial": "Architecture context saved for this version with partial documentary coverage. Limitations and pending categories are retained."
+    },
     "audit": {
       "label": "Quality audit",
       "description": "Maintainability and security, with one Word report"
@@ -93,10 +111,15 @@
       "severityDescending": "Highest to lowest severity", "severityAscending": "Lowest to highest severity",
       "identifier": "Identifier", "description": "Full description", "impact": "Software impact", "recommendation": "Recommendations",
       "attribute": "Attribute", "subcharacteristic": "Subcharacteristic", "validation": "Validation",
-      "verified": "Verified", "inconclusive": "Inconclusive", "discarded": "Discarded",
+      "verified": "Verified", "inconclusive": "Inconclusive", "discarded": "Discarded", "unreviewed": "Unreviewed",
       "title": "Findings by quality attribute", "severity": "Severity", "components": "Affected component",
       "agent": "Detecting agent", "original": "View original details", "empty": "No findings were recorded in the report.",
-      "functionalAdequacy": "Functional adequacy"
+      "functionalAdequacy": "Functional adequacy",
+      "documentaryReferences": "Referenced documents", "documentarySubject": "Subject", "documentaryStatement": "Statement",
+      "documentaryConstraint": "Constraint", "documentaryQuote": "Quote", "noDocumentaryReferences": "No documentary references",
+      "whatsWrong": "What's wrong", "recommendedFix": "Recommended fix", "evidenceReferences": "Evidence & References",
+      "technicalMetadata": "Technical metadata", "copyId": "Copy ID", "copied": "ID copied", "noComponents": "No components recorded",
+      "noEvidenceReferences": "No evidence references"
     },
     "findingsSummary": {
       "title": "Findings summary", "total": "Total findings detected",
@@ -142,7 +165,12 @@
       "loadFailed": "Could not load this audit's configuration.",
       "invocations": "Invoked agents", "noInvocations": "No invocations recorded.",
       "scopeNotice": "The recorded selection does not imply that every agent was executed.",
-      "running": "Running", "completed": "Completed", "failed": "Failed", "skipped": "Skipped", "cancelled": "Cancelled"
+      "running": "Running", "completed": "Completed", "failed": "Failed", "skipped": "Skipped", "cancelled": "Cancelled",
+      "architectureContext": "Architecture context",
+      "architectureContextExecutionId": "Execution ID",
+      "architectureContextProjectVersionId": "Project version ID",
+      "architectureContextSchemaVersion": "Schema version",
+      "architectureContextExecutionStatus": "Execution status"
     },
     "summary": {
       "unavailable": "Summary unavailable",
@@ -177,6 +205,8 @@
       "inactive": "Disabled",
       "previewNotice": "The maintainability selection applies to the next audit. Its manager and the coordinators of selected subcharacteristics are included automatically.",
       "maintainability": {
+        "requestData": "Maintainability V2 input (optional JSON)",
+        "requestDataHelp": "Supply objective, structured targets, constraints and documented_architecture (ArchitectureContextResult JSON). Leave blank to use the default scope without supplied documentary claims. Investigator prompts cannot be overridden.",
         "selectDimension": "Select at least one maintainability subcharacteristic or deselect Maintainability.",
         "legend": "Subcharacteristics to evaluate",
         "modularity": "Modularity",
@@ -221,6 +251,15 @@
       "unavailable": "Unavailable",
       "openBlackboard": "View Blackboard"
     },
+    "historyFilter": {
+      "label": "Filter by status",
+      "all": "All",
+      "completed": "Completed",
+      "partial": "Partial",
+      "failed": "Failed",
+      "empty": "No audits recorded for this filter."
+    },
+    "moreActions": "More actions for audit #{{id}}",
     "evaluation": {
       "partial": "Partial evaluation",
       "completed": "Evaluation completed",
@@ -343,7 +382,101 @@
       "projectType": "Project type",
       "pattern": "Pattern",
       "review": "Review",
-      "viewFullAnalysis": "View full analysis"
+      "viewFullAnalysis": "View full analysis",
+      "architectureContext": {
+        "title": "Architecture context",
+        "loading": "Loading architecture context",
+        "empty": "No architecture context yet for this version",
+        "error": "Could not load architecture context",
+        "knowledge": "Knowledge items",
+        "issues": "Knowledge issues",
+        "validationErrors": "Validation errors",
+        "covered": "Covered categories",
+        "pending": "Pending categories",
+        "reason": "Finalization reason",
+        "coverageTitle": "Coverage",
+        "coveredStatus": "Covered",
+        "pendingStatus": "Pending",
+        "areasCovered": "{{covered}}/{{total}} areas covered",
+        "coverageComplete": "Complete",
+        "coveragePartial": "Partial",
+        "coverageMissing": "Missing",
+        "partialStatus": "Partial",
+        "missingStatus": "Missing",
+        "coverageNote": "Covered means recovered documented information exists; it is not an architecture compliance assessment.",
+        "noCategoryEvidence": "No documentary evidence is available for this category yet.",
+        "closeDetails": "Close details",
+        "all": "All",
+        "categoryFilter": "Category",
+        "explicitnessFilter": "Explicitness",
+        "requiredOnly": "Required only",
+        "noKnowledgeItems": "No knowledge items match the current filters.",
+        "rationale": "Rationale",
+        "evidence": "Evidence",
+        "back": "Back",
+        "referencedExcerpt": "Referenced excerpt",
+        "evidenceRange": "Evidence range",
+        "documentUnavailable": "Document unavailable",
+        "invalidEvidenceRange": "Invalid evidence range",
+        "retryEvidence": "Retry evidence",
+        "expandDocument": "Expand document {{document}}",
+        "collapseDocument": "Collapse document {{document}}",
+        "categoryDescriptions": {
+          "architecturalStyle": "Patterns, principles and the overarching design approach.",
+          "components": "Main parts of the system and their boundaries.",
+          "responsibilities": "What each component owns and handles.",
+          "relationships": "How parts connect and depend on each other.",
+          "constraints": "Rules, limits and non-negotiable decisions.",
+          "interfacesAndContracts": "APIs, schemas and contracts between parts.",
+          "architecturalDecisions": "Important trade-offs and recorded decisions."
+        },
+        "documents": "Consulted documents",
+        "lines_one": "{{count}} line",
+        "lines_other": "{{count}} lines",
+        "categories": {
+          "architecturalStyle": "Architectural style",
+          "components": "Components",
+          "responsibilities": "Responsibilities",
+          "relationships": "Relationships",
+          "constraints": "Constraints",
+          "interfacesAndContracts": "Interfaces and contracts",
+          "architecturalDecisions": "Architectural decisions"
+        },
+        "certainty": {
+          "explicit": "Explicit",
+          "derived": "Derived",
+          "unknown": "Unknown"
+        },
+        "constraint": {
+          "allowed": "Allowed",
+          "prohibited": "Prohibited",
+          "required": "Required",
+          "exception": "Exception"
+        },
+        "issueKind": {
+          "unknown": "Unknown",
+          "ambiguity": "Ambiguity",
+          "discrepancy": "Discrepancy"
+        },
+        "coverageStatus": {
+          "completed": "Assessed",
+          "failed": "Assessment failed",
+          "notRun": "Not assessed"
+        },
+        "reasonValues": {
+          "coverageComplete": "Coverage complete",
+          "incompleteCoverage": "Incomplete coverage",
+          "pendingCategories": "Pending categories",
+          "retrievalIncomplete": "Retrieval incomplete",
+          "coverageNotEvaluated": "Coverage not evaluated",
+          "documentDiscoveryFailed": "Document discovery failed",
+          "validationFailed": "Validation failed",
+          "extractionFailed": "Extraction failed",
+          "extractionContextExhausted": "Extraction context exhausted",
+          "coverageAssessmentFailed": "Coverage assessment failed",
+          "coverageContextExhausted": "Coverage context exhausted"
+        }
+      }
     },
     "files": {
       "resizeLabel": "Resize file preview and directories",
