@@ -30,15 +30,19 @@ class AgentConfigSpec:
 
 
 AGENT_CONFIGS = {
-    "architecture_boundary": AgentConfigSpec("maintainability.v1.modularity.architecture_boundary", "BoundaryConfig", "AuditRequest", "investigator"),
+    "architecture_boundary": AgentConfigSpec("maintainability.v2.modularity.architecture_boundary_doc_driven", "BoundaryConfig", "AuditRequest", "investigator"),
     "responsibility": AgentConfigSpec("maintainability.v1.modularity.responsibility", "ResponsibilityConfig", "ResponsibilityRequest", "investigator", InvestigationConfig),
     "dependency_impact": AgentConfigSpec("maintainability.v1.modularity.dependency_impact", "DependencyImpactConfig", "DependencyImpactRequest", "investigator"),
-    "abstraction": AgentConfigSpec("maintainability.v1.reusability.abstraction", "AbstractionConfig", "AbstractionRequest", "investigator"),
+    "abstraction": AgentConfigSpec("maintainability.v2.reusability.abstraction_doc_driven", "AbstractionConfig", "AbstractionRequest", "investigator"),
+    "reuse_opportunity_doc_driven": AgentConfigSpec("maintainability.v2.reusability.reuse_opportunity_doc_driven", "ReuseOpportunityConfig", "ReuseOpportunityDocDrivenRequest", "investigator"),
+    "reuse_parametrization_doc_driven": AgentConfigSpec(
+        "maintainability.v2.reusability.reuse_parametrization_doc_driven", "ReuseParametrizationConfig",
+        "ReuseParametrizationDocDrivenRequest", "investigator"),
     "reuse_opportunity": AgentConfigSpec("maintainability.v1.reusability.reuse_opportunity", "ReuseOpportunityConfig", "ReuseOpportunityRequest", "investigator"),
     "component_adaptability": AgentConfigSpec("maintainability.v1.reusability.component_adaptability", "ComponentAdaptabilityConfig", "ComponentAdaptabilityRequest", "investigator"),
-    "modularity": AgentConfigSpec("maintainability.v1.modularity.coordinator", "ModularityConfig", "ModularityRequest", "coordinator", CoordinatorConfig),
-    "reusability": AgentConfigSpec("maintainability.v1.reusability.coordinator", "ReusabilityConfig", "ReusabilityRequest", "coordinator", CoordinatorConfig),
-    "maintainability_manager": AgentConfigSpec("maintainability.v1.manager", "MaintainabilityConfig", "MaintainabilityRequest", "manager"),
+    "modularity": AgentConfigSpec("maintainability.v2.modularity.coordinator", "ModularityConfig", "AssessmentRequest", "coordinator"),
+    "reusability": AgentConfigSpec("maintainability.v2.reusability.coordinator", "ReusabilityConfig", "ReusabilityRequest", "coordinator"),
+    "maintainability_manager": AgentConfigSpec("maintainability.v2.manager", "MaintainabilityConfig", "MaintainabilityRequest", "manager"),
     "project_orientation": AgentConfigSpec("server.project_analysis.project_orientation", "OrientationLimits", None, "repository_agent"),
     "project_architecture": AgentConfigSpec("server.project_analysis.project_architecture", "ArchitectureLimits", None, "repository_agent"),
     "project_semantic_validation": AgentConfigSpec("server.project_analysis.project_semantic_validation", "ValidationLimits", None, "repository_agent"),
@@ -149,5 +153,5 @@ def describe_developer_agent_config(agent_id):
         "prompt_defaults": {node: (prompt_dir / f"{node}.md").read_text(encoding="utf-8") for node in prompt_nodes},
         "model_schema": ModelSettings.model_json_schema(),
         "request_schema": request_type.model_json_schema() if request_type else None,
-        "request_defaults": request_type().model_dump(mode="json") if request_type else None,
+        "request_defaults": request_type().model_dump(mode="json") if request_type and not any(field.is_required() for field in request_type.model_fields.values()) else None,
     }

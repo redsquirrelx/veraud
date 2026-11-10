@@ -13,8 +13,7 @@ def payload(selection, attributes=None):
 
 def test_selection_derives_required_coordinators_without_exposing_a_manager_toggle():
     parsed = parse_input(payload({"modularity": ["responsibility"]}))
-    assert parsed.request.dimensions == ["modularity"]
-    assert parsed.request.investigator_selection == {"modularity": ["responsibility"]}
+    assert parsed.maintainability_selection == {"modularity": ["responsibility"]}
 
 
 @pytest.mark.parametrize("selection", [

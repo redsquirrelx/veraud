@@ -36,15 +36,21 @@ from server.reporting import AuditReportAgent, AuditReportRequest, SoftwareAudit
 from server.reporting.schemas import ReportGenerationSummary
 from server.services.audit_diagnostics import execution_diagnostics
 
+from ..agent_services.budgeting.timing import ActiveDeadline, within_deadline
+from ..agent_services.execution_tracking.events import (
+    capture_event_recorder,
+    record_execution,
+)
 from ..agents.functional_adequacy.audit import run_functional_audit
 from ..agents.functional_adequacy.config import FunctionalAdequacyConfig
 from ..agents.functional_adequacy.schemas import FunctionalAdequacyInput
-from ..agents.maintainability.v1.manager import (
-    MaintainabilityConfig,
-    MaintainabilityManagerAgent,
+from ..agents.maintainability.v2.manager import (
+    MaintainabilityManager as MaintainabilityManagerAgent,
+)
+from ..agents.maintainability.v2.manager import (
     MaintainabilityRequest,
 )
-from ..agents.maintainability.v1.manager.validation import validate_call_capacity
+from ..agents.maintainability.v2.manager.config import MaintainabilityConfig
 from ..agents.security.audit import (
     SecurityAuditRequest,
     run_security_audit,
@@ -63,7 +69,6 @@ from ..config.logs import get_logger
 from ..config.schemas import ModelCredentials, ModelSettings
 from ..config.settings import resolve_workspace_root
 from ..contracts.public_errors import public_error_text
-from ..infrastructure.execution_events import capture_event_recorder, record_execution
 from ..infrastructure.llm.chat import PROVIDERS, build_chat_model
 from ..infrastructure.llm.resources import close_model_clients
 from ..runtimes.cancellation import (
@@ -73,7 +78,6 @@ from ..runtimes.cancellation import (
 )
 from ..runtimes.invocation_reporting import observe_invocation
 from ..runtimes.repository.shared_tokens import SharedTokenBudget
-from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from ..runtimes.repository.tools import RepositoryToolset as RepositoryToolset  # noqa: PLC0414 - test compatibility
 from ..services.execution_error_details import (
     capture_execution_errors,
@@ -237,17 +241,12 @@ class AuditService:
                 validate_audit_agents(limits)
             except ValidationError:
                 raise InvalidConfigError("Invalid developer agent defaults for the audit hierarchy.") from None
-            try:
-                validate_call_capacity(limits, request)
-            except ValueError as error:
-                raise InvalidConfigError(str(error)) from None
         try:
             for attribute, overrides in (attribute_options or {}).items():
                 if "audit_budget" in overrides:
                     raise InvalidConfigError("Use the shared audit_budget outside attribute_options.")
                 if attribute == "maintainability":
                     limits = resolve_attribute_limits(attribute, overrides, base=limits)
-                    validate_call_capacity(limits, request)
                 elif attribute == "security":
                     security_limits = resolve_attribute_limits(attribute, overrides, base=security_limits)
                     if security:
@@ -384,6 +383,13 @@ class AuditService:
             nonlocal model
             with timing.stage("repository_snapshot"):
                 snapshot = await RepositoryAnalysisService().analyze(RepositoryAnalysisInput(root_path=str(root)))
+            documented = getattr(request, "documented_architecture", None) if "maintainability" in attributes else None
+            if documented is not None and (
+                documented.document_index is None
+                or documented.document_index.commit != snapshot.repository.commit
+                or documented.execution_status == "failed"
+            ):
+                raise InvalidConfigError("Architecture context must match the immutable audited revision and must not be failed.")
             context_request = request if security_request is None else SimpleNamespace(
                 objective=request.objective + "\n" + security_request.objective,
                 targets=list(dict.fromkeys([*request.targets, *security_request.targets])))
@@ -440,7 +446,8 @@ class AuditService:
             if timing.publication_allowed:
                 detail = result_error_detail(result, agent_id=audit_root(attributes),
                     invocation_id=identity.invocation_id, children=incidents)
-                self._update(identity.run_id, "completed" if result.status == "complete" else result.status,
+                status = "completed" if result.status == "complete" else "partial" if result.status == "not_applicable" else result.status
+                self._update(identity.run_id, status,
                     detail.message if detail else None, detail)
         except asyncio.CancelledError:
             signal = self._cancellations[identity.run_id]

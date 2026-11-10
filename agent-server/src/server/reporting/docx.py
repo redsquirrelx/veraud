@@ -21,7 +21,7 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 DOCX_RENDERER_VERSION = "2.0.0"
 LABELS = {
     "completed": "Completada", "partial": "Parcial", "failed": "Fallida", "not_evaluated": "No evaluado",
-    "verified": "Verificado", "inconclusive": "Inconcluso", "discarded": "Descartado",
+    "verified": "Verificado", "inconclusive": "Inconcluso", "discarded": "Descartado", "unreviewed": "Sin revisión",
     "critical": "Crítica", "high": "Alta", "medium": "Media", "low": "Baja", "info": "Informativa",
     "urgent": "Urgente", "undetermined": "No determinada",
     "maintainability": "Mantenibilidad", "security": "Seguridad", "functional_adequacy": "Adecuación funcional",
@@ -426,8 +426,8 @@ class ReportDocument:
 
     def statistics(self, counts):
         self.paragraph(f"Total: {counts.total}. Base de conteo: registros originales de hallazgos del blackboard.")
-        self.table(("Severidad", "Verificados", "Inconclusos", "Descartados"), (
-            (LABELS.get(severity, severity), values.get("verified", 0), values.get("inconclusive", 0), values.get("discarded", 0))
+        self.table(("Severidad", "Verificados", "Inconclusos", "Descartados", "Sin revisión"), (
+            (LABELS.get(severity, severity), values.get("verified", 0), values.get("inconclusive", 0), values.get("discarded", 0), values.get("unreviewed", 0))
             for severity, values in counts.by_severity_and_verification.items()))
         self.table(("Atributo", "Hallazgos"), ((LABELS.get(key, key), count) for key, count in counts.by_attribute.items()))
         self.table(("Componente", "Hallazgos verificados"), sorted(counts.verified_by_component.items()))
@@ -436,7 +436,7 @@ class ReportDocument:
         report = self.report
         severity_order = {key: number for number, key in enumerate(("critical", "high", "medium", "low", "info"))}
         ordered_findings = sorted(report.quality_results.findings, key=lambda finding: (
-            finding.lifecycle != "current", {"verified": 0, "inconclusive": 1, "discarded": 2}[finding.verification_status],
+            finding.lifecycle != "current", {"verified": 0, "inconclusive": 1, "unreviewed": 2, "discarded": 3}[finding.verification_status],
             severity_order.get(finding.severity, 5), finding.id))
         priority_order = {key: number for number, key in enumerate(("urgent", "high", "medium", "low", "undetermined"))}
         ordered_risks = sorted(report.consolidated_risks.risks, key=lambda item: (priority_order[item.priority], item.id))

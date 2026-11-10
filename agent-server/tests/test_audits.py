@@ -277,24 +277,13 @@ def test_terminal_results_and_errors_are_recorded_and_clients_closed(audit_envir
     audit_environment.async_client.aclose.assert_awaited_once()
 
 
-def test_actual_manager_publishes_a_failed_unsupported_scope_without_provider_calls(audit_environment):
+def test_legacy_scope_is_rejected_before_provider_calls(audit_environment):
     with TestClient(app) as client:
         response = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
             "request": {"dimensions": ["unsupported"]}})
-        assert response.status_code == 202
-        run_id = response.json()["run_id"]
-        service = app.state.audit_service
-
-        async def finish():
-            task = service._tasks.get(run_id)
-            if task is not None:
-                await task
-
-        client.portal.call(finish)
-        assert client.get(f"/api/audits/{run_id}").json()["status"] == "failed"
-        assessments = app.state.blackboard.query_assessments(run_id)
-        assert len(assessments) == 1 and assessments[0].status == "failed"
-        assert assessments[0].details["report"]["scope"]["unsupported"] == ["unsupported"]
+        assert response.status_code == 422
+        assert not app.state.audit_service._tasks
+    audit_environment.factory.assert_not_called()
 
 
 def test_shutdown_cancels_running_audits_before_releasing_blackboard(audit_environment, monkeypatch):
@@ -402,33 +391,36 @@ def test_rejects_invalid_paths_and_configuration_before_scheduling(audit_environ
     audit_environment.factory.assert_not_called()
 
 
-@pytest.mark.parametrize(("overrides", "code"), [
-    ({"coordinator": {"max_model_calls": 30}}, "coordinator_call_budget_too_small"),
-    ({"coordinator": {"max_tool_calls": 30}}, "coordinator_tool_budget_too_small"),
-    ({"manager": {"max_tool_calls": 96}}, "manager_tool_budget_too_small"),
+@pytest.mark.parametrize("overrides", [
+    {"coordinator": {"max_model_calls": 30}},
+    {"coordinator": {"max_tool_calls": 30}},
+    {"manager": {"max_tool_calls": 96}},
 ])
-def test_undersized_hierarchy_call_limit_is_rejected_before_scheduling(audit_environment, overrides, code):
+def test_v2_accepts_limits_without_v1_full_hierarchy_minimums(audit_environment, overrides, monkeypatch):
+    class Manager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, tools, request):
+            return SimpleNamespace(status="completed")
+
+    monkeypatch.setattr(audit_service, "MaintainabilityManagerAgent", Manager)
     with TestClient(app) as client:
         response = client.post("/api/audits", json={"repository_path": str(audit_environment.root),
             "call_limits": overrides})
-        assert response.status_code == 422
-        assert code in response.text
-        assert not app.state.audit_service._tasks
+        assert response.status_code == 202
+        client.portal.call(app.state.audit_service.wait, response.json()["run_id"])
 
 
 @pytest.mark.parametrize("global_tokens", [None, 3000000])
 @pytest.mark.parametrize("tool_overrides", [False, True])
 def test_common_developer_defaults_reach_the_full_hierarchy_and_repository_budget(audit_environment, monkeypatch, global_tokens, tool_overrides):
-    from server.agents.maintainability.v1.manager.config import MaintainabilityConfig
-    from server.agents.maintainability.v1.manager.execution import (
-        MaintainabilityManagerExecution,
+    from server.agents.maintainability.v2.manager.config import MaintainabilityConfig
+    from server.agents.maintainability.v2.manager.registry import (
+        registered_coordinators,
     )
-    from server.agents.maintainability.v1.manager.registry import COORDINATORS
-    from server.agents.maintainability.v1.modularity.coordinator.registry import (
-        INVESTIGATORS as MODULARITY,
-    )
-    from server.agents.maintainability.v1.reusability.coordinator.registry import (
-        INVESTIGATORS as REUSABILITY,
+    from server.agents.maintainability.v2.modularity.coordinator.registry import (
+        registered_investigators,
     )
     from server.runtimes.coordination.execution import CoordinatorExecution
 
@@ -442,23 +434,22 @@ def test_common_developer_defaults_reach_the_full_hierarchy_and_repository_budge
             assert self.limits.max_context_characters == 160000
             assert self.limits.max_total_tokens == 500000
             assert self.limits.max_model_calls == MaintainabilityConfig().max_model_calls
-            assert self.limits.max_tool_calls == (300 if tool_overrides else MaintainabilityConfig().max_tool_calls)
-            for dimension, spec in COORDINATORS.items():
+            assert self.limits.max_tool_calls == (200 if tool_overrides else MaintainabilityConfig().max_tool_calls)
+            for spec in registered_coordinators().values():
                 # Exercise the same conversion used by the actual runtime, including
                 # each specialized investigator contract rather than only envelopes.
-                coordinator = MaintainabilityManagerExecution.invocation_config(None, spec, self.limits.invocation_limits)
+                coordinator = spec.agent_class.config_type.model_validate(self.limits.invocation_limits.model_dump(exclude={"tools", "prompts"}))
                 assert coordinator.max_context_characters == 160000
                 assert coordinator.max_total_tokens == 500000
                 assert coordinator.max_model_calls == MaintainabilityConfig().invocation_limits.max_model_calls
                 assert coordinator.max_tool_calls == (100 if tool_overrides else MaintainabilityConfig().invocation_limits.max_tool_calls)
-                investigators = MODULARITY if dimension == "modularity" else REUSABILITY
-                for child_spec in investigators.values():
+                for child_spec in registered_investigators().values():
                     child = CoordinatorExecution.invocation_config(None, child_spec, coordinator.invocation_limits)
                     assert child.max_context_characters == 160000
                     assert child.max_total_tokens == 500000
                     assert child.max_model_calls == 30
                     assert child.max_tool_calls == (25 if tool_overrides else 20)
-            expected_global = global_tokens if global_tokens is not None else 1000000
+            expected_global = global_tokens if global_tokens is not None else MaintainabilityConfig().max_total_tokens
             assert tools.context.input.budget.max_total_tokens == expected_global
             assert tools.token_budget.limit == expected_global
             assert tools.context.input.budget.max_input_tokens_per_call == 80000
@@ -473,7 +464,7 @@ def test_common_developer_defaults_reach_the_full_hierarchy_and_repository_budge
             "agent_defaults": {"max_context_characters": 160000, "max_total_tokens": 500000,
                 "max_model_calls": 30, "max_tool_calls": 20}}
         if tool_overrides:
-            body["call_limits"] = {"manager": {"max_tool_calls": 300}, "coordinator": {"max_tool_calls": 100},
+            body["call_limits"] = {"manager": {"max_tool_calls": 200}, "coordinator": {"max_tool_calls": 100},
                 "investigator": {"max_tool_calls": 25}}
         if global_tokens is not None:
             body["audit_budget"] = {"max_total_tokens": global_tokens}
@@ -495,7 +486,7 @@ def test_common_developer_defaults_reach_the_full_hierarchy_and_repository_budge
     {"max_context_characters": 3999}, {"max_total_tokens": 0},
     {"max_context_characters": None}, {"max_total_tokens": None},
     {"max_model_calls": 0}, {"max_model_calls": None}, {"max_model_calls": 3},
-    {"max_tool_calls": 50}, {"max_tool_calls": -1}, {"max_tool_calls": None},
+    {"max_tool_calls": -1}, {"max_tool_calls": None},
     {"invocation_limits": {"max_total_tokens": 500000}},
 ])
 def test_invalid_or_unapproved_defaults_do_not_schedule_tasks(audit_environment, defaults):

@@ -44,7 +44,7 @@ class GenericPipelineRequest(BaseModel):
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
     stage_configs: dict[str, ExecutionConfig] | None = Field(
         default=None,
-        description="Per-stage model overrides; quality-audit requires explicit entries for all nine maintainability agents, including coordinators and investigators, when supplied.",
+        description="Per-participant model overrides; when supplied, quality-audit requires every selected catalog model participant (three for Maintainability V2).",
     )
     execution_ids: dict[str, Annotated[int, Field(ge=1)]] | None = Field(default=None)
     timeout_seconds: int = Field(

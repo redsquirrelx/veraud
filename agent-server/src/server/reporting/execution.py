@@ -62,17 +62,18 @@ def unique(values):
 
 
 def statistics(findings):
+    statuses = ("verified", "inconclusive", "discarded") + (("unreviewed",) if any(item.verification_status == "unreviewed" for item in findings) else ())
     return FindingStatistics(total=len(findings),
         by_severity=dict(Counter(item.severity or "undetermined" for item in findings)),
         by_verification={status: sum(item.verification_status == status for item in findings)
-            for status in ("verified", "inconclusive", "discarded")},
+            for status in statuses},
         by_severity_and_verification={severity: dict(Counter(item.verification_status for item in findings
             if (item.severity or "undetermined") == severity)) for severity in (*SEVERITIES, "undetermined")},
         by_attribute=dict(Counter(item.quality_attribute for item in findings)),
         verified_by_component=dict(Counter(component for item in findings if item.verification_status == "verified" and item.lifecycle == "current"
             for component in set(item.components))), active_total=sum(item.lifecycle == "current" for item in findings),
         active_by_verification={status: sum(item.lifecycle == "current" and item.verification_status == status for item in findings)
-            for status in ("verified", "inconclusive", "discarded")})
+            for status in statuses})
 
 
 def evaluated_status(assessments, findings):
@@ -92,8 +93,9 @@ def conclusion(title, status, findings):
         return f"{title}: No evaluado. No se emite una valoración de calidad."
     verified = sum(item.verification_status == "verified" for item in findings)
     inconclusive = sum(item.verification_status == "inconclusive" for item in findings)
+    unreviewed = sum(item.verification_status == "unreviewed" for item in findings)
     return (f"{title}: evaluación { {'completed': 'completada', 'partial': 'parcial', 'failed': 'fallida'}[status]}. "
-        f"Se registran {verified} hallazgos verificados y {inconclusive} inconclusos. "
+        f"Se registran {verified} hallazgos verificados, {inconclusive} inconclusos y {unreviewed} sin revisión. "
         "La valoración se limita al alcance y las evidencias registrados; la ausencia de hallazgos no demuestra conformidad.")
 
 

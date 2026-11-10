@@ -8,12 +8,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from config.agents.catalog import describe_agent_config, list_agent_configs
-from server.agents.maintainability.v1.manager.registry import COORDINATORS
-from server.agents.maintainability.v1.modularity.coordinator.registry import (
-    INVESTIGATORS as MODULARITY,
+from server.agents.maintainability.v2.manager.registry import registered_coordinators
+from server.agents.maintainability.v2.modularity.coordinator.registry import (
+    registered_investigators as modularity_investigators,
 )
-from server.agents.maintainability.v1.reusability.coordinator.registry import (
-    INVESTIGATORS as REUSABILITY,
+from server.agents.maintainability.v2.reusability.coordinator.registry import (
+    registered_investigators as reusability_investigators,
 )
 from server.api.executions import router
 from server.api.schemas import ExecutionConfig, ModelConfig
@@ -26,7 +26,7 @@ from server.examples.dummy.agent import DummyAgent
 def test_agent_source_tree_contains_only_quality_implementations():
     agents = Path(__file__).resolve().parents[1] / "src" / "server" / "agents"
     packages = {path.name for path in agents.iterdir() if path.is_dir() and path.name != "__pycache__"}
-    assert packages == {"maintainability", "functional_adequacy", "security"}
+    assert packages == {"maintainability", "functional_adequacy", "security", "architecture_context"}
 
 
 @pytest.fixture
@@ -52,9 +52,11 @@ def test_catalog_covers_existing_configuration_and_real_hierarchy_without_changi
     assert catalog["schema_version"] == "1.0"
     agents = {item["agent_id"]: item for item in catalog["agents"]}
     assert list(agents) == sorted(agents)
-    assert {item["configuration_id"] for item in agents.values() if item["configuration_id"]} == set(list_agent_configs())
-    assert agents["maintainability_manager"]["child_ids"] == list(COORDINATORS)
-    for coordinator, investigators in (("modularity", MODULARITY), ("reusability", REUSABILITY)):
+    assert {item["configuration_id"] for item in agents.values() if item["configuration_id"]} <= set(list_agent_configs())
+    assert agents["maintainability_manager"]["child_ids"] == list(registered_coordinators())
+    assert set(agents) >= {"modularity", "reusability", "architecture_boundary", "responsibility", "abstraction"}
+    assert not {"dependency_impact", "reuse_opportunity", "component_adaptability"} & agents.keys()
+    for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()))):
         assert agents[coordinator]["child_ids"] == list(investigators)
         for identifier in investigators:
             assert agents[identifier]["parent_ids"] == [coordinator]
@@ -125,8 +127,8 @@ def test_all_details_resolve_public_settings_and_contracts_without_credentials_o
             assert detail["configuration"] is None
         assert '"api_key"' not in json.dumps(detail)
     detail = client.get("/api/agents/catalog/architecture_boundary").json()
-    assert detail["input_schema"] == MODULARITY["architecture_boundary"].request_class.model_json_schema()
-    assert detail["output_schema"] == MODULARITY["architecture_boundary"].result_class.model_json_schema()
+    assert detail["input_schema"] == modularity_investigators()["architecture_boundary"].request_class.model_json_schema()
+    assert detail["output_schema"] == modularity_investigators()["architecture_boundary"].result_class.model_json_schema()
     assert client.get("/api/agents/catalog/project_orientation").json()["agent_id"] == "orientation"
     assert client.get("/api/agents/catalog/absent").status_code == 404
     assert client.get("/api/agents/catalog/dast_sandbox").json()["input_schema"] is None

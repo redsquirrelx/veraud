@@ -154,14 +154,15 @@ class Publication:
         self.result = PublishedResult(tuple(r.id for r in findings), tuple(r.id for r in evidence))
         return self.result
 
-    def publish_assessment(self, result: BaseModel) -> PublishedResult:
-        children = []
+    def publish_assessment(self, result: BaseModel, *, children: list[PublishedResult] | None = None) -> PublishedResult:
+        supplied_children = children is not None
+        children = list(children or [])
         existing = self.blackboard.get_assessment(self.run_id, self.record_id("assessment", ""))
         if existing is not None:
             # Replaying a saved assessment must keep its original references,
             # not republish the supervisor's reviewed copies as original claims.
             children.append(PublishedResult(existing.finding_ids, existing.evidence_ids, existing.assessment_ids))
-        else:
+        elif not supplied_children:
             manager = hasattr(result, "assessments")
             for invocation in result.assessments if manager else result.invocations:
                 child = self.child(invocation.assignment.invocation_id, invocation.assignment.investigator_id)
@@ -182,7 +183,9 @@ class Publication:
         record = Assessment(
             **self._identity("assessment", report["assessment_id"]),
             **{key: report[key] for key in ("repository_id", "commit", "snapshot_hash", "objective", "targets",
-                "status", "termination_reason", "summary", "limitations", "consumption", "rounds_completed", "duration_seconds")},
+                "termination_reason", "summary", "limitations", "consumption", "duration_seconds")},
+            status=report["status"] if report["status"] != "not_applicable" else "partial",
+            rounds_completed=report.get("rounds_completed", 0),
             quality_attribute=report.get("quality_attribute"), scope=scope,
             finding_ids=findings, evidence_ids=evidence, assessment_ids=assessments,
             consolidated_findings=report.get("consolidated_findings", []),

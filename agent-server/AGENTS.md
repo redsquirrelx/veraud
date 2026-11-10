@@ -32,8 +32,9 @@ These rules apply to `agent-server/`. All paths below are relative to that direc
 3. Sibling agents MUST NOT inherit infrastructure from one another. They MUST use a common base and supply their specializations.
 4. Each agent MUST retain its domain decisions, specialized contracts and graph topology.
 5. Code extraction MUST preserve existing nodes, routes and termination rules unless a functional change is requested.
-6. `src/server/agents/` MUST contain exactly `maintainability/`, `functional_adequacy/` and `security/` as source packages. Project analysis, reporting, examples and neutral contracts MUST remain outside it.
-   Maintainability's integrated participants live under `maintainability/v1/`. `maintainability/v2/` contains only an independent architecture-boundary copy and MUST NOT be registered or integrated.
+6. `src/server/agents/` MUST contain only the quality families `maintainability/`, `functional_adequacy/` and `security/`, plus the authorized `architecture_context/` agent package. Unrelated project analysis, reporting, examples and neutral contracts MUST remain outside it.
+   `architecture_context/` owns its documentary workflow and standalone agent. Its direct execution reads committed documentation and returns native coverage and limitations; it MUST NOT implicitly launch quality audits.
+   Maintainability's integrated participants live under `maintainability/v2/`: Manager, ModularityCoordinator, ReusabilityCoordinator, documentary ArchitectureBoundary and the abstraction investigator shell. V1 remains available for historical compatibility but MUST NOT be registered in the production audit hierarchy.
 7. Canonical schemas for a maintainability investigator/coordinator/manager MUST live with that participant. Neutral envelopes MUST live in `contracts/` or `runtimes/coordination/contracts.py`; compatibility re-exports MUST point to the same classes and MUST NOT be used by production consumers.
 8. `src/server/runtimes/`, `contracts/` and `infrastructure/` MUST NOT import `app/` or `api/`. FastAPI and composition modules may depend inward on those packages.
 9. Discovery/configuration catalogs may import implementation modules lazily to describe contracts; they MUST NOT instantiate agents, models, repositories or toolsets.

@@ -75,11 +75,12 @@ def execution_records(assessments, evidence=(), findings=()):
             "status": status or report.get("status"), "error": error or previous.get("error"), "report": report,
             "failure": failure or previous.get("failure"),
             "source_record_ids": list(dict.fromkeys([*previous.get("source_record_ids", []), source]))}
-        for child in [*report.get("invocations", []), *report.get("assessments", [])]:
+        for child in [*report.get("invocations", []), *report.get("assessments", []), *report.get("coordinator_results", [])]:
             if not isinstance(child, dict):
                 continue
             assignment = child.get("assignment", {})
-            visit(child.get("result"), assignment.get("investigator_id"), assignment.get("invocation_id"),
+            visit(child.get("result"), assignment.get("investigator_id", assignment.get("coordinator_id")),
+                assignment.get("invocation_id", child.get("assignment_id")),
                 child.get("status"), child.get("error"), source, child.get("failure"))
 
     for record in assessments:
