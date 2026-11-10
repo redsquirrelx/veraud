@@ -1,0 +1,22 @@
+.ui-modal:has(.app-settings-modal-content) {
+  max-width: min(1100px, calc(100vw - 2rem));
+  height: min(820px, calc(100dvh - 2rem));
+  overflow: hidden;
+}
+
+.app-settings-modal-content {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.app-settings-modal-content .settings-page {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.app-settings-modal-content .settings-page > .home-heading {
+  display: none;
+}

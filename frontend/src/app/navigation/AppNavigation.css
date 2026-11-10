@@ -22,7 +22,8 @@
   flex-wrap: wrap;
 }
 
-.app-nav a {
+.app-nav a,
+.app-nav button {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -35,14 +36,25 @@
   transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
 }
 
-.app-nav a:hover {
+.app-nav button {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.app-nav a:hover,
+.app-nav button:hover {
   background: var(--color-canvas);
   color: var(--color-text);
 }
 
 .app-nav a:active { transform: scale(0.96); }
+.app-nav button:active { transform: scale(0.96); }
 
 .app-nav a:focus-visible,
+.app-nav button:focus-visible,
 .app-brand:focus-visible {
   outline: var(--focus-width) solid var(--color-focus-strong);
   outline-offset: 2px;

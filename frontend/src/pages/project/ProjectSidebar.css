@@ -14,7 +14,8 @@
   align-items: stretch;
 }
 
-.project-sidebar-navigation .app-nav a { min-height: 32px; }
+.project-sidebar-navigation .app-nav a,
+.project-sidebar-navigation .app-nav button { min-height: 32px; }
 .project-sidebar-navigation .app-nav .ui-tooltip-trigger > a { flex: 1; }
 
 .project-sidebar-section-title {
@@ -51,7 +52,8 @@
 
 .project-page .ui-sidebar-collapsed .ui-sidebar-top { flex-direction: column; }
 .project-page .ui-sidebar-collapsed .app-brand { padding: 5px; }
-.project-page .ui-sidebar-collapsed .app-nav a { justify-content: center; padding: 4px; }
+.project-page .ui-sidebar-collapsed .app-nav a,
+.project-page .ui-sidebar-collapsed .app-nav button { justify-content: center; padding: 4px; }
 .project-page .ui-sidebar-collapsed .project-sidebar-services { align-items: center; }
 
 @media (max-width: 760px) {

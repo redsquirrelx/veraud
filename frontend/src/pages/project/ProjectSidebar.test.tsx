@@ -26,7 +26,7 @@ describe("ProjectSidebar", () => {
     renderSidebar(onSelect)
     expect(screen.getByRole("link", { name: "Veraud" })).toHaveAttribute("href", "/")
     expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current")
-    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings")
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("aria-haspopup", "dialog")
     expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page")
     await user.click(screen.getByRole("button", { name: "Audits" }))
     expect(onSelect).toHaveBeenCalledWith("audits")

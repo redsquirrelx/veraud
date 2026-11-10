@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("project route navigation", () => {
-  it("enters from Home, opens sidebar docs, visits Settings and returns with persisted collapse", async () => {
+  it("opens Settings over the current project and retains sidebar collapse", async () => {
     const user = userEvent.setup()
     const { router: memoryRouter } = renderRoute("/")
     expect(screen.getByRole("banner")).toBeDefined()
@@ -48,10 +48,11 @@ describe("project route navigation", () => {
     expect(sidebar.getByRole("link", { name: /WebSocket docs/ })).toHaveAttribute("target", "_blank")
     await user.keyboard("{Escape}")
     await user.click(sidebar.getByRole("button", { name: "Collapse sidebar" }))
-    await user.click(sidebar.getByRole("link", { name: "Settings" }))
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeDefined()
-    expect(screen.getByRole("banner")).toBeDefined()
-    await act(async () => { await memoryRouter.navigate(-1) })
+    await user.click(sidebar.getByRole("button", { name: "Settings" }))
+    const dialog = await screen.findByRole("dialog", { name: "Settings" })
+    expect(memoryRouter.state.location.pathname).toBe("/projects/2")
+    expect(document.querySelector(".app-header")).toBeNull()
+    await user.click(within(dialog).getByRole("button", { name: "Close" }))
     await screen.findByRole("heading", { name: "acme/Demo" })
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeDefined()
     expect(screen.getAllByTestId("dock")).toHaveLength(1)
@@ -81,7 +82,7 @@ describe("project route navigation", () => {
     expect(screen.getByRole("link", { name: "Home" })).toBeDefined()
     await act(async () => { release(new Response("{}", { status: 503 })) })
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the project")
-    expect(screen.getByRole("link", { name: "Settings" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Settings" })).toBeDefined()
     expect(screen.queryByLabelText("Project context")).toBeNull()
   })
 
