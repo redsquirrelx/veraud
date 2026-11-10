@@ -1,5 +1,7 @@
 from langchain_anthropic import ChatAnthropic
 
+from server.agent_services.budgeting.policy import timeout_seconds
+
 from ...config.schemas import ModelCredentials, ModelSettings
 from .base import Model
 from .quota import mark_quota_scope, quota_generate
@@ -13,7 +15,7 @@ class AnthropicModel(Model):
             api_key=credentials.api_key,
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
-            timeout=25,
+            timeout=timeout_seconds(25),
             max_retries=0,
         )
         mark_quota_scope(self.llm, settings)

@@ -15,9 +15,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic_core import PydanticCustomError
 
+from ...agent_services.budgeting.policy import budgets_enabled, token_budget_exceeded
+from ...agent_services.budgeting.timing import ActiveDeadline, within_deadline
 from ...blackboard.publication import publication_for
 from ...config.logs import get_logger
-from ...config.token_budget import token_budget_exceeded
 from ...infrastructure.llm.chat import prepare_chat_model
 from ...infrastructure.llm.diagnostics import (
     provider_diagnostic,
@@ -28,7 +29,6 @@ from ...infrastructure.llm.diagnostics import (
 )
 from ..cancellation import check_cancellation
 from ..invocation_reporting import phase_node, report_invocation_usage
-from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
 from .messages import provider_history
 from .provenance import verify_commit
@@ -112,7 +112,7 @@ class InvestigationAgent:
         with execution.timing.stage("investigation"):
             state = await execution.graph.ainvoke(
                 execution.initial_state(),
-                {"recursion_limit": math.inf if execution.config.unlimited_model_calls else 4 * self.config.max_model_calls + 20},
+                {"recursion_limit": 4 * self.config.max_model_calls + 20 if budgets_enabled() else math.inf},
             )
         result = state["result"]
         if publication is not None and execution.timing.publication_allowed:
@@ -156,10 +156,10 @@ class InvestigationExecution:
                 wall_deadline=tools.context.started_at + min(budget.max_elapsed_seconds, config.max_wall_time_seconds),
                 cancellation_grace_seconds=config.cancellation_grace_seconds)
         self.timing = tools.timing
-        self.call_limit = math.inf if config.unlimited_model_calls else min(config.max_model_calls, budget.max_model_calls)
+        self.call_limit = min(config.max_model_calls, budget.max_model_calls) if budgets_enabled() else math.inf
         if self.call_limit < 4:
             raise ValueError("The repository budget must permit at least four model calls.")
-        if config.unlimited_tool_calls:
+        if not budgets_enabled():
             self.tool_limit = math.inf
             tools.tool_call_limit = None
         else:
@@ -495,7 +495,7 @@ class InvestigationExecution:
             characters = len(json.dumps([m.model_dump() for m in messages], default=str)) + len(overhead)
             input_estimate = math.ceil(characters * 0.5)
             reserve = input_estimate + self.output_limit
-            if characters > self.config.max_context_characters:
+            if budgets_enabled() and characters > self.config.max_context_characters:
                 self.stop = "context_limit"
                 return None
             if input_estimate > self.tools.context.input.budget.max_input_tokens_per_call:

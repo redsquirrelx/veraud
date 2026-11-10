@@ -4,7 +4,6 @@ Callers own model clients, provider gateways, snapshot collection, and persisten
 Every invocation owns its graph state and tool ledgers; no CLI dependency is needed.
 """
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +13,7 @@ from typing import Literal, Protocol, TypedDict
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict
 
+from server.agent_services.budgeting.policy import wait_for
 from server.project_analysis.project_architecture import ProjectArchitectureAgent
 from server.project_analysis.project_architecture.diagram import (
     RenderedArchitectureDiagram,
@@ -261,7 +261,7 @@ class ProjectArchitecturePipeline:
             resume_architecture,
             execute,
         )
-        state = await asyncio.wait_for(
+        state = await wait_for(
             self.graph.ainvoke({}, context=context),
             max(0, context.deadline - monotonic()),
         )

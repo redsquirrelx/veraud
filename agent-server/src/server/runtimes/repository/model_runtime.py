@@ -20,9 +20,13 @@ from server.infrastructure.llm.retry import (
 )
 from server.infrastructure.llm.usage import extract_text, response_usage
 
-from ...infrastructure.execution_events import provider_event, record_action
-from .telemetry import ModelCallMeasurement, execution_telemetry, measured_prompt
-from .timing import ActiveDeadline, within_deadline
+from ...agent_services.budgeting.telemetry import (
+    ModelCallMeasurement,
+    execution_telemetry,
+    measured_prompt,
+)
+from ...agent_services.budgeting.timing import ActiveDeadline, within_deadline
+from ...agent_services.execution_tracking.events import provider_event, record_action
 
 
 class ModelGateway:
@@ -72,7 +76,7 @@ class ModelGateway:
         self.on_usage = on_usage
 
     @record_action("model", name="model_gateway")
-    async def __call__(self, prompt):
+    async def __call__(self, prompt, *, return_response=False):
         if self.stopped:
             raise RuntimeError("Provider unavailable after a terminal failure.")
         record = {
@@ -89,6 +93,7 @@ class ModelGateway:
                 [(prompt, "instructions")], stage="unknown"
             ).measurement
         response_characters = None
+        finish_reason = None
         delegate = self.delegate
         output_limit = getattr(prompt, "max_output_tokens", None)
         limited_generate = getattr(delegate, "generate_with_output_limit", None)
@@ -177,12 +182,17 @@ class ModelGateway:
                             and record["output_tokens"] is not None
                         )
                         text = extract_text(response)
+                        raw_finish = (getattr(response, "response_metadata", None) or {}).get("finish_reason")
+                        finish_reason = raw_finish if isinstance(raw_finish, str) and raw_finish in {
+                            "STOP", "stop", "MAX_TOKENS", "length", "SAFETY", "RECITATION",
+                            "PROHIBITED_CONTENT", "content_filter", "OTHER",
+                        } else ("other" if raw_finish is not None else None)
                         if text.strip().startswith("```json") and text.strip().endswith(
                             "```"
                         ):
                             text = text.strip()[7:-3].strip()
                         response_characters = len(text)
-                        return text
+                        return response if return_response else text
                     except Exception as error:
                         record["http_status"] = http_status(error)
                         record["error_type"] = type(error).__name__
@@ -284,6 +294,7 @@ class ModelGateway:
                 attempts=record["attempts"],
                 input_tokens=record["input_tokens"],
                 output_tokens=record["output_tokens"],
+                finish_reason=finish_reason,
             )
             if self.on_usage is not None:
                 await self.on_usage(self)

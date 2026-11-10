@@ -1,6 +1,9 @@
 """Manager-specific scope, accounting, nested provenance and coverage checks."""
 
-from server.config.token_budget import token_budget_exceeded
+from server.agent_services.budgeting.policy import (
+    budgets_enabled,
+    token_budget_exceeded,
+)
 from server.runtimes.coordination.synthesis import evidence_key
 from server.runtimes.investigation.schemas import EvidenceReference
 from server.services.execution_failures import ExecutionValidationError
@@ -8,6 +11,8 @@ from server.services.execution_failures import ExecutionValidationError
 
 def validate_call_capacity(limits, request):
     """Require room for the initial selected wave plus its closing synthesis."""
+    if not budgets_enabled():
+        return
     from ..modularity.coordinator.registry import INVESTIGATORS as MODULARITY
     from ..reusability.coordinator.registry import INVESTIGATORS as REUSABILITY
     from .registry import COORDINATORS
@@ -101,7 +106,7 @@ def validate_accounting(result, budget, *, baseline=None):
         raise ExecutionValidationError("unknown_continuation_baseline", "La evaluación declara una base que no fue asignada por el manager.")
     if budget is None or any(getattr(usage, k) < 0 for k in ("model_calls", "tool_calls", "accounted_tokens", "estimated_tokens")):
         raise ExecutionValidationError("invalid_accounting", "El consumo declarado o la reserva de recursos no es válido.")
-    if (usage.model_calls > budget.max_model_calls or usage.tool_calls > budget.max_tool_calls
+    if (token_budget_exceeded(usage.model_calls, budget.max_model_calls) or token_budget_exceeded(usage.tool_calls, budget.max_tool_calls)
             or token_budget_exceeded(usage.accounted_tokens, budget.max_total_tokens) or usage.estimated_tokens > usage.accounted_tokens):
         raise ExecutionValidationError("usage_exceeded_envelope", "El consumo declarado supera el presupuesto reservado.")
     if len({r.assignment.invocation_id for r in result.invocations}) != len(result.invocations):

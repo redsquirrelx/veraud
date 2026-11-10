@@ -8,7 +8,7 @@ def finite_token_budget(monkeypatch):
     """Budget-exhaustion regressions explicitly opt out of the unlimited default."""
     from server.config import token_budget
 
-    monkeypatch.setattr(token_budget, "token_budget_policy", lambda: token_budget.TokenBudgetPolicy(unlimited_token_budget=False))
+    monkeypatch.setattr(token_budget, "token_budget_policy", lambda: token_budget.TokenBudgetPolicy(budgets_enabled=True))
 
 
 @pytest.fixture(autouse=True)

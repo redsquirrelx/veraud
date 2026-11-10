@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field
 
 from server.contracts.audit import AuditRequest, Criterion
 
+from ...agent_services.budgeting.policy import budgets_enabled, token_budget_exceeded
+from ...agent_services.execution_tracking.events import observe_components
 from ...blackboard.models import Assessment, Evidence, Finding
 from ...blackboard.publication import Publication
-from ...config.token_budget import token_budget_exceeded
-from ...infrastructure.execution_events import observe_components
 from ...infrastructure.llm.chat import prepare_chat_model
 from ...infrastructure.llm.diagnostics import provider_diagnostic
 from ...runtimes.investigation.provider import (
@@ -118,7 +118,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
     def guard(prompt, attempt):
         nonlocal calls
         reserve = max(1, len(prompt)) + output_limit
-        if calls >= limits.max_model_calls:
+        if budgets_enabled() and calls >= limits.max_model_calls:
             raise ValueError("security_remediation_call_budget_exhausted")
         if token_budget_exceeded(tools.token_budget.used + reserve, limits.max_total_tokens):
             raise ValueError("security_remediation_local_budget_exhausted")
@@ -264,7 +264,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
 
         while start <= total:
             await asyncio.sleep(0)
-            if tools.budget_usage.tool_calls >= limits.max_tool_calls:
+            if budgets_enabled() and tools.budget_usage.tool_calls >= limits.max_tool_calls:
                 read_error("tool_budget_exhausted", exhausted_read_budget())
                 break
             response = tools.execute("get_source_excerpt", {"path": source.path, "start_line": start,
@@ -322,7 +322,7 @@ async def run_security_audit(tools, request, limits, model, board, identity):
             for source in candidates[:limits.max_scan_files]:
                 await report_invocation_phase("security_scan")
                 await asyncio.sleep(0)
-                if tools.budget_usage.tool_calls >= limits.max_tool_calls:
+                if budgets_enabled() and tools.budget_usage.tool_calls >= limits.max_tool_calls:
                     record_incident("tool_call_limit", exhausted_read_budget())
                     break
                 staged, source_refs = await stage_source(source, temporary)

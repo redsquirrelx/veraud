@@ -3,7 +3,7 @@
 import json
 from copy import deepcopy
 
-from ...config.token_budget import effective_token_budget_policy
+from ...agent_services.budgeting.policy import effective_token_budget_policy
 
 
 class WorkingContext:
@@ -144,7 +144,7 @@ def source_view(tools, response, requested_end=None):
 def rejection_details(generate, budget, prompt, objective_id):
     from math import ceil
 
-    from .token_budget import account_tokens, input_ratio
+    from ...agent_services.budgeting.tokens import account_tokens, input_ratio
 
     accounted, _ = account_tokens(generate, budget)
     target, _ = account_tokens(generate, budget, objective_id)

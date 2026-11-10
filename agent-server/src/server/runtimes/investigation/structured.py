@@ -51,6 +51,14 @@ def safe_diagnostic(error, schema=None):
         if id(current) in seen:
             break
         seen.add(id(current))
+        if type(current) is ValueError and str(current) in {
+            "output_token_limit_reached", "provider_content_filter",
+            "context_budget_exhausted", "model_call_budget_exhausted",
+            "local_token_budget_exhausted", "shared_token_budget_exhausted",
+        }:
+            return str(current)
+        if type(current) is ValueError and str(current) == "Duplicate JSON keys are not permitted.":
+            return "invalid_json (duplicate_keys)"
         if isinstance(current, PydanticCustomError):
             feedback = getattr(schema, "validation_feedback", {})
             if current.type in feedback:
