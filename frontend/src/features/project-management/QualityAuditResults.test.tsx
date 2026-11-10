@@ -153,7 +153,7 @@ describe("dedicated audit results", () => {
     show()
     await screen.findByRole("region", { name: "Findings summary" })
     expect(screen.getByRole("tab", { name: "General Overview" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getAllByRole("tab")).toHaveLength(5)
+    expect(screen.getAllByRole("tab")).toHaveLength(6)
     expect(api.getQualityAuditReportSection).toHaveBeenCalledOnce()
     await user.click(screen.getByRole("tab", { name: "Findings" }))
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))
@@ -197,6 +197,9 @@ describe("dedicated audit results", () => {
     await screen.findByRole("region", { name: "Findings summary" })
     screen.getByRole("tab", { name: "General Overview" }).focus()
     await user.keyboard("{ArrowRight}")
+    expect(screen.getByRole("tab", { name: "Findings revalidation" })).toHaveFocus()
+    expect(screen.getByRole("tabpanel", { name: "Findings revalidation" })).toBeVisible()
+    await user.keyboard("{ArrowRight}")
     expect(screen.getByRole("tab", { name: "Findings" })).toHaveFocus()
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))
     expect(await panel.findByRole("alert")).toHaveTextContent("Could not load this section.")
@@ -208,6 +211,51 @@ describe("dedicated audit results", () => {
     await user.keyboard("{Home}")
     expect(screen.getByRole("tab", { name: "General Overview" })).toHaveFocus()
     expect(screen.getByRole("tabpanel", { name: "General Overview" })).toBeVisible()
+  })
+
+  it("places revalidation immediately after the overview and opens its section without fetching findings", async () => {
+    const user = userEvent.setup()
+    show()
+    await screen.findByRole("region", { name: "Findings summary" })
+    expect(screen.getAllByRole("tab").slice(0, 2).map((tab) => tab.textContent))
+      .toEqual(["General Overview", "Findings revalidation"])
+    const requests = vi.mocked(api.getQualityAuditReportSection).mock.calls.length
+    await user.click(screen.getByRole("tab", { name: "Findings revalidation" }))
+    expect(screen.getByRole("tab", { name: "Findings revalidation" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tabpanel", { name: "Findings revalidation" }))
+      .toHaveTextContent("Initial Audit")
+    expect(screen.getByRole("region", { name: "Validation history" })).toBeVisible()
+    expect(api.getQualityAuditReportSection).toHaveBeenCalledTimes(requests)
+    await changeLanguage("es")
+    expect(screen.getByRole("tab", { name: "Revalidación de hallazgos" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tabpanel", { name: "Revalidación de hallazgos" }))
+      .toHaveTextContent("Initial Audit")
+    expect(screen.getByRole("region", { name: "Historial de validación" })).toBeVisible()
+  })
+
+  it("opens revalidation from its URL parameter", async () => {
+    render(<MemoryRouter initialEntries={["/?tab=revalidation"]}>
+      <QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" />
+    </MemoryRouter>)
+    expect(screen.getByRole("tab", { name: "Findings revalidation" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tabpanel", { name: "Findings revalidation" })).toBeVisible()
+    await screen.findByLabelText("Audit details")
+    await waitFor(() => expect(api.getQualityAudit).toHaveBeenCalledOnce())
+    expect(api.getQualityAuditReportSection).not.toHaveBeenCalledWith(5, 8, "quality_results", expect.anything())
+  })
+
+  it("shows the revalidation mockup even while real audit metadata is unavailable", async () => {
+    vi.mocked(api.getQualityAudit).mockRejectedValue(new Error("offline"))
+    render(<MemoryRouter initialEntries={["/?tab=revalidation"]}>
+      <QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" />
+    </MemoryRouter>)
+    const panel = within(screen.getByRole("tabpanel", { name: "Findings revalidation" }))
+    expect(panel.getByText("Sample data")).toBeVisible()
+    expect(panel.getByText("Initial Audit")).toBeVisible()
+    expect(panel.getByText("Revalidation #7")).toBeVisible()
+    await screen.findByRole("alert")
+    expect(panel.getAllByRole("listitem")).toHaveLength(8)
+    expect(api.getQualityAuditReportSection).not.toHaveBeenCalled()
   })
 
   it("does not request findings when the audit has no report", async () => {

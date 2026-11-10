@@ -38,6 +38,34 @@
 
 .project-body-card { min-width: 0; }
 
+.project-audit-summary { display: grid; gap: 1.25rem; }
+
+.project-audit-summary-heading,
+.project-audit-summary-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.project-audit-summary-heading { justify-content: space-between; }
+.project-audit-summary-heading h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.project-audit-summary-heading h2 > svg { width: 18px; height: 18px; color: var(--color-text-description); }
+.project-audit-summary-heading a { color: inherit; text-decoration: none; }
+.project-audit-summary-heading a:hover { text-decoration: underline; }
+
+.project-audit-summary-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.project-audit-summary-counts > div { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+.project-audit-summary-counts > div + div { border-left: var(--border-width) solid var(--color-border); padding-left: clamp(1rem, 3vw, 2.5rem); }
+.project-audit-summary-counts dt { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--color-text-description); font-size: var(--font-size-sm); }
+.project-audit-summary-counts code { font-size: 0.75rem; }
+.project-audit-summary-counts dd { margin: 0; font-size: clamp(1.75rem, 4vw, 2.25rem); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.project-audit-summary-error { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; font-size: var(--font-size-sm); }
+
 .project-structural-graph {
   display: flex;
   flex-direction: column;

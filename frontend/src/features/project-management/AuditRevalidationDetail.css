@@ -1,0 +1,22 @@
+.audit-revalidation-detail { display: grid; gap: var(--space-3); min-width: 0; }
+.audit-revalidation-back { justify-self: start; }
+.audit-revalidation-back .ui-button > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.audit-revalidation-detail-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.audit-revalidation-detail-header h3 { margin: 0; }
+.audit-revalidation-detail-header h3:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 3px; }
+.audit-revalidation-detail-meta { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.audit-revalidation-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding-block: var(--space-4); border-bottom: var(--border-width) solid var(--color-border); }
+.audit-revalidation-summary > div { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+.audit-revalidation-summary > div + div { border-inline-start: var(--border-width) solid var(--color-border); padding-inline-start: clamp(1rem, 3vw, 2.5rem); }
+.audit-revalidation-summary dt { color: var(--color-text-description); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+.audit-revalidation-summary dd { margin: 0; font-size: clamp(1.75rem, 4vw, 2.25rem); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.audit-revalidation-findings ul { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.audit-revalidation-findings li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-surface); }
+.audit-revalidation-findings li > div { display: grid; gap: var(--space-1); min-width: 0; }
+.audit-revalidation-findings li code { color: var(--color-text-muted); }
+.audit-revalidation-findings h5 { margin: 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.audit-revalidation-findings .ui-badge { flex-shrink: 0; }
+.audit-revalidation-sample { margin: 0; }
+@media (max-width: 480px) {
+  .audit-revalidation-findings li { flex-wrap: wrap; }
+}
