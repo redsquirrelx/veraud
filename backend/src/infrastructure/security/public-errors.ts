@@ -12,7 +12,9 @@ export const publicErrorMessages = {
 export const hiddenErrorMessage = "Error details withheld because their safety could not be verified."
 const safeMessages = new Set<string>([hiddenErrorMessage, ...Object.values(publicErrorMessages)])
 const safeExceptions = new Set(["Error", "CancelledError", "ValueError", "RuntimeError", "TimeoutError", "ValidationError", "TypeError",
-  "AgentTransportError", "AgentInvocationError", "AuditRunUnavailableError", "InvalidConfigError"])
+  "AgentTransportError", "AgentInvocationError", "AuditRunUnavailableError", "InvalidConfigError",
+  "OSError", "FileNotFoundError", "NotADirectoryError", "PermissionError", "CalledProcessError", "UnicodeDecodeError",
+  "GraphRecursionError", "KeyError", "AttributeError"])
 
 export function publicErrorCode(value: unknown): keyof typeof publicErrorMessages {
   return typeof value === "string" && Object.hasOwn(publicErrorMessages, value) ? value as keyof typeof publicErrorMessages : "execution_failed"
