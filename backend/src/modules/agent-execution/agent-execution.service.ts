@@ -5,7 +5,7 @@ import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infr
 import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { setTimeout as delay } from "node:timers/promises"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
-import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
+import { assertDirectCheckout, sanitizeDirectInput, InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
@@ -28,6 +28,12 @@ export class AgentExecutionNotFoundError extends Error {
     super(`Agent execution ${id} not found`)
     this.name = "AgentExecutionNotFoundError"
   }
+}
+
+export interface DirectProjectTarget {
+  projectId: number
+  branch: string
+  commitHash: string
 }
 
 /** The rows one project-architecture pipeline drives, keyed by stage name. */
@@ -201,7 +207,22 @@ export class AgentExecutionService {
    * workspace guard on `root_path`). Traversal outside the workspace throws
    * synchronously; a missing checkout fails the row in the background.
    */
-  async openDirect(agentType: string, input: AgentInput): Promise<StoredAgentExecution> {
+  async openDirect(agentType: string, input: AgentInput, project?: DirectProjectTarget): Promise<StoredAgentExecution> {
+    if (project) {
+      if (agentType !== "architecture_context" || Object.keys(input).length !== 0) {
+        throw new InvalidDirectInputError("Project-targeted direct execution requires architecture_context and no explicit input")
+      }
+      const [configuration] = await this.settings.prepareExecution([agentType])
+      const created = await this.executions.createExecutionsForProject(
+        project.projectId, project.branch, project.commitHash, [configuration!], "ArchitectureContext",
+      )
+      const execution = created.executions[agentType]!
+      if (!created.reused) {
+        this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+        void this.dispatchProjectContext(execution, project.commitHash, configuration!.transport)
+      }
+      return execution
+    }
     const sanitized = sanitizeDirectInput(input, this.workspaceDir)
     const [configuration] = await this.settings.prepareExecution([agentType])
 
@@ -218,6 +239,17 @@ export class AgentExecutionService {
     void this.dispatchDirect(execution, sanitized, configuration!.transport)
 
     return execution
+  }
+
+  private async dispatchProjectContext(execution: StoredAgentExecution, commitHash: string, config: AgentRunConfig): Promise<void> {
+    try {
+      const input = await this.targets.resolve(execution.evaluationId!)
+      const sanitized = sanitizeDirectInput({ root_path: input.root_path, commit_hash: commitHash }, this.workspaceDir)
+      assertDirectCheckout(sanitized)
+      await this.agents.run(execution.agentType, sanitized, execution.id, config)
+    } catch (error) {
+      await this.fail(execution.id, "Architecture context dispatch failed", undefined, error)
+    }
   }
 
   async openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
@@ -237,7 +269,8 @@ export class AgentExecutionService {
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
-  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
+  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {},
+    contextSource?: import("../quality-audit/audit-run-configuration.js").AuditRunConfiguration["architectureContext"]) {
     if (options.maintainability_selection !== undefined) {
       await this.settings.validateMaintainabilitySelection(options.maintainability_selection)
     }
@@ -255,6 +288,7 @@ export class AgentExecutionService {
       for (const participant of participants) configs[participant] = configuration.transport
     }
     const scope = auditRunConfiguration(await this.settings.list(), branch, commitHash, attributes, options.maintainability_selection)
+    if (contextSource) scope.architectureContext = { ...contextSource }
     const maintainability = scope.scopes.find((attribute) => attribute.id === "maintainability")
     const effectiveOptions = maintainability ? { ...options, maintainability_selection: Object.fromEntries(
       maintainability.subcharacteristics.map((child) => [child.id, child.investigators.map((agent) => agent.id)])) } : options
@@ -323,11 +357,16 @@ export class AgentExecutionService {
     if (!audit || !audit["report"] || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
       throw new Error("Quality-audit pipeline returned no report")
     }
+    const current = await this.require(id)
+    const inputs = (current.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
+    const outputs = (current.invocations ?? []).flatMap((receipt) => typeof receipt.output_tokens === "number" ? [receipt.output_tokens] : [])
+    const inputTokens = inputs.length ? inputs.reduce((total, value) => total + value, 0) : null
+    const outputTokens = outputs.length ? outputs.reduce((total, value) => total + value, 0) : null
     // Completion describes delivery, independently of the report's quality status.
     await this.close(id, {
       status: "Completed", result: JSON.stringify(audit), error: null,
       errorDetail: readExecutionErrorDetail(audit["error_detail"]),
-      inputTokens: null, outputTokens: null,
+      inputTokens, outputTokens, estimatedTokens: current.estimatedTokens ?? 0,
       interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
     })
   }
@@ -522,6 +561,10 @@ export class AgentExecutionService {
 
   async findById(id: number): Promise<StoredAgentExecution> {
     return this.require(id)
+  }
+
+  async recentIds(): Promise<number[]> {
+    return this.executions.recentIds(50)
   }
 
   private async close(id: number, completion: AgentExecutionCompletion): Promise<void> {

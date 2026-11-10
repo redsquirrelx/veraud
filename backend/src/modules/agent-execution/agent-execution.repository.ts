@@ -5,6 +5,7 @@ import { AgentConfigurationError, type PreparedAgentConfiguration } from "../age
 import type { InvocationReceipt } from "./invocationReceipt.js"
 import { readExecutionErrorDetail, storedExecutionErrorDetail, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { publicErrorText, publicErrorResult } from "../../infrastructure/security/public-errors.js"
+import { architectureContextResult } from "./architecture-context.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -79,6 +80,7 @@ export interface StoredAgentExecution {
 }
 
 export interface AgentExecutionStore {
+  recentIds(limit: number): Promise<number[]>
   requestAuditCancellation(id: number): Promise<StoredAgentExecution>
   claimAuditDispatch(id: number): Promise<boolean>
   pendingAuditCancellations(): Promise<number[]>
@@ -94,11 +96,22 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
+  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution>, reused?: boolean }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async recentIds(limit: number): Promise<number[]> {
+    // Prioritize active work, without loading results, evidence or report bytes.
+    const active = await this.db.agentExecution.findMany({ where: { status: { in: ["Waiting", "Running"] } },
+      orderBy: { id: "desc" }, take: limit, select: { id: true } })
+    const recent = active.length < limit ? await this.db.agentExecution.findMany({
+      where: { status: { notIn: ["Waiting", "Running"] } }, orderBy: { id: "desc" },
+      take: limit - active.length, select: { id: true },
+    }) : []
+    return [...active, ...recent].map((row) => row.id)
+  }
 
   async requestAuditCancellation(id: number): Promise<StoredAgentExecution> {
     await this.db.agentExecution.updateMany({
@@ -202,6 +215,15 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     return this.db.$transaction(async (tx) => {
       const existing = await tx.agentExecution.findUniqueOrThrow({ where: { id } })
       if (existing.status === "Completed" || existing.status === "Failed") return this.toStored(existing)
+      if (existing.agentType === "architecture_context" && existing.evaluationId !== null && (data.result !== null || data.status === "Completed")) {
+        const evaluation = await tx.evaluation.findUniqueOrThrow({
+          where: { id: existing.evaluationId }, include: { projectVersion: true },
+        })
+        const artifact = architectureContextResult(data.result, evaluation.projectVersion.commitHash)
+        await tx.architectureContextArtifact.create({ data: {
+          executionId: id, projectVersionId: evaluation.projectVersionId, ...artifact,
+        } })
+      }
       const execution = await tx.agentExecution.update({
         where: { id },
         data: {
@@ -228,16 +250,28 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
     if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
+      if (!await tx.project.findUnique({ where: { id: projectId }, select: { id: true } })) {
+        throw new UnknownExecutionTargetError(`Project ${projectId} not found`)
+      }
       const running = await tx.agentExecution.findFirst({ where: {
         status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
       } })
-      if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      if (running) {
+        if (evaluationType === "ArchitectureContext" && running.agentType === "architecture_context" && running.evaluationId !== null) {
+          const evaluation = await tx.evaluation.findUniqueOrThrow({ where: { id: running.evaluationId } })
+          return { versionId: evaluation.projectVersionId, evaluationId: evaluation.id,
+            executions: { architecture_context: this.toStored(running) }, reused: true }
+        }
+        throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      }
       for (const configuration of configurations) await this.assertCurrent(tx, configuration)
       const version = await tx.projectVersion.upsert({
         where: { projectId_commitHash: { projectId, commitHash } },
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
       })
-      await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      if (evaluationType !== "ArchitectureContext") {
+        await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      }
       const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: evaluationType } })
       const executions: Record<string, StoredAgentExecution> = {}
       for (const configuration of configurations) {
@@ -246,7 +280,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
           configurationSnapshot: JSON.stringify(configuration.snapshot),
         } }))
       }
-      return { versionId: version.id, evaluationId: evaluation.id, executions }
+      return { versionId: version.id, evaluationId: evaluation.id, executions, reused: false }
     })
   }
 

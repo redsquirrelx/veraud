@@ -3,6 +3,15 @@ import { test } from "node:test"
 import { monitorExecution } from "./agent-execution.monitor.js"
 import type { StoredAgentExecution } from "./agent-execution.repository.js"
 
+test("context monitor keeps native status but excludes documentary evidence", () => {
+  const raw = JSON.stringify({ schema_version: "1", execution_status: "partial",
+    finalization_reason: "incomplete_coverage", knowledge: [{ statement: "private documentary source" }] })
+  const execution = { agentType: "architecture_context", result: raw } as StoredAgentExecution
+  assert.deepEqual(JSON.parse(monitorExecution(execution).result!), { schema_version: "1", execution_status: "partial",
+    finalization_reason: "incomplete_coverage" })
+  assert.equal(execution.result, raw)
+})
+
 test("compact monitor preserves actual invocation parents without exposing retained reports", () => {
   const traces = ["manager", "modularity-1", "boundary-1", "modularity-2", "boundary-2", "orphan"].map((id) => ({
     agent_id: id.split("-")[0], invocation_id: id, status: "completed", consumption: {},

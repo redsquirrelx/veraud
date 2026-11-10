@@ -44,6 +44,7 @@ model ProjectVersion {
   project     Project      @relation("ProjectVersions", fields: [projectId], references: [id])
   selectedBy  Project?     @relation("ProjectSelectedVersion")
   evaluations Evaluation[]
+  architectureContexts ArchitectureContextArtifact[]
 
   @@unique([projectId, commitHash])
   @@map("project_version")
@@ -86,8 +87,25 @@ model AgentExecution {
 
   evaluation    Evaluation?   @relation(fields: [evaluationId], references: [id])
   agentSettings AgentSettings @relation(fields: [agentType], references: [agentType])
+  architectureContext ArchitectureContextArtifact?
 
   @@map("agent_execution")
+}
+
+// Immutable canonical output, including partial/failed documentary outcomes.
+// A new attempt creates a new artifact; old version context is never overwritten.
+model ArchitectureContextArtifact {
+  executionId Int @id @map("execution_id")
+  projectVersionId Int @map("project_version_id")
+  schemaVersion String @map("schema_version")
+  executionStatus String @map("execution_status")
+  result String
+  createdAt DateTime @default(now()) @map("created_at")
+  execution AgentExecution @relation(fields: [executionId], references: [id])
+  projectVersion ProjectVersion @relation(fields: [projectVersionId], references: [id])
+
+  @@index([projectVersionId, executionId])
+  @@map("architecture_context_artifact")
 }
 
 model ExecutionEventStream {
