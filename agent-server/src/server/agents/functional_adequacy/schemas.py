@@ -61,6 +61,17 @@ class EvidenceLocation(BaseModel):
     snippet: str | None = None
 
 
+class CapabilityCall(BaseModel):
+    """Llamada estática resuelta desde una capacidad hacia otra."""
+
+    target_capability_id: str | None = None
+    target_symbol: str = Field(min_length=1)
+    file_path: str = Field(min_length=1)
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    snippet: str | None = None
+
+
 class FunctionalCapability(BaseModel):
     """Capacidad funcional detectada sin requisitos explícitos."""
 
@@ -73,6 +84,7 @@ class FunctionalCapability(BaseModel):
     route: str | None = None
     evidence: list[EvidenceLocation] = Field(default_factory=list)
     relationships: list[str] = Field(default_factory=list)
+    calls: list[CapabilityCall] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 
 
