@@ -15,6 +15,19 @@ function agent(agentType: string, qualityAttributes: string[], workflowIds = ["q
 }
 
 describe("executionAudits", () => {
+  it.each([["complete", "completed"], ["partial", "partial"], ["failed", "failed"]])(
+    "shows independent context with native %s outcome, not as a maintainability audit", (native, expected) => {
+      const [context] = executionAudits([{ ...execution, agentType: "architecture_context", status: "Completed",
+        result: JSON.stringify({ execution_status: native }), monitorContext: { ...execution.monitorContext!,
+          evaluationType: "ArchitectureContext", qualityAttributes: [], workflowIds: [] },
+      }], [])
+      expect(context?.state).toBe(expected)
+      expect(context?.canCancel).toBe(false)
+      expect(context?.reportAvailable).toBe(false)
+      expect(context?.project?.id).toBe(5)
+      expect(context?.pipelines[0]?.id).toBe("architecture_context")
+      expect(context?.pipelines[0]?.agents[0]?.state).toBe(expected)
+    })
   it("retains root and child incident provenance when compact report traces omit metadata", () => {
     const detail = { agentId: "responsibility", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
       code: "execution_timeout", exceptionType: "TimeoutError", message: "The execution exceeded its allowed time." }

@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { useContext, type ReactNode } from "react"
 import { AgentExecutionsProvider } from "./agentMonitor.tsx"
 import { AuditExecutionUpdateContext, useAgentExecutions } from "./useAgentExecutions.ts"
+import { discoverExecutions } from "./executionDiscoveryApi.ts"
+
+vi.mock("./executionDiscoveryApi.ts", () => ({ discoverExecutions: vi.fn() }))
 
 const realWebSocket = globalThis.WebSocket
 const realFetch = globalThis.fetch
@@ -60,6 +63,7 @@ const opened = {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   globalThis.WebSocket = realWebSocket
   globalThis.fetch = realFetch
   window.localStorage.removeItem("agents.recentExecutionIds")
@@ -67,10 +71,47 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  vi.mocked(discoverExecutions).mockReset().mockResolvedValue([])
   globalThis.fetch = (async () => new Response(JSON.stringify({ ...opened, configuration: null }))) as typeof fetch
 })
 
 describe("AgentExecutionsProvider", () => {
+  it("polls discovery to recover missed opened events and aborts requests on unmount", async () => {
+    vi.useFakeTimers()
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    vi.mocked(discoverExecutions).mockResolvedValueOnce([]).mockResolvedValue([11])
+    const { result, unmount } = renderHook(() => useAgentExecutions(), { wrapper })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(result.current).toHaveLength(0)
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+    expect(result.current[0]?.id).toBe(11)
+    const signal = vi.mocked(discoverExecutions).mock.calls[0]?.[0]
+    unmount()
+    expect(signal?.aborted).toBe(true)
+  })
+  it("discovers architecture-context executions after reload without local IDs or socket events", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    vi.mocked(discoverExecutions).mockResolvedValue([42])
+    globalThis.fetch = (async () => new Response(JSON.stringify({ ...opened, id: 42,
+      agentType: "architecture_context", status: "Completed", result: '{"execution_status":"partial"}',
+      monitorContext: { project: { id: 2, repositoryOwner: "acme", repositoryName: "demo" },
+        branch: "main", commitHash: "a".repeat(40), evaluationType: "ArchitectureContext", qualityAttributes: [], workflowIds: [] },
+    }))) as typeof fetch
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    await waitFor(() => expect(result.current[0]?.agentType).toBe("architecture_context"))
+    expect(result.current[0]?.monitorContext?.project?.id).toBe(2)
+    expect(result.current[0]?.result).toBe('{"execution_status":"partial"}')
+    expect(JSON.parse(window.localStorage.getItem("agents.recentExecutionIds")!)).toContain(42)
+  })
+
+  it("rediscovers work on reconnect even if its opened event was missed", async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    const { result } = renderHook(() => useAgentExecutions(), { wrapper })
+    await waitFor(() => expect(discoverExecutions).toHaveBeenCalledOnce())
+    vi.mocked(discoverExecutions).mockResolvedValue([11])
+    act(() => FakeSocket.instances[0]?.emit("open"))
+    await waitFor(() => expect(result.current).toHaveLength(1))
+  })
   it("merges cancellation responses and terminal events without reopening a confirmed audit", async () => {
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
     const { result } = renderHook(() => ({ executions: useAgentExecutions(), update: useContext(AuditExecutionUpdateContext) }), { wrapper })

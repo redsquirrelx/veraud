@@ -122,6 +122,7 @@ export function stateLabelKey(state: Exclude<AuditRunState, "cancelling" | "canc
 }
 
 const pipelineLabelKeys: Record<string, ParseKeys<"projects">> = {
+  architecture_context: "analyze.pipeline.contextAgent",
   maintainability: "auditStatus.pipelines.maintainability",
   security: "auditStatus.pipelines.security",
   functional_adequacy: "auditStatus.pipelines.functionalAdequacy",

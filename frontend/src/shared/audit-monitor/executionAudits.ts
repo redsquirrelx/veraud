@@ -18,7 +18,8 @@ function evaluationOutcome(execution: AgentExecution, result: RecordValue): stri
   const terminal = ["Completed", "Failed"].includes(execution.status)
   if (terminal && execution.interruptionReason === "cancelled") return "cancelled"
   if (!terminal && (execution.cancellationRequestedAt || execution.interruptionReason === "cancellation_requested")) return "cancelling"
-  const status = text(result.status)
+  const native = execution.agentType === "architecture_context" ? text(result.execution_status) : null
+  const status = native === "complete" ? "completed" : native ?? text(result.status)
   // Compact terminal events can arrive before their HTTP report. An old
   // pending projection must not overrule the confirmed execution lifecycle.
   return terminal && ["queued", "running", "cancelling"].includes(status ?? "") ? null : status
@@ -93,6 +94,10 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
       const attributes = metadata?.qualityAttributes ?? execution.monitorContext?.qualityAttributes ?? []
       const workflows = metadata?.workflowIds ?? execution.monitorContext?.workflowIds ?? []
       const quality = execution.monitorContext?.evaluationType === "QualityAudit" || selected.length > 0 || (execution.invocations?.length ?? 0) > 0
+      if (!quality && execution.agentType === "architecture_context") {
+        const status = evaluationOutcome(execution, result)
+        if (status) outcomes.push(status)
+      }
       if (quality) {
         const status = evaluationOutcome(execution, result)
         if (status) outcomes.push(status)
@@ -170,7 +175,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
           configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
            interruptionReason: execution.interruptionReason,
            errorDetail: executionError,
-           state: auditStateFrom(execution.status, quality ? evaluationOutcome(execution, result) : null),
+            state: auditStateFrom(execution.status, quality || execution.agentType === "architecture_context" ? evaluationOutcome(execution, result) : null),
           inputTokens: execution.inputTokens, outputTokens: execution.outputTokens,
           startedAt: execution.startedAt, finishedAt: execution.finishedAt, error: execution.error })
       }

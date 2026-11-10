@@ -4,6 +4,7 @@ import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { mergeExecution, mergeInvocations } from "./mergeExecution.ts"
 import { AgentExecutionsContext, AuditExecutionUpdateContext } from "./useAgentExecutions.ts"
 import type { AuditCancellationResult } from "../../infrastructure/http-client/httpClient.ts"
+import { discoverExecutions } from "./executionDiscoveryApi.ts"
 
 interface AgentExecutionEvent {
   type: string
@@ -46,9 +47,13 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
     let alive = true
     let socket: WebSocket | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
+    let discoveryTimer: ReturnType<typeof setTimeout> | undefined
+    let discovering = false
+    const controller = new AbortController()
     const stored = localStorage.get<unknown>("agents.recentExecutionIds", [])
     const knownIds = new Set<number>(Array.isArray(stored) ? stored.filter((id): id is number => Number.isInteger(id) && id > 0).slice(-50) : [])
     const hydrated = new Set<number>()
+    const terminal = new Set<number>()
     const pending = new Set<number>()
     const refreshAgain = new Set<number>()
     const revisions = new Map<number, number>()
@@ -57,7 +62,13 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
       if (!alive) return
       setExecutions((current) => {
         const index = current.findIndex((item) => item.id === execution.id)
-        if (index === -1) return [...current, execution].sort((a, b) => a.id - b.id).slice(-50)
+        if (index === -1) {
+          const ordered = [...current, execution].sort((a, b) => {
+            const active = (row: AgentExecution) => row.status === "Waiting" || row.status === "Running" ? 1 : 0
+            return active(b) - active(a) || b.id - a.id
+          })
+          return ordered.slice(0, 50).sort((a, b) => a.id - b.id)
+        }
         const next = [...current]
         next[index] = snapshotOnly ? {
            ...current[index]!, configuration: execution.configuration ?? current[index]?.configuration ?? null,
@@ -73,9 +84,10 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
       pending.add(id)
       const revision = revisions.get(id) ?? 0
       try {
-        const execution = await getAgentExecution(id, true)
+        const execution = await getAgentExecution(id, true, controller.signal)
         if (execution.id !== id) return
         hydrated.add(id)
+        if (execution.status === "Completed" || execution.status === "Failed") terminal.add(id)
         apply(execution, revision !== (revisions.get(id) ?? 0))
       } catch {
         // A later event/reconnect can retry; transient HTTP failures keep the live row.
@@ -87,6 +99,28 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
 
     function restore() {
       for (const id of knownIds) void refresh(id)
+      void discover()
+    }
+
+    async function discover() {
+      if (discovering || !alive) return
+      discovering = true
+      clearTimeout(discoveryTimer)
+      try {
+        const ids = await discoverExecutions(controller.signal)
+        if (!alive) return
+        for (const id of ids) {
+          knownIds.add(id)
+          if (!terminal.has(id)) void refresh(id)
+        }
+        while (knownIds.size > 50) knownIds.delete(knownIds.values().next().value!)
+        localStorage.set("agents.recentExecutionIds", [...knownIds])
+      } catch {
+        // Discovery failure must not discard already received socket/history rows.
+      } finally {
+        discovering = false
+        if (alive) discoveryTimer = setTimeout(() => void discover(), 10000)
+      }
     }
 
     function handleMessage(event: MessageEvent) {
@@ -140,6 +174,8 @@ export function AgentExecutionsProvider({ children, retryMs = 3000 }: { children
 
     return () => {
       alive = false
+      controller.abort()
+      clearTimeout(discoveryTimer)
       if (retry !== null) {
         clearTimeout(retry)
       }
