@@ -49,6 +49,10 @@ const gitTree = { files: ["src/index.ts", "README.md"], taskId: 6 }
 function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input)
+    if (url.includes("/architecture-context?")) {
+      const commitHash = new URL(url, "http://localhost").searchParams.get("commitHash")
+      return new Response(JSON.stringify({ projectId: 2, commitHash, available: true, executionId: 41, executionStatus: "partial" }), { status: 200 })
+    }
     if (/\/audits\?limit=/.test(url)) {
       const response = await handler(url.split("?")[0], init)
       if (!response.ok) return response
@@ -66,6 +70,9 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 
 function gitResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes("/graph?") && init?.method !== "POST") return new Response("null", { status: 200 })
+  if (url.includes("/graph/") && url.endsWith("/artifact")) {
+    return new Response(JSON.stringify({ nodes: [] }), { status: 200 })
+  }
   if (url.includes("/git/branches")) {
     return new Response(JSON.stringify(gitBranches), { status: 200 })
   }
@@ -290,7 +297,7 @@ describe("ProjectDetailPage", () => {
     })
     expect(new Set(icons).size).toBe(sections.length)
     for (const name of ["Home", "Settings", "Veraud"]) {
-      const globalIcon = screen.getByRole("link", { name }).querySelector("svg")!
+      const globalIcon = screen.getByRole(name === "Settings" ? "button" : "link", { name }).querySelector("svg")!
       expect(icons).not.toContain(globalIcon.innerHTML)
     }
 
@@ -575,7 +582,7 @@ describe("ProjectDetailPage", () => {
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
   })
 
-  it("starts an independent graph Task from the header without invoking auditors", async () => {
+  it("starts the extensible pipeline from the header and waits for its graph step without invoking auditors", async () => {
     const executions: string[] = []
     const extractions: unknown[] = []
     const graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Running", phase: "extracting", graphAvailable: false, error: null }
@@ -596,10 +603,12 @@ describe("ProjectDetailPage", () => {
     expect(analyze).not.toHaveAttribute("aria-haspopup")
     await waitFor(() => expect(analyze).toBeEnabled())
     await userEvent.click(analyze)
-    expect(await screen.findByText("Extracting graph with Graphify")).toBeInTheDocument()
+    expect(await screen.findByText("Extracting graph with Graphify", {}, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Quality audit" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Analyzing" })).toBeDisabled()
+    expect(screen.getByText("Project analysis pipeline: Running")).toBeVisible()
+    expect(screen.getByText("Step 1 of 2: Generate structural graph")).toBeVisible()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
     expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
@@ -609,8 +618,33 @@ describe("ProjectDetailPage", () => {
     expect(executions).toEqual([])
   })
 
+  it("explains missing context model settings after reusing the graph and links to configuration", async () => {
+    const posted: string[] = []
+    stubFetch((url, init) => {
+      if (init?.method === "POST") posted.push(url)
+      if (url.endsWith("/api/agent-executions/direct")) return new Response(JSON.stringify({ error: "Configuration rejected",
+        agents: [{ agentType: "architecture_context", reason: "Model and credential required" }],
+      }), { status: 422 })
+      if (url.includes("/graph?")) return new Response(JSON.stringify({ taskId: 81, projectId: 2, branch: "main",
+        commitHash: "a".repeat(40), status: "Succeded", phase: "completed", graphAvailable: true, error: null,
+      }), { status: 200 })
+      if (url.includes("/api/tasks/active")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/graph")
+    const button = await screen.findByRole("button", { name: "Analyze" })
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    expect(await screen.findByText(/The graph step finished. Architecture Context could not start: configure/)).toBeVisible()
+    expect(screen.getByText("Step 2 of 2: Extract architecture context")).toBeVisible()
+    expect(within(screen.getByRole("alert")).getByRole("link")).toHaveAttribute("href", "/settings")
+    expect(posted.some((url) => url.endsWith("/graph"))).toBe(false)
+    expect(posted.filter((url) => url.endsWith("/api/agent-executions/direct"))).toHaveLength(1)
+  })
+
   it("reuses saved graphs, regenerates explicitly, retries descriptive failures and confirms completion once", async () => {
     const posts: unknown[] = []
+    const contexts: unknown[] = []
     const sockets: EventTarget[] = []
     class TaskSocket extends EventTarget {
       constructor() { super(); sockets.push(this) }
@@ -618,6 +652,13 @@ describe("ProjectDetailPage", () => {
     }
     let graph = { taskId: 81, projectId: 2, branch: "main", commitHash: "a".repeat(40), status: "Succeded", phase: "completed", graphAvailable: true, previousGraphTaskId: null as number | null, error: null as string | null }
     stubFetch((url, init) => {
+      if (url.endsWith("/api/agent-executions/direct")) {
+        contexts.push(JSON.parse(String(init?.body)))
+        return new Response(JSON.stringify({
+        id: 123, evaluationId: 10, agentType: "architecture_context", status: "Completed",
+        result: JSON.stringify({ schema_version: "1", execution_status: "partial", document_index: { commit: "a".repeat(40) } }),
+        }), { status: 201 })
+      }
       if (url.includes("/graph?")) return new Response(JSON.stringify(graph), { status: 200 })
       if (url.endsWith("/graph") && init?.method === "POST") {
         posts.push(JSON.parse(String(init.body)))
@@ -635,11 +676,16 @@ describe("ProjectDetailPage", () => {
       })
     }
     renderDetail("/projects/2/graph")
-    expect(await screen.findByRole("button", { name: "Regenerate graph" })).toBeEnabled()
+    expect(await screen.findByRole("button", { name: "Regenerate graph" }, { timeout: 3000 })).toBeEnabled()
+    expect(await screen.findByRole("img", { name: "Structural graph for commit aaaaaaa" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Download graph" })).toHaveAttribute("href", expect.stringContaining("/graph/81/artifact"))
     const success = "The graph for aaaaaaa was generated and saved successfully."
     expect(screen.queryByText(success)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
+    expect(await screen.findByText("Project analysis pipeline: Completed")).toBeVisible()
+    expect(screen.getByText("Step 2 of 2: Extract architecture context")).toBeVisible()
+    expect(screen.getByText(/Architecture context saved for this version with partial documentary coverage/)).toBeVisible()
+    expect(contexts).toEqual([{ agentType: "architecture_context", project: { projectId: 2, branch: "main", commitHash: "a".repeat(40) } }])
     expect(posts).toEqual([])
     await userEvent.click(screen.getByRole("button", { name: "Regenerate graph" }))
     expect(await screen.findByText("Extracting graph with Graphify")).toBeVisible()
