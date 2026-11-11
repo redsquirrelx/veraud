@@ -34,13 +34,9 @@ export function MaintainabilityConfiguration(props: {
     setLocalSelection(selection)
     onChange?.(selection)
   }
-  const partial = !loading && !failed && available.some((id) =>
-    !selected.includes(id) || investigatorsFor(agents, id).some((agent) =>
-      isAvailable(agent) && !(selection[id] ?? []).includes(agent.agentType)))
 
   return <fieldset className="quality-audit-subcharacteristics" aria-busy={loading}>
     <legend>{t("qualityAudits.configuration.maintainability.legend")}</legend>
-    {partial && <p className="quality-audit-partial-notice" role="status">{t("qualityAudits.configuration.investigators.partialNotice")}</p>}
     {loading && <p className="label" role="status">{t("qualityAudits.configuration.maintainability.loading")}</p>}
     {failed && <div role="alert">
       <p>{t("qualityAudits.configuration.maintainability.loadFailed")}</p>

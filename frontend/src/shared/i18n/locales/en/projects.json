@@ -223,7 +223,6 @@
       "optionsPending": "Configuration options will be available soon.",
       "investigators": {
         "view": "View investigators",
-        "partialNotice": "The audit result will be partial because not all available investigators are selected.",
         "empty": "No investigators are registered for this subcharacteristic.",
         "noDescription": "No description is available for this investigator.",
         "architectureBoundary": "Evaluates whether dependencies respect architectural boundaries and design principles.",

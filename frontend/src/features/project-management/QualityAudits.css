@@ -169,7 +169,6 @@
 .quality-audit-investigators { margin-inline-start: var(--space-6); }
 .quality-audit-investigators summary { cursor: pointer; font-size: var(--font-size-sm); color: var(--color-text-description); }
 .quality-audit-investigator-list { display: grid; gap: var(--space-3); padding-block: var(--space-3); }
-.quality-audit-partial-notice { padding: var(--space-3); border: var(--border-width) solid var(--status-warning-border); border-radius: var(--radius-surface); background: var(--status-warning-bg); color: var(--status-warning-text); font-size: var(--font-size-sm); }
 .quality-audits-empty { padding: var(--space-3); margin: 0; border: var(--border-width) dashed var(--color-border-control); border-radius: var(--radius-surface); text-align: center; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .quality-audit-run { display: grid; gap: var(--space-2); border-top: var(--border-width) solid var(--color-border); padding-block: var(--space-3); min-width: 0; }
 .quality-audit-run-row { gap: var(--space-1); padding-block: var(--space-2); border-top: 0; border-bottom: var(--border-width) solid var(--color-border); }

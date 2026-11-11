@@ -223,7 +223,6 @@
       "optionsPending": "Las opciones de configuración estarán disponibles próximamente.",
       "investigators": {
         "view": "Ver investigadores",
-        "partialNotice": "El resultado de la auditoría será parcial porque no están seleccionados todos los investigadores disponibles.",
         "empty": "No hay investigadores registrados para esta subcaracterística.",
         "noDescription": "No hay una descripción disponible para este investigador.",
         "architectureBoundary": "Evalúa si las dependencias respetan los límites arquitectónicos y los principios de diseño.",
