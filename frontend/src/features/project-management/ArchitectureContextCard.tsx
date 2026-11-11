@@ -47,7 +47,7 @@ export function ArchitectureContextCard({ state, versionLoading = false, version
     <Card className="project-body-card" layout="stack" gap="sm" align="stretch" padding="responsive">
       <div className="stage-view">
         <div className="stage-head">
-          <h4 className="stage-title">{t("detail.overview.architectureContext.title")}</h4>
+          <h4 className="stage-title stage-title--lg">{t("detail.overview.architectureContext.title")}</h4>
           {!showVersionLoading && state.status === "ready" && state.context !== null && (
             <div className="stage-head-right">
               <Badge tone={state.context.executionStatus === "complete" ? "success" : "warning"}>

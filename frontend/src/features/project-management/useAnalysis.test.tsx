@@ -151,7 +151,11 @@ describe("useAnalysis", () => {
 
   it("does nothing without a project", async () => {
     let calls = 0
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (input: unknown) => {
+      // The provider's execution-discovery heartbeat is always in flight; it is not the hook under test.
+      if (String(input).includes("/api/agent-executions/recent")) {
+        return new Response(JSON.stringify({ ids: [] }), { status: 200 })
+      }
       calls += 1
       return new Response(JSON.stringify({}), { status: 201 })
     }) as typeof fetch
@@ -206,7 +210,11 @@ describe("useAnalysis", () => {
 
   it("displays a stored run without requesting", async () => {
     let calls = 0
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (input: unknown) => {
+      // The provider's execution-discovery heartbeat is always in flight; it is not the hook under test.
+      if (String(input).includes("/api/agent-executions/recent")) {
+        return new Response(JSON.stringify({ ids: [] }), { status: 200 })
+      }
       calls += 1
       return new Response(JSON.stringify({}), { status: 200 })
     }) as typeof fetch

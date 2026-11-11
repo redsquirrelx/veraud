@@ -12,11 +12,13 @@ describe("useProjectPipeline", () => {
     act(() => { pending = result.current.start("main", "aaa"); void result.current.start("main", "aaa") })
     expect(run).toHaveBeenCalledOnce()
     expect(result.current.running).toBe(true)
+    expect(result.current.runId).toBe(1)
     expect(result.current.progress?.stepId).toBe("first")
     await act(async () => { finish(); await pending })
     expect(result.current.status).toBe("completed")
     act(() => { pending = result.current.start("main", "bbb") })
     expect(run).toHaveBeenCalledTimes(2)
+    expect(result.current.runId).toBe(2)
     await act(async () => { finish(); await pending })
   })
 

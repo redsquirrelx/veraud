@@ -4,7 +4,7 @@ import { XIcon } from "./icons.tsx"
 import "./Toast.css"
 
 interface ToastProps {
-  kind: "success" | "error"
+  kind: "success" | "error" | "info"
   message: string
   durationMs?: number
   onClose?: () => void

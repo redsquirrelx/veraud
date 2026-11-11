@@ -40,6 +40,12 @@
   color: var(--status-danger-text);
 }
 
+.ui-toast-info {
+  background: var(--status-info-bg, var(--color-surface));
+  border-color: var(--status-info-border, var(--color-border));
+  color: var(--status-info-text, var(--color-text));
+}
+
 .ui-toast-body {
   max-height: 40vh;
   overflow-y: auto;

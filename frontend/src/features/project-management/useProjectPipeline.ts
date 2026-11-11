@@ -38,7 +38,7 @@ export function useProjectPipeline(projectId: number | null, steps: readonly Pro
     setState((current) => ({ status: "running", progress: null, runId: (current.runId ?? 0) + 1 }))
     try {
       const results = await runProjectPipeline(steps, { projectId, branch, commitHash }, controller.signal, (progress) => {
-        if (!controller.signal.aborted) setState({ status: "running", progress })
+        if (!controller.signal.aborted) setState((current) => ({ ...current, status: "running", progress }))
       })
       const context = results.get("architecture-context") as ArchitectureContextOutput | undefined
       if (!controller.signal.aborted) setState((current) => ({ ...current, status: "completed",

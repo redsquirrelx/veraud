@@ -47,12 +47,13 @@ const gitCommits = {
 
 const gitTree = { files: ["src/index.ts", "README.md"], taskId: 6 }
 
-function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
+function stubFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>, architectureContextAvailable = true) {
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
     const url = String(input)
     if (url.includes("/architecture-context?")) {
       const commitHash = new URL(url, "http://localhost").searchParams.get("commitHash")
-      return new Response(JSON.stringify({ projectId: 2, commitHash, available: true, executionId: 41, executionStatus: "partial" }), { status: 200 })
+      return new Response(JSON.stringify({ projectId: 2, commitHash, available: architectureContextAvailable,
+        executionId: architectureContextAvailable ? 41 : null, executionStatus: architectureContextAvailable ? "partial" : null }), { status: 200 })
     }
     if (/\/audits\?limit=/.test(url)) {
       const response = await handler(url.split("?")[0], init)
@@ -100,11 +101,13 @@ function gitResponse(url: string, init?: RequestInit): Response | null {
   return null
 }
 
-function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] }) {
+function stubProjects(options?: { treePending?: boolean, treeFiles?: string[], architectureContextAvailable?: boolean, graphAvailable?: boolean }) {
   let release = () => {}
   const seen: string[] = []
   stubFetch((url, init) => {
     if (url.endsWith("/audits")) return new Response("[]", { status: 200 })
+    if (url.includes("/graph?") && options?.graphAvailable) return new Response(JSON.stringify({ taskId: 81, projectId: 2,
+      branch: "main", commitHash: "a".repeat(40), status: "Succeded", phase: "completed", graphAvailable: true, error: null }), { status: 200 })
     if (url.includes("/api/tasks/active")) {
       return new Response(JSON.stringify([]), { status: 200 })
     }
@@ -117,7 +120,7 @@ function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] })
       }
     }
     return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
-  })
+  }, options?.architectureContextAvailable ?? true)
   return { seen, release: () => release() }
 }
 
@@ -139,6 +142,32 @@ function renderDetail(entry: string, settings?: Partial<SettingsContextValue>) {
 }
 
 describe("ProjectDetailPage", () => {
+  it("shows project insight links only when their data exists for the selected commit", async () => {
+    stubProjects({ architectureContextAvailable: false })
+    renderDetail("/projects/2/overview")
+
+    expect(await screen.findByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(await screen.findByRole("heading", { name: "Project insights" })).toBeVisible()
+    expect(screen.getByText("Not analyzed yet — run Analyze to enable these sections.")).toBeVisible()
+    expect(screen.getAllByText("Architecture Context").find((element) => element.classList.contains("project-insight-name"))?.closest(".project-insight")).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getAllByText("Structural Graph").find((element) => element.classList.contains("project-insight-name"))?.closest(".project-insight")).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("button", { name: "Structural graph" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Architecture Context" })).toBeDisabled()
+  })
+
+  it("enables only the structural graph tile when only the selected commit has a graph", async () => {
+    stubProjects({ architectureContextAvailable: false, graphAvailable: true })
+    renderDetail("/projects/2/overview")
+
+    expect(await screen.findByRole("heading", { name: "acme/Demo" })).toBeVisible()
+    expect(await screen.findByRole("heading", { name: "Project insights" })).toBeVisible()
+    expect(await screen.findByRole("link", { name: /Structural Graph.*Explore modules/ })).toHaveAttribute("href", "/projects/2/graph")
+    expect(screen.getAllByText("Architecture Context").find((element) => element.classList.contains("project-insight-name"))?.closest(".project-insight")).toHaveAttribute("aria-disabled", "true")
+    expect(screen.queryByText("Not analyzed yet — run Analyze to enable these sections.")).toBeNull()
+    expect(screen.getByRole("button", { name: "Architecture Context" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toBeEnabled()
+  })
+
   it("shows an empty structural graph in its own section, separate from audit setup", async () => {
     stubProjects()
     renderDetail("/projects/2/graph")
@@ -149,7 +178,8 @@ describe("ProjectDetailPage", () => {
     await waitFor(() => expect(within(graph).getByText("main")).toBeVisible())
     expect(await within(graph).findByText("aaaaaaa")).toHaveAttribute("title", "a".repeat(40))
     expect(within(graph).queryByRole("img")).toBeNull()
-    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Structural graph" })).not.toHaveAttribute("aria-current")
     expect(screen.queryByRole("heading", { name: "Quality audit" })).toBeNull()
     expect(within(screen.getByLabelText("Project context")).getByRole("tab", { name: "Git" })).toBeVisible()
 
@@ -157,8 +187,7 @@ describe("ProjectDetailPage", () => {
       await userEvent.click(screen.getByRole("button", { name: section }))
       expect(screen.queryByRole("region", { name: "Structural graph" })).toBeNull()
     }
-    await userEvent.click(screen.getByRole("button", { name: "Structural graph" }))
-    expect(await screen.findByRole("region", { name: "Structural graph" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Structural graph" })).toBeDisabled()
   })
 
   it("renders historical evidence and findings inside project details without reading the working copy", async () => {
@@ -263,7 +292,7 @@ describe("ProjectDetailPage", () => {
     expect(controls.getByText("HTTPS")).toBeDefined()
     await waitFor(() => expect(controls.getByRole("button", { name: "Analyze" })).toBeEnabled())
     const branch = controls.getByRole("button", { name: "main" })
-    for (const section of ["Structural graph", "Audits", "Files", "Overview"]) {
+    for (const section of ["Architecture Context", "Structural graph", "Audits", "Files", "Overview"]) {
       await userEvent.click(screen.getByRole("button", { name: section }))
       expect(screen.getByLabelText("Project context")).toBe(header)
       expect(controls.getByRole("tab", { name: "Git" })).toBeVisible()
@@ -289,7 +318,7 @@ describe("ProjectDetailPage", () => {
 
     const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
     const sections = within(navigation).getAllByRole("button")
-    expect(sections).toHaveLength(5)
+    expect(sections).toHaveLength(6)
     const icons = sections.map((button) => {
       const icon = button.querySelector("svg")!
       expect(icon).toHaveAttribute("aria-hidden", "true")
@@ -605,12 +634,16 @@ describe("ProjectDetailPage", () => {
     expect(analyze).not.toHaveAttribute("aria-haspopup")
     await waitFor(() => expect(analyze).toBeEnabled())
     await userEvent.click(analyze)
-    expect(await screen.findByText("Extracting graph with Graphify", {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByText(/Project analysis pipeline: Running/)).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Quality audit" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Structural graph" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("button", { name: "Structural graph" })).not.toHaveAttribute("aria-current")
     expect(screen.getByRole("button", { name: "Analyzing" })).toBeDisabled()
-    expect(screen.getByText("Project analysis pipeline: Running")).toBeVisible()
-    expect(screen.getByText("Step 1 of 2: Generate structural graph")).toBeVisible()
+    const pipelineMessage = await screen.findByText(/Project analysis pipeline: Running/)
+    const pipelineToast = pipelineMessage.closest(".ui-toast")
+    expect(pipelineToast).toHaveAttribute("role", "status")
+    expect(pipelineToast).toHaveTextContent("Step 1 of 2: Generate structural graph")
+    expect(screen.queryByText("Project analysis pipeline: Running", { selector: ":not(.ui-toast *)" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "main" })).toBeDisabled()
     expect(screen.getByRole("textbox", { name: "Search items" })).toBeDisabled()
@@ -620,7 +653,7 @@ describe("ProjectDetailPage", () => {
     expect(executions).toEqual([])
   })
 
-  it("explains missing context model settings after reusing the graph and links to configuration", async () => {
+  it("explains missing context model settings in an error toast after reusing the graph", async () => {
     const posted: string[] = []
     stubFetch((url, init) => {
       if (init?.method === "POST") posted.push(url)
@@ -638,12 +671,11 @@ describe("ProjectDetailPage", () => {
     const button = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(button).toBeEnabled())
     await userEvent.click(button)
-    expect(await screen.findByText(/The graph step finished. Architecture Context could not start: configure/)).toBeVisible()
-    expect(screen.getByText("Step 2 of 2: Extract architecture context")).toBeVisible()
-    const configure = within(screen.getByRole("alert")).getByRole("button", { name: "Configure agents" })
-    expect(configure).toHaveClass("ui-link")
-    await userEvent.click(configure)
-    expect(openSettings).toHaveBeenCalledWith("agents")
+    const errorMessage = await screen.findByText(/The graph step finished. Architecture Context could not start: configure/)
+    const errorToast = errorMessage.closest(".ui-toast")
+    expect(errorToast).toHaveAttribute("role", "alert")
+    expect(errorToast).toHaveTextContent(/The graph step finished. Architecture Context could not start: configure/)
+    expect(errorToast).toHaveTextContent("Step 2 of 2: Extract architecture context")
     expect(posted.some((url) => url.endsWith("/graph"))).toBe(false)
     expect(posted.filter((url) => url.endsWith("/api/agent-executions/direct"))).toHaveLength(1)
   })
@@ -688,9 +720,12 @@ describe("ProjectDetailPage", () => {
     const success = "The graph for aaaaaaa was generated and saved successfully."
     expect(screen.queryByText(success)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Analyze" }))
-    expect(await screen.findByText("Project analysis pipeline: Completed")).toBeVisible()
-    expect(screen.getByText("Step 2 of 2: Extract architecture context")).toBeVisible()
-    expect(screen.getByText(/Architecture context saved for this version with partial documentary coverage/)).toBeVisible()
+    const completionMessage = await screen.findByText(/Project analysis pipeline: Completed/)
+    const completionToast = completionMessage.closest(".ui-toast")
+    expect(completionToast).toHaveAttribute("role", "status")
+    expect(completionToast).toHaveTextContent("Step 2 of 2: Extract architecture context")
+    expect(completionToast).toHaveTextContent(/Architecture context saved for this version with partial documentary coverage/)
+    expect(screen.queryByText("Project analysis pipeline: Completed", { selector: ":not(.ui-toast *)" })).not.toBeInTheDocument()
     expect(contexts).toEqual([{ agentType: "architecture_context", project: { projectId: 2, branch: "main", commitHash: "a".repeat(40) } }])
     expect(posts).toEqual([])
     await userEvent.click(screen.getByRole("button", { name: "Regenerate graph" }))

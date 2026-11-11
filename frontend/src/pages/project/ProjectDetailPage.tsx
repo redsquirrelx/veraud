@@ -22,9 +22,10 @@ import {
 } from "../../features/project-management/pipelineResult.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView, Modal } from "../../shared/ui-kit/index.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
-import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
+import { ProjectOverviewIcon, ProjectArchitectureContextIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { ProjectAuditSummary } from "./ProjectAuditSummary.tsx"
+import { ProjectInsights } from "./ProjectInsights.tsx"
 import { githubRepoUrl } from "../../features/project-management/github.ts"
 import { reviewVerdictLabelKeys, statusLabelKey } from "../../features/project-management/projectStatus.ts"
 import { useVersionSelector } from "../../features/project-management/useVersionSelector.ts"
@@ -32,6 +33,7 @@ import { useAnalyzedVersions } from "../../features/project-management/useAnalyz
 import { useAnalysis } from "../../features/project-management/useAnalysis.ts"
 import { useProjectGraph } from "../../features/project-management/useProjectGraph.ts"
 import { useArchitectureContext } from "../../features/project-management/useArchitectureContext.ts"
+import { useArchitectureContextAvailability } from "../../features/project-management/useArchitectureContextAvailability.ts"
 import { ArchitectureContextCard } from "../../features/project-management/ArchitectureContextCard.tsx"
 import { useProjectPipeline } from "../../features/project-management/useProjectPipeline.ts"
 import { projectGraphArtifactUrl } from "../../features/project-management/projectGraphApi.ts"
@@ -50,6 +52,7 @@ import "./ProjectDetailPage.css"
 
 const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: ReactNode }> = [
   { id: "overview", labelKey: "detail.sections.overview", icon: <ProjectOverviewIcon /> },
+  { id: "architecture-context", labelKey: "detail.sections.architectureContext", icon: <ProjectArchitectureContextIcon /> },
   { id: "graph", labelKey: "structuralGraph.title", icon: <ProjectGraphIcon /> },
   { id: "analysis", labelKey: "detail.sections.analysis", icon: <ProjectAnalysisIcon /> },
   { id: "audits", labelKey: "detail.sections.audits", icon: <ProjectAuditsIcon /> },
@@ -109,6 +112,23 @@ export function ProjectDetailPage() {
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
   const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
   const projectPipeline = useProjectPipeline(project?.id ?? null)
+  const lastPipelineToast = useRef("")
+  useEffect(() => {
+    if (projectPipeline.status === "idle" || projectPipeline.runId === undefined) return
+    const progress = projectPipeline.progress
+    const key = [projectPipeline.runId, projectPipeline.status, progress?.stepId ?? "", projectPipeline.contextStatus ?? "", projectPipeline.errorKey ?? ""].join(":")
+    if (lastPipelineToast.current === key) return
+    lastPipelineToast.current = key
+    const status = t(`analyze.pipeline.${projectPipeline.status}`)
+    const parts = [`${t("analyze.pipeline.title")}: ${status}`]
+    if (progress) parts.push(t("analyze.pipeline.step", {
+      index: progress.index, total: progress.total,
+      name: progress.labelKey ? t(progress.labelKey) : progress.stepId,
+    }))
+    if (projectPipeline.contextStatus) parts.push(t(`analyze.pipeline.context_${projectPipeline.contextStatus}`))
+    if (projectPipeline.errorKey) parts.push(t(projectPipeline.errorKey))
+    pushToast(projectPipeline.status === "failed" ? "error" : projectPipeline.status === "completed" ? "success" : "info", parts.join(" — "))
+  }, [projectPipeline.status, projectPipeline.progress, projectPipeline.contextStatus, projectPipeline.errorKey, projectPipeline.runId, pushToast, t])
   const completedArchitectureContextExecutionId = liveExecutions.reduce<number | null>((latest, execution) => {
     if (execution.agentType !== "architecture_context" || execution.status !== "Completed") return latest
     if (execution.monitorContext?.project?.id !== project?.id) return latest
@@ -123,6 +143,10 @@ export function ProjectDetailPage() {
   ].join(":")
   const architectureContext = useArchitectureContext(project?.id ?? null, activeHash, architectureContextRevision)
   const graphExtraction = useProjectGraph(project?.id ?? null, activeBranch, activeHash, liveTasks, projectPipeline.running)
+  const architectureContextAvailability = useArchitectureContextAvailability(project?.id ?? 0, activeHash,
+    project !== null && activeHash !== null, architectureContextRevision)
+  const architectureContextAvailable = architectureContextAvailability.available
+  const graphAvailable = graphExtraction.graph?.graphAvailable === true || graphExtraction.graph?.previousGraphTaskId != null
   const graphActive = graphExtraction.running || liveTasks.some((task) => task.projectId === project?.id
     && task.kind === "graph.extract" && (task.status === "Queued" || task.status === "Running"))
   const graphArtifactTaskId = graphExtraction.graph?.graphAvailable ? graphExtraction.graph.taskId : graphExtraction.graph?.previousGraphTaskId ?? null
@@ -303,7 +327,8 @@ export function ProjectDetailPage() {
 
   return (
     <section className="project-page">
-      <ProjectSidebar items={sectionItems.map((item) => ({ id: item.id, label: t(item.labelKey), icon: item.icon }))} activeId={activeSection} onSelect={(next) => void navigate(`/projects/${id}/${next}`)} />
+      <ProjectSidebar items={sectionItems.map((item) => ({ id: item.id, label: t(item.labelKey), icon: item.icon,
+        disabled: item.id === "architecture-context" ? !architectureContextAvailable : item.id === "graph" ? !graphAvailable : false }))} activeId={activeSection} onSelect={(next) => void navigate(`/projects/${id}/${next}`)} />
       <div className="project-content">
         {loading ? (
           <p className="label" role="status">{t("detail.loading")}</p>
@@ -322,7 +347,6 @@ export function ProjectDetailPage() {
                 onRunPipeline={() => {
                   if (!canAnalyze || activeBranch === null || activeHash === null) return
                   void projectPipeline.start(activeBranch, activeHash)
-                  void navigate(`/projects/${id}/graph`)
                 }}
                  pipelineRunning={projectPipeline.running || graphActive}
                 canRunPipeline={canAnalyze}
@@ -341,17 +365,6 @@ export function ProjectDetailPage() {
                 },
               }}
             />
-             {projectPipeline.status !== "idle" && <div role={projectPipeline.status === "failed" ? "alert" : "status"}>
-               <strong>{t("analyze.pipeline.title")}: {t(`analyze.pipeline.${projectPipeline.status}`)}</strong>
-               {projectPipeline.progress && <p>{t("analyze.pipeline.step", {
-                 index: projectPipeline.progress.index, total: projectPipeline.progress.total,
-                 name: projectPipeline.progress.labelKey ? t(projectPipeline.progress.labelKey) : projectPipeline.progress.stepId,
-               })}</p>}
-               {projectPipeline.contextStatus && <p>{t(`analyze.pipeline.context_${projectPipeline.contextStatus}`)}</p>}
-               {projectPipeline.errorKey && <p>{t(projectPipeline.errorKey)}
-                 {projectPipeline.errorKey === "analyze.pipeline.contextConfigurationError" && <> {" "}<button type="button" className="ui-link" onClick={() => openSettings("agents")}>{t("qualityAudits.configureAgents")}</button></>}
-               </p>}
-             </div>}
              <div className="project-body">
              {activeSection === "overview" && <Card className="project-body-card project-overview-card" layout="stack" gap="sm" align="stretch">
               <section className="project-overview" aria-label={t("detail.overview.regionLabel")}>
@@ -383,7 +396,8 @@ export function ProjectDetailPage() {
               </section>
             </Card>}
             {activeSection === "overview" && <ProjectAuditSummary key={project.id} projectId={project.id} commitHash={activeHash} />}
-            {activeSection === "overview" && <ArchitectureContextCard state={architectureContext} versionLoading={version.loadingBranches || version.loadingCommits} versionApplying={version.applying} repositoryName={project.repositoryName} />}
+            {activeSection === "overview" && <ProjectInsights projectId={project.id} architectureContextAvailable={architectureContextAvailable} graphAvailable={graphAvailable} />}
+            {activeSection === "architecture-context" && <ArchitectureContextCard state={architectureContext} versionLoading={version.loadingBranches || version.loadingCommits} versionApplying={version.applying} repositoryName={project.repositoryName} />}
             {activeSection === "overview" && analysis.execution !== null
               && (orientationSummary !== null || projectArchitectureSummary !== null
                 || semanticValidationSummary !== null) && (

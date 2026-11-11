@@ -365,6 +365,7 @@
     "serviceStatus": "Service status",
     "sections": {
       "overview": "Overview",
+      "architectureContext": "Architecture Context",
       "analysis": "Analysis",
       "audits": "Audits",
       "files": "Files"
@@ -382,6 +383,12 @@
       "pattern": "Pattern",
       "review": "Review",
       "viewFullAnalysis": "View full analysis",
+      "insights": {
+        "title": "Project insights",
+        "notAnalyzed": "Not analyzed yet — run Analyze to enable these sections.",
+        "architecture-context": { "title": "Architecture Context", "description": "Review documented architecture, coverage, knowledge items, and evidence." },
+        "graph": { "title": "Structural Graph", "description": "Explore modules, dependencies, and relationships across the codebase." }
+      },
       "architectureContext": {
         "title": "Architecture context",
         "loading": "Loading architecture context",
@@ -540,7 +547,8 @@
       "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
       "maintainability": "Maintainability",
       "security": "Security",
-      "functionalAdequacy": "Functional adequacy"
+      "functionalAdequacy": "Functional adequacy",
+      "findingResolution": "Finding resolution"
     },
     "phases": {
       "plan_investigation": "Planning", "investigate": "Investigation", "evaluate_evidence": "Evidence evaluation",

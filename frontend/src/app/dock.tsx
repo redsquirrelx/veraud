@@ -12,7 +12,7 @@ export function Dock() {
   return (
     <div className="dock">
       {toasts.map((toast) => (
-        <Toast key={toast.id} kind={toast.kind} message={toast.message} onClose={() => dismissToast(toast.id)} />
+        <Toast key={toast.id} kind={toast.kind} message={toast.message} durationMs={toast.kind === "info" ? 7000 : undefined} onClose={() => dismissToast(toast.id)} />
       ))}
       <TaskMenu tasks={visibleTasks} />
       <LiveAuditMonitor />

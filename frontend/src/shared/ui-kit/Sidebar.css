@@ -108,6 +108,15 @@
   color: var(--color-text);
 }
 
+.ui-sidebar-item-disabled,
+.ui-sidebar-item-disabled:hover,
+.ui-sidebar-item-disabled:active {
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .ui-sidebar-item:active {
   background: var(--color-surface-active);
   transform: scale(0.97);

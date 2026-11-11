@@ -14,6 +14,16 @@ export function ProjectOverviewIcon() {
   </SectionIcon>
 }
 
+export function ProjectArchitectureContextIcon() {
+  return <SectionIcon>
+    <rect x="3" y="1.5" width="10" height="13" rx="1" />
+    <path d="M6 5.5h4" />
+    <circle cx="5.6" cy="10.4" r="1.15" />
+    <circle cx="10.4" cy="10.4" r="1.15" />
+    <path d="M6.75 10.4h2.5" />
+  </SectionIcon>
+}
+
 export function ProjectGraphIcon() {
   return <SectionIcon>
     <path d="m4 5 6 1M4 5l2 7m4-6-4 6" />
