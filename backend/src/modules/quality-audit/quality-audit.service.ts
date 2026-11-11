@@ -8,6 +8,7 @@ import type { InvocationReceipt } from "../agent-execution/invocationReceipt.js"
 import { storedExecutionErrorDetail } from "../agent-execution/execution-error-detail.js"
 import { publicErrorText, publicErrorFields } from "../../infrastructure/security/public-errors.js"
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
+import { findingResolutionFindings } from "./finding-resolution.js"
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
@@ -139,6 +140,31 @@ export class QualityAuditService {
     return { projectId, commitHash: commitHash.toLowerCase(), executionId: context.executionId,
       executionStatus: context.executionStatus, schemaVersion: context.schemaVersion, createdAt: context.createdAt,
       data: JSON.parse(context.result) as Record<string, unknown> }
+  }
+
+  /** Standalone revalidation: it reuses the persisted audit findings but does
+   *  not join the quality-audit pipeline or its callback contract. */
+  async startFindingResolution(projectId: number, auditId: number, commitHash: string, findingIds?: string[]) {
+    if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError("Select a full commit hash")
+    const row = await this.repository.find(projectId, auditId)
+    if (!row) throw new AuditNotFoundError("Audit not found for this project")
+    const auditCommit = row.evaluation?.projectVersion.commitHash
+    if (!auditCommit || auditCommit.toLowerCase() !== commitHash.toLowerCase()) {
+      throw new InvalidGitRequestError("Finding resolution must target the audited commit")
+    }
+    if (!["Completed", "Failed"].includes(row.status)) {
+      throw new AuditReportUnavailableError("The audit must finish before its findings can be revalidated")
+    }
+    if (findingIds !== undefined && (!findingIds.length || new Set(findingIds).size !== findingIds.length
+      || findingIds.some((id) => typeof id !== "string" || id.trim() === ""))) {
+      throw new InvalidGitRequestError("findingIds must be distinct nonempty identifiers")
+    }
+    const result = artifacts(row)
+    if (!result?.report) throw new AuditReportUnavailableError("The audit report is not available yet")
+    const findings = findingResolutionFindings(result.report, findingIds)
+    if (!findings.length) throw new InvalidGitRequestError("No findings are available to revalidate")
+    return this.executions.openFindingResolution(projectId, row.evaluation?.projectVersion.branch ?? null,
+      auditCommit.toLowerCase(), findings, auditId)
   }
 
   async list(projectId: number, pagination?: { limit: number, offset: number }) {

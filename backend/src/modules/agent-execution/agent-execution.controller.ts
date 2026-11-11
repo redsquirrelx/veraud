@@ -7,7 +7,6 @@ import type {
   RealtimeGateway,
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
-import { monitorExecution } from "./agent-execution.monitor.js"
 import { executionErrorDetailSchema, executionErrorEvent, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { invocationEvents, invocationReceiptSchema, type InvocationReceipt } from "./invocationReceipt.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
@@ -153,6 +152,7 @@ export function registerAgentExecutionRoutes(
 
   app.get("/api/agent-executions/recent", { schema: {
     tags: ["Agent Executions"], summary: "Discover active and recent executions for the monitor",
+    description: "Returns identifiers for active and recently updated executions so the monitor can refresh them.",
     response: { 200: { type: "object", required: ["ids"], properties: {
       ids: { type: "array", maxItems: 50, items: { type: "integer" } },
     } } },
@@ -170,8 +170,9 @@ export function registerAgentExecutionRoutes(
     const { id } = request.params as { id: string }
 
     try {
-      const execution = await service.findById(Number(id))
-      return toResponse((request.query as { monitor?: boolean }).monitor ? monitorExecution(execution) : execution)
+      const monitor = (request.query as { monitor?: boolean }).monitor === true
+      const execution = monitor ? await service.findMonitorExecution(Number(id)) : await service.findById(Number(id))
+      return toResponse(execution)
     } catch (error) {
       return notFoundOrRethrow(error, reply)
     }

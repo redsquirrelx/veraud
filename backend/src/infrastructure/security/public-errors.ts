@@ -7,6 +7,7 @@ export const publicErrorMessages = {
   result_contract_invalid: "The received response did not satisfy the expected contract.",
   backend_dispatch_failed: "The backend could not dispatch or finalize the execution.",
   audit_outcome_unconfirmed: "Communication was interrupted; the audit outcome is unconfirmed, not a confirmed agent failure.",
+  cancellation_unavailable: "The cancellation could not be delivered and confirmed by the agent server.",
 } as const
 
 export const hiddenErrorMessage = "Error details withheld because their safety could not be verified."

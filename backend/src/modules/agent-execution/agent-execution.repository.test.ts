@@ -67,6 +67,7 @@ function harness(options: { serializationFailures?: number, otherError?: boolean
 test("recordInvocation uses a serializable transaction and retries serialization failures", async () => {
   const { repository, transactions, attempts } = harness({ serializationFailures: 2 })
   const stored = await repository.recordInvocation(7, { ...receipt } as never)
+  assert.ok(stored.invocations)
   assert.equal(attempts(), 3)
   assert.deepEqual(transactions.map((item) => item?.isolationLevel), ["Serializable", "Serializable", "Serializable"])
   assert.deepEqual(stored.invocations.map((item) => item.invocation_id), ["i-1"])
@@ -90,4 +91,21 @@ test("recordInvocation does not retry non-serialization errors", async () => {
     return true
   })
   assert.equal(attempts(), 1)
+})
+
+test("partial invocation usage keeps increasing and stale receipts cannot erase uncertainty", async () => {
+  const { repository } = harness()
+  await repository.recordInvocation(7, { ...receipt, status: "running" })
+  await repository.recordInvocation(7, { ...receipt, status: "running", input_tokens: null, output_tokens: null, unknown_usage_attempts: 1 })
+  const recovered = await repository.recordInvocation(7, {
+    ...receipt, status: "running", input_tokens: 150, output_tokens: 60, unknown_usage_attempts: 1,
+  })
+  assert.ok(recovered.invocations)
+  assert.equal(recovered.invocations[0]!.input_tokens, 150)
+  assert.equal(recovered.invocations[0]!.output_tokens, 60)
+  assert.equal(recovered.invocations[0]!.unknown_usage_attempts, 1)
+  const stale = await repository.recordInvocation(7, { ...receipt, status: "running" })
+  assert.ok(stale.invocations)
+  assert.equal(stale.invocations[0]!.input_tokens, 150)
+  assert.equal(stale.invocations[0]!.unknown_usage_attempts, 1)
 })

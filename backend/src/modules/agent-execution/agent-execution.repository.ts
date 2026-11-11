@@ -81,6 +81,9 @@ export interface StoredAgentExecution {
 
 export interface AgentExecutionStore {
   recentIds(limit: number): Promise<number[]>
+  /** Cheap identity of an execution for the monitor projection cache: only the
+   *  pre-`result` lifecycle fields, all inline in the table leaf page. */
+  findMonitorFingerprint(id: number): Promise<string | null>
   requestAuditCancellation(id: number): Promise<StoredAgentExecution>
   claimAuditDispatch(id: number): Promise<boolean>
   pendingAuditCancellations(): Promise<number[]>
@@ -96,11 +99,26 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution>, reused?: boolean }>
+  createExecutionsForProject(projectId: number, branch: string | null, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution>, reused?: boolean }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async findMonitorFingerprint(id: number): Promise<string | null> {
+    // The fingerprint is intentionally built from pre-`result` columns only.
+    // Rows whose report blob is tens of megabytes spill the rest of the record
+    // (invocation_receipts, dispatch timestamps, ...) onto SQLite overflow pages,
+    // so reading anything after `result` costs a disk seek per row and defeats
+    // the cache. Everything here is inline in the table leaf page (~1 ms).
+    // Content mutations pass through AgentExecutionService, which invalidates
+    // the monitor projection eagerly; this is defense-in-depth only.
+    const row = await this.db.agentExecution.findUnique({ where: { id }, select: {
+      id: true, evaluationId: true, agentType: true, status: true, createdAt: true,
+      startedAt: true, finishedAt: true, inputTokens: true, outputTokens: true, error: true,
+    } })
+    return row === null ? null : JSON.stringify(row)
+  }
 
   async recentIds(limit: number): Promise<number[]> {
     // Prioritize active work, without loading results, evidence or report bytes.
@@ -172,7 +190,8 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
           ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
         phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
-        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
+        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens),
+        unknown_usage_attempts: Math.max(previous?.unknown_usage_attempts ?? 0, receipt.unknown_usage_attempts ?? 0) }
       const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
       return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }))
@@ -263,7 +282,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   /** Generic row creation shared by every pipeline: version row is saved (or
    *  reused), it becomes the selected one, a fresh evaluation is created, and
    *  one Waiting execution per configuration is stored with its snapshot. */
-  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
+  async createExecutionsForProject(projectId: number, branch: string | null, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
     if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
       if (!await tx.project.findUnique({ where: { id: projectId }, select: { id: true } })) {

@@ -21,7 +21,7 @@ function harness(agents: Partial<AgentInvoker> = {}) {
   const events: StoredAgentExecution[] = []
   const unused = async (): Promise<never> => { throw new Error("Unexpected store operation") }
   const store: AgentExecutionStore = {
-    recentIds: unused, create: unused, createExecutionsForProject: unused, updateUsage: unused, patchResult: unused,
+    recentIds: unused, create: unused, createExecutionsForProject: unused, updateUsage: unused, patchResult: unused, findMonitorFingerprint: unused,
     findById: async () => row,
     requestAuditCancellation: async () => {
       if (!["Completed", "Failed"].includes(row.status) && !row.cancellationRequestedAt) {

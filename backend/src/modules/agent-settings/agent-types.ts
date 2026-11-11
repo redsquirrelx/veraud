@@ -10,6 +10,8 @@ export const PROJECT_SEMANTIC_VALIDATION_AGENT_TYPE = "semantic_validation"
 export const MAINTAINABILITY_AGENT_TYPE = "maintainability_manager"
 export const SECURITY_AGENT_TYPE = "security"
 export const FUNCTIONAL_ADEQUACY_AGENT_TYPE = "functional_adequacy"
+/** Standalone revalidation of persisted audit findings; not a quality-audit stage. */
+export const FINDING_RESOLUTION_AGENT_TYPE = "finding_resolution"
 /** Agent-server pipeline serving the three project stages above. */
 export const PROJECT_ARCHITECTURE_PIPELINE_NAME = "project-architecture"
 export const PROJECT_ARCHITECTURE_PIPELINE_STAGES = [ORIENTATION_AGENT_TYPE, PROJECT_ARCHITECTURE_AGENT_TYPE, PROJECT_SEMANTIC_VALIDATION_AGENT_TYPE] as const

@@ -15,6 +15,7 @@ export const invocationReceiptSchema = {
     finished_at: { type: ["string", "null"], format: "date-time" },
     input_tokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
     output_tokens: { type: ["integer", "null"], minimum: 0, maximum: 2147483647 },
+    unknown_usage_attempts: { type: "integer", minimum: 0, maximum: 2147483647 },
     error: { type: ["string", "null"], maxLength: 2000 },
     error_detail: executionErrorDetailSchema,
   },
@@ -33,6 +34,7 @@ export interface InvocationReceipt {
   finished_at: string | null
   input_tokens: number | null
   output_tokens: number | null
+  unknown_usage_attempts?: number
   error: string | null
 }
 
