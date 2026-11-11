@@ -1,0 +1,13 @@
+:8080 {
+    handle_path /api/agent-server/* {
+        reverse_proxy localhost:7502
+    }
+
+    handle_path /api/backend/* {
+        reverse_proxy localhost:7501
+    }
+
+    handle {
+        reverse_proxy localhost:7500
+    }
+}
