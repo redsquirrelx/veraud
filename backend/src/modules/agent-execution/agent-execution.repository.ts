@@ -139,7 +139,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
   async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
     receipt = { ...receipt, error: publicErrorText(receipt.error), error_detail: readExecutionErrorDetail(receipt.error_detail) }
-    return this.db.$transaction(async (tx) => {
+    return this.withSerializationRetry(() => this.db.$transaction(async (tx) => {
       const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
       if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
       const receipts = (JSON.parse(execution.invocationReceipts) as InvocationReceipt[]).map((item) => ({ ...item,
@@ -175,7 +175,23 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
       const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
       return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
-    })
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }))
+  }
+
+  /** Retry transactions aborted by PostgreSQL serialization failures (P2034).
+   *  Several agents report to the same execution row concurrently, so the JSON
+   *  read-modify-write above is inherently contended. */
+  private async withSerializationRetry<T>(action: () => Promise<T>, attempts = 5): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await action()
+      } catch (error) {
+        if (attempt < attempts && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          continue
+        }
+        throw error
+      }
+    }
   }
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {

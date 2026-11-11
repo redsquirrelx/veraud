@@ -36,6 +36,9 @@ class CallbackClient:
         self._config = config
         self._client = client
         self._owns_client = client is None
+        # Reuse one pooled client across posts; agents issue many concurrent
+        # callbacks to the same backend.
+        self._pooled: httpx.AsyncClient | None = None
 
     async def mark_running(self, execution_id: int, run_id: str | None = None) -> CallbackResult:
         """Tell the backend the run started. Optional on the backend side."""
@@ -69,6 +72,9 @@ class CallbackClient:
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
+        if self._pooled is not None:
+            await self._pooled.aclose()
+            self._pooled = None
 
     async def _post(self, path: str, payload: dict, extra_headers: dict | None = None) -> CallbackResult:
         payload = public_error_fields(payload)
@@ -78,14 +84,16 @@ class CallbackClient:
         if self._config.shared_secret:
             headers["X-Agent-Secret"] = self._config.shared_secret
 
-        client = self._client or httpx.AsyncClient(timeout=self._config.timeout_seconds)
+        if self._client is not None:
+            client = self._client
+        elif self._pooled is not None:
+            client = self._pooled
+        else:
+            self._pooled = httpx.AsyncClient(timeout=self._config.timeout_seconds)
+            client = self._pooled
 
         try:
-            if self._client is None:
-                async with client:
-                    response = await client.post(url, json=payload, headers=headers)
-            else:
-                response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(url, json=payload, headers=headers)
 
         except Exception:  # noqa: BLE001 - any transport failure
             # The run itself already finished; failing loudly here would throw
