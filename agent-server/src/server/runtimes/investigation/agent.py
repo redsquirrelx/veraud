@@ -471,7 +471,11 @@ class InvestigationExecution:
     def usage_totals(self):
         complete = self.usage_attempts > 0 and self.unknown_usage_attempts == 0
         return {"input_tokens": self.reported_input_tokens if complete else None,
-            "output_tokens": self.reported_output_tokens if complete else None}
+            "output_tokens": self.reported_output_tokens if complete else None,
+            "reported_input_tokens": self.reported_input_tokens,
+            "reported_output_tokens": self.reported_output_tokens,
+            "provider_attempts": self.usage_attempts,
+            "unknown_usage_attempts": self.unknown_usage_attempts}
 
     async def record_invocation_usage(self, response):
         raw = response.get("raw") if isinstance(response, dict) else response

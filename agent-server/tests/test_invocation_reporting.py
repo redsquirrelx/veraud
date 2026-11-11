@@ -82,3 +82,69 @@ def test_graph_phases_remain_scoped_to_invocations_and_clear_on_completion():
         assert children[-1]["status"] == "completed"
 
     asyncio.run(run())
+
+
+def test_known_usage_continues_after_an_unmetered_attempt_without_claiming_exact_totals():
+    from server.agent_services.execution_tracking.callback.schemas import (
+        InvocationReceipt,
+    )
+    from server.runtimes.investigation.agent import InvestigationExecution
+
+    async def run():
+        receipts = []
+        runtime = InvestigationExecution.__new__(InvestigationExecution)
+        runtime.usage_attempts = runtime.unknown_usage_attempts = 0
+        runtime.reported_input_tokens = runtime.reported_output_tokens = 0
+
+        async def send(receipt):
+            receipts.append(InvocationReceipt.model_validate(receipt))
+
+        async def operation():
+            await runtime.record_invocation_usage(SimpleNamespace(usage_metadata={"input_tokens": 100, "output_tokens": 20}))
+            await runtime.record_invocation_usage(None)  # Failed provider attempt.
+            await runtime.record_invocation_usage({"raw": SimpleNamespace(usage_metadata={"input_tokens": 50, "output_tokens": 10})})
+            return SimpleNamespace(status="complete")
+
+        with invocation_reporting(send):
+            await observe_invocation(operation(), agent_id="responsibility", invocation_id="child", run_id="audit")
+        assert [(row.input_tokens, row.output_tokens, row.unknown_usage_attempts) for row in receipts] == [
+            (None, None, 0), (100, 20, 0), (100, 20, 1), (150, 30, 1), (150, 30, 1),
+        ]
+        # Exact totals remain unknown; partial UI counters do not change budget accounting.
+        assert runtime.usage_totals()["input_tokens"] is None
+        assert runtime.usage_totals()["output_tokens"] is None
+
+    asyncio.run(run())
+
+
+def test_unmetered_runtime_does_not_hide_known_usage_from_another_source():
+    class Runtime:
+        def __init__(self, usage):
+            self.usage = usage
+
+        def usage_totals(self):
+            return self.usage
+
+    async def run():
+        receipts = []
+
+        async def send(receipt):
+            receipts.append(receipt)
+
+        async def operation():
+            await report_invocation_usage(Runtime({
+                "input_tokens": None, "output_tokens": None, "reported_input_tokens": 0,
+                "reported_output_tokens": 0, "provider_attempts": 1, "unknown_usage_attempts": 1,
+            }))
+            await report_invocation_usage(Runtime({"input_tokens": 9, "output_tokens": 2}))
+            return SimpleNamespace(status="complete")
+
+        with invocation_reporting(send):
+            await observe_invocation(operation(), agent_id="modularity", invocation_id="coord", run_id="audit")
+        assert receipts[1]["input_tokens"] is None  # Unknown usage is not zero.
+        assert receipts[1]["output_tokens"] is None
+        assert receipts[-1]["input_tokens"] == 9
+        assert receipts[-1]["output_tokens"] == 2
+        assert receipts[-1]["unknown_usage_attempts"] == 1
+
+    asyncio.run(run())

@@ -74,6 +74,8 @@ class InvocationReceipt(BaseModel):
     finished_at: datetime | None = None
     input_tokens: int | None = Field(default=None, ge=0, le=2147483647)
     output_tokens: int | None = Field(default=None, ge=0, le=2147483647)
+    unknown_usage_attempts: int = Field(default=0, ge=0, le=2147483647,
+        description="Attempts without usage metadata; reported token counts are partial when nonzero.")
     error: str | None = Field(default=None, max_length=2000)
     error_detail: ExecutionErrorDetail | None = None
     phase: str | None = Field(default=None, min_length=1, max_length=128)

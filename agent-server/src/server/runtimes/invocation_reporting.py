@@ -50,9 +50,18 @@ async def report_invocation_usage(runtime):
         return
     receipt, sources = active
     sources[runtime] = runtime.usage_totals()
+    # Exact totals stay unknown after an unmetered attempt. Live counters must
+    # still advance with known usage, explicitly marked as a partial count.
+    receipt["unknown_usage_attempts"] = sum(usage.get("unknown_usage_attempts", 0) for usage in sources.values())
     for key in ("input_tokens", "output_tokens"):
-        counts = [usage.get(key) for usage in sources.values()]
-        receipt[key] = sum(counts) if all(isinstance(value, int) for value in counts) else None
+        counts = []
+        for usage in sources.values():
+            value = usage.get(key)
+            if value is None and usage.get("provider_attempts", 0) > usage.get("unknown_usage_attempts", 0):
+                value = usage.get("reported_" + key)
+            if isinstance(value, int):
+                counts.append(value)
+        receipt[key] = sum(counts) if counts else None
     await _send(receipt)
 
 
