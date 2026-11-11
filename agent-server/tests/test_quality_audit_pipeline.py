@@ -58,7 +58,7 @@ def test_pipeline_preserves_partial_audit_and_returns_the_existing_report_and_do
     async def execute():
         service = GenericPipelineService(tracing_backend=NoOpTracingBackend())
         return await service.run("quality-audit", {
-            "root_path": str(root), "commit_hash": commit, "attributes": ["maintainability"],
+            "root_path": str(root), "commit_hash": commit, "attributes": ["maintainability"], "include_blackboard": True,
         }, ExecutionConfig(), stage_configs={name: ExecutionConfig(
             model={"provider": "openai", "name": "common-model"}, api_key="private-key")
             for name in MAINTAINABILITY_AGENT_TYPES} if explicit_models else None, blackboard=board)
@@ -118,7 +118,7 @@ def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts
     async def execute():
         service = GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
         return await service.run("quality-audit", {
-            "root_path": str(audit_environment.root), "commit_hash": commit, "attributes": ["security"],
+            "root_path": str(audit_environment.root), "commit_hash": commit, "attributes": ["security"], "include_blackboard": True,
         }, ExecutionConfig(), stage_configs={"security": ExecutionConfig(
             model={"provider": "openai", "name": "security-model"}, api_key="security-key")},
             execution_ids={"security": 42})
@@ -165,7 +165,7 @@ def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolse
                 "max_model_calls": 8, "max_tool_calls": 8},
             "security_config": {"max_tool_calls": 1, "max_source_lines": 1, "max_total_tokens": 2000,
                 "max_retrieved_characters": 1},
-            "audit_budget": {"max_total_tokens": 50000},
+            "audit_budget": {"max_total_tokens": 50000}, "include_blackboard": True,
         }, ExecutionConfig()))["audit"]
 
     payload = asyncio.run(execute())
@@ -242,7 +242,7 @@ def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_
     async def execute():
         service = GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend())
         payload = (await service.run("quality-audit", {
-            "root_path": str(root), "commit_hash": commit, "attributes": ["security", "maintainability"],
+            "root_path": str(root), "commit_hash": commit, "attributes": ["security", "maintainability"], "include_blackboard": True,
         }, ExecutionConfig(), stage_configs={name: ExecutionConfig(
             model={"provider": "openai", "name": name}, api_key=name + "-key")
             for name in [*MAINTAINABILITY_AGENT_TYPES, "security"]}, execution_ids={"maintainability_manager": 42}))["audit"]

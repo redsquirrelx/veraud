@@ -34,6 +34,10 @@ class QualityAuditInput(AuditExecutionOptions):
     maintainability_selection: dict[str, list[str]] | None = None
     security_request: SecurityAuditRequest = Field(default_factory=SecurityAuditRequest)
     functional_requirements: list[FunctionalRequirement] | None = Field(default=None, max_length=100)
+    # The full Blackboard snapshot is only delivered for internal pipelines/tests;
+    # the frontend reads evidence via its dedicated endpoints, and returning it
+    # inline couples the memory profile of the backend to the audit size.
+    include_blackboard: bool = False
 
 
 def parse_input(raw):
@@ -157,15 +161,17 @@ class QualityAuditRunner:
             document = await asyncio.to_thread(render_audit_report_docx, report)
             # The backend stores this envelope from the HTTP response. Lifecycle
             # callbacks carry compact invocation lifecycle: large artifacts are sent once.
-            return {"audit": {
+            audit: dict[str, object] = {
                 "attributes": parsed.attributes,
                 "status": snapshot.status,
                 "run_id": state.run_id,
                 "error_detail": snapshot.error_detail.model_dump(mode="json", by_alias=True) if snapshot.error_detail else None,
                 "report": report.model_dump(mode="json"),
-                "blackboard": snapshot.model_dump(mode="json"),
                 "docx_base64": base64.b64encode(document).decode("ascii"),
-            }}
+            }
+            if parsed.include_blackboard:
+                audit["blackboard"] = snapshot.model_dump(mode="json")
+            return {"audit": audit}
         finally:
             if audit_service is None:
                 await service.aclose()
