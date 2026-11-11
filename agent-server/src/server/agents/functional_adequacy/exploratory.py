@@ -17,6 +17,7 @@ from .schemas import (
     CapabilityCall,
     CapabilityFinding,
     CodeFragment,
+    DocumentReference,
     EvidenceLocation,
     FindingClassification,
     FunctionalAdequacyInput,
@@ -28,6 +29,13 @@ from .schemas import (
 MAX_SYMBOL_CAPABILITIES = 60
 MAX_SNIPPET_LINES = 40
 MAX_RELATIONSHIPS = 5
+MAX_DOCUMENT_REFERENCES = 500
+
+DOCUMENT_LANGUAGE = "markdown"
+REQUIREMENT_ID_RE = re.compile(r"\bREQ-\d+\b")
+MARKDOWN_HEADING_RE = re.compile(
+    r"^(?P<level>#{1,6})\s+(?P<text>\S.*?)\s*$"
+)
 
 ENTRYPOINT_KINDS = frozenset(
     {
@@ -1347,6 +1355,95 @@ def _deduplicate_evidence(
     return list(unique.values())
 
 
+def _heading_title(heading_text: str, requirement_id: str) -> str | None:
+    """Devuelve el título del encabezado, sin repetir el identificador."""
+    match = re.match(
+        rf"^{re.escape(requirement_id)}\s*[:\-–—]?\s*",
+        heading_text,
+    )
+    text = (
+        heading_text[match.end():] if match else heading_text
+    ).strip()
+    return text or None
+
+
+def _section_end_line(
+    lines: list[str],
+    heading_index: int,
+    heading_level: int,
+) -> int:
+    """Calcula la última línea de la sección abierta por un encabezado."""
+    for index in range(heading_index + 1, len(lines)):
+        heading = MARKDOWN_HEADING_RE.match(lines[index])
+        if heading is not None and len(heading.group("level")) <= heading_level:
+            return index
+    return len(lines)
+
+
+def extract_document_references(
+    snapshot: Any,
+) -> list[DocumentReference]:
+    """Indexa los requisitos citados por los documentos Markdown procesados.
+
+    Cada ocurrencia de un identificador produce una referencia verificable:
+    los encabezados abarcan su sección completa y el resto de menciones
+    quedan limitadas a la línea donde aparecen.
+    """
+    references: list[DocumentReference] = []
+    seen: set[tuple[str, str, int, int]] = set()
+
+    for source_file in getattr(snapshot, "files", ()):
+        if (
+            source_file.language != DOCUMENT_LANGUAGE
+            or source_file.status != "processed"
+            or not source_file.content
+        ):
+            continue
+
+        lines = source_file.content.splitlines()
+        for index, line in enumerate(lines):
+            identifiers = REQUIREMENT_ID_RE.findall(line)
+            if not identifiers:
+                continue
+
+            heading = MARKDOWN_HEADING_RE.match(line)
+            if heading is not None:
+                start_line = index + 1
+                end_line = _section_end_line(
+                    lines,
+                    index,
+                    len(heading.group("level")),
+                )
+            else:
+                start_line = end_line = index + 1
+
+            for requirement_id in identifiers:
+                key = (requirement_id, source_file.path, start_line, end_line)
+                if key in seen:
+                    continue
+                seen.add(key)
+                references.append(
+                    DocumentReference(
+                        requirement_id=requirement_id,
+                        document_path=source_file.path,
+                        start_line=start_line,
+                        end_line=end_line,
+                        title=(
+                            _heading_title(
+                                heading.group("text"),
+                                requirement_id,
+                            )
+                            if heading is not None
+                            else None
+                        ),
+                    )
+                )
+                if len(references) >= MAX_DOCUMENT_REFERENCES:
+                    return references
+
+    return references
+
+
 def extract_fragment_capabilities(
     fragments: Iterable[CodeFragment],
 ) -> list[FunctionalCapability]:
@@ -1857,8 +1954,35 @@ def _justification(
     )
 
 
+def _requirement_identifiers(
+    evidence: Iterable[EvidenceLocation],
+) -> set[str]:
+    """Extrae los identificadores de requisitos citados por la evidencia."""
+    identifiers: set[str] = set()
+    for item in evidence:
+        if item.snippet:
+            identifiers.update(REQUIREMENT_ID_RE.findall(item.snippet))
+    return identifiers
+
+
+def _matching_document_references(
+    document_references: list[DocumentReference],
+    evidence: list[EvidenceLocation],
+) -> list[DocumentReference]:
+    """Selecciona las referencias de los requisitos citados por la evidencia."""
+    identifiers = _requirement_identifiers(evidence)
+    if not identifiers:
+        return []
+    return [
+        reference
+        for reference in document_references
+        if reference.requirement_id in identifiers
+    ]
+
+
 def evaluate_capabilities(
     capabilities: Iterable[FunctionalCapability],
+    document_references: Iterable[DocumentReference] | None = None,
 ) -> list[CapabilityFinding]:
     """Evalúa completitud, corrección y pertinencia con criterios explícitos."""
     capability_list = list(capabilities)
@@ -1866,6 +1990,7 @@ def evaluate_capabilities(
         capability.capability_id: capability
         for capability in capability_list
     }
+    references = list(document_references or [])
     stub_by_id = {}
 
     for capability in capability_list:
@@ -1921,6 +2046,9 @@ def evaluate_capabilities(
                     ),
                     criteria=ATTRIBUTE_CRITERIA[attribute][classification],
                     evidence=evidence,
+                    document_references=(
+                        _matching_document_references(references, evidence)
+                    ),
                 )
             )
 
@@ -2014,48 +2142,6 @@ def build_exploratory_limitations(
         )
 
     return list(dict.fromkeys(limitations))
-
-
-def build_exploratory_recommendations(
-    capabilities: list[FunctionalCapability],
-    findings: list[CapabilityFinding],
-) -> list[str]:
-    recommendations = []
-
-    if not capabilities:
-        recommendations.append(
-            "Proporcionar requisitos funcionales explícitos o revisar que el "
-            "repositorio contenga código fuente compatible."
-        )
-    elif not any(
-        capability.kind in ENTRYPOINT_KINDS
-        for capability in capabilities
-    ):
-        recommendations.append(
-            "Documentar los puntos de entrada del sistema para mejorar la "
-            "trazabilidad de las capacidades detectadas."
-        )
-
-    for finding in findings:
-        if finding.attribute != "completitud":
-            continue
-        if finding.classification == "no_verificado":
-            recommendations.append(
-                f"Revisar manualmente la capacidad '{finding.capability_name}': "
-                "no se dispone de evidencia suficiente."
-            )
-        elif finding.classification == "probable":
-            recommendations.append(
-                f"Verificar la implementación de la capacidad "
-                f"'{finding.capability_name}': la evidencia es parcial."
-            )
-
-    recommendations.append(
-        "Proporcionar especificaciones funcionales para evaluar el "
-        "cumplimiento real y la corrección frente a requisitos."
-    )
-
-    return list(dict.fromkeys(recommendations))
 
 
 def is_stub_capability(capability: FunctionalCapability) -> bool:

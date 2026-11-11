@@ -18,7 +18,6 @@ from .config import FunctionalAdequacyConfig
 from .exploratory import (
     CLASSIFICATION_CRITERIA,
     build_exploratory_limitations,
-    build_exploratory_recommendations,
     build_subattribute_summaries,
     evaluate_capabilities,
     extract_fragment_capabilities,
@@ -500,7 +499,14 @@ class FunctionalAdequacyAgent(
         else:
             capabilities = []
 
-        findings = evaluate_capabilities(capabilities)
+        findings = evaluate_capabilities(
+            capabilities,
+            document_references=(
+                context.document_references
+                if context is not None
+                else None
+            ),
+        )
         subattributes = build_subattribute_summaries(findings)
         limitations = build_exploratory_limitations(
             input_data,
@@ -548,10 +554,10 @@ class FunctionalAdequacyAgent(
             subattributes=subattributes,
             classification_criteria=CLASSIFICATION_CRITERIA,
             limitations=limitations,
-            recommendations=build_exploratory_recommendations(
-                capabilities,
-                findings,
-            ),
+            # EP-004: el modo exploratorio no genera recomendaciones
+            # automáticas; los hallazgos y sus referencias documentales
+            # constituyen el resultado verificable.
+            recommendations=[],
         )
 
         logger.info(

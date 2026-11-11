@@ -112,7 +112,27 @@ def test_repository_without_requirements_runs_exploratory_mode(tmp_path):
         "No se proporcionaron requisitos funcionales" in item
         for item in output.limitations
     )
-    assert output.recommendations
+    assert output.recommendations == []
+
+
+def test_exploratory_result_contains_no_recommendations(tmp_path):
+    repository = make_api_repository(tmp_path / "demo")
+    prepared = asyncio.run(prepare_repository_input(repository, []))
+
+    async def unexpected_generate(*args, **kwargs):
+        raise AssertionError(
+            "El modo exploratorio no debe invocar el modelo"
+        )
+
+    with patch(
+        "server.agents.functional_adequacy.agent.traced_generate",
+        new=unexpected_generate,
+    ):
+        output = asyncio.run(build_agent().run(prepared))
+
+    assert output.audit_mode == "exploratory"
+    assert output.findings
+    assert output.recommendations == []
 
 
 def test_repository_with_requirements_keeps_requirements_mode(tmp_path):
