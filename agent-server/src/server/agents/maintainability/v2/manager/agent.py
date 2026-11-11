@@ -14,28 +14,84 @@ from server.runtimes.invocation_reporting import phase_node
 
 from .config import MaintainabilityConfig
 from .execution import MaintainabilityManagerExecution
-from .registry import coordinator_catalog, registered_coordinators
+from .registry import registered_coordinators, selected_coordinators
 from .schemas import MaintainabilityRequest
+
+# LEGACY PROMPT MODE (before deterministic selection, kept commented to revert).
+# To restore the legacy behavior (full catalog; selection communicated to the
+# planner only through the objective prompt):
+#   1. Restore `coordinator_catalog` in the registry import below.
+#   2. Replace the current `deterministic_objective` with the commented function
+#      below (same body as the previous release).
+#   3. In execution.py, restore "coordinator_catalog": list(coordinator_catalog().values())
+#      in `initial_state()` and exclude={"documented_architecture"} in `_context()`.
+#   4. In `run()` / `plan_audit()` below, restore the commented `coordinator_catalog(...)`
+#      lines replacing `selected_coordinators(...)`.
+# def deterministic_objective(request: MaintainabilityRequest, capabilities: Iterable | None = None) -> MaintainabilityRequest:
+#     """Compose a deterministic hierarchy prompt from the frontend selection."""
+#     catalog = coordinator_catalog(capabilities)
+#     if not catalog:
+#         return request
+#     try:
+#         from server.agents.maintainability.v2.modularity.coordinator.registry import (
+#             registered_investigators,
+#         )
+#         investigators = registered_investigators()
+#     except Exception:
+#         investigators = {}
+#     lines = []
+#     for coordinator_id in sorted(catalog):
+#         spec = catalog[coordinator_id]
+#         if coordinator_id == "modularity" and investigators:
+#             subagents = ", ".join(sorted(investigators))
+#             lines.append(f"- Coordinador {coordinator_id} ({spec.agent_name}): subagentes [{subagents}]")
+#         else:
+#             lines.append(f"- Coordinador {coordinator_id} ({spec.agent_name}): sin subagentes registrados")
+#     hierarchy = "\n".join(lines)
+#     if hierarchy in request.objective:
+#         return request
+#     suffix = (
+#         "\n\nEjecución determinista:\n"
+#         f"- Coordinadores a ejecutar: {', '.join(sorted(catalog))}\n"
+#         f"{hierarchy}\n"
+#         "Selecciona y delega exactamente esos coordinadores/investigadores; no inventes otros."
+#     )
+#     return request.model_copy(update={"objective": request.objective + suffix})
 
 
 def deterministic_objective(request: MaintainabilityRequest, capabilities: Iterable | None = None) -> MaintainabilityRequest:
-    """Compose a deterministic hierarchy prompt from the frontend selection."""
-    catalog = coordinator_catalog(capabilities)
+    """Compose a deterministic hierarchy instruction from the frontend selection.
+
+    The instruction lists exactly the coordinators the caller selected (or all
+    registered ones when no selection is declared), mirroring the catalog
+    restriction applied to the planner.
+    """
+    catalog = selected_coordinators(request, capabilities)
     if not catalog:
         return request
     try:
         from server.agents.maintainability.v2.modularity.coordinator.registry import (
             registered_investigators,
         )
-        investigators = registered_investigators()
+        modularity_investigators = set(registered_investigators())
     except Exception:  # noqa: BLE001 - hierarchy stays deterministic without investigators
-        investigators = {}
+        modularity_investigators = set()
+    try:
+        from server.agents.maintainability.v2.reusability.coordinator.registry import (
+            registered_investigators as _reusability_investigators,
+        )
+        reusability_investigators = set(_reusability_investigators())
+    except Exception:  # noqa: BLE001 - hierarchy stays deterministic without investigators
+        reusability_investigators = set()
+    registered = {"modularity": modularity_investigators, "reusability": reusability_investigators}
+    selection = getattr(request, "maintainability_selection", None)
     lines = []
     for coordinator_id in sorted(catalog):
         spec = catalog[coordinator_id]
-        if coordinator_id == "modularity" and investigators:
-            subagents = ", ".join(sorted(investigators))
-            lines.append(f"- Coordinador {coordinator_id} ({spec.agent_name}): subagentes [{subagents}]")
+        selected = selection.get(coordinator_id) if selection else None
+        subs = sorted(set(selected)) if selected is not None else sorted(registered.get(coordinator_id, set()))
+        if subs:
+            lines.append(f"- Coordinador {coordinator_id} ({spec.agent_name}): subagentes [{', '.join(subs)}]")
         else:
             lines.append(f"- Coordinador {coordinator_id} ({spec.agent_name}): sin subagentes registrados")
     hierarchy = "\n".join(lines)
@@ -74,7 +130,9 @@ class MaintainabilityManager(CoordinatorAgent):
         if self.blackboard is not None:
             execution.audit_identity = self._blackboard_publication.identity
         state = execution.initial_state()
-        state["coordinator_catalog"] = list(coordinator_catalog(capabilities).values())
+        # Deterministic selection (current). Legacy (prompt-led) retained commented:
+        # state["coordinator_catalog"] = list(coordinator_catalog(capabilities).values())
+        state["coordinator_catalog"] = list(selected_coordinators(request, capabilities).values())
         state = await self.tracing.wrap_stage(execution.graph.ainvoke(state, {"recursion_limit": 12}), name=self.trace_name)
         result = state["result"]
         # TEMP: export raw like the runner, without affecting execution.
@@ -108,7 +166,7 @@ class MaintainabilityManager(CoordinatorAgent):
     async def plan_audit(self, tools, request, *, capabilities=None):
         """Compatibility entry point: execute only the original planning node."""
         request = MaintainabilityRequest.model_validate(request)
-        catalog = coordinator_catalog(capabilities)
+        catalog = selected_coordinators(request, capabilities)
         execution = self._execution(tools, request)
         state = execution.initial_state()
         state["coordinator_catalog"] = list(catalog.values())
@@ -121,7 +179,7 @@ class MaintainabilityManager(CoordinatorAgent):
         request = MaintainabilityRequest.model_validate(state["request"])
         execution = self._execution(tools, request)
         state = {**state, "request": request,
-            "coordinator_catalog": list(coordinator_catalog(state["coordinator_catalog"]).values())}
+            "coordinator_catalog": list(selected_coordinators(request, state["coordinator_catalog"]).values())}
         operation = phase_node("delegate_coordinators", execution.delegate_coordinators)
         update = await self.tracing.wrap_stage(operation(state, {}), name="delegate_coordinators")
         return {**state, **update}

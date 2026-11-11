@@ -140,11 +140,8 @@ class InvestigationDispatch(CoordinatorExecution):
         if getattr(result, "status", None) == "failed" or result.plan is None and not result.evidence:
             return "failed"
         reasons = {reason for spec in self.registry.values() if isinstance(result, spec.result_class) for reason in spec.completed_reasons}
-        if (result.termination_reason in reasons and result.plan and not result.missing_information
+        if (result.termination_reason in reasons and result.plan
             and getattr(result, "status", "completed") == "completed" and not getattr(result, "tool_failures", [])
-            and not any(h.status in {"pending", "inconclusive"} for h in result.hypotheses)
-            and not getattr(result, "inconclusive_investigations", [])
-            and not any(getattr(row, "status", None) == "inconclusive" for row in getattr(result, "investigation_results", []))
             and getattr(result, "evaluation_evidence_status", None) != "stale"
             and not getattr(result, "pending_evaluation_evidence_ids", [])
             and getattr(result, "next_phase", None) is None and any(ref.kind == "source" for ref in result.evidence)):
@@ -198,7 +195,10 @@ def collect_findings(execution, state):
     if state.get("collected_count") == len(state.get("execution_records", [])) and "investigation_results" in state:
         return {}
     update = dispatch.collect_findings({**state, "investigation_results": [], "rounds_completed": 0})
-    # Provider scopes are authoritative when a producer underreports token usage.
+    # Provider scopes are authoritative for the audit-wide ledger: when a producer
+    # under-reports token usage, only the reported numbers are corrected. Completion
+    # status is decided exclusively by result_status(); accounting mismatches must
+    # never degrade an otherwise completed invocation to partial.
     for index, record in enumerate(update["investigation_results"]):
         scope = dispatch.invocation_tokens.get(record.assignment.invocation_id)
         if scope is not None and (scope.used > record.consumption.accounted_tokens or scope.estimated > record.consumption.estimated_tokens):
@@ -207,7 +207,6 @@ def collect_findings(execution, state):
             dispatch.spent = dispatch.spent.model_copy(update={field: getattr(dispatch.spent, field) + getattr(usage, field) - getattr(record.consumption, field)
                 for field in ("accounted_tokens", "estimated_tokens")})
             updated = record.model_copy(update={"consumption": usage,
-                "status": "partial" if record.status == "completed" else record.status,
                 "warnings": [*record.warnings, "Reported tokens differed from the provider ledger; observed consumption was preserved."]})
             update["investigation_results"][index] = dispatch._collected_records[record.assignment.invocation_id] = updated
     return {**update, "consumption": dispatch.reported_consumption}

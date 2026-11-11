@@ -78,7 +78,7 @@ def test_specific_request_selects_one_from_dynamic_catalog(tools):
     request = MaintainabilityRequest(objective="Investigate architectural problems.", repository_context="A modular application.")
     update, context = execute(tools, plan(assignment()), request, [capability(), capability("reuse")])
     assert [item.coordinator_id for item in update["plan"].assignments] == ["boundaries"]
-    assert context["request"] == request.model_dump(exclude={"documented_architecture"})
+    assert context["request"] == request.model_dump(exclude={"documented_architecture", "maintainability_selection"})
     assert context["repository_id"] == tools.accessible_snapshot.repository.name
     assert context["snapshot_hash"] == tools.accessible_snapshot.repository.snapshot_hash
     assert {item["id"] for item in context["coordinator_catalog"]} == {"boundaries", "reuse"}

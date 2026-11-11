@@ -9,7 +9,7 @@ from server.contracts.audit import Consumption
 from server.runtimes.investigation.agent import InvestigationExecution
 from server.runtimes.invocation_reporting import phase_node
 
-from .registry import coordinator_catalog
+from .registry import coordinator_catalog, selected_coordinators
 from .schemas import AuditPlan
 from .state import MaintainabilityManagerState
 from .validation import validate_plan
@@ -38,14 +38,21 @@ class MaintainabilityManagerExecution(InvestigationExecution):
 
     def initial_state(self) -> MaintainabilityManagerState:
         repository = self.tools.accessible_snapshot.repository
+        # Deterministic selection (current): the coordinator catalog honors the
+        # frontend selection. Legacy (prompt-led selection) retained commented:
+        #   catalog = list(coordinator_catalog().values())
+        catalog = list(selected_coordinators(self.request, None).values())
         return {"request": self.request, "repository_id": repository.name, "commit": repository.commit,
-            "snapshot_hash": repository.snapshot_hash, "coordinator_catalog": list(coordinator_catalog().values()), "plan": None,
+            "snapshot_hash": repository.snapshot_hash,
+            "coordinator_catalog": catalog, "plan": None,
             "limitations": [], "termination_reason": "", "consumption": Consumption(), "node_transitions": []}
 
     def _context(self, state):
         # Documentary input is carried in state for deterministic delegation only;
         # the manager's LLM must not read or reinterpret investigator context.
-        return {"request": state["request"].model_dump(mode="json", exclude={"documented_architecture"}),
+        # Legacy (prompt-led selection) retained commented below; it used
+        #   exclude={"documented_architecture"}
+        return {"request": state["request"].model_dump(mode="json", exclude={"documented_architecture", "maintainability_selection"}),
             "repository_id": state["repository_id"], "commit": state["commit"], "snapshot_hash": state["snapshot_hash"],
             "coordinator_catalog": [item.model_dump(mode="json") for item in state["coordinator_catalog"]]}
 

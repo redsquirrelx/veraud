@@ -10,10 +10,13 @@ revisión crítica del coordinador ni ejecución obligatoria del investigador di
 ## Registro real
 
 `registry.registered_investigators()` registra `abstraction` y
-`reuse_opportunity_doc_driven` con contratos V2. El segundo ejecuta solo
-`plan_investigation`, con salida `planning_only`, sin findings ni evidencia; no
-puede considerarse evaluación técnica completada. Ambos usan el patrón
+`reuse_parametrization_doc_driven` con contratos V2. Ambos usan el patrón
 `InvestigatorSpec(agent_class, request_class, result_class, capability)`.
+
+`reuse_opportunity_doc_driven` sigue implementado en el repositorio, pero está
+excluido del registro mediante `DISABLED_INVESTIGATORS`: no aparece en el catálogo
+de agentes, ni en los grupos de configuración de modelo, ni en la validación de
+selección. Para reactivarlo basta con quitar su ID de esa constante.
 
 Si el catálogo se vacía, el planner debe responder `assignments=[]` con una explicación en
 `uncovered_requirements` o `limitations`; la validación rechaza un plan vacío sin

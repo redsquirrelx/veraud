@@ -18,7 +18,7 @@ from server.agents.maintainability.v2.reusability.coordinator.registry import (
 from server.api.executions import router
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app.agent_registry import AgentRegistry
-from server.app.audit_models import validate_model_configs
+from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES, validate_model_configs
 from server.app.execution_service import AgentExecutionService, get_execution_service
 from server.examples.dummy.agent import DummyAgent
 
@@ -26,7 +26,7 @@ from server.examples.dummy.agent import DummyAgent
 def test_agent_source_tree_contains_only_quality_implementations():
     agents = Path(__file__).resolve().parents[1] / "src" / "server" / "agents"
     packages = {path.name for path in agents.iterdir() if path.is_dir() and path.name != "__pycache__"}
-    assert packages == {"maintainability", "functional_adequacy", "security", "architecture_context"}
+    assert packages == {"maintainability", "functional_adequacy", "security", "architecture_context", "finding_resolution"}
 
 
 @pytest.fixture
@@ -56,6 +56,13 @@ def test_catalog_covers_existing_configuration_and_real_hierarchy_without_changi
     assert agents["maintainability_manager"]["child_ids"] == list(registered_coordinators())
     assert set(agents) >= {"modularity", "reusability", "architecture_boundary", "responsibility", "abstraction"}
     assert not {"dependency_impact", "reuse_opportunity", "component_adaptability"} & agents.keys()
+    assert "reuse_opportunity_doc_driven" not in agents
+    assert "reuse_opportunity_doc_driven" not in reusability_investigators()
+    assert "reuse_opportunity_doc_driven" not in MAINTAINABILITY_AGENT_TYPES
+    assert {"abstraction", "reuse_parametrization_doc_driven"} <= set(reusability_investigators())
+    quality = next(item for item in catalog["workflows"] if item["workflow_id"] == "quality-audit")
+    assert "reuse_opportunity_doc_driven" not in quality["model_configuration_groups"]["maintainability"]
+    assert client.get("/api/agents/catalog/reuse_opportunity_doc_driven").status_code == 404
     for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()))):
         assert agents[coordinator]["child_ids"] == list(investigators)
         for identifier in investigators:

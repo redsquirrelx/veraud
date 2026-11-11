@@ -22,15 +22,14 @@ class Tracing:
         return await operation
 
 
-def test_reusability_catalog_registers_planning_shells():
+def test_reusability_catalog_registers_active_investigators():
     assert set(registered_investigators()) == {
         "abstraction",
-        "reuse_opportunity_doc_driven",
         "reuse_parametrization_doc_driven",
     }
+    assert "reuse_opportunity_doc_driven" not in registered_investigators()
     assert set(investigator_catalog()) == {
         "abstraction",
-        "reuse_opportunity_doc_driven",
         "reuse_parametrization_doc_driven",
     }
     assert investigator_catalog([]) == {}

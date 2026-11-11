@@ -204,3 +204,40 @@ inferir rutas de nombres de componentes. Para una frontera de acceso verificable
 el llamador debe proporcionar `targets`; el prompt exige conservar también el
 alcance en prosa y señalar localización ambigua. Un plan no constituye evidencia
 de cumplimiento o de problemas técnicos.
+
+## Modos de selección del coordinador
+
+**Modo actual — selección determinista.** `maintainability_selection` lo aplica el
+Manager de forma determinista: ve un catálogo de coordinadores recortado a lo
+seleccionado (o a los registrados si no hay selección), la instrucción
+`Ejecución determinista` del objetivo refleja exactamente lo seleccionado, y el
+planner no recibe el campo `maintainability_selection` (solo lo consume la
+delegación para propagar `investigator_selection`). Un plan que asigne un
+coordinador no seleccionado se rechaza como `unknown_coordinator` en
+`validate_plan` y el nodo de delegación no ejecuta nada fuera del catálogo. Con la
+semántica actual, `maintainability_selection = None` conserva el catálogo completo
+(compatibilidad con llamadas directas); selección `{}` sigue rechazada por la
+validación de entrada del pipeline.
+
+**Modo previo (prompt-guided) — solo comentado.** La versión anterior dejaba el
+catálogo completo al planner y dependía de que el LLM respetara la selección
+(instrucción `Coordinadores a ejecutar` en el objetivo + catálogo entero en el
+contexto). Nada garantizaba determinismo: un assignment al coordinador
+desseleccionado era válido y se ejecutaba con todos sus investigadores.
+
+Para volver al modo previo, sustituir en este directorio:
+
+1. `manager/execution.py` — en `initial_state()`, restaurar
+   `coordinator_catalog()` (el comentario LEGACY queda sobre la línea nueva);
+   en `_context()`, quitar `"maintainability_selection"` del `exclude`.
+2. `manager/agent.py` — restaurar `coordinator_catalog(capabilities)` en `run()`
+   y `plan_audit()` en vez de `selected_coordinators(...)`, devolver
+   `deterministic_objective` a la implementación completa comentada en la cabecera
+   del archivo, y restaurar el import de `coordinator_catalog`.
+3. `manager/registry.py` — `selected_coordinators()` puede quedar pero deja de
+   usarse (o eliminarlo).
+
+Puntos de verificación al cambiar de modo: `test_maintainability_selection*.py`,
+`test_maintainability_v2_plan_audit.py`, `test_maintainability_v2_delegation.py`
+(los tests del planner asumen selección determinista); el contexto del planner se
+afirma como `request.model_dump(exclude={...})`.

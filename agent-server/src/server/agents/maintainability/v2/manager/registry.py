@@ -64,3 +64,23 @@ def coordinator_catalog(capabilities: Iterable[CoordinatorCapability] | None = N
             raise ValueError("Duplicate coordinator capability ID.")
         catalog[capability.id] = capability
     return dict(sorted(catalog.items()))
+
+
+def selected_coordinators(request, capabilities: Iterable | None = None) -> dict[str, CoordinatorCapability]:
+    """Deterministic coordinator selection for Maintainability V2.
+
+    When the request carries `maintainability_selection`, the catalog seen by the
+    planner is restricted to the selected coordinators (registered ids ∩
+    selection), so no prompt instruction is required to keep the plan inside the
+    user's choices. Without a selection, the registered catalog is returned as-is
+    (legacy behavior for direct calls and tests).
+
+    Legacy (full catalog, selection communicated via the objective prompt) is
+    retained commented in manager/agent.py (LEGACY PROMPT MODE) and manager/execution.py,
+    and documented in manager/README.md ("Modos de selección del coordinador").
+    """
+    catalog = coordinator_catalog(capabilities)
+    selection = getattr(request, "maintainability_selection", None)
+    if selection is None:
+        return catalog
+    return {key: capability for key, capability in catalog.items() if key in set(selection)}

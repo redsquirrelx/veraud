@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 from .schemas import InvestigatorCapability
 
+# Implemented but intentionally not registered: the package remains in the repository
+# and can be re-enabled by removing its ID here. Excluding it from this registry also
+# hides it from the agent catalog and from the model-configuration groups derived from it.
+DISABLED_INVESTIGATORS = frozenset({"reuse_opportunity_doc_driven"})
+
 
 @dataclass(frozen=True)
 class InvestigatorSpec:
@@ -70,11 +75,12 @@ def registered_investigators() -> dict[str, InvestigatorSpec]:
         parametrization_capability,
         completed_reasons=(),
     )
-    return {
+    specs = {
         capability.id: spec,
         reuse_capability.id: reuse_spec,
         parametrization_capability.id: parametrization_spec,
     }
+    return {key: spec for key, spec in specs.items() if key not in DISABLED_INVESTIGATORS}
 
 
 def investigator_catalog(capabilities: Iterable[InvestigatorCapability] | None = None) -> dict[str, InvestigatorCapability]:

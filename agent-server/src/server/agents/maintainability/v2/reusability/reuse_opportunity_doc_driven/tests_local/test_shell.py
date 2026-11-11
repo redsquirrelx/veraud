@@ -183,11 +183,8 @@ def test_claim_references_must_belong_to_current_portion():
     assert correction["allowed_document_claim_ids"] == ["claim-0"]
 
 
-def test_shell_is_registered_with_no_completion_reasons():
-    spec = registered_investigators()["reuse_opportunity_doc_driven"]
-
-    assert spec.agent_class is ReuseOpportunityDocDrivenAgent
-    assert spec.completed_reasons == ()
+def test_shell_remains_implemented_but_is_not_registered():
+    assert "reuse_opportunity_doc_driven" not in registered_investigators()
 
 
 @pytest.mark.parametrize("invalid_first", [False, True])
