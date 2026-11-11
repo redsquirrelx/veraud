@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
     plugins: [ react() ],
     envDir: "..",
     server: {
-      port: Number(env.PORT_FRONTEND ?? 5173)
+      port: Number(env.PORT_FRONTEND ?? 5173),
+      allowedHosts: env.HOST.split(",").map(e => e.trim())
     },
     test: {
       environment: "jsdom",
