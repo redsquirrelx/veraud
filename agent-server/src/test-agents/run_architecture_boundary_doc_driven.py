@@ -22,6 +22,7 @@ Ejecuta hasta síntesis y finalización determinísticas; no confirma findings.
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
 
 from langchain.chat_models import init_chat_model
@@ -64,7 +65,18 @@ class RunnerCredentials(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
 
 
-class PlanningOnlyExecution(BoundaryExecution):
+class LLMRawDebugMixin:
+    """Print the raw LLM payload (pre-validation) to stderr, like the responsibility runner."""
+
+    async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
+        response = await super().provider_request(model, messages, overhead, node, schema, reserved_calls)
+        if response is not None:
+            raw = response.get("raw") if isinstance(response, dict) else response
+            print(f"[DEBUG_LLM_RAW {node}] {getattr(raw, 'content', raw)}", file=sys.stderr)
+        return response
+
+
+class PlanningOnlyExecution(LLMRawDebugMixin, BoundaryExecution):
     """Runner-only stopping point; the variant's normal graph is unchanged."""
 
     def _build_graph(self):
@@ -79,7 +91,7 @@ class PlanningOnlyBoundaryAgent(ArchitectureBoundaryAgent):
     execution_type = PlanningOnlyExecution
 
 
-class InvestigationOnlyExecution(BoundaryExecution):
+class InvestigationOnlyExecution(LLMRawDebugMixin, BoundaryExecution):
     """Reuse production investigation/tools routes, stopping before synthesis."""
 
     def _build_graph(self):
@@ -97,6 +109,14 @@ class InvestigationOnlyExecution(BoundaryExecution):
 
 class InvestigationOnlyBoundaryAgent(ArchitectureBoundaryAgent):
     execution_type = InvestigationOnlyExecution
+
+
+class DebugFullExecution(LLMRawDebugMixin, BoundaryExecution):
+    """Production graph; prints raw LLM payloads to stderr before validation."""
+
+
+class DebugArchitectureBoundaryAgent(ArchitectureBoundaryAgent):
+    execution_type = DebugFullExecution
 
 
 def load_test_model(agent_config="dummy"):
@@ -143,7 +163,7 @@ async def run(args):
 async def run_audit(args, root, request, config, model, settings, *, tracing_backend: TracingBackend | None = None,
                     agent_class=None, token_policy=None):
     agent_class = agent_class if agent_class is not None else (
-        PlanningOnlyBoundaryAgent if getattr(args, "plan_only", False) else ArchitectureBoundaryAgent)
+        PlanningOnlyBoundaryAgent if getattr(args, "plan_only", False) else DebugArchitectureBoundaryAgent)
     config = config.model_copy(update={"max_output_tokens": min(config.max_output_tokens, settings.max_tokens)})
     snapshot = await RepositoryAnalysisService().analyze(RepositoryAnalysisInput(
         root_path=str(root), max_files=args.max_files, max_total_bytes=16_000_000,
