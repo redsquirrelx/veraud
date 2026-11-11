@@ -1,5 +1,5 @@
 .ui-modal:has(.app-settings-modal-content) {
-  max-width: min(1100px, calc(100vw - 2rem));
+  max-width: min(1360px, calc(100vw - 2rem));
   height: min(820px, calc(100dvh - 2rem));
   overflow: hidden;
 }
