@@ -8,7 +8,8 @@ export function registerAuditSettingsRoutes(app: FastifyInstance, service: Audit
   } } as const
   const response = { 200: { type: "object", additionalProperties: true }, ...errorResponses([400, 422, 503]) }
   app.get<{ Params: { attribute: string } }>("/api/audit-settings/:attribute", { schema: {
-    tags: ["Agent Settings"], summary: "Load audit settings and explicit developer-level schema", params, response,
+    tags: ["Agent Settings"], summary: "Load audit settings and explicit developer-level schema",
+    description: "Returns the persisted audit operating settings and the explicit developer-level attribute schema.", params, response,
   } }, async (request, reply) => {
     try { return await service.get(request.params.attribute) }
     catch (error) {
@@ -17,7 +18,8 @@ export function registerAuditSettingsRoutes(app: FastifyInstance, service: Audit
     }
   })
   app.put<{ Params: { attribute: string }, Body: Record<string, unknown> }>("/api/audit-settings/:attribute", { schema: {
-    tags: ["Agent Settings"], summary: "Validate and persist audit operating settings for future runs", params,
+    tags: ["Agent Settings"], summary: "Validate and persist audit operating settings for future runs",
+    description: "Validates the supplied attributes against the explicit schema and persists them for future runs.", params,
     body: { type: "object", additionalProperties: true }, response,
   } }, async (request, reply) => {
     try { return await service.save(request.params.attribute, request.body) }

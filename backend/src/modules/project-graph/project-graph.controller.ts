@@ -8,7 +8,8 @@ const taskParams = { type: "object", required: ["id", "taskId"], properties: { i
 
 export function registerProjectGraphRoutes(app: FastifyInstance, service: ProjectGraphService, queue: TaskQueue) {
   app.post<{ Params: { id: number }, Body: { branch: string, commitHash: string, regenerate?: boolean } }>("/api/projects/:id/graph", { schema: {
-    tags: ["Projects"], summary: "Start independent Graphify extraction", params: projectParams,
+    tags: ["Projects"], summary: "Start independent Graphify extraction",
+    description: "Queues an independent Graphify extraction for the given revision and returns the task identifier.", params: projectParams,
     body: { type: "object", additionalProperties: false, required: ["branch", "commitHash"], properties: {
       branch: { type: "string", minLength: 1, maxLength: 255 }, commitHash: { type: "string", pattern: "^[a-f0-9]{40}$" },
       regenerate: { type: "boolean" },
@@ -18,10 +19,12 @@ export function registerProjectGraphRoutes(app: FastifyInstance, service: Projec
     catch (error) { if (error instanceof GraphRequestError) return reply.code(error.statusCode).send({ message: error.message }); throw error }
   })
   app.get<{ Params: { id: number }, Querystring: { commitHash?: string } }>("/api/projects/:id/graph", { schema: {
-    tags: ["Projects"], summary: "Get latest graph extraction state", params: projectParams,
+    tags: ["Projects"], summary: "Get latest graph extraction state",
+    description: "Returns the latest extraction task state for the project, optionally for one commit.", params: projectParams,
     querystring: { type: "object", properties: { commitHash: { type: "string", pattern: "^[a-f0-9]{40}$" } } },
   } }, (request) => service.get(request.params.id, undefined, request.query.commitHash))
-  app.get<{ Params: { id: number, taskId: number } }>("/api/projects/:id/graph/:taskId/artifact", { schema: { tags: ["Projects"], summary: "Download completed graph", params: taskParams } }, async (request, reply) => {
+  app.get<{ Params: { id: number, taskId: number } }>("/api/projects/:id/graph/:taskId/artifact", { schema: { tags: ["Projects"], summary: "Download completed graph",
+      description: "Streams the completed graph artifact as a JSON download.", params: taskParams } }, async (request, reply) => {
     try {
       const response = await service.artifact(request.params.id, request.params.taskId)
       return reply.type("application/json").header("Content-Disposition", 'attachment; filename="graph.json"').send(Readable.fromWeb(response.body! as import("node:stream/web").ReadableStream))
