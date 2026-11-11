@@ -39,6 +39,7 @@
     "noAbsoluteLimit": "No absolute limit recorded",
     "noBudget": "No initial budget recorded",
     "includesEstimated": "Includes {{value}} estimated tokens",
+    "incompleteCount": "Partial token count: some attempts did not report usage.",
     "breakdown": "Token breakdown",
     "input": "Input (reported)",
     "output": "Output (reported)",

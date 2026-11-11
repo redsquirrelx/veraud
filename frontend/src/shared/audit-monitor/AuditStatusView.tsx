@@ -96,7 +96,7 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
                 ? <time dateTime={agent.finishedAt}>{formatDateTime(agent.finishedAt)}</time> : labels.notRecorded}</dd></div>
             </dl>
           </section>
-          {hasReportedTokens(agent) && <section className="audit-agent-detail-section" aria-label={labels.tokens}>
+          {(hasReportedTokens(agent) || (agent.unknownUsageAttempts ?? 0) > 0) && <section className="audit-agent-detail-section" aria-label={labels.tokens}>
             <h4>{labels.tokens}</h4>
             <AgentTokenUsage execution={agent} />
           </section>}

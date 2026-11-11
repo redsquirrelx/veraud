@@ -6,7 +6,8 @@ import "./AgentTokenUsage.css"
 export type AgentTokenUsageData = Pick<AgentExecution, "agentType" | "inputTokens" | "outputTokens" | "estimatedTokens" | "interruptionReason"> & {
   id: number | string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
-  invocations?: Pick<NonNullable<AgentExecution["invocations"]>[number], "input_tokens" | "output_tokens">[] | null
+  unknownUsageAttempts?: number
+  invocations?: Pick<NonNullable<AgentExecution["invocations"]>[number], "input_tokens" | "output_tokens" | "unknown_usage_attempts">[] | null
 }
 
 type TokenUsageReportedFields = Pick<AgentTokenUsageData, "inputTokens" | "outputTokens" | "estimatedTokens" | "invocations">
@@ -34,6 +35,8 @@ export function AgentTokenUsage({ execution }: { execution: AgentTokenUsageData 
   const output = execution.outputTokens ?? sumReported(invokedOutputs)
   const estimated = execution.estimatedTokens ?? 0
   const reported = hasReportedTokens(execution)
+  const unknownAttempts = execution.unknownUsageAttempts
+    ?? (execution.invocations ?? []).reduce((sum, receipt) => sum + (receipt.unknown_usage_attempts ?? 0), 0)
   const total = (input ?? 0) + (output ?? 0) + estimated
   const budget = execution.configuration?.tokenBudget
   const absolute = execution.configuration?.absoluteTokenLimit
@@ -65,6 +68,7 @@ export function AgentTokenUsage({ execution }: { execution: AgentTokenUsageData 
     <span className="agent-token-note">{absolute != null ? t("tokenUsage.absoluteLimit", { value: format(absolute) }) : t("tokenUsage.noAbsoluteLimit")}</span>
     {budget == null && <span className="agent-token-note">{t("tokenUsage.noBudget")}</span>}
     {estimated > 0 && <span className="agent-token-note">{t("tokenUsage.includesEstimated", { value: format(estimated) })}</span>}
+    {unknownAttempts > 0 && <span className="agent-token-note">{t("tokenUsage.incompleteCount", { count: unknownAttempts })}</span>}
     {reported && <details className="agent-token-breakdown">
       <summary>{t("tokenUsage.breakdown")}</summary>
       <dl>

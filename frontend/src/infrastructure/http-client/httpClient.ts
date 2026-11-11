@@ -184,6 +184,7 @@ export interface AgentInvocation {
   finished_at: string | null
   input_tokens: number | null
   output_tokens: number | null
+  unknown_usage_attempts?: number
   error: string | null
 }
 

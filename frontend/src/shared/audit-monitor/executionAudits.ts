@@ -8,6 +8,8 @@ const rows = (value: unknown): RecordValue[] => Array.isArray(value) ? value.map
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 const text = (value: unknown): string | null => typeof value === "string" ? value : null
 const count = (value: unknown): number | null => typeof value === "number" && value >= 0 ? value : null
+/** Direct agents whose native result status is the run outcome, not an audit. */
+const DIRECT_OUTCOME_AGENTS = new Set(["architecture_context", "finding_resolution"])
 
 function resultOf(execution: AgentExecution): RecordValue {
   try { return object(JSON.parse(execution.result ?? "null")) }
@@ -94,7 +96,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
       const attributes = metadata?.qualityAttributes ?? execution.monitorContext?.qualityAttributes ?? []
       const workflows = metadata?.workflowIds ?? execution.monitorContext?.workflowIds ?? []
       const quality = execution.monitorContext?.evaluationType === "QualityAudit" || selected.length > 0 || (execution.invocations?.length ?? 0) > 0
-      if (!quality && execution.agentType === "architecture_context") {
+      if (!quality && DIRECT_OUTCOME_AGENTS.has(execution.agentType)) {
         const status = evaluationOutcome(execution, result)
         if (status) outcomes.push(status)
       }
@@ -162,6 +164,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
           configuration: agentType === execution.agentType ? execution.configuration : null,
           parentId: text(trace.parent_invocation_id),
           inputTokens: count(consumption.input_tokens), outputTokens: count(consumption.output_tokens),
+          unknownUsageAttempts: Math.max(count(trace.unknown_usage_attempts) ?? 0, count(consumption.unknown_usage_attempts) ?? 0),
            startedAt: text(trace.started_at), finishedAt: text(trace.finished_at), error: text(trace.error),
            errorDetail: readExecutionErrorDetail(trace.error_detail) ?? (agentType === execution.agentType ? executionError : null),
         })
@@ -175,7 +178,7 @@ export function executionAudits(executions: AgentExecution[], catalog: AgentSett
           configuration: execution.configuration, estimatedTokens: execution.estimatedTokens,
            interruptionReason: execution.interruptionReason,
            errorDetail: executionError,
-            state: auditStateFrom(execution.status, quality || execution.agentType === "architecture_context" ? evaluationOutcome(execution, result) : null),
+            state: auditStateFrom(execution.status, quality || DIRECT_OUTCOME_AGENTS.has(execution.agentType) ? evaluationOutcome(execution, result) : null),
           inputTokens: execution.inputTokens, outputTokens: execution.outputTokens,
           startedAt: execution.startedAt, finishedAt: execution.finishedAt, error: execution.error })
       }
