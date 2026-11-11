@@ -60,7 +60,8 @@ export interface BuildAppOptions {
   makeAgentInvoker?: (agentServerUrl: string | undefined) => AgentInvoker
   makeAgentTargets?: (workspaceDir: string) => AgentTargetResolver
   makeModelAccessVerifier?: () => ModelAccessVerifier
-  makeAgentCatalogSource?: () => AgentCatalogSource
+  makeAgentCatalogSource?: () => AgentCatalogSource,
+  corsOrigins?: readonly string[]
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -124,10 +125,10 @@ export async function buildApp(options: BuildAppOptions) {
   registerApiSchemas(app)
   await app.register(websocket)
   await app.register(cors, {
-    origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
+    origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, ...(options.corsOrigins ?? [])],
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
-  
+
   gateway.register(app)
   registerProjectRoutes(app, projectService)
   const auditSettings = new AuditSettingsService(db, options.agentServerUrl)
