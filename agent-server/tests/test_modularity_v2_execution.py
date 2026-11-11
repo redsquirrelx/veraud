@@ -246,9 +246,9 @@ def test_invalid_evidence_is_reported_and_original_payload_is_retained(tools, mo
         return result(tools, request, [finding(tools, evidence=[ref(tools, content_hash="stale")])])
 
     output, _ = run(tools, monkeypatch, [assignment()], {"responsibility": invalid})
-    # Runner raw output is authoritative: invalid evidence is retained as partial,
-    # not erased, so the blackboard persists the same findings.
-    assert output.status == "partial" and len(output.consolidated_findings) == 1
+    # Runner raw output is authoritative: invalid evidence is retained with the
+    # integrity limitation (never erased), and it no longer opens a partial gate.
+    assert output.status == "completed" and len(output.consolidated_findings) == 1
     assert output.execution_records[0].value.findings[0].evidence[0].content_hash == "stale"
     assert any("not fully supported" in note for note in output.invocations[0].result.missing_information)
 
@@ -317,7 +317,7 @@ def test_underreported_tokens_do_not_disappear_or_get_charged_twice(tools, monke
         return result(tools, request, accounted_tokens=30)
 
     output, _ = run(tools, monkeypatch, [assignment()], {"responsibility": understated})
-    assert output.status == "partial" and output.consumption.accounted_tokens == 220
+    assert output.status == "completed" and output.consumption.accounted_tokens == 220
     assert output.invocations[0].consumption.accounted_tokens == 100
     assert output.invocations[0].result.accounted_tokens == 30  # Original report remains intact.
 

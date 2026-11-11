@@ -3,6 +3,7 @@
 from server.runtimes.investigation.state import InvestigationState
 
 from .schemas import (
+    DocumentarySynthesis,
     ResponsibilityInvestigationCandidate,
     ResponsibilityInvestigationResult,
     ResponsibilityToolQuery,
@@ -15,7 +16,7 @@ class ResponsibilityState(InvestigationState, total=False):
     investigation_results: list[ResponsibilityInvestigationResult]
     candidates: list[ResponsibilityInvestigationCandidate]
     candidate_origins: dict[str, list[dict]]
-    documentary_synthesis: dict
+    documentary_synthesis: DocumentarySynthesis | None
     pending_queries: list[ResponsibilityToolQuery]
     query_cache: dict
     active_query_keys: list[str]

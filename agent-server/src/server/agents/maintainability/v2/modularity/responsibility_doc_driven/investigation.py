@@ -13,6 +13,7 @@ from pydantic_core import PydanticCustomError
 from server.runtimes.investigation.structured import safe_diagnostic
 from server.runtimes.repository.tools import TOOL_SCHEMAS, tool_signatures
 
+from .documentary import documentary_context, pending_assessments
 from .schemas import (
     ResponsibilityInvestigationResult,
     ResponsibilityInvestigationTurn,
@@ -92,19 +93,22 @@ class ResponsibilityInvestigation:
     def _documentary_context(self, state):
         task = self._current(state)
         plan = state["plan"]
-        claims = {}
-        for key in task.document_claim_ids:
-            record = getattr(plan, "document_claims", {}).get(key) if plan else None
-            if record is None:
-                continue
-            dump = record.model_dump(mode="json")
-            claims[key] = {"subject": dump["claim"]["subject"], "statement": dump["claim"]["statement"],
-                "constraint": dump["claim"]["constraint"], "certainty": dump["claim"]["certainty"],
-                "category": dump["claim"]["category"], "section_paths": dump["section_paths"],
-                "status": dump["status"], "reason": dump["reason"], "scope_paths": dump["scope_paths"]}
-        return {"document_claim_ids": list(task.document_claim_ids),
-            "documented_responsibility": task.documented_responsibility,
-            "claims": claims}
+        try:
+            cap = min(self.config.max_context_characters,
+                2 * self.tools.context.input.budget.max_input_tokens_per_call) // 4
+        except AttributeError:
+            cap = getattr(self.config, "max_context_characters", 100_000) // 4
+        context = getattr(getattr(self, "request", None), "documented_architecture", None)
+        try:
+            delivered = documentary_context(task, plan, self.tools.accessible_snapshot, context, cap)
+        except AttributeError:
+            delivered = {"document_claim_ids": list(task.document_claim_ids),
+                "claims": {},
+                "unavailable_claims": dict.fromkeys(task.document_claim_ids,
+                    "Documentary context unavailable: snapshot repository or commit is missing."),
+                "scope_notice": "Local portions only. Planned associations and mappings are provisional; no whole-claim conformance is established."}
+        delivered["documented_responsibility"] = task.documented_responsibility
+        return delivered
 
     def _investigation_context(self, state):
         task = self._current(state)
@@ -257,6 +261,26 @@ class ResponsibilityInvestigation:
                 raise _invalid("candidate_document_claim_unassessed")
             if candidate.document_claim_ids and not candidate.independent_change_reasons:
                 raise _invalid("candidate_document_claim_mismatch")
+        contradicted = {item.claim_id: item for item in result.claim_assessments if item.status == "contradicted"}
+        favorable_resolution = bool(seen == set(task.document_claim_ids)) and all(
+            item.status in {"supported", "not_applicable"} for item in result.claim_assessments)
+        favorable_evidence = {evidence_id for item in result.claim_assessments
+                              if item.status in {"supported", "not_applicable"}
+                              for evidence_id in item.code_evidence_ids}
+        if favorable_resolution:
+            for candidate in result.candidates:
+                if set(candidate.evidence_ids) & favorable_evidence and not set(candidate.document_claim_ids) & set(contradicted):
+                    raise _invalid("candidate_document_claim_mismatch")
+        linked = set()
+        for candidate in result.candidates:
+            if len(set(candidate.document_claim_ids)) != len(candidate.document_claim_ids):
+                raise _invalid("candidate_document_claim_mismatch")
+            for key in candidate.document_claim_ids:
+                if key not in contradicted or set(contradicted[key].code_evidence_ids) - set(candidate.evidence_ids):
+                    raise _invalid("candidate_document_claim_mismatch")
+                linked.add(key)
+        if result.status == "finding_candidate" and set(contradicted) - linked:
+            raise _invalid("candidate_document_claim_mismatch")
         if result.status == "finding_candidate":
             for candidate in result.candidates:
                 if len({value.strip() for value in candidate.observed_responsibilities}) < 2:
@@ -265,6 +289,16 @@ class ResponsibilityInvestigation:
             raise _invalid("documentary_no_finding_requires_resolution")
 
     def _close_investigation(self, state, conclusion):
+        task = self._current(state)
+        documentary = self._documentary_context(state)
+        conclusion = conclusion.model_copy(update={"document_claim_delivery": {
+            key: "unavailable" if key in documentary["unavailable_claims"] else
+                "delivered" if key in documentary["claims"] else "not_delivered"
+            for key in task.document_claim_ids}})
+        conclusion = conclusion.model_copy(update={"claim_assessments": pending_assessments(
+            task, conclusion.claim_assessments, documentary["unavailable_claims"])})
+        conclusion = conclusion.model_copy(update={"limitations": list(dict.fromkeys([*conclusion.limitations,
+            *(f"Document claim {key}: {reason}" for key, reason in documentary["unavailable_claims"].items())]))[:40]})
         results = [*state["investigation_results"], conclusion]
         status_map = {"finding_candidate": "confirmed", "no_finding": "discarded", "inconclusive": "inconclusive"}
         hypotheses = []

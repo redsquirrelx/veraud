@@ -1,5 +1,6 @@
-"""Plan plus iterative investigate; no synthesize/finalize yet."""
+"""Plan plus iterative investigate."""
 
+import json
 from pathlib import Path
 
 from langgraph.graph import END, START, StateGraph
@@ -18,7 +19,7 @@ from .schemas import (
     ResponsibilityResult,
 )
 from .state import ResponsibilityState
-from .synthesis import consolidate_candidates, documentary_coverage
+from .synthesis import consolidate_candidates, synthesize_documentary
 
 
 class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecution):
@@ -78,7 +79,8 @@ class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecutio
         menu_limit = min(32, max(self.config.max_planned_investigations * 2, self.config.max_planned_investigations))
         try:
             menu_plan = build_responsibility_plan(self.tools.accessible_snapshot, self.request,
-                check=self._check_planning, max_investigations=menu_limit)
+                check=self._check_planning, max_investigations=menu_limit,
+                max_documentary_claims_per_candidate=self.config.max_documentary_claims_per_candidate)
         except TimeoutError:
             self.stop = "time_limit"
             menu_plan = ResponsibilityPlan(objectives=[self.request.objective], components=[], hypotheses=[],
@@ -96,8 +98,7 @@ class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecutio
                 "collaborators": item.collaborators,
                 "documented_responsibility": item.documented_responsibility,
                 "observed_indicators": item.observed_indicators,
-                "evidence_needed": item.evidence_needed,
-                "document_claim_ids": item.document_claim_ids} for item in self._menu],
+                "evidence_needed": item.evidence_needed} for item in self._menu],
             "limitations": menu_plan.limitations,
         }
         selection = await self.call("plan_investigation", state, ResponsibilityPlanSelection) if self._menu else None
@@ -155,7 +156,13 @@ class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecutio
 
     def synthesis(self, state):
         candidates, origins = consolidate_candidates(state["investigation_results"])
-        synthesis = documentary_coverage(state["investigation_results"], state["plan"])
+        synthesis = synthesize_documentary(state["investigation_results"], state["plan"],
+            state["result"].evidence, getattr(self.tools.context.input, "snapshot_hash", None))
+        self.logger.info("responsibility_synthesis %s", json.dumps({
+            "original_candidates": sum(len(item.candidates) for item in state["investigation_results"]),
+            "consolidated_candidates": len(candidates),
+            "documentary_claims_evaluated": len(synthesis.coverage.evaluated_claim_ids),
+            "documentary_integrity_issues": len(synthesis.integrity_issues)}, sort_keys=True))
         result = state["result"].model_copy(update={"candidates": candidates,
             "candidate_origins": origins, "documentary_synthesis": synthesis,
             "termination_reason": state["result"].termination_reason})
@@ -179,6 +186,8 @@ class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecutio
                 validation_status="insufficient_evidence",
                 review_rationale="No critical review performed; consolidated provisional candidate."))
         limitations = list(dict.fromkeys([*state["limitations"], *self.issues,
+            *(f"Documentary synthesis {issue.code}: {issue.message}" for issue in
+                getattr(state.get("documentary_synthesis"), "integrity_issues", [])),
             *(limitation for item in state["investigation_results"] for limitation in item.limitations)]))
         missing = [f"Investigation {item.investigation_id}: {limitation}"
             for item in state["investigation_results"] if item.status == "inconclusive" for limitation in item.limitations]
@@ -193,4 +202,4 @@ class ResponsibilityExecution(ResponsibilityInvestigation, InvestigationExecutio
         return super().initial_state() | {"current_investigation": 0, "investigation_results": [],
             "pending_queries": [], "query_cache": {}, "active_query_keys": [],
             "initial_evidence_loaded": False, "task_limitations": [],
-            "candidates": [], "candidate_origins": {}, "documentary_synthesis": {}}
+            "candidates": [], "candidate_origins": {}, "documentary_synthesis": None}

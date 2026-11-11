@@ -163,6 +163,93 @@ def _explicit_match(claim, files, symbols_by_file):
     return primary, "applicable", "Explicit component reference with a single primary match.", score(primary_file, own) > 0
 
 
+_AFFINITY_STOPWORDS = frozenset({
+    "with", "from", "that", "this", "into", "your", "have", "some", "such", "does",
+    "about", "between", "over", "under", "each", "other", "only", "when", "where",
+    "while", "their", "there", "these", "those", "they", "them", "then", "than",
+    "therefore", "thus", "hence", "also", "within", "across", "before", "after",
+    "without", "around", "along", "among", "upon", "every", "both", "either",
+    "para", "cada", "este", "esta", "estos", "estas", "esto", "puede", "pueden",
+    "debe", "deben", "sobre", "entre", "donde", "cuando", "hacia", "como", "solo",
+})
+_AFFINITY_GENERIC = frozenset({
+    "capability", "interface", "interfaces", "contract", "contracts", "component",
+    "components", "responsibility", "responsibilities", "requirement", "requirements",
+    "module", "modules", "system", "systems", "service", "services", "method",
+    "methods", "function", "functions", "class", "classes", "package", "packages",
+    "logic", "layer", "data", "model", "models", "process", "processing", "uses",
+    "using", "based", "against", "ensures", "provide", "provides", "built", "implements", "behavior", "concern", "concerns", "single", "mixed",
+    "implement", "implemented", "representation", "production",
+    "taking", "takes", "produces", "handles", "handling", "support", "supports",
+    "respective", "directly", "generally", "typically", "concrete", "concretes",
+    "represent", "various", "certain", "particular",
+})
+GENERIC_PATH_TOKS = frozenset({"src", "lib", "app", "main", "core", "index", "module"})
+
+
+def _singular(token):
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith("es") and len(token) > 4 and not token.endswith(("ses", "xes", "zes")):
+        return token[:-2]
+    if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
+        return token[:-1]
+    return token
+
+
+def _affinity_tokens(text):
+    """Lowercase distinctive tokens from free text; never invents structure."""
+    tokens = set()
+    for chunk in re.split(r"[^A-Za-z0-9]+", text or ""):
+        if not chunk:
+            continue
+        for part in re.findall(r"[A-Z]+(?=[A-Z][a-z0-9]|[0-9]|$)|[A-Z]?[a-z0-9]+|[0-9]+", chunk):
+            token = part.lower()
+            if len(token) < 4:
+                continue
+            token = _singular(token)
+            if token in _AFFINITY_STOPWORDS or token in _AFFINITY_GENERIC or token in GENERIC_PATH_TOKS:
+                continue
+            tokens.add(token)
+    return tokens
+
+
+def _file_token_set(file, symbols):
+    """Tokens that may evidence affinity for one file: path segments + symbols."""
+    segments = [segment for segment in re.split(r"[/\\]", file.path) if segment]
+    parents = segments[:-1]
+    all_tokens = _affinity_tokens(" ".join(segments))
+    directory_tokens = _affinity_tokens(" ".join(parents))
+    for symbol in symbols:
+        all_tokens |= _affinity_tokens(symbol.name)
+    return {"all": all_tokens, "dirs": directory_tokens}
+
+
+def _capability_affinity(claim, candidates, files, symbols_by_file):
+    """Affinity of one explicit claim to the selected candidates.
+
+    Returns [(candidate_id, score)] scored by shared distinctive tokens; one
+    shared directory segment also binds. Claims remain orientation-only; they
+    are never code evidence.
+    """
+    claim_tokens = _affinity_tokens(
+        " ".join([claim.subject, claim.statement, *(claim.related_subjects or [])]))
+    if not claim_tokens:
+        return []
+    attached = []
+    files_by_path = {file.path: file for file in files.values()}
+    for item in candidates:
+        file = files_by_path.get(item.primary_component)
+        if file is None:
+            continue
+        cached = _file_token_set(file, symbols_by_file.get(file.id, []))
+        shared = claim_tokens & cached["all"]
+        directories = claim_tokens & cached["dirs"]
+        if len(shared) >= 2 or directories:
+            attached.append((item.id, len(shared or directories)))
+    return attached
+
+
 def _documented_priority(capabilities, contexts, declarations, neighbors, direct_capabilities=0):
     if direct_capabilities >= 3 and (contexts >= 1 or declarations >= 8):
         return "high"
@@ -177,7 +264,8 @@ def _structural_priority(declarations, neighbors, groups):
     return "low"
 
 
-def build_responsibility_plan(snapshot, request, *, check, max_investigations):
+def build_responsibility_plan(snapshot, request, *, check, max_investigations,
+        max_documentary_claims_per_candidate=6):
     """Deterministic, source-free plan; reading source belongs to investigate."""
     check()
     all_files = {file.id: file for file in snapshot.files}
@@ -369,6 +457,75 @@ def build_responsibility_plan(snapshot, request, *, check, max_investigations):
     limitations.append(f"Planning diagnostics: generated={total_unique}, shown={len(selected)}, discarded={discarded}; "
         "unresolved or ambiguous claims were not adjudicated.")
     candidates = selected[:max_investigations]
+    phase1_dropped = 0
+    for position, item in enumerate(candidates):
+        kept = list(dict.fromkeys(item.document_claim_ids))[:max_documentary_claims_per_candidate]
+        phase1_dropped += len(item.document_claim_ids) - len(kept)
+        if len(kept) != len(item.document_claim_ids):
+            candidates[position] = item.model_copy(update={"document_claim_ids": kept})
+    if phase1_dropped:
+        limitations.append(f"Documentation diagnostics: {phase1_dropped} phase-1 documented claim(s) dropped by "
+            f"per-candidate cap {max_documentary_claims_per_candidate}.")
+    affinity_unanchored = []
+    affinity_bindings = 0
+    affinity_culled = 0
+    phase1_counts = {item.id: len(item.document_claim_ids) for item in candidates}
+    affinity_kept: dict[str, list] = {item.id: [] for item in candidates}
+    document = getattr(request, "documented_architecture", None)
+    if document is not None:
+        symbols_by_file = defaultdict(list)
+        for symbol in symbols.values():
+            symbols_by_file[symbol.file_id].append(symbol)
+        for index, claim in enumerate(getattr(document, "knowledge", []) or []):
+            check()
+            claim_id = f"claim-{index}"
+            if any(claim_id in item.document_claim_ids for item in candidates):
+                continue
+            if claim.certainty != "explicit":
+                continue
+            if any(marker in (claim.subject + " " + claim.statement).lower() for marker in TESTING_MARKERS):
+                continue
+            matches = _capability_affinity(claim, candidates, files, symbols_by_file)
+            if not matches:
+                affinity_unanchored.append(claim_id)
+                continue
+            for candidate_id, score in matches:
+                affinity_kept[candidate_id].append((score, claim_id, claim, index))
+        # Keep phase-1 anchors intact; fill the remaining per-candidate slots
+        # with the strongest affinity claims (ties by documentary order).
+        kept_claim_ids: dict[str, set] = {}
+        for candidate in candidates:
+            entries = affinity_kept[candidate.id]
+            slots = max(0, max_documentary_claims_per_candidate - phase1_counts[candidate.id])
+            kept = [entry for entry in sorted(entries, key=lambda entry: (-entry[0], entry[3]))[:slots]]
+            affinity_culled += len(entries) - len(kept)
+            affinity_kept[candidate.id] = kept
+            for _score, claim_id, _claim, _index in kept:
+                kept_claim_ids.setdefault(claim_id, set()).add(candidate.primary_component)
+        for position, item in enumerate(candidates):
+            kept = affinity_kept[item.id]
+            if not kept:
+                continue
+            attached_ids = [entry[1] for entry in kept]
+            affinity_bindings += len(attached_ids)
+            candidates[position] = item.model_copy(update={"document_claim_ids": list(dict.fromkeys(
+                [*item.document_claim_ids, *attached_ids]))})
+        for claim_id, primaries in kept_claim_ids.items():
+            claim = next(entry[2] for item in affinity_kept.values() for entry in item
+                if entry[1] == claim_id)
+            document_claims[claim_id] = DocumentClaimRecord(
+                claim=claim, document_index=getattr(document, "document_index", None),
+                section_paths={key: document.section_paths[key] for key in claim.section_ids
+                    if key in getattr(document, "section_paths", {})},
+                status="applicable",
+                reason=(f"Capability affinity match: attached to {len(primaries)} selected "
+                    "component(s) by shared domain tokens; no explicit index anchor."),
+                scope_paths=sorted(primaries))
+        if affinity_bindings or affinity_culled or affinity_unanchored:
+            limitations.append(f"Documentation diagnostics: {affinity_bindings} capability-affinity binding(s)"
+                + (f" ({affinity_culled} dropped by per-candidate cap {max_documentary_claims_per_candidate})" if affinity_culled else "")
+                + f"; {len(affinity_unanchored)} explicit claim(s) unanchored without an indexable owner"
+                + (f": {', '.join(affinity_unanchored[:8])}" if affinity_unanchored else "") + ".")
     if discarded:
         limitations.append(f"Candidate menu bounded: {discarded} opportunities omitted; not an exhaustive plan.")
     if not candidates:
