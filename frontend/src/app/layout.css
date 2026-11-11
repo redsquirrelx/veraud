@@ -55,4 +55,4 @@
 
 .app-project-layout { height: 100dvh; min-height: 0; overflow: hidden; }
 .app-project-layout .project-page { height: 100%; min-height: 0; }
-.app-project-layout .project-content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+.app-project-layout .project-content { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
