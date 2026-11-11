@@ -2,17 +2,20 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
+from config.agents.model import AgentSettings
 from server.agents.finding_resolution import (
     FindingResolutionAgent,
     FindingResolutionConfig,
     FindingResolutionRequest,
     FindingResolutionResult,
 )
+from server.config.schemas import ModelCredentials, ModelSettings
 from server.contracts.audit import Criterion, EvidenceReference, Finding
 from server.runtimes.repository.context import RepositoryContext
 from server.runtimes.repository.schemas import ExecutionBudget, RepositoryInput
@@ -250,3 +253,37 @@ def test_output_accepts_one_result_per_finding_independent_of_order(finding):
         for identifier in ["f2", "f1"]
     ]}, context={"request": request})
     assert [item.finding_id for item in result.results] == ["f2", "f1"]
+
+
+def test_direct_agent_is_registered_for_execution():
+    from server.app.execution_service import build_default_registry
+
+    assert "finding_resolution" in build_default_registry().list_agents()
+
+
+def test_direct_agent_returns_the_compact_job_envelope(finding, tmp_path, monkeypatch):
+    from server.agents.finding_resolution import (
+        FindingResolutionDirectAgent,
+        FindingResolutionRunRequest,
+    )
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "service.py").write_text("def use(): return 1\n", encoding="utf-8")
+    monkeypatch.setattr("server.agents.finding_resolution.direct.resolve_workspace_root", lambda: tmp_path)
+    model = SimpleNamespace(
+        llm=PlanningModel(),
+        settings=ModelSettings(provider="openai", name="fake", temperature=0, max_tokens=1000),
+        credentials=ModelCredentials(api_key="test-key"),
+    )
+    agent = FindingResolutionDirectAgent(
+        settings=AgentSettings(agent_id="finding_resolution", timeout_seconds=60), model=model,
+    )
+    result = asyncio.run(agent.run(FindingResolutionRunRequest(
+        repository_path=str(repository), findings=[finding], source_audit_id=7,
+    )))
+    assert result.source_audit_id == 7
+    assert result.snapshot_hash is not None
+    assert [item.finding_id for item in result.results] == [finding.id]
+    assert result.status in {"partial", "completed"}
+    assert result.consumption.model_calls >= 1

@@ -84,3 +84,29 @@ class FindingResolutionResult(Contract):
         if set(actual) != set(expected):
             raise ValueError("Verification results must match the original finding IDs, without missing or unknown IDs.")
         return self
+
+
+class FindingResolutionRunRequest(Contract):
+    """Direct HTTP entry: the library request plus host-owned job metadata."""
+
+    repository_path: str = Field(min_length=1, description="Directory of the repository checkout to verify.")
+    findings: list[Finding] = Field(description="Previous findings to verify.")
+    commit_hash: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{40}$",
+        description="Audited commit the checkout must currently match, when known.")
+    source_audit_id: int | None = Field(default=None, ge=1,
+        description="Audit execution that produced the findings; echoed for traceability.")
+
+    def library_request(self) -> FindingResolutionRequest:
+        return FindingResolutionRequest(repository_path=self.repository_path, findings=self.findings)
+
+
+class FindingResolutionRunResult(Contract):
+    """Compact direct-execution envelope; full investigations stay host-side."""
+
+    status: Literal["completed", "partial", "failed"]
+    source_audit_id: int | None = None
+    commit_hash: str | None = None
+    snapshot_hash: str | None = None
+    results: list[FindingVerificationResult] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    consumption: Consumption

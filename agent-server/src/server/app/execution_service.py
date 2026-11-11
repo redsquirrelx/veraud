@@ -83,10 +83,12 @@ async def close_model_client(model) -> None:
 
 def build_default_registry() -> AgentRegistry:
     from server.agents.architecture_context.agent import ArchitectureContextAgent
+    from server.agents.finding_resolution import FindingResolutionDirectAgent
 
     registry = AgentRegistry()
 
     registry.register(ArchitectureContextAgent.agent_type, ArchitectureContextAgent)
+    registry.register(FindingResolutionDirectAgent.agent_type, FindingResolutionDirectAgent)
 
     registry.register(DummyAgent.agent_type, DummyAgent)
     registry.register(
