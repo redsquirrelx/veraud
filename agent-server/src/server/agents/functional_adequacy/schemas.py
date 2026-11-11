@@ -61,6 +61,27 @@ class EvidenceLocation(BaseModel):
     snippet: str | None = None
 
 
+class DocumentReference(BaseModel):
+    """Referencia verificable a un requisito dentro de la documentación."""
+
+    requirement_id: str = Field(min_length=1)
+    document_path: str = Field(min_length=1)
+    start_line: int = Field(ge=1)
+    end_line: int = Field(ge=1)
+    title: str | None = None
+
+
+class CapabilityCall(BaseModel):
+    """Llamada estática resuelta desde una capacidad hacia otra."""
+
+    target_capability_id: str | None = None
+    target_symbol: str = Field(min_length=1)
+    file_path: str = Field(min_length=1)
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    snippet: str | None = None
+
+
 class FunctionalCapability(BaseModel):
     """Capacidad funcional detectada sin requisitos explícitos."""
 
@@ -73,6 +94,7 @@ class FunctionalCapability(BaseModel):
     route: str | None = None
     evidence: list[EvidenceLocation] = Field(default_factory=list)
     relationships: list[str] = Field(default_factory=list)
+    calls: list[CapabilityCall] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 
 
@@ -81,6 +103,9 @@ class RepositoryContext(BaseModel):
 
     repository_name: str | None = None
     capabilities: list[FunctionalCapability] = Field(
+        default_factory=list
+    )
+    document_references: list[DocumentReference] = Field(
         default_factory=list
     )
     analysis_limitations: list[str] = Field(default_factory=list)
@@ -159,6 +184,9 @@ class CapabilityFinding(BaseModel):
     justification: str
     criteria: str
     evidence: list[EvidenceLocation] = Field(default_factory=list)
+    document_references: list[DocumentReference] = Field(
+        default_factory=list
+    )
 
 
 class SubattributeSummary(BaseModel):

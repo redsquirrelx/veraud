@@ -5,7 +5,10 @@ from pathlib import Path
 
 from ...config.logs import get_logger
 from ...services.repository_analysis import RepositoryAnalysisService
-from .exploratory import extract_repository_capabilities
+from .exploratory import (
+    extract_document_references,
+    extract_repository_capabilities,
+)
 from .schemas import (
     CodeFragment,
     FunctionalAdequacyInput,
@@ -94,6 +97,7 @@ def _repository_context(snapshot, fragments: list[CodeFragment]):
             else None
         ),
         capabilities=extract_repository_capabilities(snapshot, fragments),
+        document_references=extract_document_references(snapshot),
         analysis_limitations=_analysis_limitations(snapshot),
         analysis_issues=_analysis_issues(snapshot),
     )

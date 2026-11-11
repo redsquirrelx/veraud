@@ -162,6 +162,48 @@ def test_extensive_tables_and_annexes_have_collapsible_headings_without_hidden_r
     assert not root.findall(".//w:vanish", ns)
 
 
+def test_exploratory_functional_finding_is_presented_with_capability_evidence_and_document_references():
+    board = MemoryBlackboard()
+    board.publish_evidence(evidence("functional-evidence", agent_id="functional_adequacy",
+        invocation_id="functional-run", source="src/inventory/service.py", start_line=28, end_line=30,
+        content="raise NotImplementedError"))
+    board.publish_finding(finding("functional-finding", agent_id="functional_adequacy",
+        invocation_id="functional-run", title="InventoryService.get_product: probable (completitud)",
+        description="Indicador exploratorio de completitud para InventoryService.get_product.",
+        kind="design_observation", severity="low", evidence_ids=("functional-evidence",),
+        criterion_id="completitud", criterion={"id": "completitud",
+            "description": "Indicador estático exploratorio; no es un requisito suministrado.",
+            "origin": "inferred", "provenance": "Exploración estática del repositorio."},
+        details={"quality_attribute": "functional_adequacy", "subcharacteristic": "functional_completeness",
+            "audit_mode": "exploratory", "validation_status": "insufficient_evidence",
+            "functional_finding": {
+                "finding_id": "functional-finding", "capability_id": "cap-inventory-get-product",
+                "capability_name": "InventoryService.get_product", "attribute": "completitud",
+                "classification": "probable",
+                "justification": "El método levanta NotImplementedError y no se observa una implementación completa.",
+                "criteria": "Confirmado: evidencia completa. Probable: evidencia parcial. No verificado: sin evidencia suficiente.",
+                "evidence": [{"file_path": "src/inventory/service.py", "start_line": 28, "end_line": 30,
+                    "symbol": "InventoryService.get_product", "fragment_id": "frag-1",
+                    "snippet": "raise NotImplementedError"}],
+                "document_references": [{"requirement_id": "REQ-02", "document_path": "docs/requirements.md",
+                    "start_line": 14, "end_line": 21, "title": "Consultar productos por ID"}]}}))
+    board.publish_assessment(assessment("functional-manager", agent_id="functional_adequacy_manager",
+        invocation_id="functional-manager", quality_attribute="functional_adequacy", status="partial",
+        termination_reason="capabilities_evaluated", finding_ids=("functional-finding",),
+        evidence_ids=("functional-evidence",), summary="Auditoría exploratoria completada."))
+    document = Document(BytesIO(render_audit_report_docx(build(board))))
+    content = document_text(document)
+    for expected in ("Detalle de adecuación funcional exploratoria",
+            "InventoryService.get_product", "completitud", "Probable",
+            "El método levanta NotImplementedError y no se observa una implementación completa.",
+            "Confirmado: evidencia completa. Probable: evidencia parcial. No verificado: sin evidencia suficiente.",
+            "src/inventory/service.py", "28–30", "raise NotImplementedError",
+            "REQ-02", "docs/requirements.md", "14–21", "Consultar productos por ID",
+            "Evidencia E001", "no constituyen defectos confirmados"):
+        assert expected in content
+    assert '"capability_name"' not in content and '"document_references"' not in content
+
+
 def test_docx_endpoint_downloads_blackboard_report_and_returns_404_for_unknown_audit():
     service = AuditService(populated())
     service._states["audit"] = AuditState(run_id="audit", invocation_id="manager", status="completed",
