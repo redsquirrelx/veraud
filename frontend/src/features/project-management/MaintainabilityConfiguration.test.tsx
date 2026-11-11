@@ -40,7 +40,8 @@ describe("maintainability configuration", () => {
     expect(screen.queryByRole("checkbox", { name: "UnrelatedAgent" })).not.toBeInTheDocument()
     await user.click(boundary)
     expect(boundary).not.toBeChecked()
-    expect(screen.getByText("Partial evaluation")).toBeInTheDocument()
+    // Partial-evaluation labels are no longer surfaced in the configuration.
+    expect(screen.queryByText("Partial evaluation")).not.toBeInTheDocument()
     await user.click(boundary)
     expect(screen.queryByRole("status")).not.toBeInTheDocument()
     expect(screen.queryByText("Partial evaluation")).not.toBeInTheDocument()
@@ -55,7 +56,7 @@ describe("maintainability configuration", () => {
     expect(screen.getByRole("checkbox", { name: "AbstractionAgent" })).toBeChecked()
     await changeLanguage("es")
     expect(screen.getAllByText("Ver investigadores")).toHaveLength(5)
-    expect(screen.getByText("Evaluación parcial")).toBeInTheDocument()
+    expect(screen.queryByText("Evaluación parcial")).not.toBeInTheDocument()
     expect(listAgentSettings).toHaveBeenCalledOnce()
   })
 
