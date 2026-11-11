@@ -62,26 +62,24 @@ def documentary(**overrides):
 
 def test_normalize_knowledge_assigns_positional_ids_and_preserves_documentary_fields():
     records = normalize_knowledge(context())
-    assert [record["id"] for record in records] == ["index-sha:0", "index-sha:1"]
-    assert records[0] == {
-        "id": "index-sha:0",
-        "category": "components",
-        "subject": "payment processor",
-        "statement": "PaymentProcessor coordinates gateway calls.",
-        "related_subjects": ["gateway"],
-        "certainty": "explicit",
-        "constraint": "unspecified",
-        "section_ids": ["section-1"],
-        "evidence": [{"section_id": "section-1", "start_line": 2, "end_line": 4, "quote": "PaymentProcessor"}],
-        "document_index": {"index_id": "index-sha", "repository_id": "repo", "commit": "a" * 40},
-        "section_paths": {"section-1": "docs/architecture.md"},
-    }
+    assert [record["id"] for record in records] == ["claim-0", "claim-1"]
+    assert records[0]["id"] == "claim-0"
+    assert records[0]["category"] == "components"
+    assert records[0]["subject"] == "payment processor"
+    assert records[0]["statement"] == "PaymentProcessor coordinates gateway calls."
+    assert records[0]["related_subjects"] == ["gateway"]
+    assert records[0]["certainty"] == "explicit"
+    assert records[0]["constraint"] == "unspecified"
+    assert records[0]["section_ids"] == ["section-1"]
+    assert records[0]["evidence"] == [{"section_id": "section-1", "start_line": 2, "end_line": 4, "quote": "PaymentProcessor"}]
+    assert records[0]["document_index"] == {"index_id": "index-sha", "repository_id": "repo", "commit": "a" * 40}
+    assert records[0]["section_paths"] == {"section-1": "docs/architecture.md"}
     assert "reasoning" not in records[0]
 
 
 def test_normalize_knowledge_accepts_the_typed_architecture_context():
     typed = documentary()
-    assert normalize_knowledge(typed)[0]["id"] == "index-sha:0"
+    assert normalize_knowledge(typed)[0]["id"] == "claim-0"
 
 
 def test_normalize_knowledge_returns_empty_for_missing_or_empty_documented_context():
@@ -89,9 +87,10 @@ def test_normalize_knowledge_returns_empty_for_missing_or_empty_documented_conte
     assert normalize_knowledge(context(knowledge=[])) == []
 
 
-def test_normalize_knowledge_rejects_claims_without_a_documentary_index_id():
-    with pytest.raises(ValueError, match="document_index"):
-        normalize_knowledge(context(document_index=None))
+def test_normalize_knowledge_degrades_without_a_documentary_index_id():
+    records = normalize_knowledge(context(document_index=None))
+    assert records[0]["id"] == "claim-0"
+    assert records[0]["document_index"] is None
 
 
 def test_normalize_knowledge_validates_claims_before_assigning_ids():
@@ -172,7 +171,7 @@ def test_documented_helper_create_api_handler_is_discovered():
     assert candidate.abstraction_kind == "documented_helper"
     assert candidate.documented_purpose == "createApiHandler abstracts the public HTTP handler contract."
     assert candidate.purpose_basis == "explicit"
-    assert candidate.document_claim_ids == ["index-sha:0"]
+    assert candidate.document_claim_ids == ["claim-0"]
 
 
 def test_subject_matching_normalizes_case_spacing_and_punctuation():
@@ -188,7 +187,7 @@ def test_subject_matching_normalizes_case_spacing_and_punctuation():
 
         provider = next(candidate for candidate in plan.candidates
             if candidate.abstraction_name == "LlmProvider")
-        assert provider.document_claim_ids == ["index-sha:0"], subject
+        assert provider.document_claim_ids == ["claim-0"], subject
 
 
 def test_subject_matching_accepts_exact_qualified_name_reference():
@@ -204,7 +203,7 @@ def test_subject_matching_accepts_exact_qualified_name_reference():
     plan = _plan(_snapshot(files, symbols), AbstractionRequest(documented_architecture=documentary(**document)))
 
     assert [candidate.abstraction_name for candidate in plan.candidates] == ["LlmProvider"]
-    assert plan.candidates[0].document_claim_ids == ["index-sha:0"]
+    assert plan.candidates[0].document_claim_ids == ["claim-0"]
 
 
 def test_data_contract_retrocompatibility_is_preserved_not_turned_into_interchangeability():
@@ -219,7 +218,7 @@ def test_data_contract_retrocompatibility_is_preserved_not_turned_into_interchan
 
     payload = plan.candidates[0]
     assert payload.abstraction_kind == "type_alias"
-    assert payload.document_claim_ids == ["index-sha:0"]
+    assert payload.document_claim_ids == ["claim-0"]
     assert "backward compatible" in (payload.documented_purpose or "")
 
 
@@ -258,11 +257,13 @@ def test_llm_provider_is_documented_with_decisions_and_contracts():
     candidate = plan.candidates[0]
     assert candidate.abstraction_kind == "protocol"
     assert candidate.purpose_basis == "explicit"
-    assert candidate.document_claim_ids == ["index-sha:0", "index-sha:1"]
+    assert candidate.document_claim_ids == ["claim-0", "claim-1"]
     assert set(candidate.related_components) <= {"src/llm/gemini.py", "src/app/gateway.py"}
     assert candidate.priority == "high"
-    assert set(plan.document_claims) == {"index-sha:0", "index-sha:1"}
-    assert plan.document_claims["index-sha:0"].evidence[0]["quote"] == "LlmProvider"
+    assert set(plan.document_claims) == {"claim-0", "claim-1"}
+    assert plan.document_claims["claim-0"].claim.evidence[0].quote == "LlmProvider"
+    assert plan.document_claims["claim-0"].status == "applicable"
+    assert plan.document_claims["claim-0"].scope_paths == ["src/llm/provider.py"]
 
 
 def test_irrelevant_claims_are_excluded_from_candidate_selection():
@@ -303,7 +304,7 @@ def test_component_claim_does_not_misattribute_responsibilities_to_abstractions(
     plan = _plan(_snapshot(files, symbols), AbstractionRequest(documented_architecture=documentary(**document)))
 
     by_name = {candidate.abstraction_name: candidate for candidate in plan.candidates}
-    assert by_name["AuthManager"].document_claim_ids == ["index-sha:0"]
+    assert by_name["AuthManager"].document_claim_ids == ["claim-0"]
     assert by_name["AuthManager"].purpose_basis == "explicit"
     assert "AuthManager issues and verifies session tokens." in by_name["AuthManager"].documented_purpose
     assert by_name["UserProfileResult"].document_claim_ids == []
@@ -391,10 +392,11 @@ def test_plan_contains_documentary_traceability_for_selected_candidates():
     plan = _plan(_snapshot(files, symbols, relationships),
         AbstractionRequest(documented_architecture=documentary(**_llm_provider_document())))
 
-    assert set(plan.document_claims) == {"index-sha:0", "index-sha:1"}
+    assert set(plan.document_claims) == {"claim-0", "claim-1"}
     for claim_id, reference in plan.document_claims.items():
-        assert reference.id == claim_id
-        assert reference.evidence and reference.section_ids == ["section-1"]
+        assert claim_id.startswith("claim-")
+        assert reference.claim.evidence and reference.claim.section_ids == ["section-1"]
+        assert reference.section_paths == {"section-1": "docs/architecture.md"}
     for candidate in plan.candidates:
         assert set(candidate.document_claim_ids) <= set(plan.document_claims)
 
@@ -475,6 +477,7 @@ def test_selection_validation_rejects_obligation_requirements_for_unknown_candid
 
     candidate = plan.candidates[0]
     with pytest.raises(PydanticCustomError) as unknown:
+        execution._plan_req_attempts = 0
         AbstractionExecution.prepare_structured_result(execution, "plan_investigation",
             AbstractionPlanSelection(candidate_ids=[candidate.id],
                 questions={candidate.id: f"Does {candidate.primary_component} hold up?"},
@@ -496,6 +499,7 @@ def test_selection_validation_rejects_malformed_obligation_requirements():
     assert empty.value.type == "planning_requirements_invalid"
 
     with pytest.raises(PydanticCustomError) as too_many_items:
+        execution._plan_req_attempts = 0
         AbstractionExecution.prepare_structured_result(execution, "plan_investigation",
             AbstractionPlanSelection(candidate_ids=[candidate.id], questions={candidate.id: question},
                 evidence_requirements={candidate.id: [

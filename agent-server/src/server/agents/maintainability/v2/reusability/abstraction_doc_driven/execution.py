@@ -1,5 +1,6 @@
 """Graph shell with bounded planning and abstraction investigate/tools implemented."""
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ from .schemas import (
     AbstractionResult,
 )
 from .state import AbstractionState
-from .synthesis import consolidate_candidates, documentary_coverage
+from .synthesis import consolidate_candidates, synthesize_documentary
 
 
 class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
@@ -51,44 +52,124 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
         compound = len(claims) > 1 or len(paths) > 1
         return anchored, compound, len(claims), len(paths)
 
-    def _obligation_requirements(self, selection):
-        """Obligation-derived requirements: the only evidence_needed that ships."""
+    def _obligation_clean(self, selection):
+        """Validate obligation requirements without raising.
+
+        Returns (cleaned, failures): `cleaned` maps each selected candidate to its
+        deduped, length-checked, unique requirements that pass the anchoring rules;
+        `failures` is a list of (candidate_id, 1-based requirement index, code) for
+        every requirement or attachment that violates the contract.
+        """
         requirements = getattr(selection, "evidence_requirements", None) or {}
         selected = set(selection.candidate_ids)
         unknown = sorted(set(requirements) - selected)
-        if unknown:
-            raise PydanticCustomError("planning_requirements_unknown_candidate",
-                f"Obligation requirements are attached to unselected candidate_ids: {', '.join(unknown)}.")
         menu = {item.id: item for item in self._menu}
         cleaned = {}
-        for key in selected:
+        failures = []
+        for key in selection.candidate_ids:
             candidate = menu[key]
             items = requirements.get(key, [])
             output, seen = [], set()
-            for index, item in enumerate(items):
+            for index, item in enumerate(items, 1):
                 text = re.sub(r"\s+", " ", str(item)).strip()
                 text = re.sub(r"^[*\-•\d.)]+\s*", "", text).strip()
                 if not (12 <= len(text) <= 400):
-                    raise PydanticCustomError("planning_requirements_invalid",
-                        f"Candidate {key}: evidence requirement {index + 1} must be a checkable statement of 12-400 characters.")
-                anchored, compound, claim_count, path_count = self._obligation_anchor_audit(text, candidate)
+                    failures.append((key, index, "planning_requirements_invalid"))
+                    continue
+                anchored, compound, _claim_count, _path_count = self._obligation_anchor_audit(text, candidate)
                 if compound:
-                    raise PydanticCustomError("planning_requirements_compound",
-                        f"Candidate {key}: evidence requirement {index + 1} bundles {claim_count} claim(s) and "
-                        f"{path_count} related component(s); keep one claim and/or one component per requirement.")
+                    failures.append((key, index, "planning_requirements_compound"))
+                    continue
                 if not anchored:
-                    raise PydanticCustomError("planning_requirements_invalid",
-                        f"Candidate {key}: evidence requirement {index + 1} must name the abstraction, its primary "
-                        f"component, a related component or a claim_id.")
+                    failures.append((key, index, "planning_requirements_invalid"))
+                    continue
                 if text.casefold() in seen:
                     continue
                 seen.add(text.casefold())
                 output.append(text)
             if not (2 <= len(output) <= 5):
-                raise PydanticCustomError("planning_requirements_invalid",
-                    f"Candidate {key}: every selected candidate needs 2-5 obligation-derived requirements.")
+                failures.append((key, 0, "planning_requirements_invalid"))
             cleaned[key] = output
+        return cleaned, failures, unknown
+
+    def _obligation_requirements(self, selection):
+        """Obligation-derived requirements: the only evidence_needed that ships."""
+        cleaned, failures, unknown = self._obligation_clean(selection)
+        if unknown:
+            raise PydanticCustomError("planning_requirements_unknown_candidate",
+                f"Obligation requirements are attached to unselected candidate_ids: {', '.join(unknown)}.")
+        if failures:
+            key, index, code = failures[0][:3]
+            if code == "planning_requirements_compound":
+                raise PydanticCustomError("planning_requirements_compound",
+                    f"Candidate {key}: evidence requirement {index} bundles multiple claims/components; "
+                    "keep one claim and/or one component per requirement.")
+            raise PydanticCustomError("planning_requirements_invalid",
+                f"Candidate {key}: evidence requirement {index} must name the abstraction, its primary "
+                "component, a related component or a claim_id; must be 12-400 characters; 2-5 per candidate.")
         return cleaned
+
+    def _obligation_failure_detail(self, error, result):
+        """Structured correction context for retrying requirement anchoring.
+
+        Only host-side contract data (menu names/paths/claim ids already visible
+        to the caller) is disclosed; nothing from source or provider output leaks.
+        """
+        anchors = {}
+        for key in dict.fromkeys(result.candidate_ids):
+            item = next((item for item in self._menu if item.id == key), None)
+            if item is None:
+                continue
+            anchors[key] = {
+                "abstraction_name": item.abstraction_name,
+                "primary_component": item.primary_component,
+                "related_components": item.related_components,
+                "document_claim_ids": item.document_claim_ids[:6],
+            }
+        return {"failed_check": error.type,
+            "failure_detail": str(error),
+            "how_to_fix": ("Requirements must name, verbatim, the abstraction_name, the primary_component path "
+                "(or one related component path) or a claim_id; keep 12-400 characters; at most one claim_id "
+                "and one related component path per requirement; 2-5 requirements per candidate, each unique."),
+            "anchors": anchors}
+
+    def _obligation_salvage(self, result, error):
+        """Salvage conforming candidates after retries are exhausted.
+
+        Returns (pruned_selection, addenda, report) with candidates whose requirement
+        sets still pass the anchoring rules; candidates with fewer than two conforming
+        requirements (or more than five kept) are dropped entirely; conformant content
+        is preserved verbatim. Raises nothing itself; callers decide when to salvage.
+        """
+        cleaned, _failures, orphaned = self._obligation_clean(result)
+        survived = []
+        dropped_candidates = []
+        dropped_requirements = 0
+        if orphaned:
+            dropped_requirements += len(orphaned)
+        for key in dict.fromkeys(result.candidate_ids):
+            kept = cleaned.get(key, [])
+            if len(kept) > 5:
+                dropped_requirements += len(kept) - 5
+                kept = kept[:5]
+                cleaned[key] = kept
+            if len(kept) >= 2:
+                survived.append(key)
+                dropped_requirements += max(0, len(result.evidence_requirements.get(key, []) or []) - len(kept))
+            else:
+                dropped_candidates.append(key)
+                dropped_requirements += len(result.evidence_requirements.get(key, []) or [])
+        if not survived:
+            return None
+        pruned = result.model_copy(update={
+            "candidate_ids": survived,
+            "questions": {key: question for key, question in result.questions.items() if key in survived},
+            "evidence_requirements": {}})
+        addenda = {key: cleaned[key] for key in survived}
+        report = {"surviving": list(survived), "dropped_candidates": dropped_candidates,
+            "dropped_requirements": dropped_requirements,
+            "error_code": getattr(error, "type", "planning_requirements_invalid")}
+        return pruned, addenda, report
 
     async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
         if node == "investigate":
@@ -111,6 +192,8 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
         return super().model_context(node, state)
 
     def structured_correction_context(self, node, state):
+        if node == "plan_investigation":
+            return self._plan_correction_detail or {}
         if node == "investigate":
             task = self._current(state)
             references = [record for record in self.references()
@@ -145,7 +228,24 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
                 primary = by_id[key].primary_component
                 if not question or not question.strip() or primary.lower() not in question.lower():
                     raise PydanticCustomError("planning_invalid_question", "Each question must name its primary component.")
-            self._obligation_addenda = self._obligation_requirements(result)
+            try:
+                self._obligation_addenda = self._obligation_requirements(result)
+                self._plan_fallback = None
+                self._plan_correction_detail = None
+            except PydanticCustomError as error:
+                if error.type == "planning_requirements_unknown_candidate":
+                    self._plan_correction_detail = None
+                    raise
+                self._plan_req_attempts = getattr(self, "_plan_req_attempts", 0) + 1
+                if self._plan_req_attempts <= 1:
+                    self._plan_correction_detail = self._obligation_failure_detail(error, result)
+                    raise
+                salvaged = self._obligation_salvage(result, error)
+                if salvaged is None:
+                    self._plan_correction_detail = self._obligation_failure_detail(error, result)
+                    raise
+                result, self._obligation_addenda, self._plan_fallback = salvaged
+                self._plan_correction_detail = None
             return result
         if node == "investigate":
             result = self._normalize_investigate_result(result)
@@ -185,6 +285,7 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
         examined = set(self._examined_relationships(state))
 
         def repair(subject):
+            """Drop uncited citations; candidates surface their notes to be attached to the conclusion."""
             source_cited = [record for record in (references.get(identifier) for identifier in subject.evidence_ids)
                 if record is not None and record.kind == "source"]
             kept_symbols, dropped_symbols = [], []
@@ -200,20 +301,109 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
             kept_relationships, dropped_relationships = [], []
             for identifier in subject.relationship_ids:
                 (kept_relationships if identifier in examined else dropped_relationships).append(identifier)
+            inspected_paths = {record.path for record in source_cited}
+            kept_components = sorted(inspected_paths)
+            dropped_components = sorted(path for path in dict.fromkeys(subject.components)
+                if path not in inspected_paths)
             notes = []
             if dropped_relationships:
                 notes.append("relationship_ids not derived from list_relationships: " + ", ".join(sorted(dropped_relationships)))
             if dropped_symbols:
                 notes.append("symbol_ids not grounded in delivered source: " + ", ".join(sorted(dropped_symbols)))
+            if dropped_components:
+                notes.append("components not backed by cited source evidence were removed: " + ", ".join(sorted(dropped_components)))
             if not notes:
-                return subject
-            return subject.model_copy(update={
-                "relationship_ids": kept_relationships, "symbol_ids": kept_symbols,
-                "limitations": [*subject.limitations,
-                    "Model evidence citations removed during validation: " + "; ".join(notes) + "."]})
+                return subject, []
+            update = {"relationship_ids": kept_relationships, "symbol_ids": kept_symbols,
+                "components": kept_components}
+            if "limitations" in type(subject).model_fields:
+                update["limitations"] = [*subject.limitations,
+                    "Model evidence citations removed during validation: " + "; ".join(notes) + "."]
+                return subject.model_copy(update=update), []
+            return subject.model_copy(update=update), notes
 
-        candidates = [repair(candidate) for candidate in conclusion.candidates]
-        head = repair(conclusion.model_copy(update={"candidates": candidates}))
+        def _source_records(ids):
+            return [references[key] for key in ids
+                if key in references and references[key].kind == "source"]
+
+        def repair_claim_assessments(head):
+            updated, downgraded = [], []
+            for assessment in head.claim_assessments:
+                status = assessment.status
+                scope_paths = list(assessment.scope_paths)
+                limitations = list(assessment.limitations)
+                if status in {"supported", "contradicted"}:
+                    cited = _source_records(assessment.code_evidence_ids)
+                    if not assessment.code_evidence_ids:
+                        status = "inconclusive"
+                        limitations = [*limitations,
+                            f"Host downgraded the assessment from {assessment.status}: no source evidence was cited."]
+                        downgraded.append(assessment.claim_id)
+                    elif not scope_paths:
+                        scope_paths = sorted({record.path for record in cited})
+                updated.append(assessment.model_copy(update={"status": status,
+                    "scope_paths": scope_paths, "limitations": limitations}))
+            if downgraded:
+                head = head.model_copy(update={"limitations": [*head.limitations,
+                    "Claim assessments downgraded to inconclusive (no cited source): " + ", ".join(sorted(downgraded)) + "."]})
+            return head.model_copy(update={"claim_assessments": updated})
+
+        def repair_evidence_assessments(head):
+            updated, downgraded = [], []
+            for assessment in head.evidence_assessments:
+                status = assessment.status
+                scope_paths = list(assessment.scope_paths)
+                if status != "inconclusive":
+                    cited = _source_records(assessment.evidence_ids)
+                    if not assessment.evidence_ids:
+                        status = "inconclusive"
+                        downgraded.append(str(assessment.requirement_index))
+                    elif not scope_paths:
+                        scope_paths = sorted({record.path for record in cited})
+                updated.append(assessment.model_copy(update={"status": status,
+                    "scope_paths": scope_paths}))
+            if downgraded:
+                head = head.model_copy(update={"limitations": [*head.limitations,
+                    "Evidence assessments downgraded to inconclusive (no cited source) at requirement_index: " + ", ".join(sorted(downgraded)) + "."]})
+            return head.model_copy(update={"evidence_assessments": updated})
+
+        def link_candidates(head):
+            contradicted = {assessment.claim_id: assessment for assessment in head.claim_assessments
+                if assessment.status == "contradicted"}
+            if not contradicted:
+                return head
+            updated, notes = [], []
+            for candidate in head.candidates:
+                if candidate.document_claim_ids:
+                    updated.append(candidate)
+                    continue
+                linked = sorted(key for key, assessment in contradicted.items()
+                    if assessment.code_evidence_ids and set(assessment.code_evidence_ids) <= set(candidate.evidence_ids))
+                if linked:
+                    notes.append(f"{candidate.id}: {', '.join(linked)}")
+                    updated.append(candidate.model_copy(update={"document_claim_ids": linked}))
+                else:
+                    updated.append(candidate)
+            if notes:
+                head = head.model_copy(update={"limitations": [*head.limitations,
+                    "Candidates auto-linked to contradicted claims via matching cited code evidence: " + "; ".join(notes) + "."]})
+            return head.model_copy(update={"candidates": updated})
+
+        repaired_candidates = []
+        candidate_notes = []
+        for candidate in conclusion.candidates:
+            repaired, notes = repair(candidate)
+            repaired_candidates.append(repaired)
+            if notes:
+                candidate_notes.append(f"Candidate {repaired.id}: {', '.join(notes)}")
+        head, _head_notes = repair(conclusion.model_copy(update={"candidates": repaired_candidates}))
+        if candidate_notes:
+            head = head.model_copy(update={"limitations": [*head.limitations,
+                "Model evidence citations removed during validation in candidates: " + "; ".join(candidate_notes) + "."]})
+        head = repair_claim_assessments(head)
+        head = repair_evidence_assessments(head)
+        head = link_candidates(head)
+        candidates = head.candidates
         relationship_ids = list(dict.fromkeys([*head.relationship_ids,
             *(identifier for candidate in candidates for identifier in candidate.relationship_ids)]))
         symbol_ids = list(dict.fromkeys([*head.symbol_ids,
@@ -253,8 +443,7 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
             "investigation_results": [],
             "candidates": [],
             "candidate_origins": {},
-            "documentary_synthesis": {},
-            "synthesis": {},
+            "documentary_synthesis": None, "synthesis": {},
         }
 
     # --- plan -------------------------------------------------------------
@@ -266,12 +455,16 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
         menu_limit = min(32, max(2 * self.config.max_planned_investigations, self.config.max_planned_investigations))
         try:
             menu_plan = build_abstraction_plan(self.tools.accessible_snapshot, self.request,
-                check=self._check_planning, max_investigations=menu_limit)
+                check=self._check_planning, max_investigations=menu_limit,
+                max_documentary_claims_per_candidate=self.config.max_documentary_claims_per_candidate)
         except TimeoutError:
             self.stop = "time_limit"
             menu_plan = AbstractionPlan(objectives=[self.request.objective], components=[], hypotheses=[],
                 candidates=[], limitations=[limitations_note, "Planning time allowance exhausted."], document_claims={})
         self._obligation_addenda = {}
+        self._plan_fallback = None
+        self._plan_correction_detail = None
+        self._plan_req_attempts = 0
         self._menu = list(menu_plan.candidates)
         self._menu_claims = dict(menu_plan.document_claims)
         print(f"[DEBUG_PLAN_MENU] candidates={len(self._menu)}", file=sys.stderr)
@@ -295,16 +488,21 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
                 "purpose_basis": item.purpose_basis,
                 "observed_indicators": item.observed_indicators,
                 "claims": [{"id": claim_id,
-                    "subject": self._menu_claims[claim_id].subject,
-                    "statement": self._menu_claims[claim_id].statement,
-                    "constraint": self._menu_claims[claim_id].constraint,
-                    "certainty": self._menu_claims[claim_id].certainty}
+                    "subject": self._menu_claims[claim_id].claim.subject,
+                    "statement": self._menu_claims[claim_id].claim.statement,
+                    "constraint": self._menu_claims[claim_id].claim.constraint,
+                    "certainty": self._menu_claims[claim_id].claim.certainty}
                     for claim_id in item.document_claim_ids
-                    if claim_id in self._menu_claims],
-                "document_claim_ids": item.document_claim_ids} for item in self._menu],
+                    if claim_id in self._menu_claims]} for item in self._menu],
             "limitations": menu_plan.limitations,
         }
         selection = await self.call("plan_investigation", state, AbstractionPlanSelection) if self._menu else None
+        fallback = getattr(self, "_plan_fallback", None)
+        fallback_note = None
+        if fallback:
+            fallback_note = (f"Obligation requirements: salvaged after retry exhaustion — kept {len(fallback['surviving'])} "
+                f"candidate(s), dropped {len(fallback['dropped_candidates'])} and {fallback['dropped_requirements']} "
+                f"requirement(s) that failed the anchoring contract; conforming evidence is preserved, failures are not adjudicated.")
         selected_ids = list(selection.candidate_ids) if selection else []
         discarded_names = [item.abstraction_name for item in self._menu if item.id not in selected_ids]
         print(f"[DEBUG_PLAN_SELECTION] selected={selected_ids} discarded={discarded_names}", file=sys.stderr)
@@ -318,6 +516,8 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
         limitations = list(menu_plan.limitations)
         if selection is None and self._menu:
             limitations.append("Model planning did not finish; no candidate was selected.")
+        if fallback_note:
+            limitations.append(fallback_note)
         limitations.append(f"Planning menu diagnostics: shown={len(self._menu)}, selected={len(final)}, discarded={max(0, len(self._menu) - len(final))}.")
         requirements_added = sum(len(items) for items in requirements.values())
         if requirements_added:
@@ -352,7 +552,13 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
 
     def synthesis(self, state):
         candidates, origins = consolidate_candidates(state["investigation_results"])
-        synthesis = documentary_coverage(state["investigation_results"], state["plan"])
+        synthesis = synthesize_documentary(state["investigation_results"], state["plan"],
+            state["result"].evidence, getattr(self.tools.context.input, "snapshot_hash", None))
+        self.logger.info("abstraction_synthesis %s", json.dumps({
+            "original_candidates": sum(len(item.candidates) for item in state["investigation_results"]),
+            "consolidated_candidates": len(candidates),
+            "documentary_claims_evaluated": len(synthesis.coverage.evaluated_claim_ids),
+            "documentary_integrity_issues": len(synthesis.integrity_issues)}, sort_keys=True))
         result = state["result"].model_copy(update={"candidates": candidates,
             "candidate_origins": origins, "documentary_synthesis": synthesis,
             "termination_reason": state["result"].termination_reason})
@@ -375,6 +581,8 @@ class AbstractionExecution(AbstractionInvestigation, InvestigationExecution):
                 validation_status="insufficient_evidence",
                 review_rationale="No critical review performed; consolidated provisional candidate."))
         limitations = list(dict.fromkeys([*state["limitations"], *self.issues,
+            *(f"Documentary synthesis {issue.code}: {issue.message}" for issue in
+                getattr(state.get("documentary_synthesis"), "integrity_issues", [])),
             *(limitation for item in state["investigation_results"] for limitation in item.limitations)]))
         missing = [f"Investigation {item.investigation_id}: {limitation}"
             for item in state["investigation_results"] if item.status == "inconclusive" for limitation in item.limitations]

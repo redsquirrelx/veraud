@@ -2,7 +2,7 @@ from .agent import AbstractionAgent
 from .config import AbstractionConfig
 from .schemas import (
     AbstractionCandidate,
-    AbstractionDocumentClaim,
+    AbstractionClaimAssessment,
     AbstractionFinding,
     AbstractionInvestigationCandidate,
     AbstractionInvestigationResult,
@@ -12,13 +12,20 @@ from .schemas import (
     AbstractionRequest,
     AbstractionResult,
     AbstractionToolQuery,
+    ClaimAssessmentComparison,
+    ConsolidatedClaimAssessments,
+    DocumentarySynthesis,
+    DocumentarySynthesisCoverage,
+    DocumentarySynthesisIssue,
+    DocumentClaimRecord,
+    LocalClaimAssessment,
 )
 
 __all__ = [
     "AbstractionAgent",
     "AbstractionCandidate",
+    "AbstractionClaimAssessment",
     "AbstractionConfig",
-    "AbstractionDocumentClaim",
     "AbstractionFinding",
     "AbstractionInvestigationCandidate",
     "AbstractionInvestigationResult",
@@ -28,4 +35,11 @@ __all__ = [
     "AbstractionRequest",
     "AbstractionResult",
     "AbstractionToolQuery",
+    "ClaimAssessmentComparison",
+    "ConsolidatedClaimAssessments",
+    "DocumentClaimRecord",
+    "DocumentarySynthesis",
+    "DocumentarySynthesisCoverage",
+    "DocumentarySynthesisIssue",
+    "LocalClaimAssessment",
 ]

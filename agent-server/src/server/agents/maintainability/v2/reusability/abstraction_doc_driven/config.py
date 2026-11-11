@@ -15,6 +15,8 @@ class AbstractionConfig(InvestigationConfig):
     ]}
     max_planned_investigations: int = Field(default=18, ge=1, le=18,
         description="Bounded abstraction-purpose investigations proposed by plan_investigation.")
+    max_documentary_claims_per_candidate: int = Field(default=6, ge=1, le=20,
+        description="Maximum documented claims an eligible investigator may hold per task; covers binding by phase 1 or capability affinity.")
 
     @model_validator(mode="after")
     def internal_prompts_only(self):

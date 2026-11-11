@@ -252,7 +252,7 @@ def test_claim_assessment_evidence_is_unioned_with_the_conclusion(tmp_path):
             "limitations": [],
             "evidence_assessments": requirement_assessments(context),
             "claim_assessments": [{
-                "claim_id": "index-sha:0",
+                "claim_id": "claim-0",
                 "status": "supported",
                 "rationale": "The excerpt shows the contract behavior.",
                 "code_evidence_ids": [source[0]["id"]] if source else [],
@@ -266,7 +266,7 @@ def test_claim_assessment_evidence_is_unioned_with_the_conclusion(tmp_path):
     conclusion = state["result"].investigation_results[0]
     assert conclusion.status == "no_finding"
     assert conclusion.evidence_ids  # union applied automatically
-    assert any(claim.claim_id == "index-sha:0" for claim in conclusion.claim_assessments)
+    assert any(claim.claim_id == "claim-0" for claim in conclusion.claim_assessments)
 
 
 def test_identical_tool_requests_are_reused_without_reexecuting(tmp_path):

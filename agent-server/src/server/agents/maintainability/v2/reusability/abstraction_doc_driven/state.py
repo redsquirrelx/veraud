@@ -2,6 +2,10 @@
 
 from server.runtimes.investigation.state import InvestigationState
 
+from .schemas import (
+    DocumentarySynthesis,
+)
+
 
 class AbstractionState(InvestigationState, total=False):
     snapshot_hash: str
@@ -15,5 +19,5 @@ class AbstractionState(InvestigationState, total=False):
     investigation_results: list[dict]
     candidates: list[dict]
     candidate_origins: dict
-    documentary_synthesis: dict
+    documentary_synthesis: DocumentarySynthesis | None
     synthesis: dict

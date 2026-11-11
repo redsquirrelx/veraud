@@ -23,7 +23,7 @@ from server.services.document_indexing import IndexReference
 from server.services.repository_analysis.context import create_identifier
 from server.services.repository_analysis.testing import is_test_file
 
-from .schemas import AbstractionCandidate, AbstractionDocumentClaim, AbstractionPlan
+from .schemas import AbstractionCandidate, AbstractionPlan, DocumentClaimRecord
 
 DIRECT_CATEGORIES = {"interfaces_and_contracts", "architectural_decisions", "components", "architectural_style"}
 COMPLEMENTARY_CATEGORIES = {"relationships", "constraints"}
@@ -50,8 +50,9 @@ def normalize_knowledge(context: ArchitectureContextResult | Mapping[str, Any] |
     """Normalize documentary knowledge without inventing identity.
 
     The stable record ID is positional within one committed `ArchitectureContextResult`:
-    `{document_index.index_id}:{zero_based_position}`. It identifies the claim in that
-    context revision; it is not a content hash and must not survive reindexing.
+    `claim-{zero_based_position}`. It identifies the claim in that context
+    revision; it is not a content hash and must not survive reindexing. A
+    missing or malformed document index degrades honestly to no provenance.
     """
     if context is None:
         return []
@@ -60,19 +61,10 @@ def normalize_knowledge(context: ArchitectureContextResult | Mapping[str, Any] |
     if not knowledge:
         return []
 
-    document_index = data.get("document_index")
-    if document_index is None:
-        raise ValueError("documented_architecture.document_index is required to normalize documentary knowledge.")
-    index = _as_mapping(document_index, context="context.document_index")
-    index_id = index.get("index_id")
-    if not isinstance(index_id, str) or not index_id.strip():
-        raise ValueError("documented_architecture.document_index.index_id must be a non-empty string.")
-
-    claims: list[dict[str, Any]] = []
     document_index_raw = data.get("document_index")
-    document_index = None
     if isinstance(document_index_raw, BaseModel):
         document_index_raw = document_index_raw.model_dump(mode="json")
+    document_index = None
     if isinstance(document_index_raw, Mapping):
         try:
             document_index = IndexReference.model_validate({field: document_index_raw.get(field)
@@ -82,11 +74,12 @@ def normalize_knowledge(context: ArchitectureContextResult | Mapping[str, Any] |
     section_paths = data.get("section_paths")
     if not isinstance(section_paths, Mapping):
         section_paths = {}
-    for index, entry in enumerate(knowledge):
+    claims: list[dict[str, Any]] = []
+    for position, entry in enumerate(knowledge):
         claim = KnowledgeClaim.model_validate(entry)
         evidence = [KnowledgeEvidence.model_validate(item).model_dump(mode="json") for item in claim.evidence]
         claims.append({
-            "id": f"{index_id}:{index}",
+            "id": f"claim-{position}",
             "category": claim.category,
             "subject": claim.subject,
             "statement": claim.statement,
@@ -98,6 +91,7 @@ def normalize_knowledge(context: ArchitectureContextResult | Mapping[str, Any] |
             "document_index": document_index.model_dump(mode="json") if document_index else None,
             "section_paths": {section_id: section_paths[section_id] for section_id in claim.section_ids
                 if section_id in section_paths},
+            "claim": claim,
         })
     return claims
 
@@ -192,7 +186,95 @@ def _consumers(file_key, files, consumers_by_file):
     return sorted(consumers_by_file.get(file_key, ()))
 
 
-def build_abstraction_plan(snapshot, request, *, check, max_investigations):
+_AFFINITY_STOPWORDS = frozenset({
+    "with", "from", "that", "this", "into", "your", "have", "some", "such", "does",
+    "about", "between", "over", "under", "each", "other", "only", "when", "where",
+    "while", "their", "there", "these", "those", "they", "them", "then", "than",
+    "therefore", "thus", "hence", "also", "within", "across", "before", "after",
+    "without", "around", "along", "among", "upon", "every", "both", "either",
+    "para", "cada", "este", "esta", "estos", "estas", "esto", "puede", "pueden",
+    "debe", "deben", "sobre", "entre", "donde", "cuando", "hacia", "como", "solo",
+})
+_AFFINITY_GENERIC = frozenset({
+    "capability", "interface", "interfaces", "contract", "contracts", "component",
+    "components", "responsibility", "responsibilities", "requirement", "requirements",
+    "module", "modules", "system", "systems", "service", "services", "method",
+    "methods", "function", "functions", "class", "classes", "package", "packages",
+    "logic", "layer", "data", "model", "models", "process", "processing", "uses",
+    "using", "based", "against", "ensures", "provide", "provides", "built", "implements", "behavior", "concern", "concerns", "single", "mixed",
+    "implement", "implemented", "representation", "production",
+    "taking", "takes", "produces", "handles", "handling", "support", "supports",
+    "respective", "directly", "generally", "typically", "concrete", "concretes",
+    "represent", "various", "certain", "particular",
+})
+GENERIC_PATH_TOKS = frozenset({"src", "lib", "app", "main", "core", "index", "module"})
+
+
+def _singular(token):
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith("es") and len(token) > 4 and not token.endswith(("ses", "xes", "zes")):
+        return token[:-2]
+    if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
+        return token[:-1]
+    return token
+
+
+def _affinity_tokens(text):
+    """Lowercase distinctive tokens from free text; never invents structure."""
+    tokens = set()
+    for chunk in re.split(r"[^A-Za-z0-9]+", text or ""):
+        if not chunk:
+            continue
+        for part in re.findall(r"[A-Z]+(?=[A-Z][a-z0-9]|[0-9]|$)|[A-Z]?[a-z0-9]+|[0-9]+", chunk):
+            token = part.lower()
+            if len(token) < 4:
+                continue
+            token = _singular(token)
+            if token in _AFFINITY_STOPWORDS or token in _AFFINITY_GENERIC or token in GENERIC_PATH_TOKS:
+                continue
+            tokens.add(token)
+    return tokens
+
+
+def _file_token_set(file, symbols):
+    """Tokens that may evidence affinity for one file: path segments + symbols."""
+    segments = [segment for segment in re.split(r"[/\\]", file.path) if segment]
+    parents = segments[:-1]
+    all_tokens = _affinity_tokens(" ".join(segments))
+    directory_tokens = _affinity_tokens(" ".join(parents))
+    for symbol in symbols:
+        all_tokens |= _affinity_tokens(symbol.name)
+    return {"all": all_tokens, "dirs": directory_tokens}
+
+
+def _capability_affinity(claim, candidates, files, symbols_by_file):
+    """Affinity of one explicit claim to the selected candidates.
+
+    Returns [(candidate_id, score)] scored by shared distinctive tokens; one
+    shared directory segment also binds. Claims remain orientation-only; they
+    are never code evidence.
+    """
+    claim_tokens = _affinity_tokens(
+        " ".join([claim["subject"], claim["statement"], *(claim.get("related_subjects") or [])]))
+    if not claim_tokens:
+        return []
+    attached = []
+    files_by_path = {file.path: file for file in files.values()}
+    for item in candidates:
+        file = files_by_path.get(item.primary_component)
+        if file is None:
+            continue
+        cached = _file_token_set(file, symbols_by_file.get(file.id, []))
+        shared = claim_tokens & cached["all"]
+        directories = claim_tokens & cached["dirs"]
+        if len(shared) >= 2 or directories:
+            attached.append((item.id, len(shared or directories)))
+    return attached
+
+
+def build_abstraction_plan(snapshot, request, *, check, max_investigations,
+        max_documentary_claims_per_candidate=6):
     """Deterministic, source-free plan; reading source belongs to investigate."""
     check()
     all_files = {file.id: file for file in snapshot.files}
@@ -260,6 +342,15 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
     snapshot_hash = snapshot.repository.snapshot_hash
     normalized_by_id = {claim["id"]: claim for claim in claims}
 
+    def claim_record(claim_id, status, reason, scope_paths):
+        raw = normalized_by_id[claim_id]
+        document_index = raw["document_index"]
+        return DocumentClaimRecord(
+            claim=raw["claim"],
+            document_index=IndexReference.model_validate(document_index) if document_index else None,
+            section_paths=raw["section_paths"],
+            status=status, reason=reason, scope_paths=list(scope_paths))
+
     promoted_ids = set()
     # Symbol-level promotion: does any documented term name this symbol?
     for claim in claims:
@@ -287,12 +378,17 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
         pool[symbol.id] = (symbol, kind)
 
     documented: dict[str, dict[str, Any]] = {}
+    document_claims: dict[str, DocumentClaimRecord] = {}
     unmapped_claims, uncertain_claims, context_only_claims = 0, 0, 0
     if document is not None:
         for claim in claims:
             check()
             claim_id = claim["id"]
             if claim["category"] not in RELEVANT_CATEGORIES or _is_testing_claim(claim):
+                reason = ("Category does not describe an abstraction purpose or relevant context."
+                    if claim["category"] not in RELEVANT_CATEGORIES
+                    else "Testing procedure, not an abstraction purpose.")
+                document_claims[claim_id] = claim_record(claim_id, "not_applicable", reason, [])
                 continue
             scored = []
             for symbol_id, (symbol, _kind) in pool.items():
@@ -307,15 +403,22 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
                     scored.append((2, symbol_id, related))
             if not scored:
                 unmapped_claims += 1
+                document_claims[claim_id] = claim_record(claim_id, "unmapped",
+                    "No explicit index anchor; claim did not match an identified abstraction.", [])
                 continue
             top = max(entry[0] for entry in scored)
             winners = [entry for entry in scored if entry[0] == top]
             if len(winners) != 1:
                 # Tie between equally explicit candidates: never invent an owner.
                 uncertain_claims += 1
+                document_claims[claim_id] = claim_record(claim_id, "uncertain",
+                    "Ambiguous between equally explicit abstractions; no correspondence was invented.", [])
                 continue
             _, symbol_id, own = winners[0]
             is_direct = claim["category"] in DIRECT_CATEGORIES and own > 0
+            primary_path = files[pool[symbol_id][0].file_id].path
+            document_claims[claim_id] = claim_record(claim_id, "applicable",
+                "Explicit reference with a single primary match.", [primary_path])
             entry = documented.setdefault(symbol_id, {"claims": [], "direct": [], "context": [],
                 "related_subjects": []})
             if claim_id not in entry["claims"]:
@@ -337,7 +440,7 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
     if context_only_claims:
         limitations.append(f"{context_only_claims} claims mapped to components but not directly onto an abstraction purpose.")
 
-    candidates, used_claim_ids = [], set()
+    candidates = []
 
     for symbol_id, (symbol, kind) in pool.items():
         file_id = symbol.file_id
@@ -402,7 +505,6 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
             question=question,
             evidence_needed=evidence_needed,
             document_claim_ids=list(dict.fromkeys(documentation["claims"])) if documentation else []))
-        used_claim_ids.update(candidates[-1].document_claim_ids)
 
     documented_candidates = [c for c in candidates if c.document_claim_ids]
     structural_candidates = [c for c in candidates if not c.document_claim_ids]
@@ -419,20 +521,86 @@ def build_abstraction_plan(snapshot, request, *, check, max_investigations):
     discarded = max(0, total - len(selected))
     limitations.append(f"Planning diagnostics: generated={total}, shown={len(selected)}, discarded={discarded}; "
         "unresolved or ambiguous claims were not adjudicated.")
+    candidates = selected[:max_investigations]
+    phase1_dropped = 0
+    for position, item in enumerate(candidates):
+        kept = list(dict.fromkeys(item.document_claim_ids))[:max_documentary_claims_per_candidate]
+        phase1_dropped += len(item.document_claim_ids) - len(kept)
+        if len(kept) != len(item.document_claim_ids):
+            candidates[position] = item.model_copy(update={"document_claim_ids": kept})
+    if phase1_dropped:
+        limitations.append(f"Documentation diagnostics: {phase1_dropped} phase-1 documented claim(s) dropped by "
+            f"per-candidate cap {max_documentary_claims_per_candidate}.")
+    affinity_unanchored = []
+    affinity_bindings = 0
+    affinity_culled = 0
+    phase1_counts = {item.id: len(item.document_claim_ids) for item in candidates}
+    affinity_kept: dict[str, list] = {item.id: [] for item in candidates}
+    document = getattr(request, "documented_architecture", None)
+    if document is not None:
+        if claims:
+            symbols_by_file = defaultdict(list)
+            for symbol in symbols.values():
+                symbols_by_file[symbol.file_id].append(symbol)
+            for position, claim in enumerate(claims):
+                check()
+                claim_id = claim["id"]
+                if any(claim_id in item.document_claim_ids for item in candidates):
+                    continue
+                if claim["certainty"] != "explicit":
+                    continue
+                if any(marker in (claim["subject"] + " " + claim["statement"]).lower() for marker in TESTING_MARKERS):
+                    continue
+                matches = _capability_affinity(claim, candidates, files, symbols_by_file)
+                if not matches:
+                    affinity_unanchored.append(claim_id)
+                    continue
+                for candidate_id, score in matches:
+                    affinity_kept[candidate_id].append((score, claim_id, claim, position))
+            # Keep phase-1 anchors intact; fill the remaining per-candidate slots
+            # with the strongest affinity claims (ties by documentary order).
+            kept_claim_ids: dict[str, set] = {}
+            for candidate in candidates:
+                entries = affinity_kept[candidate.id]
+                slots = max(0, max_documentary_claims_per_candidate - phase1_counts[candidate.id])
+                kept = [entry for entry in sorted(entries, key=lambda entry: (-entry[0], entry[3]))[:slots]]
+                affinity_culled += len(entries) - len(kept)
+                affinity_kept[candidate.id] = kept
+                for _score, claim_id, _claim, _index in kept:
+                    kept_claim_ids.setdefault(claim_id, set()).add(candidate.primary_component)
+            for position, item in enumerate(candidates):
+                kept = affinity_kept[item.id]
+                if not kept:
+                    continue
+                attached_ids = [entry[1] for entry in kept]
+                affinity_bindings += len(attached_ids)
+                candidates[position] = item.model_copy(update={"document_claim_ids": list(dict.fromkeys(
+                    [*item.document_claim_ids, *attached_ids]))})
+            for claim_id, primaries in kept_claim_ids.items():
+                claim = next(entry[2] for item in affinity_kept.values() for entry in item
+                    if entry[1] == claim_id)
+                document_claims[claim_id] = claim_record(claim_id, "applicable",
+                    f"Capability affinity match: attached to {len(primaries)} selected "
+                    "component(s) by shared domain tokens; no explicit index anchor.", sorted(primaries))
+        if affinity_bindings or affinity_culled or affinity_unanchored:
+            limitations.append(f"Documentation diagnostics: {affinity_bindings} capability-affinity binding(s)"
+                + (f" ({affinity_culled} dropped by per-candidate cap {max_documentary_claims_per_candidate})" if affinity_culled else "")
+                + f"; {len(affinity_unanchored)} explicit claim(s) unanchored without an indexable owner"
+                + (f": {', '.join(affinity_unanchored[:8])}" if affinity_unanchored else "") + ".")
     if discarded:
         limitations.append(f"Candidate menu bounded: {discarded} opportunities omitted; not an exhaustive plan.")
-    if not selected:
+    if not candidates:
         limitations.append("No sufficiently grounded candidate was found; an empty plan is valid.")
 
     objectives = [request.objective]
     hypotheses = [Hypothesis(id=item.id, question=item.question,
         criterion_id="abstraction-purpose", priority=item.priority,
-        evidence_needed=item.evidence_needed) for item in selected]
-    components = list(dict.fromkeys(path for item in selected for path in item.scope))
+        evidence_needed=item.evidence_needed) for item in candidates]
+    components = list(dict.fromkeys(path for item in candidates for path in item.scope))
     return AbstractionPlan(objectives=objectives, components=components, hypotheses=hypotheses,
-        candidates=selected, limitations=list(dict.fromkeys(limitations)),
-        document_claims={claim_id: AbstractionDocumentClaim.model_validate(normalized_by_id[claim_id])
-            for claim_id in used_claim_ids if claim_id in normalized_by_id})
+        candidates=candidates, limitations=list(dict.fromkeys(limitations)),
+        document_claims={key: document_claims[key] for item in candidates for key in item.document_claim_ids
+            if key in document_claims})
 
 
 def _priority(direct, structural_links, documented):

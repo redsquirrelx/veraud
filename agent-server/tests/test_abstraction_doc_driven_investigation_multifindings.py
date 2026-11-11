@@ -120,7 +120,7 @@ def test_synthesis_finalize_produces_provisional_findings(tmp_path):
     assert {finding.id for finding in findings} == {"abstraction-candidate-1", "abstraction-candidate-2"}
     assert {finding.validation_status for finding in findings} == {"insufficient_evidence"}
     assert all(finding.criterion.id == "abstraction-purpose" for finding in findings)
-    assert result["result"].documentary_synthesis["selected_claims"] == 0
+    assert result["result"].documentary_synthesis.coverage.selected_claim_ids == []
     assert "abstraction-candidate-1" in result["result"].candidate_origins
     assert "abstraction-candidate-2" in result["result"].candidate_origins
     assert result["result"].termination_reason == "investigations_completed"
