@@ -161,10 +161,14 @@ describe("dedicated audit results", () => {
     expect(panel.getByText("Severity: Medium")).toBeInTheDocument()
     expect(panel.getByText("Attribute: Maintainability")).toBeInTheDocument()
     expect(panel.getByText("Subcharacteristic: Testability")).toBeInTheDocument()
-    expect(panel.getByText("Validation: Inconclusive")).toBeInTheDocument()
+    // The verification status no longer renders as a row badge in the list;
+    // it lives in the inspector drawer's technical metadata.
+    expect(panel.queryByText(/^Validation:/)).not.toBeInTheDocument()
     expect(panel.queryByText("service")).not.toBeInTheDocument()
     await user.click(panel.getByRole("button", { name: "Grouped finding" }))
     const drawer = within(await screen.findByRole("dialog", { name: "Grouped finding" }))
+    expect(drawer.getByText("Validation")).toBeInTheDocument()
+    expect(drawer.getByText("Inconclusive")).toBeInTheDocument()
     expect(drawer.getByText("M1")).toBeInTheDocument()
     expect(drawer.getByText("service")).toBeInTheDocument()
     expect(drawer.getByText("detector")).toBeInTheDocument()

@@ -100,6 +100,19 @@ export function startQualityAudit(projectId: number, branch: string, commitHash:
   })
 }
 
+export interface FindingResolutionExecution {
+  id: number
+  agentType: string
+  status: string
+}
+
+/** Starts the standalone finding_resolution agent for the audited commit. */
+export function startFindingResolution(projectId: number, auditId: number, commitHash: string) {
+  return requestJson<FindingResolutionExecution>(`/api/projects/${projectId}/audits/${auditId}/finding-resolution`, "Could not start the finding revalidation", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ commitHash }),
+  })
+}
+
 export function getQualityAuditReport(projectId: number, id: number, signal?: AbortSignal) {
   return requestJson<Record<string, unknown>>(`/api/projects/${projectId}/audits/${id}/report`, "Could not load the audit", { signal })
 }

@@ -18,7 +18,7 @@ import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditReport.tsx"
 import { useAuditReportSection } from "./useAuditReportSection.ts"
-import { downloadQualityAuditReport, getQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { downloadQualityAuditReport, getQualityAudit, startFindingResolution, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 
@@ -34,13 +34,16 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const incidentLabels = useAuditIncidentLabels()
   const chronologyLabels = useAuditChronologyLabels()
   const revalidationLabels = i18n.resolvedLanguage?.startsWith("es")
-    ? { tab: "Revalidación de hallazgos" }
-    : { tab: "Findings revalidation" }
+    ? { tab: "Revalidación de hallazgos", start: "Iniciar revalidación", starting: "Iniciando…", started: "Revalidación iniciada (ejecución {{id}}).", error: "No se pudo iniciar la revalidación." }
+    : { tab: "Findings revalidation", start: "Start finding revalidation", starting: "Starting…", started: "Finding revalidation started (execution {{id}}).", error: "Could not start the finding revalidation." }
   const [audit, setAudit] = useState<QualityAuditSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ResultsError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [revalidationStarting, setRevalidationStarting] = useState(false)
+  const [revalidationError, setRevalidationError] = useState<string | null>(null)
+  const [revalidationStarted, setRevalidationStarted] = useState<number | null>(null)
   const [search, setSearch] = useSearchParams()
   const requestedTab = search.get("tab")
   const activeTab = requestedTab === "revalidation" || requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
@@ -103,6 +106,21 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     setAttempt((value) => value + 1)
   }
 
+  async function startRevalidation() {
+    if (!audit?.commitHash) return
+    setRevalidationStarting(true)
+    setRevalidationError(null)
+    setRevalidationStarted(null)
+    try {
+      const execution = await startFindingResolution(projectId, auditId, audit.commitHash)
+      setRevalidationStarted(execution.id)
+    } catch (cause) {
+      setRevalidationError(cause instanceof Error ? cause.message : revalidationLabels.error)
+    } finally {
+      setRevalidationStarting(false)
+    }
+  }
+
   const auditStateLabel = useAuditStateLabel()
   const stateLabel = !pending && audit?.auditStatus ? evaluationLabels[audit.auditStatus] : undefined
   const executionLabel = audit ? statusLabelKey(executionStatusLabelKeys, audit.executionStatus) : undefined
@@ -158,7 +176,17 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     </>}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-revalidation`} aria-labelledby={`${tabsId}-tab-revalidation`} hidden={activeTab !== "revalidation"} tabIndex={0}>
-      {activeTab === "revalidation" && <AuditValidationHistoryPreview />}
+      {activeTab === "revalidation" && <>
+        <div className="quality-audit-history-actions">
+          <Button variant="primary" disabled={!audit || pending || !audit.reportAvailable || !audit.commitHash || revalidationStarting}
+            onClick={() => void startRevalidation()}>
+            {revalidationStarting ? revalidationLabels.starting : revalidationLabels.start}
+          </Button>
+        </div>
+        {revalidationStarted !== null && <p role="status">{revalidationLabels.started.replace("{{id}}", String(revalidationStarted))}</p>}
+        {revalidationError && <p role="alert">{revalidationError}</p>}
+        <AuditValidationHistoryPreview />
+      </>}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-findings`} aria-labelledby={`${tabsId}-tab-findings`} hidden={activeTab !== "findings"} tabIndex={0}>
       {activeTab === "findings" && (loading ? <Spinner /> : pending || (error !== null && audit === null) ? null : audit?.reportAvailable
