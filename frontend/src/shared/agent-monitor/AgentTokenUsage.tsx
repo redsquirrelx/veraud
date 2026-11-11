@@ -9,15 +9,31 @@ export type AgentTokenUsageData = Pick<AgentExecution, "agentType" | "inputToken
   invocations?: Pick<NonNullable<AgentExecution["invocations"]>[number], "input_tokens" | "output_tokens">[] | null
 }
 
+type TokenUsageReportedFields = Pick<AgentTokenUsageData, "inputTokens" | "outputTokens" | "estimatedTokens" | "invocations">
+
+function sumReported(receipts: number[]) {
+  return receipts.length ? receipts.reduce((sum, value) => sum + value, 0) : null
+}
+
+/** Whether the execution reported any token usage (direct counts or invocation receipts). */
+export function hasReportedTokens(execution: TokenUsageReportedFields): boolean {
+  const invokedInputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
+  const invokedOutputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.output_tokens === "number" ? [receipt.output_tokens] : [])
+  const input = execution.inputTokens ?? sumReported(invokedInputs)
+  const output = execution.outputTokens ?? sumReported(invokedOutputs)
+  const estimated = execution.estimatedTokens ?? 0
+  return input != null || output != null || estimated > 0
+}
+
 export function AgentTokenUsage({ execution }: { execution: AgentTokenUsageData }) {
   const { t } = useTranslation("agents")
   const format = (value: number) => formatNumber(value, { maximumFractionDigits: 1 })
   const invokedInputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
   const invokedOutputs = (execution.invocations ?? []).flatMap((receipt) => typeof receipt.output_tokens === "number" ? [receipt.output_tokens] : [])
-  const input = execution.inputTokens ?? (invokedInputs.length ? invokedInputs.reduce((sum, value) => sum + value, 0) : null)
-  const output = execution.outputTokens ?? (invokedOutputs.length ? invokedOutputs.reduce((sum, value) => sum + value, 0) : null)
+  const input = execution.inputTokens ?? sumReported(invokedInputs)
+  const output = execution.outputTokens ?? sumReported(invokedOutputs)
   const estimated = execution.estimatedTokens ?? 0
-  const reported = input != null || output != null || estimated > 0
+  const reported = hasReportedTokens(execution)
   const total = (input ?? 0) + (output ?? 0) + estimated
   const budget = execution.configuration?.tokenBudget
   const absolute = execution.configuration?.absoluteTokenLimit

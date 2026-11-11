@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 import { ArrowRightIcon, Badge, Card, ChevronDownIcon, DotsIcon, FolderIcon, GridIcon, ShieldIcon } from "../ui-kit/index.ts"
 import { formatDateTime } from "../i18n/format.ts"
-import { AgentTokenUsage } from "../agent-monitor/AgentTokenUsage.tsx"
+import { AgentTokenUsage, hasReportedTokens } from "../agent-monitor/AgentTokenUsage.tsx"
 import type projects from "../i18n/locales/en/projects.json"
 import {
   auditProgress,
@@ -96,10 +96,10 @@ function AgentRow({ node, path, primary = false, evidenceAudit }: { node: AuditA
                 ? <time dateTime={agent.finishedAt}>{formatDateTime(agent.finishedAt)}</time> : labels.notRecorded}</dd></div>
             </dl>
           </section>
-          <section className="audit-agent-detail-section" aria-label={labels.tokens}>
+          {hasReportedTokens(agent) && <section className="audit-agent-detail-section" aria-label={labels.tokens}>
             <h4>{labels.tokens}</h4>
             <AgentTokenUsage execution={agent} />
-          </section>
+          </section>}
           {(agent.error?.trim() || agent.errorDetail) && <section className="audit-agent-detail-section" aria-label={labels.error}>
             <h4>{labels.error}</h4>
             <ExecutionError error={agent.error} detail={agent.errorDetail} identity={identity} />

@@ -182,11 +182,15 @@ describe("AuditStatusView", () => {
     expect(within(agent).getByText("Finished")).toBeInTheDocument()
   })
 
-  it("marks missing token usage instead of showing zeroes", () => {
+  it("hides the tokens section when the agent reported no token usage", () => {
     const region = show()
 
-    // Only the queued agent lacks token usage.
-    expect(within(part(region, ".audit-agent-list")).getByText("Token usage not reported")).toBeInTheDocument()
+    // Only the queued agent lacks token usage; its tokens section is hidden entirely.
+    expect(within(part(region, ".audit-agent-list")).queryByText("Token usage not reported")).toBeNull()
+    const queued = part(region, ".audit-agent-list").querySelectorAll<HTMLElement>(".audit-agent")[1]!
+    expect(within(queued).queryByRole("heading", { name: "Token usage" })).toBeNull()
+    // The completed agent still shows its tokens.
+    expect(within(part(region, ".audit-agent-list")).getByText("51,070 tokens")).toBeInTheDocument()
   })
 
   it("uses the previous agent menu's budget bar and expandable token breakdown", async () => {
