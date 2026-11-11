@@ -3,10 +3,9 @@
 from importlib import import_module
 
 __all__ = [
+    "DocumentClaimRecord",
     "ParametrizationCandidate",
-    "ParametrizationExclusion",
-    "ParametrizationPlanningResponse",
-    "ParametrizationProposal",
+    "ParametrizationPlanSelection",
     "ReuseParametrizationConfig",
     "ReuseParametrizationDocDrivenAgent",
     "ReuseParametrizationDocDrivenRequest",

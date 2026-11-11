@@ -5,6 +5,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import Field
 
 from server.agents.architecture_context import ArchitectureContextResult
+from server.agents.architecture_context.schemas import KnowledgeClaim
 from server.contracts.audit import (
     AuditResult,
     CandidateFinding,
@@ -15,20 +16,15 @@ from server.contracts.audit import (
 from server.services.document_indexing import IndexReference
 
 
-class ParametrizationDocumentClaim(Contract):
-    """Documentary provenance; never an entry in the code evidence ledger."""
+class DocumentClaimRecord(Contract):
+    """Documentary provenance, never an entry in the code evidence ledger."""
 
-    id: str = Field(min_length=1)
-    category: str = Field(min_length=1)
-    subject: str = Field(min_length=1)
-    statement: str = Field(min_length=1)
-    related_subjects: list[str] = Field(default_factory=list)
-    certainty: str | None = None
-    constraint: str = "unspecified"
-    section_ids: list[str] = Field(default_factory=list)
-    evidence: list[dict[str, Any]] = Field(default_factory=list)
-    document_index: IndexReference | None = None
-    section_paths: dict[str, str] = Field(default_factory=dict)
+    claim: KnowledgeClaim
+    document_index: IndexReference | None
+    section_paths: dict[str, str]
+    status: Literal["applicable", "not_applicable", "uncertain", "unmapped"]
+    reason: str = Field(min_length=1)
+    scope_paths: list[str] = Field(default_factory=list)
 
 
 class ParametrizationCandidate(Contract):
@@ -55,64 +51,19 @@ class ParametrizationCandidate(Contract):
 class ParametrizationPlan(InvestigationPlan):
     limitations: list[str] = Field(default_factory=list)
     candidates: list[ParametrizationCandidate] = Field(default_factory=list)
-    document_claims: dict[str, ParametrizationDocumentClaim] = Field(default_factory=dict)
+    document_claims: dict[str, DocumentClaimRecord] = Field(default_factory=dict)
 
 
-class ParametrizationProposal(Contract):
-    """One bounded variation point proposed semantically by the planner."""
-
-    primary_component: str = Field(min_length=1, max_length=400)
-    symbol_name: str | None = Field(default=None, max_length=120)
-    variation_mechanism: str = Field(min_length=3, max_length=120)
-    variation_basis: Literal["explicit", "inferred"] = "inferred"
-    variation_status: Literal["documented", "planned", "unsupported"] = "documented"
-    alternatives: list[str] = Field(default_factory=list, max_length=6)
-    documented_capability: str = Field(min_length=10, max_length=500)
-    question: str = Field(min_length=10, max_length=2000)
-    evidence_needed: list[str] = Field(min_length=2, max_length=5)
-    document_claim_ids: list[str] = Field(min_length=1, max_length=30)
-
-
-class ParametrizationExclusion(Contract):
-    """A plausible claim considered and rejected with a short reason."""
-
-    claim_ids: list[str] = Field(min_length=1, max_length=30)
-    reason: str = Field(min_length=10, max_length=500)
-
-
-class ParametrizationPlanningResponse(Contract):
-    """Semantic proposal from an LLM; host grounds and merges proposals."""
+class ParametrizationPlanSelection(Contract):
+    """The model ranks host-grounded opportunities, never inventing entities."""
 
     validation_feedback: ClassVar[dict[str, str]] = {
-        "planning_invalid_candidate": "Primary must be an indexed reference supplied to the model; symbol_name must be indexed in it.",
-        "planning_unknown_claim": "document_claim_ids must be exact claim IDs supplied in this batch.",
-        "planning_generic_variation": "Use a concrete variation, not a generic word such as configuration, behavior or options.",
-        "planning_generic_alternatives": "Provide at least two distinct, concrete alternatives.",
-        "planning_invalid_question": "Each question must name primary_component, its variation and one concrete alternative.",
-        "planning_duplicate_candidate": "Combine proposals about the same component and variation instead of repeating them.",
+        "planning_size_limit": "Select at most budget.max_investigations candidate_ids.",
+        "planning_unknown_candidate": "Select unique candidate_ids from the menu only.",
+        "planning_invalid_question": "Each selected candidate needs a question naming its primary component.",
     }
-    candidates: list[ParametrizationProposal] = Field(default_factory=list, max_length=32)
-    exclusions: list[ParametrizationExclusion] = Field(default_factory=list, max_length=24)
-    limitations: list[str] = Field(default_factory=list, max_length=20)
-
-
-class ConsolidationProposal(ParametrizationProposal):
-    """A final consolidated capability derived from one or more proposals."""
-
-    source_proposal_ids: list[str] = Field(min_length=1, max_length=32)
-
-
-class ParametrizationConsolidationResponse(Contract):
-    """Final semantic consolidation of existing provisional candidates by an LLM."""
-
-    validation_feedback: ClassVar[dict[str, str]] = {
-        "consolidation_invalid_candidate": "Return only candidates based on the supplied provisional proposals; do not invent new variation points.",
-        "consolidation_unknown_claim": "document_claim_ids must be exact claim IDs supplied to the consolidator.",
-        "consolidation_unverified_status": "Use only the proposal IDs supplied by the host.",
-    }
-    candidates: list[ConsolidationProposal] = Field(default_factory=list, max_length=32)
-    exclusions: list[ParametrizationExclusion] = Field(default_factory=list, max_length=24)
-    limitations: list[str] = Field(default_factory=list, max_length=20)
+    candidate_ids: list[str] = Field(max_length=32)
+    questions: dict[str, str] = Field(default_factory=dict)
 
 
 class ParametrizationToolQuery(Contract):
@@ -132,7 +83,9 @@ class ParametrizationClaimAssessment(Contract):
     rationale: str = Field(min_length=1, max_length=4000)
     code_evidence_ids: list[str] = Field(default_factory=list, max_length=80)
     scope_paths: list[str] = Field(default_factory=list, max_length=40)
+    exceptions_examined: list[str] = Field(default_factory=list, max_length=20)
     limitations: list[str] = Field(default_factory=list, max_length=20)
+    assessment_origin: Literal["investigator", "host_pending", "unknown"] = "unknown"
 
 
 class ParametrizationEvidenceAssessment(Contract):
@@ -143,6 +96,10 @@ class ParametrizationEvidenceAssessment(Contract):
     rationale: str = Field(min_length=1, max_length=4000)
     evidence_ids: list[str] = Field(default_factory=list, max_length=80)
     scope_paths: list[str] = Field(default_factory=list, max_length=40)
+    exclusion_basis: Literal["not_code_dependent", "code_verified"] | None = Field(
+        default=None,
+        description="Required for not_applicable: code_verified needs cited source; not_code_dependent is only valid when the exclusion does not depend on inspecting code.",
+    )
 
 
 class ParametrizationInvestigationCandidate(CandidateFinding):
@@ -169,8 +126,11 @@ class ParametrizationInvestigationResult(Contract):
     evidence_ids: list[str] = Field(default_factory=list, max_length=80)
     candidates: list[ParametrizationInvestigationCandidate] = Field(default_factory=list, max_length=8)
     limitations: list[str] = Field(default_factory=list, max_length=40)
-    claim_assessments: list[ParametrizationClaimAssessment] = Field(default_factory=list)
+    claim_assessments: list[ParametrizationClaimAssessment] = Field(default_factory=list,
+        description="Independent local assessments only; supported never establishes repository-wide compliance. Missing assessments are retained as inconclusive by the host.")
     evidence_assessments: list[ParametrizationEvidenceAssessment] = Field(default_factory=list)
+    document_claim_delivery: dict[str, Literal["delivered", "unavailable", "not_delivered"]] = Field(default_factory=dict,
+        description="Host-recorded prompt delivery, not applicability or evaluation. Absent entries in legacy results mean unknown.")
     selection_phase: SelectionPhase = "unknown"
     selection_sites: list[str] = Field(default_factory=list, max_length=20)
     consumer_impact: Literal["not_required", "required", "not_verified"] = "not_verified"
@@ -178,8 +138,12 @@ class ParametrizationInvestigationResult(Contract):
 
 class ParametrizationInvestigationTurn(Contract):
     validation_feedback: ClassVar[dict[str, str]] = {
+        "investigation_validation": "Correct every listed field/index and regenerate the complete investigation conclusion. Preserve valid evidence IDs and unchanged fields.",
         "evidence_requirements_unresolved": "Assess every evidence requirement exactly once by requirement_index. Definitive closures require a source-backed resolved or source-justified not_applicable assessment; otherwise request tools or close inconclusive.",
-        "evidence_requirement_source_required": "Each resolved/not_applicable evidence assessment needs source evidence and scope_paths that are cited, delivered, and included in conclusion.components. Explain how those sources answer the obligation.",
+        "evidence_requirement_source_required": "Each resolved evidence assessment needs source evidence and scope_paths that are cited, delivered, and included in conclusion.components. code_verified not_applicable assessments need the same source traceability.",
+        "evidence_requirement_exclusion_basis_required": "Set exclusion_basis for not_applicable: code_verified when source establishes the exclusion, not_code_dependent only when the exclusion does not require code inspection.",
+        "evidence_requirement_explanation_required": "not_applicable needs a concrete rationale naming what makes the obligation inapplicable; a restatement or empty explanation is rejected.",
+        "evidence_requirement_not_applicable_unjustified": "This obligation is code-dependent; not_code_dependent cannot exclude it. Cite inspected source or close inconclusive.",
         "no_finding_requires_reachable_scope": "A no_finding conclusion needs source evidence from an adjacent implementation or consumer when the plan supplied related locations; inspect them or close inconclusive.",
         "disabled_tool": "Use only enabled tools.",
         "tool_arguments_invalid": "Tool arguments are invalid: include every required argument for the chosen tool with the correct type; consult the tool schema in the supplied context.",
@@ -204,7 +168,8 @@ class ParametrizationInvestigationTurn(Contract):
         "claim_evidence_not_specific": "Source evidence for a claim must come from the candidate variation frontier: the primary component or a supplied related location.",
         "candidate_document_claim_unassessed": "Referenced claims must all be assessed.",
         "candidate_document_claim_mismatch": "Candidate claims need matching claim assessments and relevant source evidence.",
-        "finding_requires_variation_scope": "A parametrization finding needs source evidence from an adjacent implementation or consumer and selected alternatives verified in the inspected scope.",
+        "finding_requires_variation_scope": "A parametrization finding needs inspected source for the primary component or for a cited implementation/consumer, plus selected alternatives verified in that scope.",
+        "uninspected_variation_scope": "Every implementation or consumer named by a finding must be delivered as inspected source; inspect it or remove it from the finding.",
         "selection_phase_unresolved": "Definitive closure must classify the current selection phase and cite the inspected source path(s) that establish it.",
         "selection_phase_uninspected": "Every selection_site must be delivered as source and listed in conclusion.components.",
         "consumer_impact_unresolved": "A parametrization finding must state whether current consumer code must change to select an alternative.",

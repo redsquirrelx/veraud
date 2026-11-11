@@ -4,22 +4,17 @@ import sys
 from pathlib import Path
 
 from langgraph.graph import END, START, StateGraph
+from pydantic_core import PydanticCustomError
 
+from server.contracts.audit import Hypothesis
 from server.runtimes.investigation.agent import InvestigationExecution
 from server.runtimes.invocation_reporting import phase_node
 
 from .investigation import ParametrizationInvestigation
-from .planning import (
-    _claim_batch_context,
-    _consolidation_context,
-    _memory_from_responses,
-    _structural_provisional,
-    build_parametrization_plan,
-    build_parametrization_planning,
-)
+from .planning import build_parametrization_plan
 from .schemas import (
-    ParametrizationConsolidationResponse,
-    ParametrizationPlanningResponse,
+    ParametrizationPlan,
+    ParametrizationPlanSelection,
     ReuseParametrizationDocDrivenResult,
 )
 from .state import ParametrizationState
@@ -29,7 +24,7 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
     trace_name = "reuse-parametrization-doc-driven"
     tool_prefix = "reuse-parametrization"
     prompt_directory = Path(__file__).parent / "prompts"
-    plan_schema = None
+    plan_schema = ParametrizationPlan
     result_schema = ReuseParametrizationDocDrivenResult
 
     def _check_planning(self):
@@ -66,15 +61,27 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
     def model_context(self, node, state):
         if node == "plan_investigation":
             return self._planning_context
-        if node == "consolidate":
-            return self._consolidation_context
         if node == "investigate":
             return self._investigation_context(state)
         return super().model_context(node, state)
 
     def prepare_structured_result(self, node, result, state):
+        if node == "plan_investigation":
+            allowed = {item.id for item in self._menu}
+            if len(result.candidate_ids) > self.config.max_planned_investigations:
+                raise PydanticCustomError("planning_size_limit", "Respect budget.max_investigations.")
+            if len(set(result.candidate_ids)) != len(result.candidate_ids) or set(result.candidate_ids) - allowed:
+                raise PydanticCustomError("planning_unknown_candidate", "Select unique candidate_ids from the menu only.")
+            by_id = {item.id: item for item in self._menu}
+            if set(result.questions) - set(result.candidate_ids):
+                raise PydanticCustomError("planning_unknown_candidate", "Questions must reference selected candidate_ids only.")
+            for key, question in result.questions.items():
+                primary = by_id[key].primary_component
+                if not question or not question.strip() or primary.lower() not in question.lower():
+                    raise PydanticCustomError("planning_invalid_question", "Each question must name its primary component.")
+            return result
         if node == "investigate":
-            result = self._validate_turn(result, state)
+            return self._validate_turn(result, state)
         return super().prepare_structured_result(node, result, state)
 
     async def provider_request(self, model, messages, overhead, node, schema, reserved_calls):
@@ -93,109 +100,85 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
             print(f"[DEBUG_LLM_RAW {node}] {getattr(raw, 'content', raw)}", file=sys.stderr)
         return response
 
+    # --- plan -------------------------------------------------------------
+
     async def plan_investigation(self, state):
         limitations_note = (
-            "Claim batches were sent to semantic discovery; no implementation, finding or hypothesis of viability is established."
-            " The model proposes investigation questions only; host grounds and merges those proposals."
-        )
+            "Model selection of deterministic candidates; no violations or findings are established. "
+            "The model only ranks existing menu IDs; empty slots are not refilled automatically.")
+        menu_limit = min(32, max(self.config.max_planned_investigations * 2, self.config.max_planned_investigations))
         try:
-            batch_limit = max(8_000, int(self.config.max_context_characters * 0.6))
-            planning = build_parametrization_planning(
-                self.tools.accessible_snapshot,
-                self.request,
-                check=self._check_planning,
-                max_investigations=self.config.max_planned_investigations,
-                batch_limit=batch_limit,
-            )
+            menu_plan = build_parametrization_plan(self.tools.accessible_snapshot, self.request,
+                check=self._check_planning, max_investigations=menu_limit,
+                max_documentary_claims_per_candidate=self.config.max_documentary_claims_per_candidate)
         except TimeoutError:
             self.stop = "time_limit"
-            planning = {
-                "snapshot_hash": self.tools.context.input.snapshot_hash,
-                "claims": [],
-                "batches": [],
-                "consumers_by_path": {},
-                "symbols_by_file": {},
-                "files": {},
-                "code_references": [],
-                "max_investigations": self.config.max_planned_investigations,
-                "limitations": [limitations_note, "Planning time allowance exhausted."],
-                "objective": self.request.objective,
-            }
-
-        responses: list[ParametrizationPlanningResponse | None] = []
-        for index, batch in enumerate(planning["batches"]):
-            prior_candidates = _memory_from_responses(planning, responses) if responses else []
-            self._planning_context = _claim_batch_context(
-                planning, self.request, batch, index, len(planning["batches"]), prior_candidates)
-            print(
-                f"[DEBUG_PLAN_BATCH] batch={index + 1}/{len(planning['batches'])} claims={len(batch)} "
-                f"references={len(self._planning_context['code_references'])} prior_candidates={len(prior_candidates)}",
-                file=sys.stderr,
-            )
-            response = await self.call("plan_investigation", state, ParametrizationPlanningResponse)
-            responses.append(response)
-            if response is None:
-                print(f"[DEBUG_PLAN_RESPONSE] batch={index + 1} unavailable", file=sys.stderr)
-            else:
-                print(
-                    f"[DEBUG_PLAN_RESPONSE] batch={index + 1} candidates={len(response.candidates)} "
-                    f"exclusions={len(response.exclusions)} limitations={len(response.limitations)}",
-                    file=sys.stderr,
-                )
-
-        if planning["batches"]:
-            print(
-                f"[DEBUG_PLAN_RESPONSES] batches={len(responses)} responses={sum(response is not None for response in responses)}",
-                file=sys.stderr,
-            )
-        provisional, _structural_failures, _structural_rejected = _structural_provisional(planning, responses)
-        print(f"[DEBUG_PLAN_PROVISIONAL] accepted={len(provisional)} rejected={_structural_rejected}", file=sys.stderr)
-        if provisional:
-            consolidation_context = _consolidation_context(planning, provisional)
-            self._consolidation_context = consolidation_context
-            consolidation_response = await self.call("consolidate", state, ParametrizationConsolidationResponse)
-        else:
-            consolidation_response = None
-        plan = build_parametrization_plan(planning, consolidation_response, provisional)
-        print(
-            f"[DEBUG_PLAN_ACCEPTED] proposed={sum(len(response.candidates) for response in responses if response is not None)} "
-            f"consolidated={len(consolidation_response.candidates) if consolidation_response is not None else 0} "
-            f"accepted={len(plan.candidates)}",
-            file=sys.stderr,
-        )
-        for item in plan.candidates:
-            print(
-                f"[DEBUG_PLAN_CANDIDATE] id={item.id} primary={item.primary_component} "
-                f"mechanism={item.variation_mechanism} basis={item.variation_basis} "
-                f"priority={item.priority} claim_ids={item.document_claim_ids}",
-                file=sys.stderr,
-            )
-
-        batch_count = len(planning["batches"])
-        candidates_proposed = sum(len(response.candidates) for response in responses if response is not None)
-        consolidation_candidates = len(consolidation_response.candidates) if consolidation_response is not None else 0
-        model_excluded = sum(len(response.exclusions) for response in responses if response is not None) + (
-            len(consolidation_response.exclusions) if consolidation_response is not None else 0)
-        if model_excluded:
-            plan = plan.model_copy(update={"limitations": list(dict.fromkeys([
-                *plan.limitations,
-                f"Exclusion diagnostics: the model rejected {model_excluded} plausible option(s).",
-            ]))})
+            menu_plan = ParametrizationPlan(objectives=[self.request.objective], components=[], hypotheses=[],
+                candidates=[], limitations=[limitations_note, "Planning time allowance exhausted."], document_claims={})
+        self._menu = list(menu_plan.candidates)
+        self._menu_claims = dict(menu_plan.document_claims)
+        print(f"[DEBUG_PLAN_MENU] candidates={len(self._menu)}", file=sys.stderr)
+        for item in self._menu:
+            mechanism = (item.variation_mechanism or "")[:100]
+            print(f"[DEBUG_PLAN_MENU_CANDIDATE] id={item.id} mechanism={mechanism} basis={item.variation_basis} "
+                f"priority={item.priority} primary={item.primary_component}",
+                file=sys.stderr)
+        self._planning_context = {
+            "objective": self.request.objective,
+            "constraints": self.request.constraints,
+            "criteria": [item.model_dump() for item in self.request.criteria],
+            "targets": self.request.targets,
+            "budget": {"max_investigations": self.config.max_planned_investigations},
+            "candidates": [{"id": item.id, "priority": item.priority,
+                "primary_component": item.primary_component,
+                "symbol_name": item.symbol_name,
+                "symbol_kind": item.symbol_kind,
+                "variation_mechanism": item.variation_mechanism,
+                "variation_basis": item.variation_basis,
+                "alternatives": item.alternatives,
+                "documented_capability": item.documented_capability,
+                "observed_indicators": item.observed_indicators,
+                "claims": [{"id": claim_id,
+                    "subject": self._menu_claims[claim_id].claim.subject,
+                    "statement": self._menu_claims[claim_id].claim.statement,
+                    "constraint": self._menu_claims[claim_id].claim.constraint,
+                    "certainty": self._menu_claims[claim_id].claim.certainty}
+                    for claim_id in item.document_claim_ids
+                    if claim_id in self._menu_claims]} for item in self._menu],
+            "limitations": menu_plan.limitations,
+        }
+        selection = await self.call("plan_investigation", state, ParametrizationPlanSelection) if self._menu else None
+        selected_ids = list(selection.candidate_ids) if selection else []
+        print(f"[DEBUG_PLAN_SELECTION] selected={selected_ids}", file=sys.stderr)
+        by_id = {item.id: item for item in self._menu}
+        final = [by_id[key].model_copy(update={
+            "question": selection.questions[key] if selection.questions.get(key)
+            else by_id[key].question})
+            if selection else by_id[key] for key in selection.candidate_ids] if selection is not None else []
+        limitations = list(menu_plan.limitations)
+        if selection is None and self._menu:
+            limitations.append("Model planning did not finish; no candidate was selected.")
+        limitations.append(f"Planning menu diagnostics: shown={len(self._menu)}, selected={len(final)}, discarded={max(0, len(self._menu) - len(final))}.")
+        plan = ParametrizationPlan(
+            objectives=[self.request.objective],
+            components=list(dict.fromkeys(path for item in final for path in item.scope)),
+            hypotheses=[Hypothesis(id=item.id, question=item.question,
+                criterion_id="parametrized-reuse", priority=item.priority,
+                evidence_needed=item.evidence_needed) for item in final],
+            candidates=final, limitations=list(dict.fromkeys(limitations)),
+            document_claims={key: self._menu_claims[key] for item in final for key in item.document_claim_ids
+                if key in self._menu_claims})
+        if not final and self._menu and selection is not None:
+            limitations.append("The model abstained from the supplied menu.")
+            plan = plan.model_copy(update={"limitations": list(dict.fromkeys(limitations))})
         diagnostics = {
             "executed_plan_stages": ["plan_investigation"],
             "documentary_context_supplied": self.request.documented_architecture is not None,
-            "claims_sent_to_model": sum(len(batch) for batch in planning["batches"]),
-            "references_sent_to_model": len(planning["code_references"]) * batch_count,
-            "claim_batches": batch_count,
-            "provisional_candidates": len(provisional),
-            "provisional_rejected": _structural_rejected,
-            "proposed": candidates_proposed,
-            "accepted": len(plan.candidates),
-            "host_rejected": _structural_rejected + max(0, consolidation_candidates - len(plan.candidates)),
-            "model_excluded": model_excluded,
-            "llm_calls": sum(response is not None for response in responses) + (
-                1 if consolidation_response is not None else 0),
-            "planning": "semantic discovery by batches, global semantic consolidation, grounded by host; no source investigation or findings",
+            "menu_shown": len(self._menu),
+            "selected": len(final),
+            "discarded": max(0, len(self._menu) - len(final)),
+            "llm_calls": 1 if selection is not None else 0,
+            "planning": "deterministic menu, model selection; grounded by host; no source investigation or findings",
         }
         reason = self.stop or "planning_completed"
         result = self.result_schema(

@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from server.runtimes.investigation.structured import safe_diagnostic
 from server.runtimes.repository.tools import TOOL_SCHEMAS, tool_signatures
 
+from .documentary import documentary_context, pending_assessments
 from .schemas import (
     ParametrizationInvestigationResult,
     ParametrizationInvestigationTurn,
@@ -28,6 +29,28 @@ def _invalid(code):
 
 def _normalized_identifier(value):
     return "".join(character for character in (value or "").casefold() if character.isalnum())
+
+
+# A not_applicable exclusion is only accepted without source when the obligation
+# itself does not ask for code inspection. These terms keep that escape hatch from
+# bypassing source-backed obligations.
+_CODE_DEPENDENT_REQUIREMENT_TERMS = (
+    "source", "implementation", "implement", "consumer", "caller", "call site",
+    "contract", "declaration", "behaviour", "behavior", "selection", "selector",
+    "wiring", "registry", "factory", "configur", "alternative", "guarantee",
+    "return", "branch", "class", "function", "method", "module", "file", "code",
+)
+
+
+def _requirement_requires_code(requirement):
+    lowered = (requirement or "").casefold()
+    return any(term in lowered for term in _CODE_DEPENDENT_REQUIREMENT_TERMS)
+
+
+def _concrete_rationale(value):
+    """Reject empty or restated exclusions without attempting semantic scoring."""
+    text = " ".join((value or "").split())
+    return len(text) >= 40 and len(text.split()) >= 6
 
 
 class ParametrizationInvestigation:
@@ -132,26 +155,26 @@ class ParametrizationInvestigation:
 
     def _documentary_context(self, state):
         task = self._current(state)
-        claims = {}
-        for key in task.document_claim_ids:
-            record = getattr(state["plan"], "document_claims", {}).get(key)
-            if record is None:
-                continue
-            dump = record.model_dump(mode="json")
-            line = f"{dump['subject']} :: {dump['statement']}".replace("\n", " ")
-            section = next(iter((dump.get("section_paths") or {}).values()), "")
-            detail = f"[{dump['category']}; certainty={dump['certainty']}]"
-            if dump["constraint"] != "unspecified":
-                detail += f"; constraint={dump['constraint']}"
-            if section:
-                detail += f"; section={section}"
-            claims[key] = f"{line} {detail}"
-        return {"document_claim_ids": list(task.document_claim_ids),
-            "variation_mechanism": task.variation_mechanism,
-            "variation_basis": task.variation_basis,
-            "documented_capability": task.documented_capability,
-            "alternatives": list(task.alternatives),
-            "claims": claims}
+        plan = state["plan"]
+        try:
+            cap = min(self.config.max_context_characters,
+                2 * self.tools.context.input.budget.max_input_tokens_per_call) // 4
+        except AttributeError:
+            cap = getattr(self.config, "max_context_characters", 100_000) // 4
+        context = getattr(getattr(self, "request", None), "documented_architecture", None)
+        try:
+            delivered = documentary_context(task, plan, self.tools.accessible_snapshot, context, cap)
+        except AttributeError:
+            delivered = {"document_claim_ids": list(task.document_claim_ids),
+                "claims": {},
+                "unavailable_claims": dict.fromkeys(task.document_claim_ids,
+                    "Documentary context unavailable: snapshot repository or commit is missing."),
+                "scope_notice": "Local portions only. Planned associations and mappings are provisional; no whole-claim conformance is established."}
+        delivered["variation_mechanism"] = task.variation_mechanism
+        delivered["variation_basis"] = task.variation_basis
+        delivered["documented_capability"] = task.documented_capability
+        delivered["alternatives"] = list(task.alternatives)
+        return delivered
 
     def _investigation_context(self, state):
         task = self._current(state)
@@ -188,6 +211,13 @@ class ParametrizationInvestigation:
         recent = results_all[-2:] if results_all else []
         references = [record for record in self.references() if record.id in self._delivered_ids(state)]
         inspected = {record.path for record in references if record.kind == "source"}
+        recent_keys = state["active_query_keys"][-2:]
+        recent_ids = {record["id"] for key in recent_keys
+            for record in state["query_cache"].get(key, {}).get("evidence", [])}
+        recoverable = [{"id": record.id, "path": record.path, "start_line": record.start_line,
+            "end_line": record.end_line, "tool": "get_source_excerpt",
+            "arguments": {"path": record.path, "start_line": record.start_line, "end_line": record.end_line}}
+            for record in references if record.kind == "source" and record.id not in recent_ids][:20]
         criteria = [
             ({"id": criterion.get("id"), "description": criterion.get("description")}
              if isinstance(criterion, dict) else
@@ -217,6 +247,7 @@ class ParametrizationInvestigation:
             "evidence": [[record.id, record.path, record.kind, record.start_line, record.end_line,
                 record.symbol_ids] if record.kind == "source" else [record.id, record.path, record.kind]
                 for record in references],
+            "recoverable_evidence": recoverable,
             "coverage_gap": self._coverage_gap(state, task, references),
             "documentary_context": self._documentary_context(state),
             "limitations": state["task_limitations"]}
@@ -256,156 +287,218 @@ class ParametrizationInvestigation:
             gaps.append("No indexed relationships of the capability owner examined.")
         return gaps
 
+    def _record_error(self, errors, code, field, index=None, message=None):
+        entry = {"code": code, "field": field,
+            "message": message or ParametrizationInvestigationTurn.validation_feedback.get(code, code)}
+        if index is not None:
+            entry["index"] = index
+        errors.append(entry)
+
+    def _raise_errors(self, errors):
+        self._last_validation_errors = list(errors)
+        codes = sorted({item["code"] for item in errors})
+        code = codes[0] if len(codes) == 1 else "investigation_validation"
+        raise PydanticCustomError(code, ParametrizationInvestigationTurn.validation_feedback.get(
+            code, "Correct the listed investigation fields."))
+
     def _validate_turn(self, turn, state):
         task = self._current(state)
+        self._last_validation_errors = []
+        errors = self._last_validation_errors
         if turn.action == "tools":
-            if not turn.queries or turn.conclusion is not None:
-                raise _invalid("tools_requires_queries_without_conclusion")
-            accepted, rejections = [], []
-            for query in turn.queries:
+            if turn.conclusion is not None:
+                self._record_error(errors, "tools_requires_queries_without_conclusion", "conclusion")
+            if not turn.queries:
+                self._record_error(errors, "tools_requires_queries_without_conclusion", "queries")
+            accepted, rejected = [], []
+            for index, query in enumerate(turn.queries):
                 try:
                     self._normalize_query(query, task)
                 except PydanticCustomError as error:
-                    rejections.append(f"{query.tool}: {error.type}")
+                    rejected.append((index, error.type, query.tool))
                 else:
                     accepted.append(query)
-            if rejections:
-                self.issues.append("Query scope/tool validation discarded invalid query (" + ", ".join(rejections[:4]) + "); kept " + str(len(accepted)) + " valid query(s).")
+            if rejected:
+                self.issues.append("Query scope/tool validation discarded invalid query (" + ", ".join(
+                    f"{index}:{tool}: {code}" for index, code, tool in rejected[:4]) + "); kept " + str(len(accepted)) + " valid query(s).")
             if not accepted:
-                if rejections:
-                    raise _invalid("invalid_queries_only")
-                raise _invalid("tools_requires_queries_without_conclusion")
-            turn = turn.model_copy(update={"queries": accepted})
-            return turn
+                for index, code, _tool in rejected:
+                    self._record_error(errors, code, "queries", index)
+                if rejected:
+                    self._record_error(errors, "invalid_queries_only", "queries")
+                self._raise_errors(errors)
+            if errors:
+                self._raise_errors(errors)
+            return turn.model_copy(update={"queries": accepted})
         result = turn.conclusion
-        if turn.queries or result is None or result.investigation_id != task.id:
-            raise _invalid("close_requires_current_investigation_conclusion")
+        if turn.queries:
+            self._record_error(errors, "close_requires_current_investigation_conclusion", "queries")
+        if result is None:
+            self._record_error(errors, "close_requires_current_investigation_conclusion", "conclusion")
+            self._raise_errors(errors)
+        if result.investigation_id != task.id:
+            self._record_error(errors, "close_requires_current_investigation_conclusion", "conclusion.investigation_id")
         if (result.status == "finding_candidate") != bool(result.candidates):
-            raise _invalid("candidate_status_mismatch")
+            self._record_error(errors, "candidate_status_mismatch", "conclusion.candidates")
         if result.status == "inconclusive" and not result.limitations:
-            raise _invalid("inconclusive_requires_limitations")
+            self._record_error(errors, "inconclusive_requires_limitations", "conclusion.limitations")
         if result.status == "no_finding" and task.primary_component not in result.components:
-            raise _invalid("conclusion_requires_inspected_primary_component")
+            self._record_error(errors, "conclusion_requires_inspected_primary_component", "conclusion.components")
         references = {record.id: record for record in self.references() if record.id in self._delivered_ids(state)}
         if result.status != "inconclusive":
             gaps = self._coverage_gap(state, task, list(references.values()))
             if gaps:
-                raise PydanticCustomError("coverage_incomplete",
-                    "Insufficient evidence for the question: " + "; ".join(gaps)
+                self._record_error(errors, "coverage_incomplete", "conclusion",
+                    message="Insufficient evidence for the question: " + "; ".join(gaps)
                     + ". Inspect the missing evidence or close inconclusive.")
         if set(result.evidence_ids) - references.keys():
-            raise _invalid("unknown_or_undelivered_evidence")
+            self._record_error(errors, "unknown_or_undelivered_evidence", "conclusion.evidence_ids")
         snapshot = self.tools.accessible_snapshot
         symbols = {symbol.id: symbol for symbol in snapshot.symbols}
         examined = set(self._examined_relationships(state))
-        for subject in [result, *result.candidates]:
+        for subject_index, subject in enumerate([result, *result.candidates]):
+            field = "conclusion" if subject_index == 0 else f"conclusion.candidates[{subject_index - 1}]"
             if set(subject.relationship_ids) - examined:
-                raise _invalid("unexamined_relationship")
+                self._record_error(errors, "unexamined_relationship", field + ".relationship_ids", subject_index)
             if set(subject.evidence_ids) - set(result.evidence_ids):
-                raise _invalid("candidate_evidence_not_in_conclusion")
+                self._record_error(errors, "candidate_evidence_not_in_conclusion", field + ".evidence_ids", subject_index)
             cited = [references[key] for key in subject.evidence_ids if key in references]
             if result.status != "inconclusive":
                 if not any(record.kind == "source" for record in cited) or not subject.components:
-                    raise _invalid("conclusion_requires_inspected_source_and_components")
-                _evidence, issues = self.evidence_issues(subject.evidence_ids, references)
+                    self._record_error(errors, "conclusion_requires_inspected_source_and_components", field + ".components", subject_index)
+                _evidence, issues = self.evidence_issues(list(subject.evidence_ids), references)
                 if issues:
-                    raise _invalid("unverified_source_provenance")
+                    self._record_error(errors, "unverified_source_provenance", field + ".evidence_ids", subject_index)
             inspected = {record.path for record in cited if record.kind == "source"}
             uninspected = sorted(set(subject.components) - inspected)
             if uninspected:
-                raise PydanticCustomError("uninspected_component",
-                    f"Components cited but not inspected: {', '.join(uninspected)}. "
+                self._record_error(errors, "uninspected_component", field + ".components", subject_index,
+                    message=f"Components cited but not inspected: {', '.join(uninspected)}. "
                     "get_source_excerpt them or remove them from components.")
-            for identifier in subject.symbol_ids:
+            for symbol_index, identifier in enumerate(subject.symbol_ids):
                 symbol = symbols.get(identifier)
                 if symbol is None or not any(record.kind == "source" and record.file_id == symbol.file_id
                         and record.start_line is not None and record.start_line <= symbol.end_line
                         and record.end_line is not None and record.end_line >= symbol.start_line
                         for record in cited):
-                    raise _invalid("uninspected_symbol")
-        self._validate_evidence_requirements(result, task, references)
-        self._validate_claims(result, task, references)
+                    self._record_error(errors, "uninspected_symbol", field + ".symbol_ids", symbol_index)
+        self._validate_evidence_requirements(result, task, references, errors)
+        self._validate_claims(result, task, references, errors)
         if result.status == "finding_candidate":
-            for candidate in result.candidates:
-                inspected = {references[identifier].path for identifier in candidate.evidence_ids
-                    if identifier in references and references[identifier].kind == "source"}
-                related = set(self._scope_paths(task)) - {task.primary_component}
-                if related and not any(path in related for path in [*candidate.implementations, *candidate.consumers]):
-                    raise _invalid("finding_requires_variation_scope")
-                if related and not (set(candidate.implementations) | set(candidate.consumers)) & inspected:
-                    raise _invalid("finding_requires_variation_scope")
-                if not candidate.selected_alternatives:
-                    raise _invalid("finding_requires_variation_scope")
-        self._validate_selection(result, references)
+            self._validate_finding_scope(result, task, references, errors)
+        self._validate_selection(result, references, errors)
+        if errors:
+            self._raise_errors(errors)
+        return turn
 
-    def _validate_selection(self, result, references):
+    def _validate_finding_scope(self, result, task, references, errors):
+        for index, candidate in enumerate(result.candidates):
+            field = f"conclusion.candidates[{index}]"
+            inspected = {references[identifier].path for identifier in candidate.evidence_ids
+                if identifier in references and references[identifier].kind == "source"}
+            primary_inspected = (task.primary_component in inspected
+                and task.primary_component in candidate.components)
+            variation_inspected = bool((set(candidate.implementations) | set(candidate.consumers)) & inspected)
+            if not (primary_inspected or variation_inspected):
+                self._record_error(errors, "finding_requires_variation_scope", field + ".components", index)
+            uninspected_scope = sorted((set(candidate.implementations) | set(candidate.consumers)) - inspected)
+            if uninspected_scope:
+                self._record_error(errors, "uninspected_variation_scope", field + ".implementations", index,
+                    message="Implementations/consumers not delivered as inspected source: "
+                    + ", ".join(uninspected_scope) + ". Inspect them or remove them from the finding.")
+            if not candidate.selected_alternatives:
+                self._record_error(errors, "finding_requires_variation_scope", field + ".selected_alternatives", index)
+
+    def structured_correction_context(self, node, state):
+        if node == "investigate" and getattr(self, "_last_validation_errors", None):
+            return {"validation_errors": self._last_validation_errors,
+                "instruction": "Correct only the rejected fields/indices; preserve valid evidence IDs and unchanged fields."}
+        return super().structured_correction_context(node, state)
+
+
+    def _validate_selection(self, result, references, errors):
         if result.status == "inconclusive":
             return
         if result.selection_phase == "unknown" or not result.selection_sites:
-            raise _invalid("selection_phase_unresolved")
+            self._record_error(errors, "selection_phase_unresolved", "conclusion.selection_phase")
         source_paths = {record.path for record in references.values() if record.kind == "source"}
         uninspected = sorted(set(result.selection_sites) - source_paths)
         if uninspected or set(result.selection_sites) - set(result.components):
-            raise _invalid("selection_phase_uninspected")
+            self._record_error(errors, "selection_phase_uninspected", "conclusion.selection_sites")
         if result.status == "finding_candidate" and result.consumer_impact == "not_verified":
-            raise _invalid("consumer_impact_unresolved")
+            self._record_error(errors, "consumer_impact_unresolved", "conclusion.consumer_impact")
 
-    def _validate_evidence_requirements(self, result, task, references):
+    def _validate_evidence_requirements(self, result, task, references, errors):
         assessments = result.evidence_assessments
         indices = [item.requirement_index for item in assessments]
         required = set(range(len(task.evidence_needed)))
         if len(indices) != len(set(indices)) or set(indices) - required:
-            raise _invalid("evidence_requirements_unresolved")
+            self._record_error(errors, "evidence_requirements_unresolved", "conclusion.evidence_assessments")
         if result.status != "inconclusive" and (
             set(indices) != required or any(item.status == "inconclusive" for item in assessments)
         ):
-            raise _invalid("evidence_requirements_unresolved")
-        for assessment in assessments:
+            self._record_error(errors, "evidence_requirements_unresolved", "conclusion.evidence_assessments")
+        for index, assessment in enumerate(assessments):
+            field = f"conclusion.evidence_assessments[{index}]"
             if set(assessment.evidence_ids) - references.keys():
-                raise _invalid("unknown_or_undelivered_evidence")
+                self._record_error(errors, "unknown_or_undelivered_evidence", field + ".evidence_ids", index)
             if assessment.status == "inconclusive":
                 continue
-            source = [references[key] for key in assessment.evidence_ids if references[key].kind == "source"]
-            if not source or not assessment.scope_paths or (
-                set(assessment.scope_paths) - {record.path for record in source}
-            ):
-                raise _invalid("evidence_requirement_source_required")
+            source = [references[key] for key in assessment.evidence_ids
+                if key in references and references[key].kind == "source"]
+            scope_valid = bool(assessment.scope_paths) and not (
+                set(assessment.scope_paths) - {record.path for record in source})
+            if assessment.status == "resolved":
+                if not source or not scope_valid:
+                    self._record_error(errors, "evidence_requirement_source_required", field, index)
+                continue
+            if not _concrete_rationale(assessment.rationale):
+                self._record_error(errors, "evidence_requirement_explanation_required", field + ".rationale", index)
+            if assessment.exclusion_basis is None:
+                self._record_error(errors, "evidence_requirement_exclusion_basis_required", field + ".exclusion_basis", index)
+                continue
+            if (assessment.exclusion_basis == "code_verified" or assessment.evidence_ids
+                    or assessment.scope_paths) and (not source or not scope_valid):
+                self._record_error(errors, "evidence_requirement_source_required", field, index)
+            requirement = (task.evidence_needed[assessment.requirement_index]
+                if assessment.requirement_index < len(task.evidence_needed) else "")
+            if assessment.exclusion_basis == "not_code_dependent" and _requirement_requires_code(requirement):
+                self._record_error(errors, "evidence_requirement_not_applicable_unjustified", field, index)
 
-    def _validate_claims(self, result, task, references):
+    def _validate_claims(self, result, task, references, errors):
         seen = set()
-        for assessment in result.claim_assessments:
+        for index, assessment in enumerate(result.claim_assessments):
+            field = f"conclusion.claim_assessments[{index}]"
             key = assessment.claim_id
             if key not in task.document_claim_ids or key in seen:
-                raise _invalid("invalid_document_claim_assessment")
+                self._record_error(errors, "invalid_document_claim_assessment", field + ".claim_id", index)
             seen.add(key)
             if result.status == "no_finding" and assessment.status == "inconclusive":
-                raise PydanticCustomError("documentary_claims_unresolved",
-                    "no_finding cannot be used with an inconclusive claim assessment; inspect source or close inconclusive.")
+                self._record_error(errors, "documentary_claims_unresolved", field, index)
             if result.status == "no_finding" and assessment.status == "contradicted":
-                raise _invalid("no_finding_with_contradiction")
+                self._record_error(errors, "no_finding_with_contradiction", field, index)
             if set(assessment.code_evidence_ids) - references.keys():
-                raise _invalid("unknown_or_undelivered_evidence")
+                self._record_error(errors, "unknown_or_undelivered_evidence", field + ".code_evidence_ids", index)
             if set(assessment.code_evidence_ids) - set(result.evidence_ids):
-                raise _invalid("claim_evidence_not_in_conclusion")
+                self._record_error(errors, "claim_evidence_not_in_conclusion", field + ".code_evidence_ids", index)
             cited = [references[identifier] for identifier in assessment.code_evidence_ids if identifier in references]
             if assessment.status in {"supported", "contradicted"} or (
                 assessment.status == "not_applicable" and assessment.code_evidence_ids
             ):
                 if not any(record.kind == "source" for record in cited) or not assessment.scope_paths:
-                    raise _invalid("claim_assessment_requires_source")
+                    self._record_error(errors, "claim_assessment_requires_source", field, index)
                 inspected_paths = {record.path for record in cited if record.kind == "source"}
                 missing_scope = sorted(set(assessment.scope_paths) - inspected_paths)
                 if missing_scope:
-                    raise PydanticCustomError("claim_assessment_requires_uninspected_source",
-                        "scope_paths not delivered as source in this investigation: "
-                        + ", ".join(missing_scope) + ". get_source_excerpt them or remove them from scope_paths.")
-        for candidate in result.candidates:
+                    self._record_error(errors, "claim_assessment_requires_uninspected_source", field + ".scope_paths", index)
+        for index, candidate in enumerate(result.candidates):
+            field = f"conclusion.candidates[{index}]"
             if any(key not in seen for key in candidate.document_claim_ids):
-                raise _invalid("candidate_document_claim_unassessed")
+                self._record_error(errors, "candidate_document_claim_unassessed", field + ".document_claim_ids", index)
             if candidate.document_claim_ids and not candidate.evidence_ids:
-                raise _invalid("candidate_document_claim_mismatch")
+                self._record_error(errors, "candidate_document_claim_mismatch", field + ".evidence_ids", index)
         if result.status == "no_finding" and task.document_claim_ids and seen != set(task.document_claim_ids):
-            raise _invalid("documentary_no_finding_requires_resolution")
+            self._record_error(errors, "documentary_no_finding_requires_resolution", "conclusion.claim_assessments")
 
     def _investigation_diagnostics(self, diagnostics, termination_reason):
         updated = dict(diagnostics)
@@ -419,12 +512,22 @@ class ParametrizationInvestigation:
             "source_inspection": "bounded delivered repository evidence only",
         }
         updated["planning"] = (
-            "semantic discovery by batches, global semantic consolidation, then bounded reusability investigation; "
+            "deterministic menu, model selection; bounded reusability investigation; "
             "no synthesis, finalization or findings are produced"
         )
         return updated
 
     def _close_investigation(self, state, conclusion):
+        task = self._current(state)
+        documentary = self._documentary_context(state)
+        conclusion = conclusion.model_copy(update={"document_claim_delivery": {
+            key: "unavailable" if key in documentary["unavailable_claims"] else
+                "delivered" if key in documentary["claims"] else "not_delivered"
+            for key in task.document_claim_ids}})
+        conclusion = conclusion.model_copy(update={"claim_assessments": pending_assessments(
+            task, conclusion.claim_assessments, documentary["unavailable_claims"])})
+        conclusion = conclusion.model_copy(update={"limitations": list(dict.fromkeys([*conclusion.limitations,
+            *(f"Document claim {key}: {reason}" for key, reason in documentary["unavailable_claims"].items())]))[:40]})
         results = [*state["investigation_results"], conclusion]
         status_map = {"finding_candidate": "confirmed", "no_finding": "discarded", "inconclusive": "inconclusive"}
         hypotheses = []
@@ -457,6 +560,42 @@ class ParametrizationInvestigation:
             "limitations": limitations, "model_calls": self.calls,
             "tool_calls": self.tools.budget_usage.tool_calls,
             "iterations": state["iterations"] + 1, "termination_reason": reason}
+
+    def _coverage_recovery_queries(self, state, delivered):
+        if "get_source_excerpt" not in self.config.tools:
+            return []
+        task = self._current(state)
+        queries = []
+        source = [record for record in delivered if record.kind == "source"]
+        inspected_paths = {record.path for record in source}
+        target, _spans = self._contract_spans(task)
+        delivered_primary = [record for record in source if record.file_id == (target.id if target else None)]
+        covered_end = max((record.end_line or 0) for record in delivered_primary) if delivered_primary else 0
+        if target and target.line_count and covered_end < target.line_count:
+            queries.append(ParametrizationToolQuery(tool="get_source_excerpt",
+                arguments={"path": task.primary_component, "start_line": covered_end + 1,
+                    "end_line": min(target.line_count, covered_end + 40)},
+                reason="Cover the declaring frontier after the delivered portion."))
+        uninspected = next((path for path in task.initial_locations[1:] if path not in inspected_paths), None)
+        if uninspected:
+            queries.append(ParametrizationToolQuery(tool="get_source_excerpt",
+                arguments={"path": uninspected, "start_line": 1, "end_line": 60},
+                reason="Inspect a capability selection site before concluding."))
+        return queries
+
+    def _resolve_evidence_query(self, tool, arguments):
+        """Model-facing get_evidence re-reads delivered source instead of snapshot metadata."""
+        if tool != "get_evidence" or "get_source_excerpt" not in self.config.tools:
+            return tool, arguments
+        evidence_id = arguments.get("evidence_id")
+        record = next((item for item in self.tools.retrieved_evidence if item.id == evidence_id), None)
+        if record is None or record.kind != "source" or not record.start_line or not record.end_line:
+            return tool, arguments
+        source = next((item for item in self.tools.accessible_snapshot.files if item.id == record.file_id), None)
+        if source is None:
+            return tool, arguments
+        return "get_source_excerpt", {"path": source.path, "start_line": record.start_line,
+            "end_line": record.end_line}
 
     async def investigate(self, state):
         tasks = state["plan"].candidates
@@ -502,24 +641,7 @@ class ParametrizationInvestigation:
             key=lambda record: record.kind != "source")[:80]
         gaps = self._coverage_gap(state, self._current(state), delivered)
         if gaps and not state.get("coverage_recovery_done") and self.remaining_seconds() > 0:
-            task = self._current(state)
-            queries = []
-            source = [record for record in delivered if record.kind == "source"]
-            inspected_paths = {record.path for record in source}
-            target, _spans = self._contract_spans(task)
-            delivered_primary = [record for record in source if record.file_id == (target.id if target else None)]
-            covered_end = max((record.end_line or 0) for record in delivered_primary) if delivered_primary else 0
-            if target and target.line_count and covered_end < target.line_count and task.primary_component in self.config.tools:
-                queries.append(ParametrizationToolQuery(tool="get_source_excerpt",
-                    arguments={"path": task.primary_component, "start_line": covered_end + 1,
-                        "end_line": min(target.line_count, covered_end + 40)},
-                    reason="Cover the declaring frontier after the delivered portion."))
-            uninspected = next((path for path in task.initial_locations[1:]
-                if path not in inspected_paths and path in self.config.tools), None)
-            if uninspected:
-                queries.append(ParametrizationToolQuery(tool="get_source_excerpt",
-                    arguments={"path": uninspected, "start_line": 1, "end_line": 60},
-                    reason="Inspect a capability selection site before concluding."))
+            queries = self._coverage_recovery_queries(state, delivered)
             if queries:
                 return {"pending_queries": queries, "coverage_recovery_done": True,
                     "initial_evidence_loaded": True,
@@ -552,6 +674,7 @@ class ParametrizationInvestigation:
             failures = self._tool_failures = {}
         for query in state["pending_queries"]:
             args, key = self._normalize_query(query, task)
+            tool, tool_args = self._resolve_evidence_query(query.tool, args)
             if failures.get(key, 0) >= 2:
                 limitations.append("Tool query failed: retries_exhausted")
                 continue
@@ -570,9 +693,9 @@ class ParametrizationInvestigation:
                 continue
             call_id = "reuse-parametrization-investigate-" + uuid4().hex
             try:
-                response = self.tools.execute(query.tool, args, tool_call_id=call_id)
+                response = self.tools.execute(tool, tool_args, tool_call_id=call_id)
             except Exception as error:  # noqa: BLE001 - tool boundary
-                view = {"status": "error", "tool_name": query.tool, "tool_call_id": call_id,
+                view = {"status": "error", "tool_name": tool, "tool_call_id": call_id,
                     "error": {"code": "tool_execution_error", "message": safe_diagnostic(error)},
                     "evidence": []}
             else:

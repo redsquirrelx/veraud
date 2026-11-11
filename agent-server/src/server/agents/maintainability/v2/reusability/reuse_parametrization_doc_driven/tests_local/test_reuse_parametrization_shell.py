@@ -2,12 +2,17 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 
+import pytest
 from langchain_core.messages import AIMessage
+from pydantic_core import PydanticCustomError
 
 from config.agents.catalog import describe_agent_config
 from server.agents.architecture_context.schemas import (
     ArchitectureContextResult,
+    KnowledgeClaim,
+    KnowledgeEvidence,
 )
 from server.agents.maintainability.v2.reusability.coordinator.registry import (
     registered_investigators,
@@ -22,12 +27,10 @@ from server.agents.maintainability.v2.reusability.reuse_parametrization_doc_driv
     build_parametrization_plan,
 )
 from server.agents.maintainability.v2.reusability.reuse_parametrization_doc_driven.schemas import (
-    ConsolidationProposal,
     ParametrizationCandidate,
-    ParametrizationConsolidationResponse,
+    ParametrizationEvidenceAssessment,
     ParametrizationInvestigationTurn,
     ParametrizationPlan,
-    ParametrizationProposal,
     ParametrizationToolQuery,
 )
 from server.contracts.audit import Hypothesis
@@ -52,30 +55,15 @@ class GenerationModel:
     def bind_tools(self, _tools):
         return self
 
-    def _proposal(self, claims, subject_fragment, path, symbol_name, variation_mechanism, alternatives, claim_ids):
-        matching = next(
-            claim for claim in claims if subject_fragment.casefold() in claim["subject"].casefold()
-        )
-        return {
-            "primary_component": path,
-            "symbol_name": symbol_name,
-            "variation_mechanism": variation_mechanism,
-            "variation_basis": "explicit",
-            "alternatives": alternatives,
-            "documented_capability": matching["statement"],
-            "question": (
-                f"Can {path} use {variation_mechanism} to choose between {', '.join(alternatives)} "
-                "without modifying its implementation?"
-            ),
-            "evidence_needed": [
-                f"Inspect `{path}` to determine how `{symbol_name or path}` selects the documented alternatives.",
-                (
-                    f"Inspect callers of `{symbol_name or path}` in `{path}` to determine how they choose between "
-                    f"{alternatives[0]} and {alternatives[1]}."
-                ),
-            ],
-            "document_claim_ids": claim_ids,
-        }
+    def _selection(self, payload):
+        questions = {}
+        for item in payload["candidates"]:
+            primary = item["primary_component"]
+            questions[item["id"]] = (
+                f"Can callers of {primary} select the documented capability through its mechanism "
+                f"without modifying {primary}?"
+            )
+        return {"candidate_ids": [item["id"] for item in payload["candidates"]], "questions": questions}
 
     @staticmethod
     def _investigation_refs(payload):
@@ -167,52 +155,11 @@ class GenerationModel:
             response = self._investigation_response(payload)
             return AIMessage(content=json.dumps(response),
                 usage_metadata={"input_tokens": 40, "output_tokens": 30, "total_tokens": 70})
-        if "provisional_candidates" in payload:
-            claims = payload["claims"]
-            fixed_ids = [claim["id"] for claim in claims
-                if "ESLint" in claim.get("subject", "") or "DomainError" in claim.get("subject", "")]
-            response = {
-                "candidates": payload["provisional_candidates"],
-                "exclusions": [{"claim_ids": fixed_ids, "reason": "No selectable variation or alternatives are documented."}] if fixed_ids else [],
-                "limitations": [],
-            }
+        if "candidates" in payload:
+            response = self._selection(payload)
             return AIMessage(content=json.dumps(response),
                 usage_metadata={"input_tokens": 40, "output_tokens": 30, "total_tokens": 70})
-        claims = payload["claims"]
-        references = payload["code_references"]
-        schema_id = next((claim["id"] for claim in claims if "Zod" in claim["statement"]), None)
-        auth_id = next((claim["id"] for claim in claims if "requireAuth" in claim["statement"]), None)
-        success_id = next((claim["id"] for claim in claims if "successStatus" in claim["statement"]), None)
-        provider_id = next((claim["id"] for claim in claims if "adapters for LlmProvider" in claim["statement"]), None)
-        fixed_ids = [claim["id"] for claim in claims if "ESLint" in claim["subject"] or "DomainError" in claim["subject"]]
-        code_by_path = {item["path"] for item in references}
-
-        proposals = []
-        if "handler.py" in code_by_path:
-            if schema_id is not None:
-                proposals.append(self._proposal(
-                    claims, "create_api_handler", "handler.py", "create_api_handler",
-                    "schema validation", ["validation function", "Zod schema"], [schema_id]))
-            if auth_id is not None:
-                proposals.append(self._proposal(
-                    claims, "create_api_handler", "handler.py", "create_api_handler",
-                    "requireAuth and permission", ["requireAuth boolean", "permission list"], [auth_id]))
-            if success_id is not None:
-                proposals.append(self._proposal(
-                    claims, "RouteHandlerConfig", "handler.py", "RouteHandlerConfig",
-                    "successStatus", ["HTTP 200", "HTTP 201"], [success_id]))
-        if "llm.py" in code_by_path and provider_id is not None:
-            proposals.append(self._proposal(
-                claims, "LlmProvider", "llm.py", "LlmProvider",
-                "provider adapter selection", ["MockLlmProvider", "ProviderProvider"], [provider_id]))
-
-        response = {
-            "candidates": proposals,
-            "exclusions": [{"claim_ids": fixed_ids, "reason": "No selectable variation or alternatives are documented."}] if fixed_ids else [],
-            "limitations": [],
-        }
-        return AIMessage(content=json.dumps(response),
-            usage_metadata={"input_tokens": 40, "output_tokens": 30, "total_tokens": 70})
+        raise AssertionError("Unexpected planning payload: " + json.dumps(payload)[:200])
 
 
 class UnknownSelectionModel(GenerationModel):
@@ -253,9 +200,9 @@ def success_status_claim(**changes):
 def provider_claim(**changes):
     return variation_claim(
         subject="LlmProvider",
-        statement="The adapters for LlmProvider are MockLlmProvider or a configurable ProviderProvider chosen by configuration.",
-        related_subjects=["MockLlmProvider", "ProviderProvider"],
-        evidence=[{"section_id": "section-1", "start_line": 12, "end_line": 13, "quote": "MockLlmProvider"}],
+        statement="The adapters for LlmProvider are EchoLlmProvider or a configurable ProviderProvider chosen by configuration.",
+        related_subjects=["EchoLlmProvider", "ProviderProvider"],
+        evidence=[{"section_id": "section-1", "start_line": 12, "end_line": 13, "quote": "EchoLlmProvider"}],
     ) | changes
 
 
@@ -340,6 +287,7 @@ def toolset(root):
 def test_configuration_and_reusability_catalog_registration():
     assert describe_agent_config("reuse_parametrization_doc_driven")["agent_id"] == "reuse_parametrization_doc_driven"
     assert ReuseParametrizationConfig().max_planned_investigations == 16
+    assert ReuseParametrizationConfig().max_documentary_claims_per_candidate == 6
     spec = registered_investigators()["reuse_parametrization_doc_driven"]
 
     assert spec.agent_class is ReuseParametrizationDocDrivenAgent
@@ -371,14 +319,12 @@ def test_debug_output_reports_menu_raw_response_and_selection(tmp_path, capsys):
             toolset(tmp_path), request))
 
     captured = capsys.readouterr().err
-    assert result.model_calls == 3
-    assert "[DEBUG_PLAN_BATCH]" in captured
-    assert "batch=1/1" in captured
-    assert "[DEBUG_PLAN_RESPONSE]" in captured
-    assert "candidates=1" in captured
-    assert "mechanism=schema validation" in captured
+    assert result.model_calls == 2
+    assert "[DEBUG_PLAN_MENU]" in captured
+    assert "[DEBUG_PLAN_MENU_CANDIDATE]" in captured
+    assert "[DEBUG_PLAN_SELECTION]" in captured
     assert "[DEBUG_LLM_RAW plan_investigation]" in captured
-    assert '"candidates"' in captured
+    assert '"candidate_ids"' in captured
     assert "[DEBUG_INVESTIGATE_CONTEXT]" in captured
     assert result.status == "investigation_completed"
     assert len(result.investigation_results) == len(result.plan.candidates)
@@ -500,10 +446,11 @@ def test_documentary_success_status_and_provider_selection_are_investigated(tmp_
         model, ReuseParametrizationConfig(max_model_calls=4)).run(
             toolset(tmp_path), request))
 
-    assert {item.variation_mechanism for item in result.plan.candidates} == {
-        "successStatus",
-        "provider adapter selection",
+    assert {item.primary_component for item in result.plan.candidates} == {
+        "handler.py",
+        "llm.py",
     }
+    assert result.model_calls == 3
 
 
 def test_static_claims_are_excluded_without_relaxing_valid_variants(tmp_path):
@@ -522,139 +469,52 @@ def test_static_claims_are_excluded_without_relaxing_valid_variants(tmp_path):
         GenerationModel(), ReuseParametrizationConfig(max_model_calls=4)).run(
             toolset(tmp_path), request))
 
-    assert {item.variation_mechanism for item in result.plan.candidates} == {
-        "schema validation",
-        "requireAuth and permission",
-    }
-    assert result.model_calls == 4
-    assert any("exclusion" in limitation.casefold() for limitation in result.limitations)
-
-
-def semantic_planning(claims):
-    from types import SimpleNamespace
-
-    claim_records = []
-    for index, statement in enumerate(claims):
-        claim_records.append({
-            "id": f"index-sha:{index}",
-            "category": "interfaces_and_contracts",
-            "subject": "handler",
-            "statement": statement,
-            "related_subjects": ["schema", "validation"],
-            "certainty": "explicit",
-            "constraint": "unspecified",
-            "section_ids": ["section-1"],
-            "evidence": [{"section_id": "section-1", "start_line": index + 2, "end_line": index + 4, "quote": statement}],
-            "document_index": None,
-            "section_paths": {"section-1": "docs/architecture.md"},
-        })
-    planning = {
-        "objective": "Test objective",
-        "snapshot_hash": "snapshot",
-        "claims": claim_records,
-        "code_references": [{
-            "kind": "file",
-            "path": "handler.py",
-            "file_id": "file:handler",
-            "module_name": "handler",
-            "symbol_id": None,
-            "symbol_name": None,
-            "symbol_kind": None,
-        }],
-        "consumers_by_path": {"handler.py": []},
-        "symbols_by_file": {},
-        "files": {"file:handler": SimpleNamespace(id="file:handler", path="handler.py")},
-        "max_investigations": 2,
-        "limitations": [],
-    }
-    return planning
-
-
-def build_schema_proposal(claim_ids, mechanism):
-    return ParametrizationProposal(
-        primary_component="handler.py",
-        variation_mechanism=mechanism,
-        variation_basis="explicit",
-        alternatives=["validation function", "Zod schema"],
-        documented_capability="handler accepts either a validation function or a Zod schema through schema.",
-        question="Can handler.py use schema validation to choose between validation function and Zod schema?",
-        evidence_needed=[
-            "Inspect `handler.py` to verify how the schema parameter accepts validation functions and Zod schemas.",
-            "Inspect at least one caller of `handler` in `consumer_0.py` to verify the selected schema mode.",
-        ],
-        document_claim_ids=claim_ids)
-
-
-def test_semantically_equivalent_batches_are_consolidated():
-    planning = semantic_planning([
-        "handler accepts either a validation function or a Zod schema through schema.",
-        "handler supports both contracted validation functions and Zod schemas.",
-    ])
-    response = ParametrizationConsolidationResponse(candidates=[ConsolidationProposal(
-        source_proposal_ids=["proposal-1"],
-        **build_schema_proposal(["index-sha:0", "index-sha:1"], "schema validation").model_dump())])
-
-    plan = build_parametrization_plan(planning, response)
-
-    assert len(plan.candidates) == 1
-    assert set(plan.candidates[0].document_claim_ids) == {"index-sha:0", "index-sha:1"}
+    assert [item.primary_component for item in result.plan.candidates] == ["handler.py"]
+    assert result.model_calls == 2
+    candidate = result.plan.candidates[0]
+    assert set(candidate.document_claim_ids) == {"claim-0", "claim-1"}
+    assert set(result.plan.document_claims) == {"claim-0", "claim-1"}
+    assert "ESLint" not in json.dumps([record.claim.subject for record in result.plan.document_claims.values()])
+    assert "DomainError" not in json.dumps([record.claim.subject for record in result.plan.document_claims.values()])
 
 
 def test_initial_locations_are_bounded_to_ten(tmp_path):
     from types import SimpleNamespace
 
-    from server.agents.maintainability.v2.reusability.reuse_parametrization_doc_driven.planning import (
-        build_parametrization_plan,
+    def file(identifier, path):
+        return SimpleNamespace(id=identifier, path=path, module_name=None, project_id="p", language="python", size_bytes=1, status="processed")
+
+    files = [file("f0", "handler.py"), *(file(f"c{index}", f"consumer_{index}.py") for index in range(18))]
+    relationships = [SimpleNamespace(source_id=f"c{index}", target_id="f0", resolution="internal") for index in range(18)]
+    claim = KnowledgeClaim(
+        category="interfaces_and_contracts",
+        subject="handler",
+        statement="handler supports HTTP 200 and HTTP 201.",
+        related_subjects=["successStatus"],
+        certainty="explicit",
+        section_ids=["section-1"],
+        reasoning="Extracted documentary obligation.",
+        constraint="unspecified",
+        evidence=[KnowledgeEvidence(section_id="section-1", start_line=2, end_line=4, quote="successStatus")])
+    document = SimpleNamespace(
+        knowledge=[claim],
+        section_paths={"section-1": "docs/architecture.md"},
+        document_index=None,
+        consulted_documents=[],
     )
+    files_by_path = {item.path: item for item in files}
+    module_name = files_by_path["handler.py"]
+    module_name.module_name = "handler"
+    snapshot = SimpleNamespace(
+        files=files, symbols=[], relationships=relationships, testing=[],
+        coverage=SimpleNamespace(unsupported_source_languages=[], issues=[]),
+        repository=SimpleNamespace(snapshot_hash="abc"),
+        projects=[],
+    )
+    request = ReuseParametrizationDocDrivenRequest().model_copy(update={"documented_architecture": document})
 
-    file_record = SimpleNamespace(id="file:handler", path="handler.py")
-    claim = {
-        "id": "index-sha:0",
-        "category": "interfaces_and_contracts",
-        "subject": "handler",
-        "statement": "handler supports HTTP 200 and HTTP 201.",
-        "related_subjects": ["successStatus"],
-        "certainty": "explicit",
-        "constraint": "unspecified",
-        "section_ids": ["section-1"],
-        "evidence": [{"section_id": "section-1", "start_line": 2, "end_line": 4, "quote": "successStatus"}],
-        "document_index": None,
-        "section_paths": {"section-1": "docs/architecture.md"},
-    }
-    planning = {
-        "objective": "Test objective",
-        "snapshot_hash": "snapshot",
-        "claims": [claim],
-        "code_references": [{
-            "kind": "file",
-            "path": "handler.py",
-            "file_id": "file:handler",
-            "module_name": "handler",
-            "symbol_id": None,
-            "symbol_name": None,
-            "symbol_kind": None,
-        }],
-        "consumers_by_path": {"handler.py": [f"consumer_{index}.py" for index in range(18)]},
-        "symbols_by_file": {},
-        "files": {"file:handler": file_record},
-        "max_investigations": 1,
-        "limitations": [],
-    }
-    response = ParametrizationConsolidationResponse(candidates=[ConsolidationProposal(
-        source_proposal_ids=["proposal-1"],
-        primary_component="handler.py",
-        variation_mechanism="successStatus",
-        variation_basis="explicit",
-        alternatives=["HTTP 200", "HTTP 201"],
-        documented_capability="handler chooses between HTTP 200 and HTTP 201.",
-        question="Can handler.py use successStatus to choose between HTTP 200 and HTTP 201?",
-        evidence_needed=[
-            "Inspect `handler.py` to verify `successStatus` handling.",
-            "Inspect at least one caller of `handler` in `consumer_0.py` to verify HTTP 200 or HTTP 201.",
-        ],
-        document_claim_ids=["index-sha:0"])])
-
-    plan = build_parametrization_plan(planning, response)
+    plan = build_parametrization_plan(snapshot, request,
+        check=lambda: None, max_investigations=2)
 
     assert len(plan.candidates) == 1
     assert len(plan.candidates[0].initial_locations) == 10
@@ -662,17 +522,23 @@ def test_initial_locations_are_bounded_to_ten(tmp_path):
 
 
 
-def test_claim_without_documented_variation_does_not_create_a_question(tmp_path):
+class AbstainingModel(GenerationModel):
+    def _selection(self, _payload):
+        return {"candidate_ids": [], "questions": {}}
+
+
+def test_model_abstention_selects_no_variation_questions(tmp_path):
     request = ReuseParametrizationDocDrivenRequest(documented_architecture=documentary_context([
         variation_claim(statement="create_api_handler represents an API handler.", related_subjects=[]),
     ]))
     result = asyncio.run(ReuseParametrizationDocDrivenAgent(
-        GenerationModel(), ReuseParametrizationConfig(max_model_calls=4)).run(
+        AbstainingModel(), ReuseParametrizationConfig(max_model_calls=4)).run(
             toolset(tmp_path), request))
 
     assert result.plan.candidates == []
     assert result.plan.hypotheses == []
     assert result.model_calls == 1
+    assert any("abstained" in limitation for limitation in result.limitations)
 
 
 def test_plan_investigation_selects_bounded_variation_questions(tmp_path):
@@ -691,22 +557,216 @@ def test_plan_investigation_selects_bounded_variation_questions(tmp_path):
         model, ReuseParametrizationConfig(max_model_calls=4)).run(
             toolset(tmp_path), request))
 
-    assert result.model_calls == 4
+    assert result.model_calls == 2
     assert [item.id for item in result.plan.candidates] == [item.id for item in result.plan.hypotheses]
-    assert len(result.plan.candidates) == 2
-    assert {item.variation_mechanism for item in result.plan.candidates} == {
-        "schema validation",
-        "requireAuth and permission",
+    assert len(result.plan.candidates) == 1
+    candidate = result.plan.candidates[0]
+    assert candidate.primary_component == "handler.py"
+    assert set(candidate.document_claim_ids) == {"claim-0", "claim-1"}
+    assert set(result.plan.document_claims) == {"claim-0", "claim-1"}
+    assert all("without modifying" in item.question for item in result.plan.hypotheses)
+    assert candidate.evidence_needed
+    assert model.contexts[0]["candidates"], "plan model must receive the host menu"
+    menu_ids = {item["id"] for item in model.contexts[0]["candidates"]}
+    assert menu_ids == {candidate.id}
+    assert {item["primary_component"] for item in model.contexts[0]["candidates"]} == {"handler.py"}
+
+
+
+
+def delivered_investigation_state(execution, state):
+    pending = execution._initial_queries(execution._current(state))
+    result = asyncio.run(execution.execute_investigation_tools({**state, "pending_queries": pending,
+        "initial_evidence_loaded": True}))
+    return {**state, **result, "pending_queries": []}
+
+
+def test_coverage_recovery_checks_the_source_tool_not_the_component_path(tmp_path):
+    request, execution, state = investigation_execution(tmp_path)
+    task = execution._current(state)
+
+    queries = execution._coverage_recovery_queries(state, [])
+
+    assert any(query.tool == "get_source_excerpt"
+        and query.arguments["path"] == task.primary_component for query in queries)
+    disabled = ReuseParametrizationDocDrivenAgent.execution_type(
+        UnexpectedModel(), ReuseParametrizationConfig(max_model_calls=4, tools=["list_files"]),
+        toolset(tmp_path), request)
+    disabled_state = disabled.initial_state() | {"plan": state["plan"]}
+    assert disabled._coverage_recovery_queries(disabled_state, []) == []
+
+
+def test_not_applicable_requires_basis_and_cannot_exclude_code_obligations(tmp_path):
+    _request, execution, state = investigation_execution(tmp_path)
+    state = delivered_investigation_state(execution, state)
+    task = execution._current(state)
+    references = {record.id: record for record in execution.references()}
+    source_id = next(record.id for record in references.values() if record.kind == "source")
+
+    def codes(assessment, plan=task):
+        errors = []
+        execution._validate_evidence_requirements(
+            SimpleNamespace(status="finding_candidate", evidence_assessments=[assessment]), plan, references, errors)
+        return [item["code"] for item in errors]
+
+    resolved_without_scope = ParametrizationEvidenceAssessment(
+        requirement_index=0, status="resolved", rationale="The delivered source resolves this obligation.",
+        evidence_ids=[source_id], scope_paths=[])
+    assert "evidence_requirement_source_required" in codes(resolved_without_scope)
+
+    code_verified_without_source = ParametrizationEvidenceAssessment(
+        requirement_index=0, status="not_applicable",
+        rationale="The inspected implementation excludes this obligation for the bounded capability.",
+        exclusion_basis="code_verified")
+    assert "evidence_requirement_source_required" in codes(code_verified_without_source)
+
+    missing_basis = ParametrizationEvidenceAssessment(
+        requirement_index=0, status="not_applicable",
+        rationale="The inspected implementation excludes this obligation for the bounded capability.")
+    assert "evidence_requirement_exclusion_basis_required" in codes(missing_basis)
+
+    excluded_code_obligation = ParametrizationEvidenceAssessment(
+        requirement_index=0, status="not_applicable",
+        rationale="Documentation availability was confirmed by the architecture owner.",
+        exclusion_basis="not_code_dependent")
+    assert "evidence_requirement_not_applicable_unjustified" in codes(excluded_code_obligation)
+
+    non_code_task = task.model_copy(update={"evidence_needed": [
+        "Documentation availability was confirmed by the architecture owner."]})
+    accepted = ParametrizationEvidenceAssessment(
+        requirement_index=0, status="not_applicable",
+        rationale="Documentation availability was confirmed by the architecture owner.",
+        exclusion_basis="not_code_dependent")
+    assert codes(accepted, non_code_task) == []
+
+
+def finding_turn(execution, state, *, candidate_changes=None, conclusion_changes=None):
+    task = execution._current(state)
+    source = next(record for record in execution.references()
+        if record.kind == "source" and record.path == task.primary_component)
+    evidence_ids = [source.id]
+    components = [task.primary_component]
+    candidate = {
+        "id": "finding-1",
+        "title": "Primary component contradicts the variation contract",
+        "description": "Inspected source shows consumers cannot select the documented alternative.",
+        "criterion_id": "parametrized-reuse",
+        "kind": "design_observation",
+        "components": components,
+        "evidence_ids": evidence_ids,
+        "justification": "The inspected primary component contradicts the documented variation contract.",
+        "modularity_impact": "Consumers must change implementation code to select the alternative.",
+        "severity": "info",
+        "confidence": 0.7,
+        "recommendation": "Expose the variation through the declared contract.",
+        "variation_mechanism": task.variation_mechanism,
+        "selected_alternatives": ["validation function"],
+        "implementations": [],
+        "consumers": [],
+        "symbol_ids": [],
+        "relationship_ids": [],
+        "document_claim_ids": [],
     }
-    assert all(item.primary_component == "handler.py" for item in result.plan.candidates)
-    assert all(document.section_paths for item in result.plan.candidates if item.document_claim_ids)
-    assert all("without modifying its implementation" in item.question for item in result.plan.hypotheses)
-    schema_evidence = next(item for item in result.plan.candidates if item.variation_mechanism == "schema validation").evidence_needed
-    auth_evidence = next(item for item in result.plan.candidates if item.variation_mechanism == "requireAuth and permission").evidence_needed
-    assert any("validation function" in item for item in schema_evidence)
-    assert any("permission" in item and "requireAuth" in item for item in auth_evidence)
-    assert schema_evidence != auth_evidence
-    assert model.contexts[0]["claims"], "plan model must receive normalized claims"
-    assert model.contexts[0]["code_references"], "plan model must receive indexed code references"
+    candidate.update(candidate_changes or {})
+    conclusion = {
+        "investigation_id": task.id,
+        "status": "finding_candidate",
+        "summary": "The primary component violates substitutability.",
+        "justification": "Inspected source establishes the contract violation and its impact.",
+        "components": components,
+        "symbol_ids": [],
+        "relationship_ids": [],
+        "evidence_ids": evidence_ids,
+        "selection_phase": "startup",
+        "selection_sites": components,
+        "consumer_impact": "not_required",
+        "candidates": [candidate],
+        "limitations": [],
+        "claim_assessments": [],
+        "evidence_assessments": [{
+            "requirement_index": index,
+            "status": "resolved",
+            "rationale": "The delivered primary source resolves this obligation.",
+            "evidence_ids": evidence_ids,
+            "scope_paths": components,
+        } for index, _requirement in enumerate(task.evidence_needed)],
+    }
+    conclusion.update(conclusion_changes or {})
+    return ParametrizationInvestigationTurn.model_validate(
+        {"action": "close", "queries": [], "conclusion": conclusion})
 
 
+def test_finding_may_be_supported_by_the_primary_component_alone(tmp_path):
+    (tmp_path / "consumer.py").write_text("from handler import create_api_handler\n", encoding="utf-8")
+    _request, execution, state = investigation_execution(tmp_path)
+    candidate = state["plan"].candidates[0].model_copy(update={
+        "scope": ["handler.py", "consumer.py"],
+        "initial_locations": ["handler.py", "consumer.py"]})
+    state = {**state, "plan": state["plan"].model_copy(update={"candidates": [candidate]})}
+    state = delivered_investigation_state(execution, state)
+
+    prepared = execution.prepare_structured_result("investigate", finding_turn(execution, state), state)
+
+    assert prepared.conclusion.status == "finding_candidate"
+    assert prepared.conclusion.candidates[0].components == ["handler.py"]
+
+
+def test_validation_accumulates_field_and_index_diagnostics(tmp_path):
+    _request, execution, state = investigation_execution(tmp_path)
+    state = delivered_investigation_state(execution, state)
+    source = next(record for record in execution.references()
+        if record.kind == "source" and record.path == "handler.py")
+    turn = finding_turn(execution, state,
+        candidate_changes={"implementations": ["consumer.py"]},
+        conclusion_changes={"selection_phase": "unknown", "selection_sites": [],
+            "consumer_impact": "not_verified",
+            "evidence_assessments": [
+                {"requirement_index": 0, "status": "resolved",
+                 "rationale": "The delivered source resolves this obligation.",
+                 "evidence_ids": [source.id], "scope_paths": []},
+                {"requirement_index": 1, "status": "not_applicable",
+                 "rationale": "Documentation availability was confirmed by the architecture owner.",
+                 "exclusion_basis": None},
+            ]})
+
+    with pytest.raises(PydanticCustomError):
+        execution.prepare_structured_result("investigate", turn, state)
+
+    codes = {item["code"] for item in execution._last_validation_errors}
+    assert {"selection_phase_unresolved", "consumer_impact_unresolved",
+        "uninspected_variation_scope", "evidence_requirement_source_required",
+        "evidence_requirement_exclusion_basis_required"} <= codes
+    context = execution.structured_correction_context("investigate", state)
+    assert context["validation_errors"] == execution._last_validation_errors
+    assert all({"code", "field", "message"} <= set(item) for item in context["validation_errors"])
+
+
+def test_get_evidence_recovers_a_previously_delivered_fragment(tmp_path):
+    _request, execution, state = investigation_execution(tmp_path)
+    state = delivered_investigation_state(execution, state)
+    source = next(record for record in execution.references()
+        if record.kind == "source" and record.path == "handler.py")
+    query = ParametrizationToolQuery(tool="get_evidence", arguments={"evidence_id": source.id},
+        reason="Recover the earlier delivered fragment.")
+    _args, key = execution._normalize_query(query, execution._current(state))
+
+    result = asyncio.run(execution.execute_investigation_tools({**state, "pending_queries": [query]}))
+    view = result["query_cache"][key]
+
+    assert view["status"] == "ok"
+    assert view["tool_name"] == "get_source_excerpt"
+    assert view["data"]["path"] == "handler.py"
+    assert "create_api_handler" in view["data"]["content"]
+
+
+def test_context_offers_bounded_recovery_for_older_fragments(tmp_path):
+    _request, execution, state = investigation_execution(tmp_path)
+    state = delivered_investigation_state(execution, state)
+
+    context = execution._investigation_context({**state, "pending_queries": []})
+
+    assert context["recoverable_evidence"]
+    assert any(item["path"] == "handler.py" for item in context["recoverable_evidence"])
+    assert all({"id", "path", "start_line", "end_line", "tool", "arguments"}
+        <= set(item) for item in context["recoverable_evidence"])
+    assert len(context["tool_results"]) <= 2
