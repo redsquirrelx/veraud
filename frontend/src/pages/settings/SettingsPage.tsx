@@ -19,7 +19,7 @@ const settingsTabs = [
   { id: "models", labelKey: "tabs.models" },
   { id: "preferences", labelKey: "tabs.preferences" },
 ] as const
-type SettingsTab = typeof settingsTabs[number]["id"]
+export type SettingsTab = typeof settingsTabs[number]["id"]
 const settingsTabStorageKey = "settings.activeTab"
 
 // Task-kind labels live in the settings namespace (translated at render so
@@ -55,10 +55,11 @@ type SettingsEditor =
   | (SettingsEditorBase & { kind: "model" })
   | (SettingsEditorBase & { kind: "credential", apiKey: string })
 
-export function SettingsPage() {
+export function SettingsPage({ initialTab }: { initialTab?: SettingsTab } = {}) {
   const { t } = useTranslation("settings")
   const tabsId = useId()
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (initialTab !== undefined) return initialTab
     const saved = localStorage.get<unknown>(settingsTabStorageKey, "models")
     return settingsTabs.find((tab) => tab.id === saved)?.id ?? "models"
   })

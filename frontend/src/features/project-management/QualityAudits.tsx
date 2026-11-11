@@ -10,6 +10,7 @@ import { executionStatusLabelKeys, statusLabelKey } from "./projectStatus.ts"
 import { auditStateFrom, stateTone, type AuditRunState } from "../../shared/audit-monitor/auditStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
+import { useSettings } from "../../app/settingsContext.tsx"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { downloadQualityAuditReport, listQualityAudits, listQualityAuditPage, startQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
@@ -120,6 +121,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
 }) {
   const { t } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
+  const { openSettings } = useSettings()
   const agentCatalog = useAuditAgentCatalog(view !== "history")
   const startMessages = useAuditStartMessages()
   const historyLabels = useAuditHistoryLabels()
@@ -342,7 +344,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
         <Button disabled={startBlocked} title={startBlocker ?? undefined} onClick={() => void start()}>{starting ? t("qualityAudits.starting") : t("qualityAudits.start")}</Button>
         <Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>{tCommon("ui.refresh")}</Button>
         <Button variant="secondary" onClick={() => setConfigurationOpen(true)}>{t("qualityAudits.configuration.title")}</Button>
-        <Link className="ui-button ui-button-secondary" to="/settings">{t("qualityAudits.configureAgents")}</Link>
+        <button type="button" className="ui-button ui-button-secondary" onClick={() => openSettings("agents")}>{t("qualityAudits.configureAgents")}</button>
       </div>
       {startBlocker && <p role="status">{startBlocker}</p>}
       {!agentCatalog.loading && (agentCatalog.failed || readinessIssues.length > 0 || !selectedAttributes.length) && <div role="status">

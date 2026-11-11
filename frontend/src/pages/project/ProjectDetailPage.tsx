@@ -21,7 +21,6 @@ import {
   verdictTone,
 } from "../../features/project-management/pipelineResult.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView, Modal } from "../../shared/ui-kit/index.ts"
-import { localStorage } from "../../infrastructure/storage/LocalStorage.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
 import { ProjectOverviewIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
@@ -45,6 +44,7 @@ import { useProjectFile } from "../../features/project-management/useProjectFile
 import { useProjectTree } from "../../features/project-management/useProjectTree.ts"
 import type { VersionMode } from "../../features/project-management/VersionSelector.tsx"
 import { useToasts } from "../../app/use-toasts.ts"
+import { useSettings } from "../../app/settingsContext.tsx"
 import { formatDate, formatDateTime, formatNumber } from "../../shared/i18n/format.ts"
 import "./ProjectDetailPage.css"
 
@@ -63,6 +63,7 @@ export function ProjectDetailPage() {
   const { t } = useTranslation("projects")
   const { t: graphT } = useTranslation("graph")
   const navigate = useNavigate()
+  const { openSettings } = useSettings()
   const activeSection = auditId !== undefined ? "audits" : section !== undefined && VALID_SECTIONS.has(section) ? section : "overview"
   const [project, setProject] = useState<ProjectSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -348,7 +349,7 @@ export function ProjectDetailPage() {
                })}</p>}
                {projectPipeline.contextStatus && <p>{t(`analyze.pipeline.context_${projectPipeline.contextStatus}`)}</p>}
                {projectPipeline.errorKey && <p>{t(projectPipeline.errorKey)}
-                 {projectPipeline.errorKey === "analyze.pipeline.contextConfigurationError" && <> {" "}<Link to="/settings">{t("qualityAudits.configureAgents")}</Link></>}
+                 {projectPipeline.errorKey === "analyze.pipeline.contextConfigurationError" && <> {" "}<button type="button" className="ui-link" onClick={() => openSettings("agents")}>{t("qualityAudits.configureAgents")}</button></>}
                </p>}
              </div>}
              <div className="project-body">
@@ -572,7 +573,7 @@ export function ProjectDetailPage() {
             )}
              {auditId === undefined && activeSection !== "audits" && analysis.phase === "error" && <Card className="project-body-card" layout="stack" gap="md" align="stretch" padding="responsive">
               <p role="alert">{analysis.message}</p>
-             <Link className="ui-button ui-button-secondary" to="/settings" onClick={() => localStorage.set("settings.activeTab", "agents")}>{t("detail.reviewAgents")}</Link>
+             <button type="button" className="ui-button ui-button-secondary" onClick={() => openSettings("agents")}>{t("detail.reviewAgents")}</button>
             </Card>}
             </div>
           </>

@@ -7,6 +7,7 @@ import { changeLanguage } from "../../shared/i18n/index.ts"
 import { ApiError, listAgentSettings, type AgentExecution, type AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { AgentExecutionsContext } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAudits } from "./QualityAudits.tsx"
+import { SettingsContext, type SettingsContextValue } from "../../app/settingsContext.tsx"
 import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import * as api from "./qualityAuditApi.ts"
 import * as operating from "./auditOperatingSettingsApi.ts"
@@ -56,8 +57,9 @@ beforeEach(() => {
 })
 afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en") })
 
-function show() {
-  render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun /></MemoryRouter>)
+function show(settings?: Partial<SettingsContextValue>) {
+  const page = <MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun /></MemoryRouter>
+  render(settings ? <SettingsContext.Provider value={{ openSettings: () => {}, ...settings }}>{page}</SettingsContext.Provider> : page)
 }
 
 async function toggleAttribute(name: string) {
@@ -618,7 +620,8 @@ describe("project quality audits", () => {
       await user.click(screen.getAllByText("View investigators")[0]!)
       await user.click(screen.getByRole("checkbox", { name: "architecture_boundary" }))
       await user.click(screen.getByRole("checkbox", { name: "Enable Security" }))
-      expect(screen.getByText("Partial evaluation")).toBeInTheDocument()
+      // The partial-evaluation label is no longer surfaced in the configuration drawer.
+      expect(screen.queryByText("Partial evaluation")).not.toBeInTheDocument()
 
       await user.click(screen.getByRole("button", { name: "Restore defaults" }))
 
@@ -909,15 +912,17 @@ describe("project quality audits", () => {
   it("selects both attributes by default and starts them as one audit request", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 10 })
-    show()
+    const openSettings = vi.fn()
+    show({ openSettings })
     await screen.findByText("No audits recorded.")
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Functional adequacy · exploratory" })).toHaveTextContent("Disabled")
-    const settingsLink = screen.getByRole("link", { name: "Configure agents" })
-    expect(settingsLink).toHaveClass("ui-button", "ui-button-secondary")
-    expect(settingsLink).toHaveAttribute("href", "/settings")
+    const settingsButton = screen.getByRole("button", { name: "Configure agents" })
+    expect(settingsButton).toHaveClass("ui-button", "ui-button-secondary")
+    await userEvent.click(settingsButton)
+    expect(openSettings).toHaveBeenCalledWith("agents")
     await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"]))
     expect(api.startQualityAudit).toHaveBeenCalledOnce()

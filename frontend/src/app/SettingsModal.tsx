@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next"
 import { Modal } from "../shared/ui-kit/Modal.tsx"
-import { SettingsPage } from "../pages/settings/SettingsPage.tsx"
+import { SettingsPage, type SettingsTab } from "../pages/settings/SettingsPage.tsx"
 import "./SettingsModal.css"
 
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsModal({ open, onClose, initialTab }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const { t } = useTranslation("common")
   return (
     <Modal
@@ -16,7 +16,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       size="default"
     >
       <div className="app-settings-modal-content">
-        {open && <SettingsPage />}
+        {open && <SettingsPage initialTab={initialTab} />}
       </div>
     </Modal>
   )

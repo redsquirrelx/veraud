@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { ProjectDetailPage } from "./ProjectDetailPage.tsx"
+import { SettingsContext, type SettingsContextValue } from "../../app/settingsContext.tsx"
 import { ToastProvider } from "../../app/toasts.tsx"
 import { Dock } from "../../app/dock.tsx"
 import { formatDate } from "../../shared/i18n/format.ts"
@@ -120,8 +121,8 @@ function stubProjects(options?: { treePending?: boolean, treeFiles?: string[] })
   return { seen, release: () => release() }
 }
 
-function renderDetail(entry: string) {
-  render(
+function renderDetail(entry: string, settings?: Partial<SettingsContextValue>) {
+  const page = (
     <MemoryRouter initialEntries={[entry]}>
       <ToastProvider>
         <Routes>
@@ -134,6 +135,7 @@ function renderDetail(entry: string) {
       </ToastProvider>
     </MemoryRouter>
   )
+  render(settings ? <SettingsContext.Provider value={{ openSettings: () => {}, ...settings }}>{page}</SettingsContext.Provider> : page)
 }
 
 describe("ProjectDetailPage", () => {
@@ -631,13 +633,17 @@ describe("ProjectDetailPage", () => {
       if (url.includes("/api/tasks/active")) return new Response("[]", { status: 200 })
       return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
     })
-    renderDetail("/projects/2/graph")
+    const openSettings = vi.fn()
+    renderDetail("/projects/2/graph", { openSettings })
     const button = await screen.findByRole("button", { name: "Analyze" })
     await waitFor(() => expect(button).toBeEnabled())
     await userEvent.click(button)
     expect(await screen.findByText(/The graph step finished. Architecture Context could not start: configure/)).toBeVisible()
     expect(screen.getByText("Step 2 of 2: Extract architecture context")).toBeVisible()
-    expect(within(screen.getByRole("alert")).getByRole("link")).toHaveAttribute("href", "/settings")
+    const configure = within(screen.getByRole("alert")).getByRole("button", { name: "Configure agents" })
+    expect(configure).toHaveClass("ui-link")
+    await userEvent.click(configure)
+    expect(openSettings).toHaveBeenCalledWith("agents")
     expect(posted.some((url) => url.endsWith("/graph"))).toBe(false)
     expect(posted.filter((url) => url.endsWith("/api/agent-executions/direct"))).toHaveLength(1)
   })

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ToastProvider } from "../toasts.tsx"
+import { SettingsProvider } from "../settingsContext.tsx"
 import { AppMainNavigation } from "./AppNavigation.tsx"
 
 afterEach(() => vi.unstubAllGlobals())
@@ -16,8 +17,10 @@ describe("settings navigation", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })))
     const user = userEvent.setup()
     render(<MemoryRouter><ToastProvider>
-      <AppMainNavigation />
-      <Location />
+      <SettingsProvider>
+        <AppMainNavigation />
+        <Location />
+      </SettingsProvider>
     </ToastProvider></MemoryRouter>)
     await user.click(screen.getByRole("button", { name: "Settings" }))
     const dialog = screen.getByRole("dialog", { name: "Settings" })

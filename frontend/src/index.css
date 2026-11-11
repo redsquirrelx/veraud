@@ -33,6 +33,21 @@ h2 {
   font-family: var(--font-mono);
 }
 
+button.ui-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-brand);
+  cursor: pointer;
+  text-decoration: underline;
+}
+button.ui-link:hover { text-decoration: none; }
+button.ui-link:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-strong);
+  outline-offset: 2px;
+}
+
 .label {
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);

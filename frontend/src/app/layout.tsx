@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom"
 import { Dock } from "./dock.tsx"
 import { ToastProvider } from "./toasts.tsx"
+import { SettingsProvider } from "./settingsContext.tsx"
 import { useBackendStatus } from "./useBackendStatus.ts"
 import "./layout.css"
 
@@ -12,8 +13,10 @@ export function AppLayout() {
   return (
     <ToastProvider>
       <div className="app">
-        <Outlet context={services satisfies AppLayoutContext} />
-        <Dock />
+        <SettingsProvider>
+          <Outlet context={services satisfies AppLayoutContext} />
+          <Dock />
+        </SettingsProvider>
       </div>
     </ToastProvider>
   )
