@@ -69,6 +69,7 @@ class DocumentReference(BaseModel):
     start_line: int = Field(ge=1)
     end_line: int = Field(ge=1)
     title: str | None = None
+    reference_kind: Literal["definition", "mapping", "mention"] = "mention"
 
 
 class CapabilityCall(BaseModel):

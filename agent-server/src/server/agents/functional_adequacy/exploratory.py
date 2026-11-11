@@ -36,6 +36,9 @@ REQUIREMENT_ID_RE = re.compile(r"\bREQ-\d+\b")
 MARKDOWN_HEADING_RE = re.compile(
     r"^(?P<level>#{1,6})\s+(?P<text>\S.*?)\s*$"
 )
+HTTP_METHOD_RE = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE)\b")
+ROUTE_PATH_RE = re.compile(r"/(?:[\w{}._-]+/)*[\w{}._-]+")
+REFERENCE_KIND_ORDER = {"definition": 0, "mapping": 1, "mention": 2}
 
 ENTRYPOINT_KINDS = frozenset(
     {
@@ -1355,6 +1358,16 @@ def _deduplicate_evidence(
     return list(unique.values())
 
 
+def _reference_kind(line: str, heading: re.Match | None) -> str:
+    """Clasifica una mención como definición, correspondencia o referencia."""
+    if heading is not None:
+        return "definition"
+    stripped = line.strip()
+    if "|" in stripped or HTTP_METHOD_RE.search(stripped) or ROUTE_PATH_RE.search(stripped):
+        return "mapping"
+    return "mention"
+
+
 def _heading_title(heading_text: str, requirement_id: str) -> str | None:
     """Devuelve el título del encabezado, sin repetir el identificador."""
     match = re.match(
@@ -1407,6 +1420,7 @@ def extract_document_references(
                 continue
 
             heading = MARKDOWN_HEADING_RE.match(line)
+            reference_kind = _reference_kind(line, heading)
             if heading is not None:
                 start_line = index + 1
                 end_line = _section_end_line(
@@ -1436,6 +1450,7 @@ def extract_document_references(
                             if heading is not None
                             else None
                         ),
+                        reference_kind=reference_kind,
                     )
                 )
                 if len(references) >= MAX_DOCUMENT_REFERENCES:
@@ -1954,6 +1969,31 @@ def _justification(
     )
 
 
+def _transitive_call_evidence(
+    capability: FunctionalCapability,
+    capabilities_by_id: dict[str, FunctionalCapability],
+) -> list[EvidenceLocation]:
+    """Reúne la evidencia de las capacidades llamadas, siguiendo cadenas resueltas."""
+    evidence: list[EvidenceLocation] = []
+    seen: set[str] = set()
+
+    def visit(current: FunctionalCapability, active: set[str]) -> None:
+        for call in current.calls:
+            target_id = call.target_capability_id
+            if not target_id or target_id in active:
+                continue
+            target = capabilities_by_id.get(target_id)
+            if target is None:
+                continue
+            if target_id not in seen:
+                seen.add(target_id)
+                evidence.extend(target.evidence)
+            visit(target, active | {target_id})
+
+    visit(capability, {capability.capability_id})
+    return evidence
+
+
 def _requirement_identifiers(
     evidence: Iterable[EvidenceLocation],
 ) -> set[str]:
@@ -1973,11 +2013,18 @@ def _matching_document_references(
     identifiers = _requirement_identifiers(evidence)
     if not identifiers:
         return []
-    return [
-        reference
-        for reference in document_references
-        if reference.requirement_id in identifiers
-    ]
+    return sorted(
+        (
+            reference
+            for reference in document_references
+            if reference.requirement_id in identifiers
+        ),
+        key=lambda reference: (
+            REFERENCE_KIND_ORDER.get(reference.reference_kind, 3),
+            reference.document_path,
+            reference.start_line,
+        ),
+    )
 
 
 def evaluate_capabilities(
@@ -2029,6 +2076,11 @@ def evaluate_capabilities(
             "pertinencia": _classify_pertinence(capability),
         }
 
+        reference_evidence = [
+            *evidence,
+            *_transitive_call_evidence(capability, capabilities_by_id),
+        ]
+
         for attribute, classification in classifications.items():
             findings.append(
                 CapabilityFinding(
@@ -2047,7 +2099,7 @@ def evaluate_capabilities(
                     criteria=ATTRIBUTE_CRITERIA[attribute][classification],
                     evidence=evidence,
                     document_references=(
-                        _matching_document_references(references, evidence)
+                        _matching_document_references(references, reference_evidence)
                     ),
                 )
             )

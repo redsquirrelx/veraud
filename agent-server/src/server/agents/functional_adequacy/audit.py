@@ -17,6 +17,11 @@ from ...runtimes.invocation_reporting import report_invocation_phase
 from ...runtimes.repository.budgeted_model import BudgetedModel
 from . import schemas
 from .agent import FunctionalAdequacyAgent
+from .finding_details import (
+    documentary_references,
+    exploratory_details,
+    requirement_details,
+)
 from .repository_adapter import MAX_FRAGMENTS, prepare_snapshot_input
 
 logger = get_logger("functional-adequacy-audit")
@@ -92,6 +97,10 @@ async def _run_functional_audit(snapshot, requirements, limits, model, board, id
                 board.publish_evidence(evidence)
                 evidence_by_fragment[fragment.fragment_id] = evidence.id
             evidence_ids.append(evidence_by_fragment[fragment.fragment_id])
+        impact, recommendation = requirement_details(result)
+        references = documentary_references(
+            [reference for reference in prepared.repository_context.document_references
+                if reference.requirement_id == result.requirement_id], files)
         finding = Finding(id=publication.record_id("finding", result.requirement_id), agent_id="functional_adequacy",
             run_id=identity.run_id, invocation_id=identity.invocation_id, local_id=result.requirement_id,
             title=f"{result.requirement_id}: {result.status}", description=result.description,
@@ -99,9 +108,10 @@ async def _run_functional_audit(snapshot, requirements, limits, model, board, id
             criterion={"id": result.requirement_id, "description": result.description,
                 "origin": "explicit", "provenance": "Requisito funcional suministrado por el usuario."},
             components=tuple(dict.fromkeys(reference.file_path for reference in result.evidence)) or ("repository",),
-            justification=result.justification, modularity_impact="Evaluación de adecuación funcional, no de modularidad.",
+            justification=result.justification, modularity_impact=impact, recommendation=recommendation,
             evidence_ids=tuple(evidence_ids), details={"quality_attribute": "functional_adequacy",
                 "subcharacteristic": "functional_correctness", "functional_requirement": result.model_dump(mode="json"),
+                "documentary_references": references,
                 "validation_status": "insufficient_evidence", "limitations": limitations})
         board.publish_finding(finding)
         findings.append(finding.id)
@@ -133,6 +143,7 @@ def _publish_exploratory(snapshot, prepared, output, board, identity, tokens):
         limitations.append("La selección alcanzó el límite de fragmentos; puede existir código relevante fuera del alcance.")
     subcharacteristics = {"completitud": "functional_completeness", "correccion": "functional_correctness",
         "pertinencia": "functional_appropriateness"}
+    capabilities = {item.capability_id: item for item in output.capabilities}
     for result in output.findings:
         evidence_ids = []
         for reference in result.evidence:
@@ -153,6 +164,8 @@ def _publish_exploratory(snapshot, prepared, output, board, identity, tokens):
                 board.publish_evidence(evidence)
                 evidence_index[key] = evidence.id
             evidence_ids.append(evidence_index[key])
+        impact, recommendation = exploratory_details(result, capabilities.get(result.capability_id))
+        references = documentary_references(result.document_references, files)
         finding = Finding(id=publication.record_id("finding", result.finding_id), agent_id="functional_adequacy",
             run_id=identity.run_id, invocation_id=identity.invocation_id, local_id=result.finding_id,
             title=f"{result.capability_name}: {result.attribute} ({result.classification})",
@@ -160,10 +173,11 @@ def _publish_exploratory(snapshot, prepared, output, board, identity, tokens):
             criterion={"id": result.attribute, "description": result.criteria, "origin": "inferred",
                 "provenance": "Indicador estático exploratorio; no es un requisito suministrado."},
             components=tuple(dict.fromkeys(reference.file_path for reference in result.evidence)) or ("repository",),
-            justification=result.justification, modularity_impact="Evaluación de adecuación funcional, no de modularidad.",
+            justification=result.justification, modularity_impact=impact, recommendation=recommendation,
             evidence_ids=tuple(evidence_ids), details={"quality_attribute": "functional_adequacy",
                 "subcharacteristic": subcharacteristics[result.attribute], "functional_finding": result.model_dump(mode="json"),
-                "audit_mode": "exploratory", "validation_status": "insufficient_evidence", "limitations": limitations})
+                "audit_mode": "exploratory", "documentary_references": references,
+                "validation_status": "insufficient_evidence", "limitations": limitations})
         board.publish_finding(finding)
         findings.append(finding.id)
     incomplete = (not output.capabilities or not evidence_index or truncated or bool(prepared.repository_context.analysis_issues)

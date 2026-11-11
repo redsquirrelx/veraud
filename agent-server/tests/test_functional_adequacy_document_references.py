@@ -14,6 +14,7 @@ from server.agents.functional_adequacy.repository_adapter import (
     prepare_repository_input,
 )
 from server.agents.functional_adequacy.schemas import (
+    CapabilityCall,
     DocumentReference,
     EvidenceLocation,
     FunctionalCapability,
@@ -88,6 +89,7 @@ def test_document_reference_found_in_markdown_heading():
             start_line=3,
             end_line=5,
             title="Consultar productos por ID",
+            reference_kind="definition",
         )
     ]
 
@@ -294,6 +296,7 @@ def test_exploratory_findings_carry_document_references_and_keep_evidence(
             start_line=3,
             end_line=5,
             title="Consultar productos por ID",
+            reference_kind="definition",
         )
     ]
     assert finding.evidence
@@ -302,3 +305,184 @@ def test_exploratory_findings_carry_document_references_and_keep_evidence(
         and "REQ-02: obtiene un producto" in (evidence.snippet or "")
         for evidence in finding.evidence
     )
+
+
+def test_endpoint_inherits_document_references_through_implemented_calls():
+    references = [
+        DocumentReference(
+            requirement_id="REQ-03",
+            document_path="docs/requirements.md",
+            start_line=3,
+            end_line=5,
+            title="Crear productos con validación",
+        )
+    ]
+    service = FunctionalCapability(
+        capability_id="symbol:InventoryService.create_product",
+        name="InventoryService.create_product",
+        kind="method",
+        description="Símbolo method 'InventoryService.create_product'.",
+        detection="observed",
+        evidence=[
+            EvidenceLocation(
+                file_path="src/service.py",
+                start_line=32,
+                end_line=63,
+                symbol="InventoryService.create_product",
+                snippet=(
+                    'def create_product(self):\n    """REQ-03: crea un producto."""\n'
+                    "    return None"
+                ),
+            )
+        ],
+    )
+    endpoint = FunctionalCapability(
+        capability_id="entrypoint:create_product",
+        name="create_product",
+        kind="http_endpoint",
+        description="Punto de entrada http_endpoint POST /products.",
+        detection="observed",
+        evidence=[
+            EvidenceLocation(
+                file_path="src/api.py",
+                start_line=75,
+                end_line=89,
+                symbol="create_app.create_product",
+                snippet=(
+                    "def create_product():\n"
+                    "    return service.create_product()\n"
+                ),
+            )
+        ],
+        calls=[
+            CapabilityCall(
+                target_capability_id="symbol:InventoryService.create_product",
+                target_symbol="InventoryService.create_product",
+                file_path="src/api.py",
+                start_line=82,
+                end_line=82,
+                snippet="    return service.create_product()",
+            )
+        ],
+    )
+
+    findings = evaluate_capabilities(
+        [endpoint, service],
+        document_references=references,
+    )
+
+    endpoint_findings = [
+        finding
+        for finding in findings
+        if finding.capability_id == "entrypoint:create_product"
+    ]
+    assert len(endpoint_findings) == 3
+    assert all(
+        finding.document_references == references for finding in endpoint_findings
+    )
+
+
+def test_document_reference_kinds_are_classified():
+    snapshot = SimpleNamespace(
+        files=[
+            make_file(
+                "docs/requirements.md",
+                "# Requisitos\n\n## REQ-03: Crear productos\nEl sistema debe crear productos.\n",
+            ),
+            make_file(
+                "README.md",
+                "| POST | `/products` | REQ-03 |\nUna mención inline de REQ-03 fuera de encabezados.\n",
+            ),
+        ]
+    )
+
+    references = extract_document_references(snapshot)
+
+    assert [reference.reference_kind for reference in references] == [
+        "definition",
+        "mapping",
+        "mention",
+    ]
+    assert [reference.requirement_id for reference in references] == ["REQ-03"] * 3
+
+
+def test_findings_are_sorted_definition_first():
+    service = FunctionalCapability(
+        capability_id="symbol:InventoryService.create_product",
+        name="InventoryService.create_product",
+        kind="method",
+        description="Símbolo method 'InventoryService.create_product'.",
+        detection="observed",
+        evidence=[
+            EvidenceLocation(
+                file_path="src/service.py",
+                start_line=32,
+                end_line=33,
+                symbol="InventoryService.create_product",
+                snippet='def create_product(self):\n    """REQ-03: crea un producto."""',
+            )
+        ],
+    )
+    endpoint = FunctionalCapability(
+        capability_id="entrypoint:create_product",
+        name="create_product",
+        kind="http_endpoint",
+        description="Punto de entrada http_endpoint POST /products.",
+        detection="observed",
+        evidence=[
+            EvidenceLocation(
+                file_path="src/api.py",
+                start_line=75,
+                end_line=75,
+                symbol="create_app.create_product",
+                snippet="def create_product():\n",
+            )
+        ],
+        calls=[
+            CapabilityCall(
+                target_capability_id=service.capability_id,
+                target_symbol="InventoryService.create_product",
+                file_path="src/api.py",
+                start_line=82,
+                end_line=82,
+                snippet="    return service.create_product()",
+            )
+        ],
+    )
+    references = [
+        DocumentReference(
+            requirement_id="REQ-03",
+            document_path="README.md",
+            start_line=2,
+            end_line=2,
+            reference_kind="mention",
+        ),
+        DocumentReference(
+            requirement_id="REQ-03",
+            document_path="docs/requirements.md",
+            start_line=3,
+            end_line=4,
+            reference_kind="definition",
+            title="Crear productos",
+        ),
+        DocumentReference(
+            requirement_id="REQ-03",
+            document_path="README.md",
+            start_line=1,
+            end_line=1,
+            reference_kind="mapping",
+        ),
+    ]
+
+    findings = evaluate_capabilities([endpoint, service], document_references=references)
+
+    endpoint_finding = next(
+        finding
+        for finding in findings
+        if finding.capability_id == "entrypoint:create_product"
+        and finding.attribute == "correccion"
+    )
+    assert [
+        reference.reference_kind
+        for reference in endpoint_finding.document_references
+    ] == ["definition", "mapping", "mention"]
