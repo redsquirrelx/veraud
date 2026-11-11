@@ -101,10 +101,14 @@ it never updates or restarts the source audit. Missing participants are omitted 
 a review notice. Scopes whose technique selection cannot be reproduced are disabled
 rather than silently substituted with today's defaults.
 
-The pipeline artifact remains `{"audit": {"attributes", "status", "run_id", "report",
-"blackboard", "docx_base64"}}`. Fastify may reconcile an existing run using GET snapshot,
-report and DOCX; it must not replay the POST after an uncertain transport result. Do not move
-large report artifacts into each invocation receipt.
+The pipeline artifact remains `{"audit": {"attributes", "status", "run_id",
+"error_detail", "report", "docx_base64"[, "blackboard"]`}}`; the full Blackboard
+snapshot is only delivered when the pipeline input sets `include_blackboard: true`.
+Internal pipelines and tests can request it; production callers use the on-demand
+endpoints (`GET /api/audits/{run_id}` for the snapshot, `GET /api/audits/{run_id}/report[.docx]` for the artifacts), so the backend's restart path keeps the
+same contract with the Fastify side. Fastify may reconcile an existing run using GET
+snapshot, report and DOCX; it must not replay the POST after an uncertain
+transport result. Do not move large report artifacts into each invocation receipt.
 
 ## Agent, graph and config extension checklist
 

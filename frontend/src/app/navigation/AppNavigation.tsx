@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { Badge, DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, Tooltip, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
 import type { ServiceStatus } from "../useBackendStatus.ts"
+import { useSettings } from "../settingsContext.tsx"
 import "./AppNavigation.css"
 
 const backendDocsUrl = `${(import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")}/docs`
@@ -17,16 +18,17 @@ export function AppBrand({ compact = false }: { compact?: boolean }) {
 
 export function AppMainNavigation({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation("common")
-  return <nav className="app-nav" aria-label={t("navigation.main")}>
+  const { openSettings } = useSettings()
+  return <><nav className="app-nav" aria-label={t("navigation.main")}>
     <Tooltip content={t("navigation.home")} disabled={!compact}>{(props) => <NavLink {...props} to="/" end aria-label={t("navigation.home")} title={compact ? undefined : t("navigation.home")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <GridIcon />
       {!compact && t("navigation.home")}
     </NavLink>}</Tooltip>
-    <Tooltip content={t("navigation.settings")} disabled={!compact}>{(props) => <NavLink {...props} to="/settings" aria-label={t("navigation.settings")} title={compact ? undefined : t("navigation.settings")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
+    <Tooltip content={t("navigation.settings")} disabled={!compact}>{(props) => <button {...props} type="button" onClick={() => openSettings()} aria-haspopup="dialog" aria-label={t("navigation.settings")} title={compact ? undefined : t("navigation.settings")}>
       <SlidersIcon />
       {!compact && t("navigation.settings")}
-    </NavLink>}</Tooltip>
-  </nav>
+    </button>}</Tooltip>
+  </nav></>
 }
 
 export function AppDocumentationLinks({ align = "end", compact = false }: { align?: "start" | "end", compact?: boolean }) {

@@ -9,6 +9,7 @@ export interface SidebarItem {
   id: string
   label: string
   icon?: ReactNode
+  disabled?: boolean
 }
 
 interface SidebarProps {
@@ -92,11 +93,13 @@ export function Sidebar({ title, items, activeId, defaultExpanded = true, storag
             {(tooltipProps) => <button
             {...tooltipProps}
             type="button"
-            className={item.id === activeId ? "ui-sidebar-item ui-sidebar-item-active" : "ui-sidebar-item"}
+            className={`${item.id === activeId ? "ui-sidebar-item ui-sidebar-item-active" : "ui-sidebar-item"}${item.disabled ? " ui-sidebar-item-disabled" : ""}`}
              title={expanded ? item.label : undefined}
              aria-label={item.label}
+             disabled={item.disabled}
+             aria-disabled={item.disabled || undefined}
              aria-current={item.id === activeId ? "page" : undefined}
-            onClick={() => onSelect?.(item.id)}
+            onClick={() => { if (!item.disabled) onSelect?.(item.id) }}
           >
             {item.icon && <span className="ui-sidebar-icon">{item.icon}</span>}
             {expanded && <span>{item.label}</span>}

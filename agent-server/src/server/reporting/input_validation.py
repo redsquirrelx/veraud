@@ -10,7 +10,7 @@ def validate_extensions(records):
 
     object_fields = {"report", "investigation", "audit_context", "audit_outcome", "report_facts", "coverage",
         "assignment", "consumption", "hypothesis_validation_issues"}
-    object_lists = {"invocations", "assessments", "hypotheses", "findings", "consolidated_findings", "contributions",
+    object_lists = {"invocations", "assessments", "coordinator_results", "hypotheses", "findings", "consolidated_findings", "contributions",
         "relationships", "links", "finding_relationships", "commitments", "material_gaps", "unresolved_gaps", "gaps"}
     text_lists = {"limitations", "conditions", "assumptions", "unknowns", "missing_information", "finding_refs",
         "withdrawn_finding_refs", "resolved_gap_ids", "evidence_ids", "declaration_ids", "component_ids", "group_ids",
@@ -53,9 +53,16 @@ def validate_extensions(records):
                         require(child.get("id"), str, f"{location}[{index}].id")
                     if key == "contributions" and child.get("reference") is not None:
                         require(child["reference"], str, f"{location}[{index}].reference")
-                    if key in {"invocations", "assessments"}:
+                    if key == "assessments" and "assignment_id" in child and "coordinator_id" in child:
+                        require(child["assignment_id"], str, f"{location}[{index}].assignment_id")
+                        require(child["coordinator_id"], str, f"{location}[{index}].coordinator_id")
+                    elif key in {"invocations", "assessments"}:
                         require(child.get("assignment"), dict, f"{location}[{index}].assignment")
                         require(child["assignment"].get("invocation_id"), str, f"{location}[{index}].assignment.invocation_id")
+                    elif key == "coordinator_results":
+                        require(child.get("assignment_id"), str, f"{location}[{index}].assignment_id")
+                        require(child.get("assignment"), dict, f"{location}[{index}].assignment")
+                        require(child["assignment"].get("coordinator_id"), str, f"{location}[{index}].assignment.coordinator_id")
             elif key in text_lists:
                 # Finding evidence inside nested investigator output is a list of
                 # objects under `evidence`, not `evidence_ids`.

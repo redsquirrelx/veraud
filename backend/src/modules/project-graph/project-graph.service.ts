@@ -102,6 +102,7 @@ export class ProjectGraphService {
     return { taskId: row.taskId, projectId, branch: row.branch, commitHash: row.commitHash,
       status: row.task.status, phase: row.task.status === "Failed" ? "failed" : row.phase,
       error: row.task.status === "Failed" ? row.error ?? "extraction_failed" : row.error,
+      createdAt: row.createdAt.toISOString(),
       graphAvailable: completed, previousGraphTaskId: previous?.taskId ?? null }
   }
 

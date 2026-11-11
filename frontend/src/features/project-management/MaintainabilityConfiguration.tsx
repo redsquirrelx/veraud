@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParseKeys } from "i18next"
-import { Badge, Button, Checkbox } from "../../shared/ui-kit/index.ts"
+import { Button, Checkbox } from "../../shared/ui-kit/index.ts"
 import { availableSubcharacteristics, investigatorsFor, isAvailable, subcharacteristics, useAuditAgentCatalog, type AuditAgentCatalog } from "./auditAgentCatalog.ts"
 
 const investigatorDescriptions: Record<string, ParseKeys<"projects">> = {
@@ -34,13 +34,9 @@ export function MaintainabilityConfiguration(props: {
     setLocalSelection(selection)
     onChange?.(selection)
   }
-  const partial = !loading && !failed && available.some((id) =>
-    !selected.includes(id) || investigatorsFor(agents, id).some((agent) =>
-      isAvailable(agent) && !(selection[id] ?? []).includes(agent.agentType)))
 
   return <fieldset className="quality-audit-subcharacteristics" aria-busy={loading}>
     <legend>{t("qualityAudits.configuration.maintainability.legend")}</legend>
-    {partial && <p className="quality-audit-partial-notice" role="status">{t("qualityAudits.configuration.investigators.partialNotice")}</p>}
     {loading && <p className="label" role="status">{t("qualityAudits.configuration.maintainability.loading")}</p>}
     {failed && <div role="alert">
       <p>{t("qualityAudits.configuration.maintainability.loadFailed")}</p>
@@ -49,8 +45,6 @@ export function MaintainabilityConfiguration(props: {
     {subcharacteristics.map((id) => {
       const enabled = !loading && !failed && available.includes(id)
       const investigators = investigatorsFor(agents, id)
-      const dimensionPartial = enabled && selected.includes(id)
-        && investigators.some((agent) => isAvailable(agent) && !(selection[id] ?? []).includes(agent.agentType))
       return <div key={id} className="quality-audit-subcharacteristic">
       <div className="quality-audit-subcharacteristic-heading">
       <Checkbox
@@ -67,7 +61,6 @@ export function MaintainabilityConfiguration(props: {
           update(next)
         }}
       />
-      {dimensionPartial && <Badge tone="warning">{t("qualityAudits.evaluation.partial")}</Badge>}
       </div>
       <details className="quality-audit-investigators">
         <summary>{t("qualityAudits.configuration.investigators.view")}</summary>

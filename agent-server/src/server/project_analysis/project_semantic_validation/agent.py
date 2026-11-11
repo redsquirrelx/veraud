@@ -1,12 +1,12 @@
 """Independent, bounded LangGraph semantic investigation over claim batches."""
 
-import asyncio
 import json
 from dataclasses import dataclass
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from server.agent_services.budgeting.policy import budgets_enabled, wait_for
 from server.project_analysis.project_architecture.schemas import ArchitectureResult
 from server.project_analysis.project_semantic_validation.context import (
     report_hash,
@@ -120,7 +120,7 @@ def build_validation_graph():
             }
         if all(target.id in state["findings"] for target in state["selected"]):
             return {"route": "finish"}
-        if state["calls"] >= min(
+        if budgets_enabled() and state["calls"] >= min(
             context.limits.max_model_calls, budget.max_model_calls
         ):
             return {
@@ -166,7 +166,7 @@ def build_validation_graph():
                 targets=sorted(active),
             )
             submitted = True
-            answer = await asyncio.wait_for(
+            answer = await wait_for(
                 context.generate(prompt),
                 max(
                     0,
@@ -220,7 +220,7 @@ def build_validation_graph():
             turn = ValidationTurn.model_validate(value)
             if any(call.name not in ALLOWED_TOOLS for call in turn.tool_calls):
                 raise ValueError("Use only offered semantic validation tools.")
-            if (
+            if budgets_enabled() and (
                 len(turn.tool_calls)
                 > min(context.limits.max_tool_calls, budget.max_tool_calls)
                 - context.tools.budget_usage.tool_calls

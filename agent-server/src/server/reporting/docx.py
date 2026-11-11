@@ -21,7 +21,7 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 DOCX_RENDERER_VERSION = "2.0.0"
 LABELS = {
     "completed": "Completada", "partial": "Parcial", "failed": "Fallida", "not_evaluated": "No evaluado",
-    "verified": "Verificado", "inconclusive": "Inconcluso", "discarded": "Descartado",
+    "verified": "Verificado", "inconclusive": "Inconcluso", "discarded": "Descartado", "unreviewed": "Sin revisión",
     "critical": "Crítica", "high": "Alta", "medium": "Media", "low": "Baja", "info": "Informativa",
     "urgent": "Urgente", "undetermined": "No determinada",
     "maintainability": "Mantenibilidad", "security": "Seguridad", "functional_adequacy": "Adecuación funcional",
@@ -33,6 +33,7 @@ LABELS = {
     "finding": "Hallazgo", "assessment": "Evaluación", "evidence": "Evidencia",
     "accepted": "Aceptado", "rejected": "Rechazado", "insufficient_evidence": "Evidencia insuficiente",
     "explicit": "Explícito", "heuristic": "Heurístico", "source": "Código fuente",
+    "confirmado": "Confirmado", "probable": "Probable", "no_verificado": "No verificado",
 }
 FIELD_LABELS = {
     "id": "Identificador", "agent_id": "Agente", "invocation_id": "Invocación",
@@ -426,8 +427,8 @@ class ReportDocument:
 
     def statistics(self, counts):
         self.paragraph(f"Total: {counts.total}. Base de conteo: registros originales de hallazgos del blackboard.")
-        self.table(("Severidad", "Verificados", "Inconclusos", "Descartados"), (
-            (LABELS.get(severity, severity), values.get("verified", 0), values.get("inconclusive", 0), values.get("discarded", 0))
+        self.table(("Severidad", "Verificados", "Inconclusos", "Descartados", "Sin revisión"), (
+            (LABELS.get(severity, severity), values.get("verified", 0), values.get("inconclusive", 0), values.get("discarded", 0), values.get("unreviewed", 0))
             for severity, values in counts.by_severity_and_verification.items()))
         self.table(("Atributo", "Hallazgos"), ((LABELS.get(key, key), count) for key, count in counts.by_attribute.items()))
         self.table(("Componente", "Hallazgos verificados"), sorted(counts.verified_by_component.items()))
@@ -436,7 +437,7 @@ class ReportDocument:
         report = self.report
         severity_order = {key: number for number, key in enumerate(("critical", "high", "medium", "low", "info"))}
         ordered_findings = sorted(report.quality_results.findings, key=lambda finding: (
-            finding.lifecycle != "current", {"verified": 0, "inconclusive": 1, "discarded": 2}[finding.verification_status],
+            finding.lifecycle != "current", {"verified": 0, "inconclusive": 1, "unreviewed": 2, "discarded": 3}[finding.verification_status],
             severity_order.get(finding.severity, 5), finding.id))
         priority_order = {key: number for number, key in enumerate(("urgent", "high", "medium", "low", "undetermined"))}
         ordered_risks = sorted(report.consolidated_risks.risks, key=lambda item: (priority_order[item.priority], item.id))
@@ -576,6 +577,34 @@ class ReportDocument:
                     ("Regla del escáner", security.get("rule_id"))])
                 self.paragraph("Detección heurística: la severidad del escáner no confirma explotabilidad. "
                     "La propuesta de parche se conserva en el JSON canónico y no acredita una corrección validada.")
+            functional = finding.technical_details.get("functional_finding", {})
+            if isinstance(functional, dict) and functional:
+                self.heading("Detalle de adecuación funcional exploratoria", 4)
+                self.fields([("Capacidad evaluada", functional.get("capability_name")),
+                    ("Atributo evaluado", functional.get("attribute")),
+                    ("Clasificación", LABELS.get(functional.get("classification"), functional.get("classification"))),
+                    ("Criterio de evaluación", functional.get("criteria")),
+                    ("Justificación", functional.get("justification"))])
+                evidences = [item for item in functional.get("evidence") or [] if isinstance(item, dict)]
+                if evidences:
+                    self.table(("Archivo", "Líneas", "Símbolo"), ((item.get("file_path"),
+                        f"{item.get('start_line')}–{item.get('end_line')}" if item.get("start_line") else None,
+                        item.get("symbol")) for item in evidences))
+                    for item in evidences:
+                        if item.get("snippet"):
+                            self.write(self.doc, "Fragmento de código — "
+                                f"{item.get('file_path')} · líneas {item.get('start_line')}–{item.get('end_line')}",
+                                style="Caption")
+                            self.value(self.doc, LiteralText(item.get("snippet")))
+                references = [item for item in functional.get("document_references") or [] if isinstance(item, dict)]
+                if references:
+                    self.table(("Requisito", "Documento", "Líneas", "Título"), ((item.get("requirement_id"),
+                        item.get("document_path"),
+                        f"{item.get('start_line')}–{item.get('end_line')}" if item.get("start_line") else None,
+                        item.get("title")) for item in references))
+                self.paragraph("Clasificación exploratoria: 'probable' y 'no verificado' reflejan evidencia "
+                    "parcial o insuficiente; no constituyen defectos confirmados. Las evidencias citadas se "
+                    "desarrollan en el inventario de trazabilidad.")
 
         self.heading("7. Análisis consolidado de riesgos")
         risk = report.consolidated_risks

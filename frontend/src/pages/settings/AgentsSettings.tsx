@@ -37,6 +37,7 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
   agentTypes, heading, description, labels = {}, modelAccessOnly = false, qualityCategories = false,
 }: AgentsSettingsProps) {
   const { t } = useTranslation("settings")
+  const { t: tProjects } = useTranslation("projects")
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<AgentsLoadError | null>(null)
@@ -104,7 +105,11 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
       return representative ? [{ attribute, agent: representative, mixed: owners.some((agent) =>
         agent.configuration?.model.id !== representative.configuration?.model.id || agent.configuration?.credential.id !== representative.configuration?.credential.id) }] : []
     })
-  const cards = qualityCategories ? categories : agents.filter((agent) => agent.agentType !== "functional_adequacy"
+  // An audit prerequisite with its own model, not a quality-attribute descendant.
+  const contextCards = agents.filter((agent) => agent.agentType === "architecture_context"
+    && agent.requiresModel !== false && (agent.availability === undefined || agent.availability === "available"))
+    .map((agent) => ({ agent, attribute: undefined, mixed: false }))
+  const cards = qualityCategories ? [...contextCards, ...categories] : agents.filter((agent) => agent.agentType !== "functional_adequacy"
     && (!agentTypes || agentTypes.includes(agent.agentType)))
     .map((agent) => ({ agent, attribute: undefined, mixed: false }))
 
@@ -139,7 +144,8 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
               <AgentSettingsCard
                 key={attribute ?? agent.agentType}
                 agent={agent}
-                label={attribute ? labels[attribute] ?? attribute : labels[agent.agentType]}
+                 label={attribute ? labels[attribute] ?? attribute : labels[agent.agentType]
+                   ?? (agent.agentType === "architecture_context" ? tProjects("analyze.pipeline.contextAgent") : undefined)}
                 qualityAttribute={attribute}
                 categoryMixed={mixed}
                 onCategorySaved={setAgents}

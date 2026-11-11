@@ -9,7 +9,8 @@ export interface DrawerProps {
   open: boolean
   title: string
   description?: string
-  size?: "default" | "wide"
+  headerExtra?: ReactNode
+  size?: "default" | "wide" | "inspector"
   closeOnOverlay?: boolean
   onClose: () => void
   children: ReactNode
@@ -17,7 +18,7 @@ export interface DrawerProps {
 }
 
 /** Modal right-side panel with isolated scrolling and keyboard focus. */
-export function Drawer({ open, title, description, size = "default", closeOnOverlay = true, onClose, children, footer }: DrawerProps) {
+export function Drawer({ open, title, description, headerExtra, size = "default", closeOnOverlay = true, onClose, children, footer }: DrawerProps) {
   const { t } = useTranslation("common")
   const id = useId()
   const [present, setPresent] = useState(open)
@@ -158,6 +159,7 @@ export function Drawer({ open, title, description, size = "default", closeOnOver
         <header className="ui-drawer-header">
           <div className="ui-drawer-heading">
             <h2 id={`${id}-title`}>{title}</h2>
+            {headerExtra && <div className="ui-drawer-header-extra">{headerExtra}</div>}
             {description && <p id={`${id}-description`}>{description}</p>}
           </div>
           <IconButton className="ui-drawer-close" variant="ghost" size="sm" ariaLabel={t("ui.close")} onClick={onClose}>

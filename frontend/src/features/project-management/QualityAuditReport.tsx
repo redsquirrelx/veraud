@@ -13,7 +13,7 @@ const fieldLabelKeys: Record<string, ParseKeys<"projects">> = {
   objective: "qualityAudits.report.fields.objective", evaluated_attributes: "qualityAudits.report.fields.evaluated_attributes",
   principal_results: "qualityAudits.report.fields.principal_results", conclusion: "qualityAudits.report.fields.conclusion",
   findings: "qualityAudits.report.fields.findings", total: "qualityAudits.report.fields.total", by_verification: "qualityAudits.report.fields.by_verification",
-  verified: "qualityAudits.report.fields.verified", inconclusive: "qualityAudits.report.fields.inconclusive", discarded: "qualityAudits.report.fields.discarded",
+  verified: "qualityAudits.report.fields.verified", inconclusive: "qualityAudits.report.fields.inconclusive", discarded: "qualityAudits.report.fields.discarded", unreviewed: "qualityAudits.findingsList.unreviewed",
   status: "qualityAudits.report.fields.status", limitations: "qualityAudits.report.fields.limitations", source_refs: "qualityAudits.report.fields.source_refs",
   title: "qualityAudits.report.fields.title", project_name: "qualityAudits.report.fields.project_name", revisions: "qualityAudits.report.fields.revisions",
   executed_at: "qualityAudits.report.fields.executed_at",
@@ -59,16 +59,18 @@ function SourceReferences({ items }: { items: unknown[] }) {
 
 type SectionState = { status: "loading" } | { status: "loaded", data: unknown } | { status: "error" }
 
-function QualityResultsReport({ data }: { data: unknown }) {
+function QualityResultsReport({ data, projectId, repositoryName }: { data: unknown, projectId?: number | null, repositoryName?: string }) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return <ReportValue value={data} />
   const { findings, ...rest } = data as Record<string, unknown>
   return <>
-    <QualityAuditFindings findings={findings} renderDetails={(finding) => <ReportValue value={finding} />} />
+    <QualityAuditFindings findings={findings} renderDetails={(finding) => <ReportValue value={finding} />} projectId={projectId} repositoryName={repositoryName} />
     {Object.keys(rest).length > 0 && <ReportValue value={rest} />}
   </>
 }
 
-export function QualityAuditFindingsPanel({ resource }: { resource: AuditReportSectionResource }) {
+export function QualityAuditFindingsPanel({ resource, projectId = null, repositoryName = "" }: {
+  resource: AuditReportSectionResource, projectId?: number | null, repositoryName?: string
+}) {
   const { t } = useTranslation("projects")
   if (resource.state.status === "loading") return <Spinner />
   if (resource.state.status === "error") return <div role="alert">
@@ -77,10 +79,12 @@ export function QualityAuditFindingsPanel({ resource }: { resource: AuditReportS
   </div>
   const data = resource.state.data
   const findings = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>).findings : null
-  return <div className="quality-report"><QualityAuditFindings findings={findings} renderDetails={(finding) => <ReportValue value={finding} />} /></div>
+  return <div className="quality-report"><QualityAuditFindings findings={findings} renderDetails={(finding) => <ReportValue value={finding} />} projectId={projectId} repositoryName={repositoryName} /></div>
 }
 
-function QualityResultsSection({ resource, onOpenChange, title }: { resource: AuditReportSectionResource, onOpenChange: (open: boolean) => void, title: string }) {
+function QualityResultsSection({ resource, onOpenChange, title, projectId, repositoryName }: {
+  resource: AuditReportSectionResource, onOpenChange: (open: boolean) => void, title: string, projectId?: number | null, repositoryName?: string
+}) {
   const { t } = useTranslation("projects")
   const [open, setOpen] = useState(false)
   return <details open={open} onToggle={(event) => {
@@ -88,7 +92,7 @@ function QualityResultsSection({ resource, onOpenChange, title }: { resource: Au
     onOpenChange(event.currentTarget.open)
   }}>
     <summary>{title}</summary>
-    {open && (resource.state.status === "loaded" ? <QualityResultsReport data={resource.state.data} />
+    {open && (resource.state.status === "loaded" ? <QualityResultsReport data={resource.state.data} projectId={projectId} repositoryName={repositoryName} />
       : resource.state.status === "loading" ? <Spinner /> : <div role="alert">
         <p>{t("qualityAudits.results.sectionFailed")}</p>
         <Button variant="secondary" onClick={resource.retry}>{t("qualityAudits.results.retry")}</Button>
@@ -122,8 +126,8 @@ function ReportSection({ projectId, auditId, section, title, onExecutiveSummaryL
   </details>
 }
 
-export function QualityAuditReport({ projectId, auditId, qualityResults, onQualityResultsOpenChange }: {
-  projectId: number, auditId: number, qualityResults: AuditReportSectionResource, onQualityResultsOpenChange: (open: boolean) => void,
+export function QualityAuditReport({ projectId, auditId, qualityResults, onQualityResultsOpenChange, repositoryName = "" }: {
+  projectId: number, auditId: number, qualityResults: AuditReportSectionResource, onQualityResultsOpenChange: (open: boolean) => void, repositoryName?: string,
 }) {
   const { t } = useTranslation("projects")
   const [summary, setSummary] = useState<{ data: unknown } | null>(null)
@@ -134,7 +138,7 @@ export function QualityAuditReport({ projectId, auditId, qualityResults, onQuali
     <h3>{t("qualityAudits.report.title", { id: auditId })}</h3>
     <p className="label">{t("qualityAudits.report.originalNotice")}</p>
     <div className="quality-report">{auditReportSections.map(([key, titleKey]) => key === "quality_results"
-      ? <QualityResultsSection key={`${auditId}-${key}`} resource={qualityResults} onOpenChange={onQualityResultsOpenChange} title={t(titleKey)} />
+      ? <QualityResultsSection key={`${auditId}-${key}`} resource={qualityResults} onOpenChange={onQualityResultsOpenChange} title={t(titleKey)} projectId={projectId} repositoryName={repositoryName} />
       : <ReportSection key={`${auditId}-${key}`} projectId={projectId} auditId={auditId} section={key} title={t(titleKey)} onExecutiveSummaryLoaded={handleExecutiveSummaryLoaded} />)}</div>
     </section>
   </>

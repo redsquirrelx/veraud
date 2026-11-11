@@ -2,7 +2,7 @@
 
 from threading import Lock
 
-from ....infrastructure.execution_events import record_event
+from ....agent_services.execution_tracking.events import record_event
 from ...models import Assessment, BlackboardRecord, Evidence, Finding
 from ..interface import BlackboardRepository
 

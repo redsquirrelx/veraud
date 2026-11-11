@@ -1,12 +1,12 @@
 """Small in-memory LangGraph: prepare, inspect, tools, validate, finish."""
 
-import asyncio
 import json
 from dataclasses import dataclass
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from server.agent_services.budgeting.policy import budgets_enabled, wait_for
 from server.project_analysis.project_orientation.context import (
     representation_view,
     validate_orientation,
@@ -88,7 +88,7 @@ def build_orientation_graph():
         context = runtime.context
         budget = context.tools.context.input.budget
         max_calls = min(context.limits.max_model_calls, budget.max_model_calls)
-        if state["calls"] >= max_calls:
+        if budgets_enabled() and state["calls"] >= max_calls:
             return {
                 "route": "finish",
                 "issues": (
@@ -109,7 +109,7 @@ def build_orientation_graph():
                 context.generate, budget, text, "orientation", attempts
             )
             submitted = True
-            answer = await asyncio.wait_for(
+            answer = await wait_for(
                 context.generate(prompt),
                 max(
                     0,
@@ -157,7 +157,7 @@ def build_orientation_graph():
                     min(context.limits.max_tool_calls, budget.max_tool_calls)
                     - state["tool_calls"]
                 )
-                if len(turn.tool_calls) > remaining:
+                if budgets_enabled() and len(turn.tool_calls) > remaining:
                     raise ValueError(
                         "Tool budget exhausted; return orientation with explicit uncertainties."
                     )

@@ -2,13 +2,13 @@ import { createContext, useContext } from "react"
 
 export interface ToastItem {
   id: number
-  kind: "success" | "error"
+  kind: "success" | "error" | "info"
   message: string
 }
 
 export interface ToastsContextValue {
   toasts: ToastItem[]
-  pushToast: (kind: "success" | "error", message: string) => void
+  pushToast: (kind: "success" | "error" | "info", message: string) => void
   dismissToast: (id: number) => void
 }
 

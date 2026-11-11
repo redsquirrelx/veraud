@@ -7,9 +7,13 @@ import { changeLanguage } from "../../shared/i18n/index.ts"
 import { ApiError, listAgentSettings, type AgentExecution, type AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { AgentExecutionsContext } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAudits } from "./QualityAudits.tsx"
+import { SettingsContext, type SettingsContextValue } from "../../app/settingsContext.tsx"
 import { AnalyzeMenu } from "./AnalyzeMenu.tsx"
 import * as api from "./qualityAuditApi.ts"
 import * as operating from "./auditOperatingSettingsApi.ts"
+import { getArchitectureContextAvailability } from "./architectureContextApi.ts"
+
+vi.mock("./architectureContextApi.ts", () => ({ getArchitectureContextAvailability: vi.fn() }))
 
 vi.mock("./auditOperatingSettingsApi.ts", async (importOriginal) => ({
   ...await importOriginal<typeof import("./auditOperatingSettingsApi.ts")>(), getAuditSettings: vi.fn(), saveAuditSettings: vi.fn(),
@@ -33,6 +37,9 @@ const readyAgents: AgentSettings[] = ["maintainability_manager", "security", "fu
   agentType, qualityAttributes: [agentType], workflowIds: [], configured: true, configuration: null, availability: "available", requiresModel: true,
 }))
 beforeEach(() => {
+  vi.mocked(getArchitectureContextAvailability).mockImplementation(async (projectId, commitHash) => ({
+    projectId, commitHash, available: true, executionId: 41, executionStatus: "partial",
+  }))
   vi.mocked(api.listQualityAuditPage).mockImplementation(async (projectId, limit, offset) => {
     const rows = [...await api.listQualityAudits(projectId)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id - a.id)
     const actualOffset = rows.length ? Math.min(offset, Math.floor((rows.length - 1) / limit) * limit) : 0
@@ -50,8 +57,9 @@ beforeEach(() => {
 })
 afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en") })
 
-function show() {
-  render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun /></MemoryRouter>)
+function show(settings?: Partial<SettingsContextValue>) {
+  const page = <MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun /></MemoryRouter>
+  render(settings ? <SettingsContext.Provider value={{ openSettings: () => {}, ...settings }}>{page}</SettingsContext.Provider> : page)
 }
 
 async function toggleAttribute(name: string) {
@@ -62,6 +70,40 @@ async function toggleAttribute(name: string) {
 }
 
 describe("project quality audits", () => {
+  it("removes manual V2 JSON input and leaves saved context resolution to the backend", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 44 })
+    show()
+    await screen.findByText("No audits recorded.")
+    await toggleAttribute("Security")
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Configure audit" }))
+    expect(screen.queryByRole("textbox", { name: "Maintainability V2 input (optional JSON)" })).not.toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await user.click(screen.getByRole("button", { name: "Start audit" }))
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability"]))
+  })
+
+  it("blocks missing context and keeps security available without silently dropping maintainability", async () => {
+    vi.mocked(getArchitectureContextAvailability).mockImplementation(async (projectId, commitHash) => ({
+      projectId, commitHash, available: false, executionId: null, executionStatus: null,
+    }))
+    vi.mocked(api.listQualityAudits).mockResolvedValue([])
+    vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 44 })
+    show()
+    await screen.findByText("No audits recorded.")
+    expect(screen.getByRole("button", { name: "Start audit" })).toBeDisabled()
+    expect(screen.getByRole("region", { name: "Maintainability" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getAllByText(/Run Analyze to generate architecture context/).length).toBeGreaterThan(0)
+    await toggleAttribute("Maintainability")
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start audit" })).toBeEnabled())
+    await userEvent.click(screen.getByRole("button", { name: "Configure audit" }))
+    expect(screen.getByRole("checkbox", { name: "Enable Maintainability" })).toBeDisabled()
+    await userEvent.keyboard("{Escape}")
+    await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
+    await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["security"]))
+  })
+
   it("shows a loading indicator before the empty history and while refreshing", async () => {
     let resolve!: (rows: api.QualityAuditSummary[]) => void
     vi.mocked(api.listQualityAudits).mockImplementation(() => new Promise((done) => { resolve = done }))
@@ -69,6 +111,7 @@ describe("project quality audits", () => {
 
     expect(screen.getByRole("status", { name: "Loading audits" })).toBeVisible()
     expect(screen.queryByText("No audits recorded.")).toBeNull()
+    expect(screen.queryByRole("article")).toBeNull()
     expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled()
     resolve([])
     await waitFor(() => expect(screen.queryByRole("status", { name: "Loading audits" })).toBeNull())
@@ -77,9 +120,17 @@ describe("project quality audits", () => {
     await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
     expect(screen.getByRole("status", { name: "Loading audits" })).toBeVisible()
     expect(screen.queryByText("No audits recorded.")).toBeNull()
+    expect(screen.queryByRole("article")).toBeNull()
     resolve([historicalSummary])
     expect(await screen.findByRole("article")).toBeVisible()
     expect(screen.queryByRole("status", { name: "Loading audits" })).toBeNull()
+
+    // Refreshing with an existing row hides it instead of showing old and new together.
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    expect(screen.getByRole("status", { name: "Loading audits" })).toBeVisible()
+    expect(screen.queryByRole("article")).toBeNull()
+    resolve([historicalSummary])
+    expect(await screen.findByRole("article")).toBeVisible()
   })
 
   it("stops the loading indicator on failure without showing an empty history", async () => {
@@ -127,6 +178,10 @@ describe("project quality audits", () => {
     render(<MemoryRouter><QualityAudits projectId={5} branch="main" commitHash={"a".repeat(40)} canRun view="history" /></MemoryRouter>)
   }
 
+  async function openAuditMenu(container: HTMLElement = document.body) {
+    await userEvent.click(within(container).getByRole("button", { name: /More actions for audit/ }))
+  }
+
   it("loads only one summary page without fetching audit details or the agent catalog", async () => {
     vi.mocked(api.listQualityAuditPage).mockResolvedValue({ items: [{ ...historicalSummary, runId: null }], total: 12,
       hasRunning: false, limit: 5, offset: 0 })
@@ -137,7 +192,10 @@ describe("project quality audits", () => {
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
     expect(api.getQualityAuditConfiguration).not.toHaveBeenCalled()
     expect(listAgentSettings).not.toHaveBeenCalled()
-    expect(screen.getByText("Unavailable")).toBeVisible()
+    // Run ID is hidden from the explorer row; Blackboard lives in the menu and is disabled while unavailable.
+    expect(screen.queryByRole("button", { name: "View Blackboard" })).toBeNull()
+    await openAuditMenu()
+    expect(screen.getByRole("button", { name: "View Blackboard" })).toBeDisabled()
 
     vi.mocked(api.listQualityAuditPage).mockResolvedValue({ items: [{ ...historicalSummary, id: 9 }], total: 12,
       hasRunning: false, limit: 5, offset: 5 })
@@ -259,15 +317,20 @@ describe("project quality audits", () => {
     await waitFor(() => expect(api.listQualityAudits).toHaveBeenCalledTimes(2))
   })
 
-  it("uses the same secondary button style for all audit history actions", async () => {
+  it("uses the same secondary button style for the visible history actions and keeps secondary actions in the menu", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, configurationAvailable: true }])
     show()
-    await screen.findByRole("link", { name: "View details" })
-    const history = within(screen.getByRole("article"))
-    for (const name of ["View configuration", "Reuse configuration", "Download Word report"]) {
-      expect(history.getByRole("button", { name })).toHaveClass("ui-button-secondary")
-    }
+    const article = await screen.findByRole("article")
+    const history = within(article)
+    // View Details and Reuse Configuration are visible first-hand in the explorer row.
     expect(history.getByRole("link", { name: "View details" })).toHaveClass("ui-button-secondary")
+    expect(history.getByRole("button", { name: "Reuse configuration" })).toHaveClass("ui-button-secondary")
+    expect(history.queryByRole("link", { name: "View Blackboard" })).not.toBeInTheDocument()
+    await openAuditMenu(article)
+    for (const name of ["View configuration", "Download Word report"]) {
+      expect(history.getByRole("button", { name })).toBeInTheDocument()
+    }
+    expect(history.getByRole("link", { name: "View Blackboard" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("ui-button-secondary")
     expect(screen.getByRole("button", { name: "Start audit" })).toHaveClass("ui-button-primary")
   })
@@ -474,7 +537,9 @@ describe("project quality audits", () => {
       executionStatus, auditStatus: executionStatus === "Failed" ? "failed" : "partial", error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false }])
     show()
-    expect(await screen.findByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    const article = await screen.findByRole("article")
+    await openAuditMenu(article)
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
   })
 
   it.each([false, true])("reuses historical selections without changing the original audit (separate views: %s)", async (separateViews) => {
@@ -507,6 +572,7 @@ describe("project quality audits", () => {
         onConfigure={() => { onConfigure(); setView(separateViews ? "configuration" : "all") }} />
     }
     render(<MemoryRouter><Workspace /></MemoryRouter>)
+    await screen.findByRole("article")
     const reuse = await screen.findByRole("button", { name: "Reuse configuration" })
     await waitFor(() => expect(reuse).toBeEnabled())
     await user.click(reuse)
@@ -554,7 +620,8 @@ describe("project quality audits", () => {
       await user.click(screen.getAllByText("View investigators")[0]!)
       await user.click(screen.getByRole("checkbox", { name: "architecture_boundary" }))
       await user.click(screen.getByRole("checkbox", { name: "Enable Security" }))
-      expect(screen.getByText("Partial evaluation")).toBeInTheDocument()
+      // The partial-evaluation label is no longer surfaced in the configuration drawer.
+      expect(screen.queryByText("Partial evaluation")).not.toBeInTheDocument()
 
       await user.click(screen.getByRole("button", { name: "Restore defaults" }))
 
@@ -805,9 +872,13 @@ describe("project quality audits", () => {
     }])
     show()
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
-    expect(await screen.findByText("bdeb6efb73bd45fe9cb193f54710cf60")).toBeInTheDocument()
+    // The full run ID is kept for the detail page, not the explorer row.
+    expect(screen.queryByText("bdeb6efb73bd45fe9cb193f54710cf60")).not.toBeInTheDocument()
     expect(api.getQualityAudit).not.toHaveBeenCalled()
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    const article = screen.getByRole("article")
+    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    await openAuditMenu(article)
+    expect(screen.getByRole("link", { name: "View Blackboard" })).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Audit report · #8" })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Download Word report" }))
     expect(api.downloadQualityAuditReport).toHaveBeenCalledWith(5, 8)
@@ -821,7 +892,8 @@ describe("project quality audits", () => {
     const article = await screen.findByRole("article")
     expect(within(article).getByRole("heading", { name: /Functional adequacy · #8/ })).toBeInTheDocument()
     expect(article).not.toHaveTextContent("Functional adequacy · exploratory")
-    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    await openAuditMenu(article)
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(JSON.stringify(historical)).toBe(original)
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
   })
@@ -840,45 +912,52 @@ describe("project quality audits", () => {
   it("selects both attributes by default and starts them as one audit request", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([])
     vi.mocked(api.startQualityAudit).mockResolvedValue({ executionId: 10 })
-    show()
+    const openSettings = vi.fn()
+    show({ openSettings })
     await screen.findByText("No audits recorded.")
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Security" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Maintainability" })).toHaveTextContent("Enabled")
     expect(screen.getByRole("region", { name: "Functional adequacy · exploratory" })).toHaveTextContent("Disabled")
-    const settingsLink = screen.getByRole("link", { name: "Configure agents" })
-    expect(settingsLink).toHaveClass("ui-button", "ui-button-secondary")
-    expect(settingsLink).toHaveAttribute("href", "/settings")
+    const settingsButton = screen.getByRole("button", { name: "Configure agents" })
+    expect(settingsButton).toHaveClass("ui-button", "ui-button-secondary")
+    await userEvent.click(settingsButton)
+    expect(openSettings).toHaveBeenCalledWith("agents")
     await userEvent.click(screen.getByRole("button", { name: "Start audit" }))
     await waitFor(() => expect(api.startQualityAudit).toHaveBeenCalledWith(5, "main", "a".repeat(40), ["maintainability", "security"]))
     expect(api.startQualityAudit).toHaveBeenCalledOnce()
   })
 
-  it("shows the run id and its Blackboard link while the audit is still running", async () => {
+  it("keeps View Details and Reuse Configuration visible while the audit is still running", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 9, evaluationId: 4, runId: "c".repeat(32), branch: "main", commitHash: "a".repeat(40),
       attributes: ["maintainability"], executionStatus: "Running", auditStatus: null, error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false,
     }])
     show()
-    expect(await screen.findByText("c".repeat(32))).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View Blackboard" }).getAttribute("href"))
-      .toBe(`http://localhost:7502/blackboard?run_id=${"c".repeat(32)}`)
-    expect(screen.getByRole("link", { name: "View Blackboard" })).toHaveClass("ui-button", "ui-button-secondary")
+    // The full run ID stays out of the explorer row.
+    expect(screen.queryByText("c".repeat(32))).not.toBeInTheDocument()
+    const article = await screen.findByRole("article")
+    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/9")
+    expect(within(article).getByRole("button", { name: "Reuse configuration" })).toBeInTheDocument()
     // A running audit has no report yet, so no extra request is made for it.
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/9")
+    await openAuditMenu(article)
+    expect((screen.getByRole("link", { name: "View Blackboard" })).getAttribute("href"))
+      .toBe(`http://localhost:7502/blackboard?run_id=${"c".repeat(32)}`)
+    expect(screen.queryByRole("button", { name: "Download Word report" })).not.toBeInTheDocument()
   })
 
-  it("waits for the run id while the audit is starting", async () => {
+  it("disables the Blackboard menu action while the run id is still starting", async () => {
     vi.mocked(api.listQualityAudits).mockResolvedValue([{
       id: 10, evaluationId: 4, runId: null, branch: "main", commitHash: "a".repeat(40),
       attributes: ["maintainability"], executionStatus: "Running", auditStatus: null, error: null,
       createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false,
     }])
     show()
-    expect(await screen.findByText("Initializing…")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/10")
+    await screen.findByRole("article")
+    await openAuditMenu()
+    expect(screen.getByRole("button", { name: "View Blackboard" })).toBeDisabled()
   })
 
   it("translates history links and the exploratory label without revealing LLM mode or making requests", async () => {
@@ -892,6 +971,7 @@ describe("project quality audits", () => {
     expect(await screen.findByText("Partial evaluation")).toBeInTheDocument()
     await toggleAttribute("Functional adequacy")
     expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
+    await openAuditMenu()
     expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(api.getQualityAudit).not.toHaveBeenCalled()
     const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
@@ -903,9 +983,75 @@ describe("project quality audits", () => {
     expect(screen.getByRole("heading", { name: "Auditorías del proyecto" })).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Adecuación funcional · exploratoria" })).toHaveTextContent("Activado")
     expect(screen.queryByRole("textbox", { name: "Requisitos funcionales" })).not.toBeInTheDocument()
-    expect(screen.getByText("report-run-id")).toBeInTheDocument()
+    // The full run ID is not exposed in the explorer row; the Blackboard target carries it.
+    expect(screen.queryByText("report-run-id")).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Ver Blackboard" })).toHaveAttribute("href", expect.stringContaining("run_id=report-run-id"))
     expect(api.startQualityAudit).not.toHaveBeenCalled()
     expect([vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]).toEqual(requestCounts)
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
+  })
+
+  it("filters evaluation runs by status before paginating and resets to the first page", async () => {
+    const make = (id: number, executionStatus: string, auditStatus: string | null): api.QualityAuditSummary => ({
+      id, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
+      executionStatus, auditStatus, error: null, runId: `run-${id}`,
+      createdAt: `2026-02-${String(id).padStart(2, "0")}T12:00:00Z`, finishedAt: null, reportAvailable: false,
+    })
+    vi.mocked(api.listQualityAudits).mockResolvedValue([
+      make(1, "Completed", "completed"), make(2, "Completed", "partial"), make(3, "Failed", "failed"),
+      make(4, "Running", null), make(5, "Completed", "completed"), make(6, "Completed", "partial"),
+      make(7, "Failed", "failed"),
+    ])
+    const user = userEvent.setup()
+    showHistory()
+    await screen.findAllByRole("article")
+    // Defaults to the unfiltered, newest-first explorer.
+    expect(screen.getByRole("tab", { name: "All" })).toHaveAttribute("aria-selected", "true")
+    await user.click(screen.getAllByRole("button", { name: "Next page" })[0])
+    expect(within(screen.getAllByRole("article")[0]).getByRole("heading")).toHaveTextContent("#2")
+    expect(screen.getAllByText("Page 2 of 2")).toHaveLength(2)
+    // Switching the filter resets pagination and applies the filter before slicing.
+    await user.click(screen.getByRole("tab", { name: "Partial" }))
+    expect(screen.getByRole("tab", { name: "Partial" })).toHaveAttribute("aria-selected", "true")
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2))
+    expect(screen.getAllByRole("article").map((article) => within(article).getByRole("heading").textContent)).toEqual(
+      ["Maintainability · #2", "Maintainability · #6"])
+    // The filtered set fits on one page, so the shared pager renders no page nav.
+    expect(screen.queryByRole("navigation", { name: "Audit history pages" })).toBeNull()
+    // A filter with no matches shows the filtered empty state, not the generic one.
+    await user.click(screen.getByRole("tab", { name: "Failed" }))
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2))
+    await user.click(screen.getByRole("tab", { name: "Completed" }))
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2))
+    expect(screen.getAllByRole("article").map((article) => within(article).getByRole("heading").textContent)).toEqual(
+      ["Maintainability · #1", "Maintainability · #5"])
+  })
+
+  it("shows an empty state when a status filter has no matching runs", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([{
+      id: 8, evaluationId: 4, branch: "main", commitHash: "a".repeat(40), attributes: ["maintainability"],
+      executionStatus: "Completed", auditStatus: "completed", error: null, runId: "run-8",
+      createdAt: "2026-10-17T10:00:00Z", finishedAt: null, reportAvailable: false,
+    }])
+    showHistory()
+    await screen.findByRole("article")
+    await userEvent.click(screen.getByRole("tab", { name: "Failed" }))
+    expect(await screen.findByText("No audits recorded for this filter.")).toBeVisible()
+    expect(screen.queryByRole("combobox", { name: "Audits per page" })).toBeNull()
+  })
+
+  it("keeps the row menu keyboard accessible with the secondary actions", async () => {
+    vi.mocked(api.listQualityAudits).mockResolvedValue([{ ...historicalSummary, configurationAvailable: true }])
+    show()
+    const user = userEvent.setup()
+    await screen.findByRole("article")
+    const trigger = screen.getByRole("button", { name: /More actions for audit #8/ })
+    trigger.focus()
+    await user.keyboard("{Enter}")
+    expect(await screen.findByRole("button", { name: "View configuration" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "View details" })).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("button", { name: "View configuration" })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 })

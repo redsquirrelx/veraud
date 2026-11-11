@@ -11,13 +11,14 @@ import { AuditEvidenceTab } from "./AuditEvidenceTab.tsx"
 import { AuditIncidentsTab } from "./AuditIncidentsTab.tsx"
 import { useAuditIncidentLabels } from "./auditIncidentLabels.ts"
 import { AuditChronologyTab } from "./AuditChronologyTab.tsx"
+import { AuditValidationHistoryPreview } from "./AuditValidationHistory.tsx"
 import { useAuditChronologyLabels } from "./auditChronologyLabels.ts"
 import { executionStatusLabelKeys, statusLabelKey, isQualityAuditActive } from "./projectStatus.ts"
 import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditReport.tsx"
 import { useAuditReportSection } from "./useAuditReportSection.ts"
-import { downloadQualityAuditReport, getQualityAudit, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { downloadQualityAuditReport, getQualityAudit, startFindingResolution, type QualityAuditSummary } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
 
@@ -27,25 +28,32 @@ const evaluationLabels: Record<string, ParseKeys<"projects">> = {
 }
 
 export function QualityAuditResults({ projectId, auditId, projectName, repositoryName }: { projectId: number, auditId: number, projectName: string, repositoryName?: string }) {
-  const { t } = useTranslation("projects")
+  const { t, i18n } = useTranslation("projects")
   const { t: tCommon } = useTranslation("common")
   const { t: tEvidence } = useTranslation("auditEvidence")
   const incidentLabels = useAuditIncidentLabels()
   const chronologyLabels = useAuditChronologyLabels()
+  const revalidationLabels = i18n.resolvedLanguage?.startsWith("es")
+    ? { tab: "Revalidación de hallazgos", start: "Iniciar revalidación", starting: "Iniciando…", started: "Revalidación iniciada (ejecución {{id}}).", error: "No se pudo iniciar la revalidación." }
+    : { tab: "Findings revalidation", start: "Start finding revalidation", starting: "Starting…", started: "Finding revalidation started (execution {{id}}).", error: "Could not start the finding revalidation." }
   const [audit, setAudit] = useState<QualityAuditSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ResultsError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [revalidationStarting, setRevalidationStarting] = useState(false)
+  const [revalidationError, setRevalidationError] = useState<string | null>(null)
+  const [revalidationStarted, setRevalidationStarted] = useState<number | null>(null)
   const [search, setSearch] = useSearchParams()
   const requestedTab = search.get("tab")
-  const activeTab = requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
+  const activeTab = requestedTab === "revalidation" || requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
   const requestedEvidenceId = search.get("evidence") || undefined
   const [evidenceVisited, setEvidenceVisited] = useState(false)
   const [qualityResultsOpen, setQualityResultsOpen] = useState(false)
   const tabsId = useId()
   const tabs = [
     { id: "general", label: t("qualityAudits.results.generalTab") },
+    { id: "revalidation", label: revalidationLabels.tab },
     { id: "findings", label: t("qualityAudits.results.findingsTab") },
     { id: "evidence", label: tEvidence("tab") },
     { id: "incidents", label: incidentLabels.tab },
@@ -98,6 +106,21 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     setAttempt((value) => value + 1)
   }
 
+  async function startRevalidation() {
+    if (!audit?.commitHash) return
+    setRevalidationStarting(true)
+    setRevalidationError(null)
+    setRevalidationStarted(null)
+    try {
+      const execution = await startFindingResolution(projectId, auditId, audit.commitHash)
+      setRevalidationStarted(execution.id)
+    } catch (cause) {
+      setRevalidationError(cause instanceof Error ? cause.message : revalidationLabels.error)
+    } finally {
+      setRevalidationStarting(false)
+    }
+  }
+
   const auditStateLabel = useAuditStateLabel()
   const stateLabel = !pending && audit?.auditStatus ? evaluationLabels[audit.auditStatus] : undefined
   const executionLabel = audit ? statusLabelKey(executionStatusLabelKeys, audit.executionStatus) : undefined
@@ -148,13 +171,26 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
           {!pending && audit.reportAvailable && <Button variant="secondary" disabled={downloading} onClick={() => void download()}>{downloading ? t("qualityAudits.downloading") : t("qualityAudits.downloadWord")}</Button>}
         </div>
         {audit.error && <p role="alert">{publicErrorText(audit.error)}</p>}
-        {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
+        {!pending && (audit.reportAvailable ? <QualityAuditReport key={attempt} projectId={projectId} auditId={auditId} qualityResults={qualityResults} onQualityResultsOpenChange={setQualityResultsOpen} repositoryName={repositoryName ?? ""} /> : !error && <p className="label">{t("qualityAudits.results.noReport")}</p>)}
       </>}
     </>}
     </div>
+    <div role="tabpanel" id={`${tabsId}-panel-revalidation`} aria-labelledby={`${tabsId}-tab-revalidation`} hidden={activeTab !== "revalidation"} tabIndex={0}>
+      {activeTab === "revalidation" && <>
+        <div className="quality-audit-history-actions">
+          <Button variant="primary" disabled={!audit || pending || !audit.reportAvailable || !audit.commitHash || revalidationStarting}
+            onClick={() => void startRevalidation()}>
+            {revalidationStarting ? revalidationLabels.starting : revalidationLabels.start}
+          </Button>
+        </div>
+        {revalidationStarted !== null && <p role="status">{revalidationLabels.started.replace("{{id}}", String(revalidationStarted))}</p>}
+        {revalidationError && <p role="alert">{revalidationError}</p>}
+        <AuditValidationHistoryPreview />
+      </>}
+    </div>
     <div role="tabpanel" id={`${tabsId}-panel-findings`} aria-labelledby={`${tabsId}-tab-findings`} hidden={activeTab !== "findings"} tabIndex={0}>
       {activeTab === "findings" && (loading ? <Spinner /> : pending || (error !== null && audit === null) ? null : audit?.reportAvailable
-        ? <QualityAuditFindingsPanel resource={qualityResults} />
+        ? <QualityAuditFindingsPanel resource={qualityResults} projectId={projectId} repositoryName={repositoryName ?? ""} />
         : <p className="label">{t("qualityAudits.results.noReport")}</p>)}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-evidence`} aria-labelledby={`${tabsId}-tab-evidence`} hidden={activeTab !== "evidence"} tabIndex={0}>

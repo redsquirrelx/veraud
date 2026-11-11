@@ -70,6 +70,29 @@ function renderSettings(responses: Array<{ status: number, body?: unknown }>) {
 }
 
 describe("SettingsPage", () => {
+  it("shows a separate Architecture Context card in Audit and saves its own model assignment", async () => {
+    const saved = { agentType: "architecture_context", qualityAttributes: [], workflowIds: [], requiresModel: true,
+      availability: "available", configured: true, configuration: {
+        model: { id: 10, name: "gpt-4o", providerId: 1, providerName: "OpenAI" },
+        credential: { id: 20, name: "prod", providerId: 1, providerName: "OpenAI" }, temperature: null, maxTokens: null,
+      } }
+    const calls = renderSettings([{ status: 200, body: providers },
+      { status: 200, body: [{ ...saved, configured: false, configuration: null }] },
+      { status: 200, body: saved }, { status: 200, body: providers },
+    ])
+    await userEvent.click(screen.getByRole("tab", { name: "Audit" }))
+    const heading = await screen.findByRole("heading", { name: "Architecture Context" })
+    const card = within(heading.closest<HTMLElement>(".settings-agent-card")!)
+    await userEvent.click(card.getByRole("button", { name: "Select a model..." }))
+    await userEvent.click(screen.getByRole("option", { name: /gpt-4o/ }))
+    await userEvent.click(card.getByRole("button", { name: "Select a credential..." }))
+    await userEvent.click(screen.getByRole("option", { name: /prod/ }))
+    await userEvent.click(card.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT"
+      && call.url.endsWith("/api/agent-settings/architecture_context")
+      && call.body === JSON.stringify({ modelId: 10, credentialId: 20 }))).toBe(true))
+    expect(calls.some((call) => call.url.includes("/categories/"))).toBe(false)
+  })
   it("restores the stored tab and persists mouse and keyboard selection", async () => {
     window.localStorage.setItem("settings.activeTab", JSON.stringify("preferences"))
     renderSettings([{ status: 200, body: providers }])

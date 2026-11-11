@@ -15,7 +15,10 @@ export function mergeInvocations(previous: AgentInvocation[] = [], incoming: Age
         ? old?.phase ?? null : item.phase ?? old?.phase ?? null,
         phase_sequence: Math.max(old?.phase_sequence ?? 0, item.phase_sequence ?? 0) } : {}),
       input_tokens: count(old?.input_tokens, item.input_tokens),
-      output_tokens: count(old?.output_tokens, item.output_tokens) })
+      output_tokens: count(old?.output_tokens, item.output_tokens),
+      ...((old?.unknown_usage_attempts !== undefined || item.unknown_usage_attempts !== undefined) ? {
+        unknown_usage_attempts: Math.max(old?.unknown_usage_attempts ?? 0, item.unknown_usage_attempts ?? 0),
+      } : {}) })
   }
   return [...merged.values()]
 }

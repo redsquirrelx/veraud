@@ -108,6 +108,7 @@
       "fileContent": "Contenido del archivo",
       "loadingFile": "Cargando el contenido del archivo",
       "readOnly": "Solo lectura",
+      "wrapLines": "Ajustar líneas",
       "plainText": "Texto sin formato",
       "line_one": "{{count}} línea",
       "line_other": "{{count}} líneas"

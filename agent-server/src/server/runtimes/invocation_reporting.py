@@ -8,8 +8,11 @@ from datetime import UTC, datetime
 
 from langchain_core.runnables import Runnable, RunnableConfig
 
+from ..agent_services.execution_tracking.events import (
+    invocation_event_context,
+    record_event,
+)
 from ..config.logs import get_logger
-from ..infrastructure.execution_events import invocation_event_context, record_event
 from ..services.execution_error_details import (
     capture_execution_errors,
     exception_error_detail,
@@ -47,9 +50,18 @@ async def report_invocation_usage(runtime):
         return
     receipt, sources = active
     sources[runtime] = runtime.usage_totals()
+    # Exact totals stay unknown after an unmetered attempt. Live counters must
+    # still advance with known usage, explicitly marked as a partial count.
+    receipt["unknown_usage_attempts"] = sum(usage.get("unknown_usage_attempts", 0) for usage in sources.values())
     for key in ("input_tokens", "output_tokens"):
-        counts = [usage.get(key) for usage in sources.values()]
-        receipt[key] = sum(counts) if all(isinstance(value, int) for value in counts) else None
+        counts = []
+        for usage in sources.values():
+            value = usage.get(key)
+            if value is None and usage.get("provider_attempts", 0) > usage.get("unknown_usage_attempts", 0):
+                value = usage.get("reported_" + key)
+            if isinstance(value, int):
+                counts.append(value)
+        receipt[key] = sum(counts) if counts else None
     await _send(receipt)
 
 
@@ -80,7 +92,7 @@ def phase_node(name, operation):
     return node
 
 
-async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
+async def observe_invocation(operation, *, agent_id, invocation_id, run_id, status_resolver=None):
     """Wrap actual execution, preserving results, exceptions and cancellation."""
     try:
         check_cancellation()
@@ -104,7 +116,7 @@ async def observe_invocation(operation, *, agent_id, invocation_id, run_id):
         began = True
         with capture_execution_errors() as children:
             result = await operation
-        status = getattr(result, "status", None)
+        status = status_resolver(result) if status_resolver is not None else getattr(result, "status", None)
         receipt["status"] = "completed" if status in {"complete", "completed"} else (
             status if status in {"partial", "failed", "cancelled", "timeout"} else "partial")
         detail = result_error_detail(result, agent_id=agent_id, invocation_id=invocation_id, children=children)

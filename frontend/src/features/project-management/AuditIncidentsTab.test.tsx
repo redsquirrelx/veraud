@@ -47,7 +47,7 @@ it("adds Incidents after Evidence, deduplicates inherited causes, sorts chronolo
     { ...receipt("legacy"), error: "Legacy error" },
   ] })
   show()
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen General", "Hallazgos", "Evidencias", "Incidentes", "Cronología"])
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen General", "Revalidación de hallazgos", "Hallazgos", "Evidencias", "Incidentes", "Cronología"])
   const panel = screen.getByRole("tabpanel", { name: "Incidentes" })
   const articles = await within(panel).findAllByRole("article")
   expect(articles).toHaveLength(3)

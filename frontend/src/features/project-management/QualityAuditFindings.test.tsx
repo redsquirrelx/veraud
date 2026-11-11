@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { changeLanguage } from "../../shared/i18n/index.ts"
 import { QualityAuditFindings } from "./QualityAuditFindings.tsx"
 
-afterEach(async () => { cleanup(); await changeLanguage("en") })
+afterEach(async () => { cleanup(); vi.restoreAllMocks(); await changeLanguage("en") })
 const finding = (id: string, attribute: string, severity: string | null = "high") => ({
   id, title: `Finding ${id}`, description: `Description ${id}`, quality_attribute: attribute, severity,
   components: ["api", "database"], source_refs: [
@@ -15,6 +15,9 @@ const finding = (id: string, attribute: string, severity: string | null = "high"
   ],
 })
 const renderDetails = () => <p>Full original finding</p>
+function describeTechnicalMetadata(drawer: ReturnType<typeof within>) {
+  return drawer.getByText("Technical metadata", { selector: "summary" }).closest("details")!
+}
 
 describe("audit findings list", () => {
   it("groups findings and shows their description, severity, components and original detecting agent", async () => {
@@ -31,9 +34,9 @@ describe("audit findings list", () => {
     expect(item.getByText("Severity: High")).toBeInTheDocument()
     expect(item.getByText("Attribute: Maintainability").closest(".ui-badge")).toBeInTheDocument()
     expect(item.getByText("Subcharacteristic: Modularity").closest(".ui-badge")).toBeInTheDocument()
-    expect(item.getByText("Validation: Verified").closest(".ui-badge")).toHaveClass("ui-badge-success")
+    expect(item.queryByText(/Validation:/)).not.toBeInTheDocument()
     expect(item.queryByText("api, database")).not.toBeInTheDocument()
-    expect(item.queryByText("detector")).not.toBeInTheDocument()
+    expect(item.getByText(/Detecting agent: detector/)).toBeInTheDocument()
     expect(item.queryByText("Changes propagate across modules.")).not.toBeInTheDocument()
     expect(screen.queryByText("reviewer")).not.toBeInTheDocument()
     expect(screen.queryByText("another-detector")).not.toBeInTheDocument()
@@ -43,12 +46,16 @@ describe("audit findings list", () => {
     trigger.focus()
     await user.keyboard("{Enter}")
     const drawer = within(await screen.findByRole("dialog", { name: "Finding M1" }))
+    // Identifier and detecting agent live in the collapsed technical metadata section.
+    await user.click(drawer.getByText("Technical metadata"))
     expect(drawer.getByText("M1")).toBeInTheDocument()
     expect(drawer.getByText("Description M1")).toBeInTheDocument()
     expect(drawer.getByText("Changes propagate across modules.")).toBeInTheDocument()
     expect(drawer.getByText("Separate the responsibilities.")).toBeInTheDocument()
-    expect(drawer.getByText("api, database")).toBeInTheDocument()
-    expect(drawer.getByText("detector")).toBeInTheDocument()
+    // Components are rendered as individual chips, not as a joined string.
+    expect(drawer.getByText("api")).toBeInTheDocument()
+    expect(drawer.getByText("database")).toBeInTheDocument()
+    expect(describeTechnicalMetadata(drawer)).toHaveTextContent("detector")
     expect(drawer.queryByText("reviewer")).not.toBeInTheDocument()
     expect(drawer.queryByText("another-detector")).not.toBeInTheDocument()
     await user.click(drawer.getByText("View original details"))
@@ -56,17 +63,19 @@ describe("audit findings list", () => {
     await changeLanguage("es")
     expect(screen.getByText("Mantenibilidad (2)")).toBeInTheDocument()
     expect(item.getByText("Severidad: Alta")).toBeInTheDocument()
+    // Agent lives inside technical metadata; details stays open after language switch.
     expect(drawer.getByText("Agente detector")).toBeInTheDocument()
     expect(drawer.getByText("Impacto sobre el software")).toBeInTheDocument()
-    expect(drawer.getByText("Recomendaciones")).toBeInTheDocument()
+    expect(drawer.getByText("Corrección recomendada")).toBeInTheDocument()
     expect(item.getByText("Atributo: Mantenibilidad")).toBeInTheDocument()
     expect(item.getByText("Subcaracterística: Modularidad")).toBeInTheDocument()
-    expect(item.getByText("Validación: Verificado")).toBeInTheDocument()
+    expect(item.queryByText(/Validación:/)).not.toBeInTheDocument()
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
     await user.click(screen.getByRole("button", { name: "Finding S1" }))
     const nextDrawer = within(await screen.findByRole("dialog", { name: "Finding S1" }))
+    await user.click(nextDrawer.getByText("Metadatos técnicos", { selector: "summary" }))
     expect(nextDrawer.getByText("S1")).toBeInTheDocument()
     expect(nextDrawer.queryByText("Changes propagate across modules.")).not.toBeInTheDocument()
     expect(nextDrawer.queryByText("Full original finding")).not.toBeInTheDocument()
@@ -80,20 +89,24 @@ describe("audit findings list", () => {
     expect(screen.getAllByText("Not recorded")).toHaveLength(1)
     expect(screen.getByText("Attribute: custom attribute")).toBeInTheDocument()
     expect(screen.getByText("Subcharacteristic: Not recorded")).toBeInTheDocument()
-    expect(screen.getByText("Validation: Not recorded")).toBeInTheDocument()
+    expect(screen.queryByText(/Validation:/)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Legacy finding" }))
     const drawer = within(await screen.findByRole("dialog", { name: "Legacy finding" }))
-    for (const label of ["Full description", "Software impact", "Recommendations", "Affected component", "Detecting agent"]) {
-      expect(drawer.getByText(label).closest("div")).toHaveTextContent(`${label}Not recorded`)
-    }
+    // Missing data is shown as "Not recorded" without inventing values; sections stay visible.
+    expect(drawer.getByRole("region", { name: "What's wrong" })).toHaveTextContent("Not recorded")
+    expect(drawer.getByRole("region", { name: "Software impact" })).toHaveTextContent("Not recorded")
+    expect(drawer.getByRole("region", { name: "Recommended fix" })).toHaveTextContent("Not recorded")
+    expect(drawer.getByRole("region", { name: "What's wrong" })).toHaveTextContent("No components recorded")
+    const technical = describeTechnicalMetadata(drawer)
+    expect(technical).toHaveTextContent("Not recorded")
   })
 
   it.each([
-    ["inconclusive", "Inconclusive", "warning"], ["discarded", "Discarded", "neutral"], ["pending_review", "pending review", "neutral"],
-  ])("preserves the reported %s validation status without marking it verified", (status, label, tone) => {
+    ["inconclusive", "Inconclusive", "warning"], ["discarded", "Discarded", "neutral"], ["unreviewed", "Unreviewed", "neutral"], ["pending_review", "pending review", "neutral"],
+  ])("does not mark the reported %s validation status as verified", (status, label, tone) => {
     render(<QualityAuditFindings findings={[{ ...finding("S1", "security"), subcharacteristic: "custom_dimension", verification_status: status }]}
       renderDetails={renderDetails} />)
-    expect(screen.getByText(`Validation: ${label}`).closest(".ui-badge")).toHaveClass(`ui-badge-${tone}`)
+    expect(screen.queryByText(/Validation:/)).not.toBeInTheDocument()
     expect(screen.getByText("Subcharacteristic: custom dimension")).toBeInTheDocument()
     expect(screen.queryByText("Validation: Verified")).not.toBeInTheDocument()
   })
@@ -190,5 +203,43 @@ describe("audit findings list", () => {
     rerender(<QualityAuditFindings findings={null} renderDetails={renderDetails} />)
     expect(screen.getByText("Not recorded")).toBeInTheDocument()
     expect(screen.queryByText("No findings were identified in this audit")).not.toBeInTheDocument()
+  })
+
+  it("opens a documentary reference in the shared evidence viewer and returns to the inspector", async () => {
+    const content = "first documented line\nsecond documented line\nthird documented line"
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      JSON.stringify({ path: "docs/arch.md", content, size: content.length }), { status: 200 }))
+    render(<QualityAuditFindings findings={[{
+      ...finding("D1", "maintainability"),
+      description: "Forbidden dependency",
+      technical_details: {
+        documentary_references: [{
+          document_claim_id: "CLAIM-1", subject: "Layering", statement: "Layers only talk downwards",
+          constraint: "prohibited", certainty: "explicit", category: "constraints",
+          section_paths: { s1: "docs/arch.md" },
+          quotes: [{ section_id: "s1", path: "docs/arch.md", start_line: 2, end_line: 3, quote: "quoted rule" }],
+        }],
+      },
+    }]} renderDetails={renderDetails} projectId={2} repositoryName="Demo" />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: "Finding D1" }))
+    const drawer = within(await screen.findByRole("dialog", { name: "Finding D1" }))
+    // Severity stays in the fixed header, not inside the scrollable content.
+    expect(drawer.getByText("Severity: High").closest(".ui-drawer-header-extra")).not.toBeNull()
+    // Reference row shows filename, path, range and rule classification.
+    const refButton = drawer.getByRole("button", { name: /arch\.md/ })
+    expect(refButton).toHaveTextContent("L2–L3")
+    expect(refButton).toHaveTextContent("Prohibited")
+    await user.click(refButton)
+    // Evidence viewer replaces the inspector content; close remains available.
+    expect(await drawer.findByText("Back")).toBeInTheDocument()
+    expect(drawer.getByText("quoted rule")).toBeInTheDocument()
+    expect(drawer.getByRole("button", { name: "Close" })).toBeInTheDocument()
+    expect(drawer.queryByRole("region", { name: "What's wrong" })).not.toBeInTheDocument()
+    // Back restores the inspector without closing the drawer.
+    await user.click(drawer.getByText("Back"))
+    expect(await drawer.findByRole("region", { name: "What's wrong" })).toHaveTextContent("Forbidden dependency")
+    expect(drawer.queryByText("Back")).not.toBeInTheDocument()
+    expect(drawer.getByRole("button", { name: /arch\.md/ })).toBeInTheDocument()
   })
 })

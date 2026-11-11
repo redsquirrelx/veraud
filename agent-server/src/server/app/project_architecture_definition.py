@@ -29,6 +29,7 @@ from server.project_analysis.project_semantic_validation import (
 )
 from server.project_analysis.project_semantic_validation.schemas import ValidationLimits
 
+from ..agent_services.budgeting.timing import ActiveDeadline, within_deadline
 from ..config.logs import get_logger
 from ..config.settings import resolve_workspace_root
 from ..infrastructure.llm.factory import create_project_model
@@ -38,7 +39,6 @@ from ..runtimes.repository.model_runtime import (
     ModelGateway,
 )
 from ..runtimes.repository.schemas import ExecutionBudget
-from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from ..services.repository_analysis import (
     RepositoryAnalysisInput,
     RepositoryAnalysisService,

@@ -108,6 +108,7 @@
       "fileContent": "File content",
       "loadingFile": "Loading file content",
       "readOnly": "Read-only",
+      "wrapLines": "Wrap lines",
       "plainText": "Plain text",
       "line_one": "{{count}} line",
       "line_other": "{{count}} lines"

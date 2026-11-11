@@ -84,4 +84,25 @@ describe("useProjectGraph", () => {
     expect(result.current.graph?.status).toBe("Failed")
     expect(result.current.running).toBe(false)
   })
+
+  it("watches tasks launched by a pipeline even after a previous terminal result", async () => {
+    vi.useFakeTimers()
+    vi.mocked(getProjectGraph).mockResolvedValue({ ...graph, phase: "failed", status: "Failed" })
+    const { result, rerender } = renderHook(({ watch }) => useProjectGraph(2, "main", graph.commitHash, [], watch), {
+      initialProps: { watch: false },
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(result.current.graph?.status).toBe("Failed")
+    rerender({ watch: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    vi.mocked(getProjectGraph).mockResolvedValue({ ...graph, taskId: 9 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+    expect(result.current.graph?.taskId).toBe(9)
+    expect(result.current.running).toBe(true)
+    vi.mocked(getProjectGraph).mockResolvedValue({ ...graph, taskId: 9, phase: "completed", status: "Succeded", graphAvailable: true })
+    rerender({ watch: false })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(result.current.graph?.graphAvailable).toBe(true)
+    expect(result.current.running).toBe(false)
+  })
 })

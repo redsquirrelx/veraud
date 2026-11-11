@@ -11,6 +11,7 @@ export interface AuditAgentRun {
   name?: string
   configuration?: Pick<AgentConfiguration, "tokenBudget" | "absoluteTokenLimit"> | null
   estimatedTokens?: number | null
+  unknownUsageAttempts?: number
   interruptionReason?: string | null
   phase?: string | null
   id: number | string
@@ -122,6 +123,8 @@ export function stateLabelKey(state: Exclude<AuditRunState, "cancelling" | "canc
 }
 
 const pipelineLabelKeys: Record<string, ParseKeys<"projects">> = {
+  architecture_context: "analyze.pipeline.contextAgent",
+  finding_resolution: "auditStatus.pipelines.findingResolution",
   maintainability: "auditStatus.pipelines.maintainability",
   security: "auditStatus.pipelines.security",
   functional_adequacy: "auditStatus.pipelines.functionalAdequacy",

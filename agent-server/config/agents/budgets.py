@@ -5,8 +5,16 @@ from pydantic import Field, StrictBool
 from .base import ConfigContract
 
 
-class TokenBudgetPolicy(ConfigContract):
-    unlimited_token_budget: StrictBool = True
+class BudgetPolicy(ConfigContract):
+    budgets_enabled: StrictBool = True
+
+    @property
+    def unlimited_token_budget(self):
+        """Read-only compatibility view of the single global switch."""
+        return not self.budgets_enabled
+
+
+TokenBudgetPolicy = BudgetPolicy
 
 
 class TokenBudgetConfig(ConfigContract):

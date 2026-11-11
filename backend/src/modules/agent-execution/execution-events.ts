@@ -106,6 +106,7 @@ export function registerExecutionEventRoutes(app: FastifyInstance, repository: E
   }
   app.post<{ Params: { id: string }, Body: { events: ExecutionEventInput[] } }>("/api/agent-executions/:id/events", { schema: {
     params, tags: ["Agent Executions"], summary: "Append immutable execution events (idempotent batch)",
+    description: "Appends an idempotent batch of immutable execution events.",
     body: { type: "object", additionalProperties: false, required: ["events"], properties: { events: { type: "array", minItems: 1, maxItems: 100, items: executionEventSchema } } },
     response: { 200: { type: "object", required: ["acknowledged"], properties: { acknowledged: { type: "boolean" } } }, ...errors },
   } }, async (request, reply) => {
@@ -114,6 +115,7 @@ export function registerExecutionEventRoutes(app: FastifyInstance, repository: E
   })
   app.get<{ Params: { id: string }, Querystring: { offset?: number, limit?: number } }>("/api/agent-executions/:id/events", { schema: {
     params, tags: ["Agent Executions"], summary: "Read execution chronology, ordered by occurrence time",
+    description: "Returns paginated execution events ordered by occurrence time.",
     querystring: { type: "object", additionalProperties: false, properties: { offset: { type: "integer", minimum: 0, default: 0 }, limit: { type: "integer", minimum: 1, maximum: 200, default: 100 } } },
     response: { 200: { type: "object", required: ["total", "offset", "limit", "events"], properties: {
       total: { type: "integer" }, offset: { type: "integer" }, limit: { type: "integer" }, events: { type: "array", items: { ...executionEventSchema,

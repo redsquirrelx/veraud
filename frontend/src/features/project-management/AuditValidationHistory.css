@@ -1,0 +1,87 @@
+.audit-validation-history { min-width: 0; }
+.audit-validation-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); }
+.audit-validation-tree { overflow-x: auto; padding: var(--space-1); }
+.audit-validation-tree ol { list-style: none; margin: 0; }
+.audit-validation-root { padding: 0; }
+.audit-validation-tree li { position: relative; }
+.audit-validation-tree .audit-validation-branches { padding-inline-start: 2rem; margin-inline-start: 1rem; }
+.audit-validation-branches > li { padding-block-start: 1rem; }
+
+/* The ancestor rail ends at its last child's marker, not at the end of that subtree. */
+.audit-validation-branches > li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -2rem;
+  top: 0;
+  bottom: 0;
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+.audit-validation-branches > li::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: -2rem;
+  top: 2.75rem;
+  width: 3rem;
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+.audit-validation-branches > li:last-child::before { bottom: auto; height: 2.75rem; }
+
+.audit-validation-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2rem minmax(34rem, 1fr);
+  gap: 1rem;
+  width: 100%;
+  min-width: 37rem;
+}
+.audit-validation-row[data-has-children="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 1rem;
+  top: 1.75rem;
+  bottom: 0;
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+.audit-validation-marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 2rem;
+  height: 2rem;
+  margin-block-start: 0.75rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.audit-validation-toggle { padding: 0; font-family: inherit; cursor: pointer; }
+.audit-validation-toggle > span:first-child { display: grid; place-items: center; }
+.audit-validation-toggle:hover { border-color: var(--color-focus-strong); }
+.audit-validation-toggle:focus-visible { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 3px; }
+.audit-validation-toggle-chevron { position: absolute; inset-inline-end: -3px; bottom: -3px; display: grid; place-items: center; width: 12px; height: 12px; border-radius: 50%; background: var(--color-surface); color: var(--color-text-muted); }
+.audit-validation-node {
+  display: grid;
+  align-content: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface);
+}
+.audit-validation-row:not(.audit-validation-initial) .audit-validation-node { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+.audit-validation-node-content { display: grid; gap: var(--space-1); min-width: 0; }
+.audit-validation-node strong { font-weight: var(--font-weight-semibold); }
+.audit-validation-node-heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.audit-validation-commit { justify-self: start; color: var(--color-text-description); }
+.audit-validation-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); }
+.audit-validation-actions .ui-button { white-space: nowrap; }
+.audit-validation-node time { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.audit-validation-row[data-latest="true"] .audit-validation-marker { background: var(--color-selection-soft); border-color: var(--color-focus-strong); color: var(--color-focus-strong); }
+.audit-validation-row[data-latest="true"] .audit-validation-node { border-color: var(--color-focus-strong); }

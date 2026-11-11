@@ -74,12 +74,12 @@ def _definitions(service):
     """Return descriptors and optional typed input/output contracts, lazily."""
     from server.app.pipeline_registry import default_pipeline_registry
 
-    from ..agents.maintainability.v1.manager.registry import COORDINATORS
-    from ..agents.maintainability.v1.modularity.coordinator.registry import (
-        INVESTIGATORS as MODULARITY,
+    from ..agents.maintainability.v2.manager.registry import registered_coordinators
+    from ..agents.maintainability.v2.modularity.coordinator.registry import (
+        registered_investigators as modularity_investigators,
     )
-    from ..agents.maintainability.v1.reusability.coordinator.registry import (
-        INVESTIGATORS as REUSABILITY,
+    from ..agents.maintainability.v2.reusability.coordinator.registry import (
+        registered_investigators as reusability_investigators,
     )
     from .audit_models import MAINTAINABILITY_AGENT_TYPES
     from .project_architecture_definition import ProjectArchitectureInput
@@ -115,13 +115,18 @@ def _definitions(service):
             config=package, workflows=["project-architecture"], aliases=[package],
             result=_symbol(f"project_analysis.{package}.schemas", result))
 
-    add("maintainability_manager", "MaintainabilityManagerAgent", "manager", ["audit", "pipeline"],
+    coordinators = registered_coordinators()
+    add("maintainability_manager", "MaintainabilityManager", "manager", ["audit", "pipeline"],
         "Coordinates the implemented maintainability dimensions over one audit snapshot.",
-        config="maintainability_manager", workflows=["quality-audit"], attributes=["maintainability"], children=COORDINATORS,
-        request=_symbol("maintainability.v1.manager.schemas", "MaintainabilityRequest"),
-        result=_symbol("maintainability.v1.manager.schemas", "MaintainabilityReport"))
-    for identifier, spec in COORDINATORS.items():
-        investigators = MODULARITY if identifier == "modularity" else REUSABILITY
+        config="maintainability_manager", workflows=["quality-audit"], attributes=["maintainability"], children=coordinators,
+        request=_symbol("maintainability.v2.manager.schemas", "MaintainabilityRequest"),
+        result=_symbol("maintainability.v2.manager.schemas", "AuditResult"))
+    investigators_by_coordinator = {
+        "modularity": modularity_investigators,
+        "reusability": reusability_investigators,
+    }
+    for identifier, spec in coordinators.items():
+        investigators = investigators_by_coordinator.get(identifier, modularity_investigators)()
         add(identifier, spec.agent_class.__name__, "coordinator", ["internal"],
             "Coordinates its registered investigators; invoked by the maintainability manager.",
             config=identifier, workflows=["quality-audit"], attributes=["maintainability"], parents=["maintainability_manager"],

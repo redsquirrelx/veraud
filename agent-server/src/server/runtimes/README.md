@@ -23,6 +23,13 @@ Shared configuration belongs to `config.agents`; exclusive configuration remains
 in each agent's `config.py`. See [coordination/README.md](coordination/README.md)
 for the shared orchestration contract.
 
+Agent lifecycle callbacks and content-free activity capture are unified in
+`server.agent_services.execution_tracking.ExecutionObserver`. Runtime hooks use
+that package's `events` module; the application composes the backend transport and
+shared delivery worker. See [agent services](../agent_services/README.md).
+`server.agent_services.budgeting` owns the global budget switch, timing and resource
+ledgers/metrics. Pacing, quotas and repository access policies remain separate.
+
 ## Global provider RPM/TPM
 
 `server.infrastructure.llm.quota` owns the process-independent provider/model

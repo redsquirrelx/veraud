@@ -23,6 +23,10 @@
   letter-spacing: -0.01em;
 }
 
+.stage-title--lg {
+  font-size: 17px;
+}
+
 .stage-head-right {
   display: flex;
   align-items: center;

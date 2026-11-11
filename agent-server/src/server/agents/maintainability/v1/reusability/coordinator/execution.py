@@ -134,7 +134,7 @@ class ReusabilityExecution(CoordinatorExecution):
         budget = raw.assignment.budget
         if budget is None or any(n < 0 for n in [result.model_calls, result.tool_calls, result.accounted_tokens, result.estimated_tokens]):
             raise ValueError("Invalid usage accounting")
-        if (result.model_calls > budget.max_model_calls or result.tool_calls > budget.max_tool_calls
+        if (token_budget_exceeded(result.model_calls, budget.max_model_calls) or token_budget_exceeded(result.tool_calls, budget.max_tool_calls)
                 or token_budget_exceeded(result.accounted_tokens, budget.max_total_tokens) or result.estimated_tokens > result.accounted_tokens):
             raise ValueError("Reported usage exceeded reservation")
         if raw.assignment.investigator_id == "component_adaptability" and result.target_context != self.request.target_context:

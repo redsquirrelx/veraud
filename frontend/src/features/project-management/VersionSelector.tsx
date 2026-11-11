@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { FilterTabs, ItemSearcher, ItemSelector } from "../../shared/ui-kit/index.ts"
+import { FilterTabs, ItemSearcher, ItemSelector, Spinner } from "../../shared/ui-kit/index.ts"
 import type { VersionAnalysisSummary } from "../../infrastructure/http-client/httpClient.ts"
 import { analyzedLabel, derivedStatusLabelKey } from "./useAnalyzedVersions.ts"
 import type { useVersionSelector } from "./useVersionSelector.ts"
@@ -54,6 +54,8 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
     const key = derivedStatusLabelKey(status)
     return key === null ? status : t(key)
   }
+  const versionLoading = selection.loadingBranches || selection.loadingCommits
+  const versionBusy = versionLoading || selection.applying
 
   return (
     <div className="version-selector">
@@ -69,9 +71,13 @@ export function VersionSelector({ selection, analysis, mode, onModeChange, analy
           onChange={(id) => onModeChange?.(id as VersionMode)}
         />
       )}
-      {(selection.loadingBranches || selection.applying || selection.error !== "" || (showLocation && (selection.detached !== null || selection.applied !== null))) && <div className="version-row version-state-row">
-      {selection.loadingBranches && <span className="label version-state">{t("version.loadingBranches")}</span>}
-      {selection.applying && <span className="label version-state">{t("version.applying")}</span>}
+      {(versionBusy || selection.error !== "" || (showLocation && (selection.detached !== null || selection.applied !== null))) && <div className="version-row version-state-row">
+      {versionBusy && (
+        <span className="version-loading" role="status">
+          <Spinner size={12} />
+          <span className="label version-state">{versionLoading ? t("version.loadingVersion") : t("version.applying")}</span>
+        </span>
+      )}
       {selection.error !== "" && <span className="label version-state">{selection.error}</span>}
 
         {showLocation && <VersionLocation selection={selection} />}

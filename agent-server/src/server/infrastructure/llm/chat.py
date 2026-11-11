@@ -3,6 +3,8 @@
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from server.agent_services.budgeting.policy import budgets_enabled
+
 from ...config.schemas import ModelCredentials, ModelSettings
 from .quota import mark_quota_scope
 
@@ -31,7 +33,7 @@ def prepare_chat_model(model, *, max_output_tokens, request_timeout_seconds):
             if field in type(model).model_fields:
                 existing = getattr(model, field)
                 if existing is None or isinstance(existing, (int, float)):
-                    timeout = min(existing, request_timeout_seconds) if existing is not None else request_timeout_seconds
+                    timeout = (min(existing, request_timeout_seconds) if existing is not None else request_timeout_seconds) if budgets_enabled() else None
                     model = model.model_copy(update={field: timeout})
                 break
     return model, options, output_limit

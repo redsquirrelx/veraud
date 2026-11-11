@@ -12,6 +12,17 @@ const running: AgentExecution = {
 describe("AgentTokenUsage Spanish", () => {
   afterEach(async () => { await changeLanguage("en") })
 
+  it("keeps reporting known tokens while showing that some attempts are unmetered", async () => {
+    await changeLanguage("es")
+    const { rerender } = render(<AgentTokenUsage execution={{ ...running, inputTokens: 100, outputTokens: 20, unknownUsageAttempts: 1 }} />)
+    expect(screen.getByText("Conteo parcial de tokens: algunos intentos no informaron su consumo.")).toBeVisible()
+    expect(screen.getByText("100")).toBeInTheDocument()
+    rerender(<AgentTokenUsage execution={{ ...running, inputTokens: 150, outputTokens: 30, unknownUsageAttempts: 1 }} />)
+    expect(screen.getByText("150")).toBeInTheDocument()
+    expect(screen.getByText("30")).toBeInTheDocument()
+    expect(screen.getByText("Conteo parcial de tokens: algunos intentos no informaron su consumo.")).toBeVisible()
+  })
+
   it("translates token budget states and breakdown labels", async () => {
     await changeLanguage("es")
 

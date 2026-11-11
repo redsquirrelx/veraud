@@ -55,4 +55,23 @@ describe("Modal", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it("only closes with the cross when backdrop and Escape dismissal are disabled", async () => {
+    const onClose = vi.fn()
+    render(<Modal open label="Demo" closeOnBackdrop={false} closeOnEscape={false} onClose={onClose}><p>visible</p></Modal>)
+
+    await userEvent.keyboard("{Escape}")
+    const dialog = screen.getByRole("dialog")
+    const overlay = dialog.closest(".ui-modal-overlay")
+    if (overlay === null) {
+      throw new Error("overlay not found")
+    }
+    await userEvent.click(overlay)
+
+    expect(onClose).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole("button", { name: "Close" }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
 })

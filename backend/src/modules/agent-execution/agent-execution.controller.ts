@@ -7,10 +7,10 @@ import type {
   RealtimeGateway,
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
-import { monitorExecution } from "./agent-execution.monitor.js"
 import { executionErrorDetailSchema, executionErrorEvent, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { invocationEvents, invocationReceiptSchema, type InvocationReceipt } from "./invocationReceipt.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
+import { InvalidArchitectureContextError } from "./architecture-context.js"
 import {
   UnknownExecutionTargetError,
   type StoredAgentExecution,
@@ -40,10 +40,15 @@ const openBody = {
 
 const openDirectBody = {
   type: "object",
-  required: ["agentType", "input"],
+  required: ["agentType"],
+  oneOf: [{ required: ["input"], not: { required: ["project"] } }, { required: ["project"], not: { required: ["input"] } }],
   properties: {
     agentType: { type: "string", minLength: 1, examples: ["analyzer"] },
     input: { type: "object", minProperties: 1, additionalProperties: true, description: "Agent-specific input. root_path, if present, must resolve inside the workspace.", examples: [{ root_path: "project-1-owner-repo" }] },
+    project: { type: "object", additionalProperties: false, required: ["projectId", "branch", "commitHash"], properties: {
+      projectId: { type: "integer", minimum: 1 }, branch: { type: "string", minLength: 1 },
+      commitHash: { type: "string", pattern: "^[a-fA-F0-9]{40}$" },
+    } },
   },
 } as const
 
@@ -113,20 +118,22 @@ export function registerAgentExecutionRoutes(
   /**
    * Registers a direct invocation with an explicit agent input.
    *
-   * No evaluation or project version is created: the row stores
+   * Without a project target no evaluation or project version is created: the row stores
    * evaluationId null and the input goes to the agent as given, except
    * `root_path` which must resolve inside the workspace. Registered before
    * `/:id` for clarity (`:id` only matches digits, so there is no conflict).
    */
   app.post("/api/agent-executions/direct", { schema: { body: openDirectBody,
     tags: ["Agent Executions"], summary: "Start an agent with explicit input",
-    description: "Checks saved model/credential provider consistency and live model access before creating an execution; failures return 422 with affected agents. Captures the saved configuration for this run. Creates no evaluation/version and returns evaluationId null. Workspace traversal is rejected before creation; an absent checkout fails the execution in the background. Other input fields pass through to the agent.",
+    description: "Starts an independent agent with either explicit input (no evaluation/version) or an architecture_context project target (projectId, branch, commitHash). The backend resolves the repository path for project targets and persists the canonical output with that version. Configuration is validated before execution; workspace traversal is rejected.",
     response: { 201: { $ref: "AgentExecution#" }, ...errorResponses([400], "ExecutionError", false), 422: { type: "object", required: ["error"], properties: { error: { type: "string" }, agents: configurationIssuesSchema } } },
   } }, async (request, reply) => {
-    const body = request.body as { agentType: string; input: Record<string, unknown> }
+    const body = request.body as { agentType: string; input?: Record<string, unknown>; project?: import("./agent-execution.service.js").DirectProjectTarget }
 
     try {
-      const execution = await service.openDirect(body.agentType, body.input)
+      const execution = await service.openDirect(body.agentType, body.input ?? {}, body.project ? {
+        ...body.project, commitHash: body.project.commitHash.toLowerCase(),
+      } : undefined)
 
       logger
         .withTag("agent-execution")
@@ -143,6 +150,17 @@ export function registerAgentExecutionRoutes(
     }
   })
 
+  app.get("/api/agent-executions/recent", { schema: {
+    tags: ["Agent Executions"], summary: "Discover active and recent executions for the monitor",
+    description: "Returns identifiers for active and recently updated executions so the monitor can refresh them.",
+    response: { 200: { type: "object", required: ["ids"], properties: {
+      ids: { type: "array", maxItems: 50, items: { type: "integer" } },
+    } } },
+  } }, async (_request, reply) => {
+    reply.header("Cache-Control", "no-store")
+    return { ids: await service.recentIds() }
+  })
+
   app.get("/api/agent-executions/:id", { schema: { params: idParams,
     querystring: { type: "object", properties: { monitor: { type: "boolean" } } },
     tags: ["Agent Executions"], summary: "Get an agent execution",
@@ -152,8 +170,9 @@ export function registerAgentExecutionRoutes(
     const { id } = request.params as { id: string }
 
     try {
-      const execution = await service.findById(Number(id))
-      return toResponse((request.query as { monitor?: boolean }).monitor ? monitorExecution(execution) : execution)
+      const monitor = (request.query as { monitor?: boolean }).monitor === true
+      const execution = monitor ? await service.findMonitorExecution(Number(id)) : await service.findById(Number(id))
+      return toResponse(execution)
     } catch (error) {
       return notFoundOrRethrow(error, reply)
     }
@@ -286,7 +305,7 @@ function notFoundOrRethrow(error: unknown, reply: FastifyReply) {
     return reply.code(404).send({ error: error.message })
   }
 
-  if (error instanceof InvalidCompletionError) {
+  if (error instanceof InvalidCompletionError || error instanceof InvalidArchitectureContextError) {
     return reply.code(422).send({ error: error.message })
   }
 

@@ -1,12 +1,12 @@
 """One compact architect call chooses a view after repository investigation."""
 
-import asyncio
 import hashlib
 import json
 from typing import Literal
 
 from pydantic import model_validator
 
+from server.agent_services.budgeting.policy import wait_for
 from server.project_analysis.project_architecture.context import prompt_template
 from server.project_analysis.project_architecture.diagram import (
     project_component_diagram,
@@ -403,7 +403,7 @@ async def compose_diagram(
                 max_output_tokens=prompt.max_output_tokens,
             )
             calls += 1
-            response = await asyncio.wait_for(
+            response = await wait_for(
                 generate(prompt),
                 max(0, budget.max_elapsed_seconds - tools.context.elapsed_seconds),
             )

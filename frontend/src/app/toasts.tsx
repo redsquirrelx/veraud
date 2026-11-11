@@ -2,10 +2,10 @@ import { useCallback, useRef, useState, type ReactNode } from "react"
 import { ToastsContext } from "./use-toasts.ts"
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Array<{ id: number, kind: "success" | "error", message: string }>>([])
+  const [toasts, setToasts] = useState<Array<{ id: number, kind: "success" | "error" | "info", message: string }>>([])
   const nextId = useRef(1)
 
-  const pushToast = useCallback((kind: "success" | "error", message: string) => {
+  const pushToast = useCallback((kind: "success" | "error" | "info", message: string) => {
     const id = nextId.current
     nextId.current += 1
     setToasts((current) => [...current, { id, kind, message }])

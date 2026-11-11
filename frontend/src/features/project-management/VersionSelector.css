@@ -46,6 +46,12 @@
   align-items: center;
 }
 
+.version-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .version-state {
   font-size: 9px;
 }

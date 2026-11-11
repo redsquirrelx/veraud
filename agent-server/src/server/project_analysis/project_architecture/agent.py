@@ -1,12 +1,12 @@
 """Focused in-memory architecture LangGraph with bounded evidence investigation."""
 
-import asyncio
 import json
 from dataclasses import dataclass
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from server.agent_services.budgeting.policy import budgets_enabled, wait_for
 from server.project_analysis.project_architecture.context import (
     normalize_source_references,
     validate_orientation_input,
@@ -125,7 +125,7 @@ def build_architecture_graph():
                     ),
                 ),
             }
-        if state["calls"] >= maximum:
+        if budgets_enabled() and state["calls"] >= maximum:
             return {
                 "route": "finish",
                 "issues": (
@@ -174,7 +174,7 @@ def build_architecture_graph():
             request_guard(prompt, 0)
             context.generate.request_guard = request_guard
             submitted = True
-            answer = await asyncio.wait_for(
+            answer = await wait_for(
                 context.generate(prompt),
                 max(
                     0,
@@ -246,7 +246,7 @@ def build_architecture_graph():
                 min(context.limits.max_tool_calls, budget.max_tool_calls)
                 - state["tool_calls"]
             )
-            if len(turn.tool_calls) > remaining:
+            if budgets_enabled() and len(turn.tool_calls) > remaining:
                 raise ValueError(
                     "Tool budget exhausted; return a scoped architecture with explicit uncertainty."
                 )
@@ -387,6 +387,9 @@ def build_architecture_graph():
                     context.tools.context.elapsed_seconds
                     < context.tools.context.input.budget.max_elapsed_seconds
                 )
+                if not budgets_enabled():
+                    remaining_calls = remaining_tools = float("inf")
+                    time_left = True
                 if (
                     tasks
                     and remaining_calls > 0
@@ -683,6 +686,6 @@ class ProjectArchitectureAgent:
                 feedback,
                 objective_id,
             ),
-            config={"recursion_limit": max(40, self.limits.max_model_calls * 6 + 10)},
+            config={"recursion_limit": max(40, self.limits.max_model_calls * 6 + 10) if budgets_enabled() else float("inf")},
         )
         return state["result"]

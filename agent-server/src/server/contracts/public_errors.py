@@ -17,7 +17,9 @@ HIDDEN_ERROR = "Error details withheld because their safety could not be verifie
 CONFIGURATION_ERRORS = {name: f"{name}: The configured hierarchy budget is insufficient." for name in (
     "coordinator_call_budget_too_small", "coordinator_tool_budget_too_small", "manager_call_budget_too_small", "manager_tool_budget_too_small")}
 EXCEPTIONS = {"Error", "CancelledError", "ValueError", "RuntimeError", "TimeoutError", "ValidationError", "TypeError",
-    "AgentTransportError", "AgentInvocationError", "AuditRunUnavailableError", "InvalidConfigError"}
+    "AgentTransportError", "AgentInvocationError", "AuditRunUnavailableError", "InvalidConfigError",
+    "OSError", "FileNotFoundError", "NotADirectoryError", "PermissionError", "CalledProcessError", "UnicodeDecodeError",
+    "GraphRecursionError", "KeyError", "AttributeError"}
 
 
 def public_error_code(value):

@@ -54,6 +54,8 @@ it("opens only findings that reference the selected evidence, including multiple
   expect(screen.getByRole("button", { name: "F-2 — Repeated dependency" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "F-1 — Shared responsibility" }))
   const drawer = within(screen.getByRole("dialog", { name: "Shared responsibility" }))
+  // Identifier lives in the collapsed technical metadata section.
+  await userEvent.click(drawer.getByText("Technical metadata"))
   expect(drawer.getByText("F-1")).toBeVisible()
   expect(drawer.getByText("Recorded finding description")).toBeVisible()
 })

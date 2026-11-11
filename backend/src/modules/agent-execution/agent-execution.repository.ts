@@ -5,6 +5,7 @@ import { AgentConfigurationError, type PreparedAgentConfiguration } from "../age
 import type { InvocationReceipt } from "./invocationReceipt.js"
 import { readExecutionErrorDetail, storedExecutionErrorDetail, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { publicErrorText, publicErrorResult } from "../../infrastructure/security/public-errors.js"
+import { architectureContextResult } from "./architecture-context.js"
 
 /** agent_type and evaluation_id are both foreign keys, so an unknown value is a
  *  bad request rather than a server fault. Prisma reports that as P2003. */
@@ -79,6 +80,10 @@ export interface StoredAgentExecution {
 }
 
 export interface AgentExecutionStore {
+  recentIds(limit: number): Promise<number[]>
+  /** Cheap identity of an execution for the monitor projection cache: only the
+   *  pre-`result` lifecycle fields, all inline in the table leaf page. */
+  findMonitorFingerprint(id: number): Promise<string | null>
   requestAuditCancellation(id: number): Promise<StoredAgentExecution>
   claimAuditDispatch(id: number): Promise<boolean>
   pendingAuditCancellations(): Promise<number[]>
@@ -94,11 +99,37 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
-  createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution> }>
+  createExecutionsForProject(projectId: number, branch: string | null, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution>, reused?: boolean }>
 }
 
 export class AgentExecutionRepository implements AgentExecutionStore {
   constructor(private db: PrismaClient, private settings: AgentSettingsRepository) {}
+
+  async findMonitorFingerprint(id: number): Promise<string | null> {
+    // The fingerprint is intentionally built from pre-`result` columns only.
+    // Rows whose report blob is tens of megabytes spill the rest of the record
+    // (invocation_receipts, dispatch timestamps, ...) onto SQLite overflow pages,
+    // so reading anything after `result` costs a disk seek per row and defeats
+    // the cache. Everything here is inline in the table leaf page (~1 ms).
+    // Content mutations pass through AgentExecutionService, which invalidates
+    // the monitor projection eagerly; this is defense-in-depth only.
+    const row = await this.db.agentExecution.findUnique({ where: { id }, select: {
+      id: true, evaluationId: true, agentType: true, status: true, createdAt: true,
+      startedAt: true, finishedAt: true, inputTokens: true, outputTokens: true, error: true,
+    } })
+    return row === null ? null : JSON.stringify(row)
+  }
+
+  async recentIds(limit: number): Promise<number[]> {
+    // Prioritize active work, without loading results, evidence or report bytes.
+    const active = await this.db.agentExecution.findMany({ where: { status: { in: ["Waiting", "Running"] } },
+      orderBy: { id: "desc" }, take: limit, select: { id: true } })
+    const recent = active.length < limit ? await this.db.agentExecution.findMany({
+      where: { status: { notIn: ["Waiting", "Running"] } }, orderBy: { id: "desc" },
+      take: limit - active.length, select: { id: true },
+    }) : []
+    return [...active, ...recent].map((row) => row.id)
+  }
 
   async requestAuditCancellation(id: number): Promise<StoredAgentExecution> {
     await this.db.agentExecution.updateMany({
@@ -126,7 +157,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
   async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
     receipt = { ...receipt, error: publicErrorText(receipt.error), error_detail: readExecutionErrorDetail(receipt.error_detail) }
-    return this.db.$transaction(async (tx) => {
+    return this.withSerializationRetry(() => this.db.$transaction(async (tx) => {
       const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
       if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
       const receipts = (JSON.parse(execution.invocationReceipts) as InvocationReceipt[]).map((item) => ({ ...item,
@@ -159,10 +190,27 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         phase: receipt.status !== "running" ? null : (previous?.phase_sequence ?? 0) > (receipt.phase_sequence ?? 0)
           ? previous?.phase ?? null : receipt.phase ?? previous?.phase ?? null,
         phase_sequence: Math.max(previous?.phase_sequence ?? 0, receipt.phase_sequence ?? 0),
-        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens) }
+        input_tokens: count(previous?.input_tokens, receipt.input_tokens), output_tokens: count(previous?.output_tokens, receipt.output_tokens),
+        unknown_usage_attempts: Math.max(previous?.unknown_usage_attempts ?? 0, receipt.unknown_usage_attempts ?? 0) }
       const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
       return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
-    })
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }))
+  }
+
+  /** Retry transactions aborted by PostgreSQL serialization failures (P2034).
+   *  Several agents report to the same execution row concurrently, so the JSON
+   *  read-modify-write above is inherently contended. */
+  private async withSerializationRetry<T>(action: () => Promise<T>, attempts = 5): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await action()
+      } catch (error) {
+        if (attempt < attempts && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          continue
+        }
+        throw error
+      }
+    }
   }
 
   async create(data: NewAgentExecution): Promise<StoredAgentExecution> {
@@ -202,6 +250,15 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     return this.db.$transaction(async (tx) => {
       const existing = await tx.agentExecution.findUniqueOrThrow({ where: { id } })
       if (existing.status === "Completed" || existing.status === "Failed") return this.toStored(existing)
+      if (existing.agentType === "architecture_context" && existing.evaluationId !== null && (data.result !== null || data.status === "Completed")) {
+        const evaluation = await tx.evaluation.findUniqueOrThrow({
+          where: { id: existing.evaluationId }, include: { projectVersion: true },
+        })
+        const artifact = architectureContextResult(data.result, evaluation.projectVersion.commitHash)
+        await tx.architectureContextArtifact.create({ data: {
+          executionId: id, projectVersionId: evaluation.projectVersionId, ...artifact,
+        } })
+      }
       const execution = await tx.agentExecution.update({
         where: { id },
         data: {
@@ -225,19 +282,31 @@ export class AgentExecutionRepository implements AgentExecutionStore {
   /** Generic row creation shared by every pipeline: version row is saved (or
    *  reused), it becomes the selected one, a fresh evaluation is created, and
    *  one Waiting execution per configuration is stored with its snapshot. */
-  async createExecutionsForProject(projectId: number, branch: string, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
+  async createExecutionsForProject(projectId: number, branch: string | null, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType = "Analysis") {
     if (configurations.length === 0) throw new AgentConfigurationError([{ agentType: "pipeline", reason: "At least one stage configuration is required" }])
     return this.db.$transaction(async (tx) => {
+      if (!await tx.project.findUnique({ where: { id: projectId }, select: { id: true } })) {
+        throw new UnknownExecutionTargetError(`Project ${projectId} not found`)
+      }
       const running = await tx.agentExecution.findFirst({ where: {
         status: { in: ["Waiting", "Running"] }, evaluation: { projectVersion: { projectId, commitHash } },
       } })
-      if (running) throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      if (running) {
+        if (evaluationType === "ArchitectureContext" && running.agentType === "architecture_context" && running.evaluationId !== null) {
+          const evaluation = await tx.evaluation.findUniqueOrThrow({ where: { id: running.evaluationId } })
+          return { versionId: evaluation.projectVersionId, evaluationId: evaluation.id,
+            executions: { architecture_context: this.toStored(running) }, reused: true }
+        }
+        throw new UnknownExecutionTargetError(`Version ${commitHash.slice(0, 7)} is already being analyzed (execution ${running.id})`)
+      }
       for (const configuration of configurations) await this.assertCurrent(tx, configuration)
       const version = await tx.projectVersion.upsert({
         where: { projectId_commitHash: { projectId, commitHash } },
         create: { projectId, branch, commitHash, analysisStatus: "Pending" }, update: { branch },
       })
-      await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      if (evaluationType !== "ArchitectureContext") {
+        await tx.project.update({ where: { id: projectId }, data: { selectedVersionId: version.id } })
+      }
       const evaluation = await tx.evaluation.create({ data: { projectVersionId: version.id, type: evaluationType } })
       const executions: Record<string, StoredAgentExecution> = {}
       for (const configuration of configurations) {
@@ -246,7 +315,7 @@ export class AgentExecutionRepository implements AgentExecutionStore {
           configurationSnapshot: JSON.stringify(configuration.snapshot),
         } }))
       }
-      return { versionId: version.id, evaluationId: evaluation.id, executions }
+      return { versionId: version.id, evaluationId: evaluation.id, executions, reused: false }
     })
   }
 

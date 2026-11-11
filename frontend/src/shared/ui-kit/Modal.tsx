@@ -8,17 +8,19 @@ interface ModalProps {
   open: boolean
   label: string
   title?: string
-  size?: "default" | "narrow"
+  size?: "default" | "narrow" | "wide"
+  closeOnBackdrop?: boolean
+  closeOnEscape?: boolean
   onClose: () => void
   children: ReactNode
 }
 
-export function Modal({ open, label, title, size = "default", onClose, children }: ModalProps) {
+export function Modal({ open, label, title, size = "default", closeOnBackdrop = true, closeOnEscape = true, onClose, children }: ModalProps) {
   const { t } = useTranslation("common")
   const dialog = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !closeOnEscape) {
       return
     }
     function handleKey(event: KeyboardEvent) {
@@ -30,21 +32,21 @@ export function Modal({ open, label, title, size = "default", onClose, children 
     return () => {
       document.removeEventListener("keydown", handleKey)
     }
-  }, [open, onClose])
+  }, [open, closeOnEscape, onClose])
 
   if (!open) {
     return null
   }
 
   function handleOverlay(event: MouseEvent<HTMLDivElement>) {
-    if (dialog.current !== null && !dialog.current.contains(event.target as Node)) {
+    if (closeOnBackdrop && dialog.current !== null && !dialog.current.contains(event.target as Node)) {
       onClose()
     }
   }
 
   return (
     <div className="ui-modal-overlay" onMouseDown={handleOverlay}>
-      <div className={size === "narrow" ? "ui-modal ui-modal-narrow" : "ui-modal"} role="dialog" aria-modal="true" aria-label={label} ref={dialog}>
+      <div className={size === "narrow" ? "ui-modal ui-modal-narrow" : size === "wide" ? "ui-modal ui-modal-wide" : "ui-modal"} role="dialog" aria-modal="true" aria-label={label} ref={dialog}>
         <div className="ui-modal-head">
           {title !== undefined && <span className="ui-modal-title">{title}</span>}
           <IconButton className="ui-modal-close" variant="ghost" size="sm" ariaLabel={t("ui.close")} onClick={onClose}>

@@ -42,6 +42,7 @@
     "git": "Git",
     "analyzed": "Analizadas",
     "loadingBranches": "Cargando ramas",
+    "loadingVersion": "Cargando versión (rama y commit)…",
     "applying": "Aplicando versión",
     "detachedNotice": "(HEAD desvinculado en {{hash}}): selecciona una rama para volver a vincularlo",
     "appliedNotice": "En {{branch}} en {{shortHash}}",
@@ -70,6 +71,24 @@
     "noSelection": "Sin seleccionar"
   },
   "analyze": {
+    "pipeline": {
+      "title": "Pipeline de análisis del proyecto",
+      "running": "En ejecución",
+      "completed": "Completado",
+      "failed": "Falló. No se ejecutaron los pasos siguientes. Puedes volver a pulsar Analizar.",
+      "step": "Paso {{index}} de {{total}}: {{name}}",
+      "structuralGraph": "Generar grafo estructural",
+      "architectureContext": "Extraer contexto arquitectónico",
+      "contextAgent": "Contexto arquitectónico",
+      "contextConfigurationError": "El paso del grafo finalizó. Architecture Context no pudo iniciarse: configura su modelo y credencial y verifica el acceso al modelo en la configuración de agentes. Luego vuelve a pulsar Analizar.",
+      "graphStepFailed": "No se pudo completar el paso del grafo estructural. Architecture Context no se inició.",
+      "contextStepFailed": "El paso del grafo finalizó, pero Architecture Context no pudo iniciarse o finalizar. Vuelve a pulsar Analizar para reutilizar el grafo y reintentar este paso.",
+      "contextChecking": "Comprobando el contexto arquitectónico de esta versión…",
+      "contextCheckFailed": "No se pudo comprobar el contexto arquitectónico. Mantenibilidad está deshabilitada hasta verificarlo.",
+      "contextRequired": "Ejecuta Analizar para generar el contexto arquitectónico de esta versión antes de auditar mantenibilidad.",
+      "context_complete": "Contexto arquitectónico guardado para esta versión con cobertura documental completa. No es una evaluación de cumplimiento.",
+      "context_partial": "Contexto arquitectónico guardado para esta versión con cobertura documental parcial. Se conservan las limitaciones y categorías pendientes."
+    },
     "audit": {
       "label": "Auditoría de calidad",
       "description": "Mantenibilidad y seguridad, con un informe Word"
@@ -92,10 +111,15 @@
       "severityDescending": "Mayor a menor severidad", "severityAscending": "Menor a mayor severidad",
       "identifier": "Identificador", "description": "Descripción completa", "impact": "Impacto sobre el software", "recommendation": "Recomendaciones",
       "attribute": "Atributo", "subcharacteristic": "Subcaracterística", "validation": "Validación",
-      "verified": "Verificado", "inconclusive": "No concluyente", "discarded": "Descartado",
+      "verified": "Verificado", "inconclusive": "No concluyente", "discarded": "Descartado", "unreviewed": "Sin revisión",
       "title": "Hallazgos por atributo de calidad", "severity": "Severidad", "components": "Componente afectado",
       "agent": "Agente detector", "original": "Ver detalle original", "empty": "No se registraron hallazgos en el reporte.",
-      "functionalAdequacy": "Adecuación funcional"
+      "functionalAdequacy": "Adecuación funcional",
+      "documentaryReferences": "Documentos referenciados", "documentarySubject": "Sujeto", "documentaryStatement": "Afirmación",
+      "documentaryConstraint": "Restricción", "documentaryQuote": "Cita", "noDocumentaryReferences": "Sin referencias documentales",
+      "whatsWrong": "Qué está mal", "recommendedFix": "Corrección recomendada", "evidenceReferences": "Evidencia y referencias",
+      "technicalMetadata": "Metadatos técnicos", "copyId": "Copiar ID", "copied": "ID copiado", "noComponents": "Sin componentes registrados",
+      "noEvidenceReferences": "Sin referencias de evidencia"
     },
     "findingsSummary": {
       "title": "Resumen de hallazgos", "total": "Total de hallazgos detectados",
@@ -141,7 +165,12 @@
       "loadFailed": "No se pudo cargar la configuración de esta auditoría.",
       "invocations": "Agentes invocados", "noInvocations": "No hay invocaciones registradas.",
       "scopeNotice": "La selección registrada no implica que todos los agentes hayan llegado a ejecutarse.",
-      "running": "En curso", "completed": "Completado", "failed": "Fallido", "skipped": "Omitido", "cancelled": "Cancelado"
+      "running": "En curso", "completed": "Completado", "failed": "Fallido", "skipped": "Omitido", "cancelled": "Cancelado",
+      "architectureContext": "Contexto de arquitectura",
+      "architectureContextExecutionId": "ID de ejecución",
+      "architectureContextProjectVersionId": "ID de versión del proyecto",
+      "architectureContextSchemaVersion": "Versión del esquema",
+      "architectureContextExecutionStatus": "Estado de ejecución"
     },
     "summary": {
       "unavailable": "Resumen no disponible",
@@ -176,6 +205,8 @@
       "inactive": "Desactivado",
       "previewNotice": "La selección de mantenibilidad se aplicará a la próxima auditoría. El gestor y los coordinadores de las subcaracterísticas seleccionadas se incluyen automáticamente.",
       "maintainability": {
+        "requestData": "Entrada de Maintainability V2 (JSON opcional)",
+        "requestDataHelp": "Admite objective, targets estructurados, constraints y documented_architecture (JSON ArchitectureContextResult). En blanco usa el alcance predeterminado sin claims documentales suministrados. No permite cambiar los prompts del investigador.",
         "selectDimension": "Selecciona al menos una subcaracterística de mantenibilidad o desmarca Mantenibilidad.",
         "legend": "Subcaracterísticas a evaluar",
         "modularity": "Modularidad",
@@ -192,7 +223,6 @@
       "optionsPending": "Las opciones de configuración estarán disponibles próximamente.",
       "investigators": {
         "view": "Ver investigadores",
-        "partialNotice": "El resultado de la auditoría será parcial porque no están seleccionados todos los investigadores disponibles.",
         "empty": "No hay investigadores registrados para esta subcaracterística.",
         "noDescription": "No hay una descripción disponible para este investigador.",
         "architectureBoundary": "Evalúa si las dependencias respetan los límites arquitectónicos y los principios de diseño.",
@@ -220,6 +250,15 @@
       "unavailable": "No disponible",
       "openBlackboard": "Ver Blackboard"
     },
+    "historyFilter": {
+      "label": "Filtrar por estado",
+      "all": "Todas",
+      "completed": "Completadas",
+      "partial": "Parciales",
+      "failed": "Fallidas",
+      "empty": "No hay auditorías registradas para este filtro."
+    },
+    "moreActions": "Más acciones para la auditoría #{{id}}",
     "evaluation": {
       "partial": "Evaluación parcial",
       "completed": "Evaluación completada",
@@ -326,6 +365,7 @@
     "serviceStatus": "Estado de los servicios",
     "sections": {
       "overview": "Resumen",
+      "architectureContext": "Contexto de arquitectura",
       "analysis": "Análisis",
       "audits": "Auditorías",
       "files": "Archivos"
@@ -342,7 +382,107 @@
       "projectType": "Tipo de proyecto",
       "pattern": "Patrón",
       "review": "Revisión",
-      "viewFullAnalysis": "Ver análisis completo"
+      "viewFullAnalysis": "Ver análisis completo",
+      "insights": {
+        "title": "Perspectivas del proyecto",
+        "notAnalyzed": "Aún no analizado — ejecuta Analizar para habilitar estas secciones.",
+        "architecture-context": { "title": "Contexto de arquitectura", "description": "Revisa la arquitectura documentada, cobertura, elementos de conocimiento y evidencias." },
+        "graph": { "title": "Grafo estructural", "description": "Explora módulos, dependencias y relaciones en el código." }
+      },
+      "architectureContext": {
+        "title": "Contexto de arquitectura",
+        "loading": "Cargando contexto de arquitectura",
+        "empty": "Aún no hay contexto de arquitectura para esta versión",
+        "error": "No se pudo cargar el contexto de arquitectura",
+        "knowledge": "Conocimiento",
+        "issues": "Problemas de conocimiento",
+        "validationErrors": "Errores de validación",
+        "covered": "Categorías cubiertas",
+        "pending": "Categorías pendientes",
+        "reason": "Motivo de finalización",
+        "coverageTitle": "Cobertura",
+        "coveredStatus": "Cubierta",
+        "pendingStatus": "Pendiente",
+        "areasCovered": "{{covered}}/{{total}} áreas cubiertas",
+        "coverageComplete": "Completa",
+        "coveragePartial": "Parcial",
+        "coverageMissing": "Sin cobertura",
+        "partialStatus": "Parcial",
+        "missingStatus": "Sin cobertura",
+        "coverageNote": "Cubierta significa que existe información documentada recuperada; no es una evaluación de cumplimiento arquitectónico.",
+        "noCategoryEvidence": "Aún no hay evidencias documentales disponibles para esta categoría.",
+        "closeDetails": "Cerrar detalle",
+        "all": "Todas",
+        "categoryFilter": "Categoría",
+        "explicitnessFilter": "Explicitud",
+        "requiredOnly": "Solo requerida",
+        "noKnowledgeItems": "No hay conocimientos que coincidan con los filtros actuales.",
+        "rationale": "Justificación",
+        "evidence": "Evidencias",
+        "back": "Volver",
+        "referencedExcerpt": "Extracto referenciado",
+        "evidenceRange": "Rango de evidencia",
+        "documentUnavailable": "Documento no disponible",
+        "invalidEvidenceRange": "Rango de evidencia inválido",
+        "retryEvidence": "Reintentar evidencia",
+        "expandDocument": "Expandir documento {{document}}",
+        "collapseDocument": "Contraer documento {{document}}",
+        "categoryDescriptions": {
+          "architecturalStyle": "Patrones, principios y enfoque general de diseño.",
+          "components": "Partes principales del sistema y sus límites.",
+          "responsibilities": "Qué posee y gestiona cada componente.",
+          "relationships": "Cómo se conectan y dependen las partes entre sí.",
+          "constraints": "Reglas, límites y decisiones no negociables.",
+          "interfacesAndContracts": "API, esquemas y contratos entre partes.",
+          "architecturalDecisions": "Compromisos importantes y decisiones registradas."
+        },
+        "documents": "Documentos consultados",
+        "lines_one": "{{count}} línea",
+        "lines_other": "{{count}} líneas",
+        "categories": {
+          "architecturalStyle": "Estilo arquitectónico",
+          "components": "Componentes",
+          "responsibilities": "Responsabilidades",
+          "relationships": "Relaciones",
+          "constraints": "Restricciones",
+          "interfacesAndContracts": "Interfaces y contratos",
+          "architecturalDecisions": "Decisiones arquitectónicas"
+        },
+        "certainty": {
+          "explicit": "Explícita",
+          "derived": "Derivada",
+          "unknown": "Desconocida"
+        },
+        "constraint": {
+          "allowed": "Permitida",
+          "prohibited": "Prohibida",
+          "required": "Requerida",
+          "exception": "Excepción"
+        },
+        "issueKind": {
+          "unknown": "Desconocido",
+          "ambiguity": "Ambigüedad",
+          "discrepancy": "Discrepancia"
+        },
+        "coverageStatus": {
+          "completed": "Evaluada",
+          "failed": "Evaluación fallida",
+          "notRun": "Sin evaluar"
+        },
+        "reasonValues": {
+          "coverageComplete": "Cobertura completa",
+          "incompleteCoverage": "Cobertura incompleta",
+          "pendingCategories": "Categorías pendientes",
+          "retrievalIncomplete": "Recuperación incompleta",
+          "coverageNotEvaluated": "Cobertura sin evaluar",
+          "documentDiscoveryFailed": "Descubrimiento de documentos fallido",
+          "validationFailed": "Validación fallida",
+          "extractionFailed": "Extracción fallida",
+          "extractionContextExhausted": "Contexto de extracción agotado",
+          "coverageAssessmentFailed": "Evaluación de cobertura fallida",
+          "coverageContextExhausted": "Contexto de cobertura agotado"
+        }
+      }
     },
     "files": {
       "resizeLabel": "Redimensionar vista previa y directorios",
@@ -407,7 +547,8 @@
       "toggleLabel": "{{pipeline}} · {{state}} · {{progress}}",
       "maintainability": "Mantenibilidad",
       "security": "Seguridad",
-      "functionalAdequacy": "Adecuación funcional"
+      "functionalAdequacy": "Adecuación funcional",
+      "findingResolution": "Resolución de hallazgos"
     },
     "phases": {
       "plan_investigation": "Planificación", "investigate": "Investigación", "evaluate_evidence": "Evaluación de evidencia",

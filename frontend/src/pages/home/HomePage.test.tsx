@@ -135,4 +135,12 @@ describe("HomePage", () => {
 
     expect(await screen.findByRole("alert")).toBeDefined()
   })
+
+  it("does not show the settings demo button", () => {
+    stubFetch(() => new Response(JSON.stringify([]), { status: 200 }))
+    renderHome()
+
+    expect(screen.queryByRole("button", { name: "Settings demo" })).toBeNull()
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
 })

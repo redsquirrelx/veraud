@@ -15,11 +15,13 @@ flowchart TD
   App --> Reporting[reporting]
   Attr --> Runtime[runtimes: graphs, budgets, repository tools]
   Runtime --> Contracts[contracts]
-  Runtime --> Infra[infrastructure: model, quota, tracing, callback]
+  Runtime --> Infra[infrastructure: model, quota, tracing]
+  Runtime --> AgentServices[agent_services: execution tracking]
   Runtime --> Repo[services/repository_analysis]
   Attr --> Board[blackboard]
   Board --> Reporting
-  App --> Callback[Fastify lifecycle callbacks]
+  App --> AgentServices
+  AgentServices --> Callback[Fastify lifecycle and activity callbacks]
 ```
 
 ## Owners and entry points
@@ -30,15 +32,16 @@ flowchart TD
 | Direct `/api/agents/run` execution and provider overrides | `src/server/api/executions.py`, `src/server/app/execution_service.py` | `src/server/app/{execution_config,model_configuration}.py`, `src/server/infrastructure/llm/` |
 | A new/changed named workflow | `src/server/app/pipeline_contracts.py`, `pipeline_registry.py`, matching `*_definition.py` | `src/server/pipelines/`, `src/server/api/pipelines.py` |
 | Audit acceptance, status, cancel, report-generation retention | `src/server/app/audit_service.py`, `audit_state.py` | `src/server/app/audit_resources.py`, `quality_audit_definition.py`, `src/server/blackboard/` |
-| Maintainability policy or topology | `src/server/agents/maintainability/v1/<participant>/` (integrated); `v2/modularity/architecture_boundary/` (unregistered copy) | `src/server/runtimes/{investigation,coordination}/` |
+| Maintainability policy or topology | `src/server/agents/maintainability/v2/` (integrated Manager → Modularity → documentary ArchitectureBoundary); `v1/` (historical compatibility) | `src/server/runtimes/{investigation,coordination}/` |
 | Functional adequacy retrieval or verification | `src/server/agents/functional_adequacy/agent.py`, `audit.py`, local `schemas.py` | `repository_adapter.py`, `config.py`, `prompts/` |
 | Security scanning/remediation | `src/server/agents/security/audit.py` and component package | `security/config.py`, `runtimes/repository/` |
 | Project orientation/architecture/semantic pipeline | `src/server/project_analysis/` | `src/server/pipelines/`, `src/server/app/project_architecture_definition.py` |
 | Report schema, traceability, presentation | `src/server/reporting/` | `src/server/blackboard/`, `src/server/services/audit_diagnostics.py` |
 | Repository snapshot, source access or tools | `src/server/services/repository_analysis/`, `src/server/runtimes/repository/` | `tests/repository_runtime/` |
 | Agent configuration panel/defaults | `config/agents/` | `src/server/agents/<participant>/config.py` only for real specialization |
-| Provider/model construction, diagnostics, client cleanup, retry/usage, global quotas | `src/server/infrastructure/llm/` | `src/server/runtimes/investigation/provider.py`, `src/server/runtimes/repository/model_runtime.py` |
-| Fastify callback payloads | `src/server/infrastructure/callback/` | [`contracts.md`](contracts.md), `tests/test_usage_callbacks.py` |
+| Agent budget switch, execution deadlines, resource metrics and ledgers | `src/server/agent_services/budgeting/` | `config/agents/`, agent service README |
+| Provider/model construction, diagnostics, client cleanup, pacing, global RPM/TPM quotas | `src/server/infrastructure/llm/` | `src/server/runtimes/investigation/provider.py`, `src/server/runtimes/repository/model_runtime.py` |
+| Agent lifecycle, events/history and callback payloads | `src/server/agent_services/execution_tracking/` | [`../src/server/agent_services/README.md`](../src/server/agent_services/README.md), [`contracts.md`](contracts.md), `tests/test_usage_callbacks.py` |
 
 `agents/` has exactly three implementation folders. Project analysis, report generation,
 the dummy example, neutral contracts and execution infrastructure are deliberately outside it.
@@ -68,6 +71,10 @@ the dummy example, neutral contracts and execution infrastructure are deliberate
   reacquire quota; usage helpers must not charge one generation twice.
 - `infrastructure/llm/diagnostics.py`, `usage.py`, and `resources.py` are SDK-facing helpers;
   `ModelGateway` and provider admission remain in `runtimes/` because they enforce run budgets.
+- `agent_services/execution_tracking/` owns the unified `ExecutionObserver`, event
+  capture, volatile outbox and backend transport. Old callback/history paths are
+  same-module aliases only. `agent_services/budgeting/` owns budget enforcement and
+  resource metrics; provider pacing and RPM/TPM quotas remain independent.
 
 ## Dependency rules
 

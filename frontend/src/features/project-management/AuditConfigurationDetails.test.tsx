@@ -13,7 +13,7 @@ const history: AuditConfigurationHistory = {
   configuration: { version: 1, branch: "release-original", commitHash: "b".repeat(40), attributes: ["maintainability"], scopes: [{
     id: "maintainability", requiredAgents: [{ id: "maintainability_manager", name: "Original manager" }], techniques: [], investigators: [],
     subcharacteristics: [{ id: "modularity", name: "Original coordinator", investigators: [{ id: "original_investigator", name: "Original investigator" }] }],
-  }] },
+  }], architectureContext: { executionId: 42, projectVersionId: 7, schemaVersion: "1", executionStatus: "partial" } },
   invocations: [{ id: "receipt-1", agentId: "original_investigator", status: "completed" }],
 }
 
@@ -28,6 +28,10 @@ describe("audit configuration history", () => {
     expect(await drawer.findByText("release-original")).toBeInTheDocument()
     expect(drawer.getByText("b".repeat(40))).toBeInTheDocument()
     expect(drawer.getByRole("heading", { name: "Modularity" })).toBeInTheDocument()
+    expect(drawer.getByRole("heading", { name: "Architecture context" })).toBeInTheDocument()
+    expect(drawer.getByText("#42")).toBeInTheDocument()
+    expect(drawer.getByText("v1")).toBeInTheDocument()
+    expect(drawer.getByText("partial")).toBeInTheDocument()
     expect(drawer.getAllByText("Original investigator").length).toBeGreaterThan(0)
     expect(drawer.queryByRole("checkbox")).not.toBeInTheDocument()
     expect(getQualityAuditConfiguration).toHaveBeenCalledWith(5, 8, expect.any(AbortSignal))

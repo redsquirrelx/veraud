@@ -121,6 +121,46 @@ def review_overrides(findings, assessments, decision_assessments=None):
     return overrides, groups, relationships, unresolved
 
 
+def _documentary_references(details, investigation, local_id):
+    """Resolve finding documentary IDs to report-ready references.
+    Returns None when the finding has no documentary linkage, otherwise
+    deterministic IDs plus content projections from the retained catalog."""
+    claim_ids = [item for item in details.get("document_claim_ids", []) if isinstance(item, str)]
+    if not claim_ids and isinstance(investigation, dict) and local_id:
+        for candidate in investigation.get("candidates", []):
+            if isinstance(candidate, dict) and candidate.get("id") == local_id:
+                claim_ids = [item for item in candidate.get("document_claim_ids", []) if isinstance(item, str)]
+                break
+    claim_ids = sorted(set(claim_ids))
+    if not claim_ids:
+        return None
+    plan = investigation.get("plan") if isinstance(investigation, dict) else None
+    catalog = plan.get("document_claims", {}) if isinstance(plan, dict) else {}
+    if not isinstance(catalog, dict):
+        catalog = {}
+    references = []
+    for claim_id in claim_ids:
+        record = catalog.get(claim_id)
+        if not isinstance(record, dict):
+            continue
+        claim = record.get("claim", {}) if isinstance(record.get("claim"), dict) else {}
+        section_paths = record.get("section_paths", {}) if isinstance(record.get("section_paths"), dict) else {}
+        quotes = []
+        for item in claim.get("evidence", []):
+            if not isinstance(item, dict):
+                continue
+            section_id = item.get("section_id", "")
+            quotes.append({"section_id": section_id, "path": section_paths.get(section_id, ""),
+                "start_line": item.get("start_line"), "end_line": item.get("end_line"), "quote": item.get("quote", "")})
+        index = record.get("document_index") if isinstance(record.get("document_index"), dict) else {}
+        references.append({"document_claim_id": claim_id, "subject": claim.get("subject", ""),
+            "statement": claim.get("statement", ""), "constraint": claim.get("constraint", "unspecified"),
+            "certainty": claim.get("certainty", "unknown"), "category": claim.get("category", ""),
+            "section_paths": section_paths, "quotes": quotes, "status": record.get("status", ""),
+            "reason": record.get("reason", ""), "commit": index.get("commit", "") if isinstance(index, dict) else ""})
+    return {"ids": claim_ids, "references": references}
+
+
 def report_findings(findings: list[Finding], evidence: list[Evidence], assessments: list[Assessment], *, effective=None, historical=None):
     index = {item.id: item for item in evidence}
     overrides, groups, relationships, unresolved = review_overrides(findings, assessments, effective)
@@ -129,11 +169,13 @@ def report_findings(findings: list[Finding], evidence: list[Evidence], assessmen
     for finding in findings:
         attribute, dimension = category(finding, assessments)
         issues = []
-        statuses = [finding.details.get("validation_status", "insufficient_evidence")]
+        statuses = [finding.details["validation_status"]] if finding.details.get("validation_status") else []
         decisions = overrides[finding.id]
         statuses.extend(status for status, _ in decisions)
         # Contradictory judgments never become a confirmed defect by report formatting.
-        if "withdrawn" in statuses:
+        if not statuses:
+            verification = "unreviewed"
+        elif "withdrawn" in statuses:
             verification = "discarded"
         elif "accepted" in statuses and "rejected" in statuses:
             verification = "inconclusive"
@@ -190,8 +232,15 @@ def report_findings(findings: list[Finding], evidence: list[Evidence], assessmen
         if disposition == "observation" and any(a.get("impact_kind") == "plausible_risk" for a in domain):
             disposition = "contextual_risk"
         assessed_context = details.get("assessed_context") or "\n".join(a.get("change_scenario", "") for a in domain if a.get("impact_kind") == "plausible_risk")
-        original_rationale = str(details.get("review_rationale", "No consta una revisión explícita."))
-        rationale = original_rationale + (" Decisión documental: " + verification + "; " + ", ".join(issues) + "." if issues else "")
+        original_rationale = str(details.get("review_rationale") or "")
+        rationale = (original_rationale or "No consta una revisión explícita.") + (
+            " Decisión documental: " + verification + "; " + ", ".join(issues) + "." if issues else "")
+        technical_details = {key: value for key, value in finding.details.items()
+            if key not in {"investigation", "evidence"}}
+        documentary = _documentary_references(details, investigation, finding.local_id)
+        if documentary is not None:
+            technical_details["document_claim_ids"] = sorted(set(technical_details.get("document_claim_ids", [])) | set(documentary["ids"]))
+            technical_details["documentary_references"] = documentary["references"]
         results.append(ReportFinding(
             id=finding.id, title=finding.title, quality_attribute=attribute, subcharacteristic=dimension,
             kind=finding.kind, severity=finding.severity, description=finding.description, criterion=finding.criterion,
@@ -199,7 +248,7 @@ def report_findings(findings: list[Finding], evidence: list[Evidence], assessmen
             evidence_ids=[item.id for item in refs], components=list(finding.components), impact=finding.modularity_impact,
             recommendation=finding.recommendation, verification_status=verification,
             verification_rationale=rationale, original_review_rationale=original_rationale,
-            original_validation_status=str(details.get("validation_status", "insufficient_evidence")),
+            original_validation_status=details.get("validation_status"),
             lifecycle="historical" if finding.id in historical else "current", superseded_by=historical.get(finding.id, []),
             disposition=disposition, assessed_context=assessed_context, sharing_boundary=details.get("sharing_boundary", ""),
             conditions=details.get("conditions", []), assumptions=details.get("assumptions", []), unknowns=details.get("unknowns", []),
@@ -209,6 +258,5 @@ def report_findings(findings: list[Finding], evidence: list[Evidence], assessmen
             consolidation_ids=sorted(groups[finding.id]), classification=(
                 "strength" if finding.details.get("category") in {"useful_abstraction", "justified_boundary"}
                 else "problem" if finding.kind == "violation" else "observation"),
-            technical_details={key: value for key, value in finding.details.items()
-                if key not in {"investigation", "evidence"}}))
+            technical_details=technical_details))
     return results, relationships, unresolved

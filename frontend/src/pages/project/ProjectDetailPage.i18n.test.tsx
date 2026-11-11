@@ -91,6 +91,7 @@ describe("ProjectDetailPage in Spanish", () => {
     expect(screen.getByRole("button", { name: "Analizar" })).toBeDefined()
     // Translated section tabs keep stable navigation targets.
     expect(screen.getByRole("button", { name: "Resumen" })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Contexto de arquitectura" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Análisis" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Grafo estructural" })).toBeDefined()
     expect(screen.getByRole("button", { name: "Auditorías" })).toBeDefined()

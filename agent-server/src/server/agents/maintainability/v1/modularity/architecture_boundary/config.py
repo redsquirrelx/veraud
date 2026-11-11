@@ -8,7 +8,6 @@ from config.agents import InvestigationConfig
 
 
 class BoundaryConfig(InvestigationConfig):
-    defaults: ClassVar = {"unlimited_tool_calls": True, "unlimited_model_calls": True}
     prompt_nodes: ClassVar[tuple[str, ...]] = ("plan_investigation", "investigate")
     max_calls_per_investigation: int | None = Field(default=None, ge=1, le=20,
         description="Optional provider-attempt cap per task, including corrections; null disables it.")

@@ -29,6 +29,21 @@ function invocationParents(raw: Record<string, unknown>): Map<string, string> {
 
 /** A monitor needs states and receipts, never snapshots, evidence text or DOCX. */
 export function monitorExecution(execution: StoredAgentExecution): StoredAgentExecution {
+  if (execution.agentType === "finding_resolution" && execution.result) {
+    try {
+      const raw = object(JSON.parse(execution.result))
+      return { ...execution, result: JSON.stringify({ status: raw.status,
+        source_audit_id: raw.source_audit_id,
+        results: rows(raw.results).map((item) => ({ finding_id: item.finding_id, status: item.status })) }) }
+    } catch { return { ...execution, result: null } }
+  }
+  if (execution.agentType === "architecture_context" && execution.result) {
+    try {
+      const raw = object(JSON.parse(execution.result))
+      return { ...execution, result: JSON.stringify({ execution_status: raw.execution_status,
+        schema_version: raw.schema_version, finalization_reason: raw.finalization_reason }) }
+    } catch { return { ...execution, result: null } }
+  }
   if (execution.monitorContext?.evaluationType !== "QualityAudit" || !execution.result) return execution
   let raw: Record<string, unknown>
   try { raw = object(JSON.parse(execution.result)) }

@@ -12,14 +12,18 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from server.infrastructure.llm.retry import RequestPacer
 from server.infrastructure.tracing import LangSmithTracingBackend
 
+from ...agent_services.budgeting.policy import (
+    budgets_enabled,
+    effective_token_budget_policy,
+    token_budget_exceeded,
+)
+from ...agent_services.budgeting.timing import ActiveDeadline, within_deadline
 from ...blackboard.publication import publication_for
-from ...config.token_budget import effective_token_budget_policy, token_budget_exceeded
 from ..investigation.agent import InvestigationExecution
 from ..investigation.provider import lean_schema, model_pacer
 from ..invocation_reporting import observe_invocation
 from ..repository.context import RepositoryContext
 from ..repository.schemas import ExecutionBudget
-from ..repository.timing import ActiveDeadline, within_deadline
 from ..repository.tools import RepositoryToolset
 from .knowledge import (
     commitment_resolved,
@@ -201,6 +205,8 @@ class CoordinatorExecution(ABC):
         }
 
     def can_dispatch(self, records):
+        if not budgets_enabled():
+            return True
         remaining = self.resources()
         # Reserve the whole per-invocation envelope before dispatch, not after parallel calls.
         limits = self.config.invocation_limits
@@ -295,7 +301,7 @@ class CoordinatorExecution(ABC):
                 ("tokens", reserved["tokens"], 1 if self.token_budget is not None else limits.max_total_tokens),
                 ("tools", reserved["tools"], limits.max_tool_calls)]
             shortfalls = [ResourceShortfall(resource=key, available=max(0, available), required=required)
-                for key, available, required in requirements if available < required
+                for key, available, required in requirements if budgets_enabled() and available < required
                 and (key != "tokens" or token_budget_exceeded(required, available))]
             if shortfalls:
                 failures[assignment.invocation_id] = ExecutionFailure(code="execution_budget_exhausted",
@@ -382,7 +388,8 @@ class CoordinatorExecution(ABC):
                         investigator.run(child, self.investigator_request(spec, assignment, context)),
                         **self.invocation_metadata(assignment, state)), timing), self.timing),
                         agent_id=assignment.investigator_id, invocation_id=assignment.invocation_id,
-                        run_id=self.audit_identity.run_id if self.audit_identity else "unscoped")
+                        run_id=self.audit_identity.run_id if self.audit_identity else "unscoped",
+                        status_resolver=getattr(self, "invocation_status", None))
                     return self.raw_invocation_type(assignment=assignment, status="received", value=value,
                         evidence=self.invocation_evidence(value, child),
                         duration_seconds=monotonic() - started)
@@ -403,7 +410,7 @@ class CoordinatorExecution(ABC):
                 received[raw.assignment.invocation_id] = raw
                 self.collect_received(raw, state)
         finally:
-            from ..repository.timing import cancel_bounded
+            from ...agent_services.budgeting.timing import cancel_bounded
             await asyncio.gather(*(cancel_bounded(task, self.config.cancellation_grace_seconds)
                 for task in tasks if not task.done()))
         return {"execution_records": [received[a.invocation_id] for a, _ in dispatch], "pending_assignments": []}
@@ -625,7 +632,7 @@ class CoordinatorExecution(ABC):
             "evidence": {ref: e.model_dump() for ref, e in index.items()}, "gaps": [g.model_dump() for g in gaps.values()]}
         before = self.synth.calls, self.synth.tokens, self.synth.estimates
         remaining = self.resources()
-        self.synth.call_limit = self.synth.calls + max(0, remaining["calls"])
+        self.synth.call_limit = self.synth.calls + max(0, remaining["calls"]) if budgets_enabled() else float("inf")
         self.synth.token_limit = self.synthesis_token_limit(remaining)
         self.resume_synthesis()
         context = self.synthesis_context(context, state, records)

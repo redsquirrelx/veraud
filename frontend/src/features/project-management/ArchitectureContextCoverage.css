@@ -1,0 +1,373 @@
+.architecture-coverage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.architecture-coverage-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.architecture-coverage-count {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.architecture-coverage-progress {
+  display: flex;
+  flex: 1 1 160px;
+  min-width: 120px;
+  height: 8px;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-recessed);
+}
+
+.architecture-coverage-progress-fill {
+  display: block;
+  flex: 0 0 auto;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--status-success-accent);
+}
+
+.architecture-coverage-progress-fill.is-covered {
+  background: var(--status-success-accent);
+}
+
+.architecture-coverage-progress-fill.is-partial {
+  background: var(--status-partial-accent);
+  border-radius: 0;
+}
+
+.architecture-coverage-progress-fill.is-missing {
+  background: var(--color-text-muted);
+}
+
+.architecture-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.architecture-coverage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 112px;
+  min-width: 0;
+  padding: 0.65rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover);
+}
+
+.architecture-coverage-card:hover {
+  background: var(--color-surface-hover);
+}
+
+.architecture-coverage-card:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-strong);
+  outline-offset: 2px;
+}
+
+.architecture-coverage-card[aria-pressed="true"] {
+  border-color: var(--color-border);
+  background: var(--color-surface-hover);
+  box-shadow: var(--shadow-card);
+}
+
+.architecture-coverage-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.architecture-coverage-icon {
+  display: inline-flex;
+  color: var(--color-text-secondary);
+}
+
+.architecture-coverage-status-icon {
+  display: inline-flex;
+}
+
+.architecture-coverage-card[data-state="covered"] .architecture-coverage-status-icon {
+  color: var(--status-success-accent);
+}
+
+.architecture-coverage-card[data-state="partial"] .architecture-coverage-status-icon {
+  color: var(--status-partial-accent);
+}
+
+.architecture-coverage-card[data-state="missing"] .architecture-coverage-status-icon {
+  color: var(--color-text-muted);
+}
+
+.architecture-coverage-title {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.architecture-coverage-description {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.architecture-coverage-foot {
+  display: flex;
+  margin-top: auto;
+}
+
+.architecture-coverage-modal .ui-modal-wide {
+  width: min(920px, 96vw);
+  height: min(720px, 88vh);
+  max-height: min(720px, 88vh);
+}
+
+.architecture-coverage-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.architecture-coverage-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.architecture-coverage-panel-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.architecture-coverage-modal-body .stage-rows {
+  border-top: 0;
+}
+
+.architecture-evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.architecture-evidence-group {
+  min-width: 0;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface);
+}
+
+.architecture-evidence-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.architecture-evidence-group-head:hover {
+  background: var(--color-surface-hover);
+}
+
+.architecture-evidence-group-head:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-strong);
+  outline-offset: 2px;
+}
+
+.architecture-evidence-group-icon,
+.architecture-evidence-row-icon,
+.architecture-evidence-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.architecture-evidence-group-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.architecture-evidence-document {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.architecture-evidence-path {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.architecture-evidence-references {
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.architecture-evidence-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.65rem 0.5rem 1.75rem;
+  border: 0;
+  border-top: var(--border-width) solid var(--color-surface-hover);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.architecture-evidence-row:first-child {
+  border-top: 0;
+}
+
+.architecture-evidence-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.architecture-evidence-row:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus-strong);
+  outline-offset: -2px;
+}
+
+.architecture-evidence-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.architecture-evidence-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+}
+
+.architecture-evidence-file {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.architecture-evidence-range {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.architecture-evidence-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.architecture-evidence-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 0;
+}
+
+.architecture-evidence-viewer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.architecture-evidence-viewer-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.architecture-evidence-excerpt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface-recessed);
+}
+
+.architecture-evidence-excerpt-section p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.architecture-evidence-viewer .ui-code-viewer {
+  min-height: 300px;
+  max-height: none;
+  flex: 1;
+}
+
+@media (max-width: 560px) {
+  .architecture-coverage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .architecture-coverage-card {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .architecture-coverage-card {
+    transition: none;
+  }
+}

@@ -3,6 +3,7 @@ import { logger } from "./config/logger.js"
 import { buildApp } from "./app.js"
 
 import { env } from "./config/env.js"
+import { normalizeCorsOrigins } from "./config/cors-origins.js"
 import { resolveWorkspaceDir } from "./config/workspace.js"
 
 const projectRoot = fileURLToPath(new URL("../../", import.meta.url))
@@ -16,6 +17,7 @@ const { app } = await buildApp({
   databaseUrl: env.DATABASE_URL,
   workspaceDir,
   agentServerUrl: `http://127.0.0.1:${env.PORT_AGENTSERVER}`,
+  corsOrigins: normalizeCorsOrigins([env.HOST]),
 })
 
 logger.withTag("workspace").info(

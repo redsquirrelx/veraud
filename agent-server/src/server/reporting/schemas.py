@@ -10,7 +10,7 @@ from server.services.audit_diagnostics import ExecutionDiagnostic
 
 ReportStatus = Literal["completed", "partial", "failed"]
 EvaluationStatus = Literal["completed", "partial", "failed", "not_evaluated"]
-VerificationStatus = Literal["verified", "inconclusive", "discarded"]
+VerificationStatus = Literal["verified", "inconclusive", "discarded", "unreviewed"]
 
 
 class AuditReportRequest(Contract):
@@ -136,7 +136,7 @@ class ReportFinding(ReportQualifications):
     technical_details: dict[str, JsonValue] = Field(default_factory=dict)
     lifecycle: Literal["current", "historical"] = "current"
     superseded_by: list[str] = Field(default_factory=list)
-    original_validation_status: str = "insufficient_evidence"
+    original_validation_status: str | None = None
     original_review_rationale: str = ""
     disposition: Literal["defect", "contextual_risk", "opportunity", "conditional_proposal", "strength", "observation"] = "observation"
 

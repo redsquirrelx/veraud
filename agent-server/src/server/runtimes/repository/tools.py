@@ -5,7 +5,6 @@ import json
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
-from threading import RLock
 from time import monotonic
 from typing import Any, Literal
 
@@ -13,7 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from config.agents.tools import ToolLimits
 
-from ...infrastructure.execution_events import action_event
+from ...agent_services.budgeting.policy import budgets_enabled
+from ...agent_services.budgeting.retrieval import RetrievalBudget
+from ...agent_services.budgeting.shared_tokens import SharedTokenBudget
+from ...agent_services.budgeting.telemetry import ToolMeasurement
+from ...agent_services.budgeting.timing import ActiveDeadline
+from ...agent_services.budgeting.usage import BudgetUsage
+from ...agent_services.execution_tracking.events import action_event
 from ...services.repository_analysis import RepositoryQueryService
 from ...services.repository_analysis.context import create_identifier
 from ...services.repository_analysis.schemas import QueryPage
@@ -24,10 +29,7 @@ from .access import (
     repository_relative_path,
 )
 from .context import RepositoryContext
-from .schemas import BudgetUsage, RetrievedEvidence
-from .shared_tokens import SharedTokenBudget
-from .telemetry import ToolMeasurement
-from .timing import ActiveDeadline
+from .schemas import RetrievedEvidence
 
 
 class ToolError(BaseModel):
@@ -149,15 +151,6 @@ class ToolRequestError(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
-
-
-class RetrievalBudget:
-    """One character ledger shared by every descendant of a repository toolset."""
-
-    def __init__(self, limit):
-        self.limit = limit
-        self.used = 0
-        self.lock = RLock()
 
 
 class RepositoryToolset:
@@ -332,7 +325,7 @@ class RepositoryToolset:
                     "Use a fresh tool call ID.",
                 )
             budget = self.context.input.budget
-            if (self.timing.remaining <= 0 if self.timing is not None else
+            if budgets_enabled() and (self.timing.remaining <= 0 if self.timing is not None else
                     self.context.elapsed_seconds >= budget.max_elapsed_seconds):
                 return self._error(
                     name,
@@ -340,7 +333,7 @@ class RepositoryToolset:
                     "time_budget_exhausted",
                     "The execution time budget is exhausted.",
                 )
-            if self.tool_call_limit is not None and self._tool_calls >= self.tool_call_limit:
+            if budgets_enabled() and self.tool_call_limit is not None and self._tool_calls >= self.tool_call_limit:
                 return self._error(
                     name,
                     tool_call_id,
@@ -367,7 +360,7 @@ class RepositoryToolset:
                     if self.limits.compact:
                         self._query_cache[cache_key] = deepcopy(result)
                 response = self._bounded_response(name, tool_call_id, result)
-                if (self.timing.remaining <= 0 if self.timing is not None else
+                if budgets_enabled() and (self.timing.remaining <= 0 if self.timing is not None else
                         self.context.elapsed_seconds >= budget.max_elapsed_seconds):
                     raise ToolRequestError(
                         "time_budget_exhausted",
@@ -419,7 +412,7 @@ class RepositoryToolset:
         )
 
     def _validate_arguments(self, values: dict) -> None:
-        if "limit" in values and values["limit"] > self.limits.max_page_size:
+        if budgets_enabled() and "limit" in values and values["limit"] > self.limits.max_page_size:
             raise ToolRequestError("page_limit_exceeded", "Use a smaller page size.")
         for name in ("path", "file_path", "path_prefix"):
             if values.get(name) is not None:
@@ -464,16 +457,16 @@ class RepositoryToolset:
                 raise ToolRequestError(
                     "invalid_source_range", "Source range is outside retained content."
                 )
-            end = min(requested_end, start + self.limits.max_source_lines - 1)
+            end = min(requested_end, start + self.limits.max_source_lines - 1) if budgets_enabled() else requested_end
             source = self._queries.get_source_excerpt(path, start, end)
-            if self.limits.compact:
+            if budgets_enabled() and self.limits.compact:
                 while (
                     len(source.content) > self.limits.max_source_characters
                     and end > start
                 ):
                     end -= 1
                     source = self._queries.get_source_excerpt(path, start, end)
-            if len(source.content) > self.limits.max_source_characters:
+            if budgets_enabled() and len(source.content) > self.limits.max_source_characters:
                 raise ToolRequestError(
                     "source_limit_exceeded", "Use a smaller source line range."
                 )
@@ -502,7 +495,8 @@ class RepositoryToolset:
             data["truncated"] = False
         if self.limits.compact:
             data = self.compact_data(name, data)
-        self._compact_metadata(data)
+        if budgets_enabled():
+            self._compact_metadata(data)
         remaining = (
             self.context.input.budget.max_retrieved_characters
             - self._retrieved_characters
@@ -519,7 +513,7 @@ class RepositoryToolset:
                 data=data,
                 evidence=evidence,
             )
-            if len(response.model_dump_json()) <= cap:
+            if not budgets_enabled() or len(response.model_dump_json()) <= cap:
                 return response
             if isinstance(result, QueryPage) and len(data["items"]) > 1:
                 data["items"].pop()

@@ -18,7 +18,7 @@ def test_drawer_schema_and_validation_use_runtime_contracts(attribute, exclusive
             "max_model_calls": 20, "max_tool_calls": 200}
         options = {"agent_defaults": defaults, "audit_budget": {"max_total_tokens": 300000000000}}
         if attribute == "maintainability":
-            options[exclusive] = {"manager": {"max_tool_calls": 400}, "coordinator": {"max_tool_calls": 180},
+            options[exclusive] = {"manager": {"max_tool_calls": 200}, "coordinator": {"max_tool_calls": 180},
                 "investigator": {"max_tool_calls": 60}}
         elif attribute == "security":
             options[exclusive] = {"max_retrieved_characters": 20000000, "max_scan_files": 500, "max_tool_calls": 2000}
@@ -34,7 +34,7 @@ def test_drawer_schema_and_validation_use_runtime_contracts(attribute, exclusive
         assert schema["$defs"]["AuditAgentDefaults"]["properties"]["max_output_tokens"] == (
             AgentExecutionConfig.model_json_schema()["properties"]["max_output_tokens"])
         if attribute == "maintainability":
-            assert resolved.max_tool_calls == 400
+            assert resolved.max_tool_calls == 200
             assert resolved.invocation_limits.max_tool_calls == 180
             assert resolved.invocation_limits.invocation_limits.max_tool_calls == 60
             assert resolved.invocation_limits.max_output_tokens == 16000

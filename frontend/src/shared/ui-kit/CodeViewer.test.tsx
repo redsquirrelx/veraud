@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { CodeViewer } from "./CodeViewer.tsx"
 
 const code = "export function settle(amount: number) {\n  return amount * 2\n}\n"
@@ -94,6 +95,32 @@ describe("CodeViewer", () => {
     expect(bar?.textContent).toContain("0 lines")
     expect(bar?.textContent).toContain("Plain text")
     expect(screen.getByText("No content to show")).toBeDefined()
+  })
+
+  it("starts wrapped when the caller requests it", () => {
+    const { container } = render(<CodeViewer code={"a very long line without spaces that would keep the viewer scrolled horizontally"} initialWrapLines />)
+    const button = screen.getByRole("button", { name: "Wrap lines" })
+
+    expect(container.querySelector(".ui-code-viewer")?.classList.contains("ui-code-viewer-wrapped")).toBe(true)
+    expect(button.getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("toggles wrapped lines from the shared viewer toolbar", async () => {
+    const { container } = render(<CodeViewer code={"a very long line without spaces that would keep the viewer scrolled horizontally"} />)
+    const button = screen.getByRole("button", { name: "Wrap lines" })
+
+    expect(container.querySelector(".ui-code-viewer")?.classList.contains("ui-code-viewer-wrapped")).toBe(false)
+    expect(button.getAttribute("aria-pressed")).toBe("false")
+
+    await userEvent.click(button)
+
+    expect(container.querySelector(".ui-code-viewer")?.classList.contains("ui-code-viewer-wrapped")).toBe(true)
+    expect(button.getAttribute("aria-pressed")).toBe("true")
+
+    await userEvent.click(button)
+
+    expect(container.querySelector(".ui-code-viewer")?.classList.contains("ui-code-viewer-wrapped")).toBe(false)
+    expect(button.getAttribute("aria-pressed")).toBe("false")
   })
 
   it("shows a single line and kilobytes for bigger files", () => {

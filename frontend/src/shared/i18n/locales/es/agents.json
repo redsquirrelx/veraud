@@ -39,6 +39,7 @@
     "noAbsoluteLimit": "Sin límite absoluto registrado",
     "noBudget": "Sin presupuesto inicial registrado",
     "includesEstimated": "Incluye {{value}} tokens estimados",
+    "incompleteCount": "Conteo parcial de tokens: algunos intentos no informaron su consumo.",
     "breakdown": "Desglose de tokens",
     "input": "Entrada (informada)",
     "output": "Salida (informada)",

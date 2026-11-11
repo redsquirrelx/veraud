@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from functools import lru_cache
@@ -26,6 +25,15 @@ from server.services.execution_error_details import (
     result_error_detail,
 )
 
+from ..agent_services.budgeting.policy import wait_for
+from ..agent_services.budgeting.timing import ActiveDeadline, within_deadline
+from ..agent_services.execution_tracking.callback.schemas import ExecutionOutcome
+from ..agent_services.execution_tracking.events import record_execution
+from ..agent_services.execution_tracking.observer import (
+    CallbackSink,
+    backend_url,
+    default_callback_sink,
+)
 from ..agents.functional_adequacy.agent import FunctionalAdequacyAgent
 from ..config import tracing
 from ..config.logs import get_logger
@@ -34,16 +42,8 @@ from ..config.schemas import (
     ModelCredentials,
     ModelSettings,
 )
-from ..infrastructure.callback.schemas import ExecutionOutcome
-from ..infrastructure.execution_events import record_execution
 from ..infrastructure.llm.base import Model
-from ..runtimes.repository.timing import ActiveDeadline, within_deadline
 from .agent_registry import AgentRegistry
-from .callback_port import (
-    CallbackSink,
-    backend_url,
-    default_callback_sink,
-)
 from .usage_reporting import ReportingModel
 
 logger = get_logger("execution-service")
@@ -82,7 +82,13 @@ async def close_model_client(model) -> None:
 
 
 def build_default_registry() -> AgentRegistry:
+    from server.agents.architecture_context.agent import ArchitectureContextAgent
+    from server.agents.finding_resolution import FindingResolutionDirectAgent
+
     registry = AgentRegistry()
+
+    registry.register(ArchitectureContextAgent.agent_type, ArchitectureContextAgent)
+    registry.register(FindingResolutionDirectAgent.agent_type, FindingResolutionDirectAgent)
 
     registry.register(DummyAgent.agent_type, DummyAgent)
     registry.register(
@@ -230,13 +236,14 @@ class AgentExecutionService:
         callbacks = self._callbacks(execution_id)
         reporting_model = ReportingModel(agent.model, callbacks, execution_id)
         agent.model = reporting_model
+        agent.on_usage = reporting_model.report_gateway_usage
 
         try:
             await self._mark_running(callbacks, execution_id)
 
             with capture_execution_errors() as incidents:
                 result = await self._tracing.wrap_stage(
-                    asyncio.wait_for(agent.run(agent_input), timeout),
+                    wait_for(agent.run(agent_input), timeout),
                     name=agent_type,
                     model=agent.model.settings.name,
                     timeout_seconds=timeout,

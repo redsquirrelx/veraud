@@ -19,7 +19,7 @@ function harness(agents: AgentInvoker) {
   const store = {
     requestAuditCancellation: unused, pendingAuditCancellations: async () => [], claimAuditDispatch: async () => true,
     recordInvocation: unused, create: unused, updateUsage: unused,
-    patchResult: unused, createExecutionsForProject: unused,
+    recentIds: unused, patchResult: unused, createExecutionsForProject: unused, findMonitorFingerprint: unused,
     findById: async () => row,
     markRunning: async () => row,
     complete: async (_id, completion) => {

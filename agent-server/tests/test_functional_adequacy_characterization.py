@@ -22,11 +22,20 @@ REQUIREMENTS_INPUT = {
     "code_fragments": [{"fragment_id": "1", "file_path": "app.py:1-2", "code": "def list_items():\n    return []"}],
 }
 CASES = {
+    # EP-004: el fingerprint exploratorio se actualizó al añadir
+    # document_references vacíos a CapabilityFinding (sin snapshot no hay
+    # referencias documentales) y al eliminar las recomendaciones
+    # automáticas del modo exploratorio (diff verificado campo a campo:
+    # solo cambia recommendations, de lista a []).
     "exploratory": ({"code_fragments": [
         {"fragment_id": "1", "file_path": "app.py:1-3", "code": '@app.get("/items")\ndef list_items():\n    return []'},
         {"fragment_id": "2", "file_path": "service.py:1-2", "code": "def pending():\n    pass"},
-    ]}, "a3ead0e30f8868727f5ed202b87a38ad8782a3e91863aec1b73511668eefb664"),
-    "empty": ({}, "3359c67813d605986c093deb2bf4592c0dbf6668c53205be81b469597205aa40"),
+    ]}, "62e71a6591048ad2507536cb74e24d9eaa9b7de79c15e55a0d62ead5bc54a4b3"),
+    # e1c5c6a añadió limitaciones de propagación visibles en el caso vacío,
+    # pero no actualizó este fingerprint; se regeneró al valor verificado
+    # (idéntico antes y después de las referencias documentales de EP-004)
+    # y de nuevo al eliminar las recomendaciones exploratorias.
+    "empty": ({}, "4ac93cd73d707c9253a7e94712d35b783f9046180b8a538171788452d1f5357b"),
     "requirements": (REQUIREMENTS_INPUT, "6ee90b4c7de2d82c82a294607835a869824d095e4cb9064606e8ef8a7f7c25dd"),
     "missing_dependency": (REQUIREMENTS_INPUT, "db711edb1496b3d05249dd2fdb8603f6af60c1f8a8ede169419bb02c45b67af7"),
     "invalid_llm": (REQUIREMENTS_INPUT, "d340805963280801c2b166e9ef90f07fdecdf2d9a8094e91959e49bfcf07054a"),

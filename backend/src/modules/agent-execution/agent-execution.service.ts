@@ -5,14 +5,15 @@ import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infr
 import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { setTimeout as delay } from "node:timers/promises"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
-import { assertDirectCheckout, sanitizeDirectInput } from "../../infrastructure/agent-target/direct-input.guard.js"
+import { assertDirectCheckout, sanitizeDirectInput, InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 import type { AgentRunConfig } from "../agent-settings/agent-configuration.js"
 import type { ProjectArchitectureAnalysisRequest } from "../project/project.service.js"
-import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
+import { MAINTAINABILITY_AGENT_TYPE, SECURITY_AGENT_TYPE, FUNCTIONAL_ADEQUACY_AGENT_TYPE, FINDING_RESOLUTION_AGENT_TYPE, PROJECT_ARCHITECTURE_PIPELINE_NAME, PROJECT_ARCHITECTURE_PIPELINE_STAGES } from "../agent-settings/agent-types.js"
 import { invocationEvents } from "./invocationReceipt.js"
 import { readExecutionErrorDetail, executionErrorEvent } from "./execution-error-detail.js"
 import { publicErrorCode, publicErrorMessages } from "../../infrastructure/security/public-errors.js"
+import { monitorExecution } from "./agent-execution.monitor.js"
 import {
   INITIAL_STATUS,
   type AgentExecutionCompletion,
@@ -30,11 +31,29 @@ export class AgentExecutionNotFoundError extends Error {
   }
 }
 
+export interface DirectProjectTarget {
+  projectId: number
+  branch: string
+  commitHash: string
+}
+
 /** The rows one project-architecture pipeline drives, keyed by stage name. */
 export interface ProjectArchitectureExecutions {
   orientation: StoredAgentExecution
   architecture: StoredAgentExecution
   semantic_validation: StoredAgentExecution
+}
+
+/** Wall-clock budget for a cancellation request before it is recorded as
+ *  unavailable; network trouble is never proof of agent failure, so the row
+ *  is marked with a dedicated code. */
+const DEFAULT_CANCELLATION_TIMEOUT_MS = 10 * 60 * 1000
+const CANCELLATION_ATTEMPT_LIMIT = 30
+
+function cancellationTimeoutMs(): number {
+  const raw = process.env.AGENT_CANCELLATION_TIMEOUT_MS
+  const parsed = raw ? Number(raw) : Number.NaN
+  return Number.isFinite(parsed) && parsed >= 1_000 ? parsed : DEFAULT_CANCELLATION_TIMEOUT_MS
 }
 
 export class InvalidCompletionError extends Error {
@@ -55,6 +74,14 @@ export class AgentExecutionService {
   private cancellationTimers = new Map<number, ReturnType<typeof setTimeout>>()
   private forwardedCancellations = new Set<number>()
   private cancellationShutdown = false
+  /** Compact monitor projections of executions, keyed by a cheap fingerprint
+   *  read from the row (never the whole payload). Terminal audits are
+   *  immutable, so without this every monitor poll re-parses multi-megabyte
+   *  report JSON on the event loop. */
+  private monitorProjections = new Map<number, { fingerprint: string, value: StoredAgentExecution }>()
+  /** Wall-clock deadline and attempt budget for each in-flight cancellation. */
+  private cancellationStartedAt = new Map<number, number>()
+  private cancellationAttempts = new Map<number, number>()
 
   constructor(
     private executions: AgentExecutionStore,
@@ -69,6 +96,7 @@ export class AgentExecutionService {
   async cancelQualityAudit(id: number): Promise<StoredAgentExecution> {
     await this.require(id)
     const execution = await this.executions.requestAuditCancellation(id)
+    this.invalidateMonitorProjection(id)
     if (execution.cancellationRequestedAt && !this.isTerminal(execution)) {
       this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(execution) })
       this.queueAuditCancellation(id)
@@ -97,22 +125,59 @@ export class AgentExecutionService {
     return typeof result.run_id === "string" && result.run_id ? result.run_id : execution.invocations?.[0]?.run_id
   }
 
+  private resetCancellationState(id: number): void {
+    this.cancellationAttempts.delete(id)
+    this.cancellationStartedAt.delete(id)
+    this.forwardedCancellations.delete(id)
+  }
+
+  private startCancellationWindow(id: number): void {
+    if (!this.cancellationStartedAt.has(id)) {
+      this.cancellationStartedAt.set(id, Date.now())
+      this.cancellationAttempts.set(id, 0)
+    }
+  }
+
   private queueAuditCancellation(id: number): void {
     if (this.cancellationShutdown || this.cancellationWorkers.has(id) || this.cancellationTimers.has(id)) return
+    this.startCancellationWindow(id)
+    const failExpired = () => {
+      this.log.error(`Execution ${id}: cancellation unavailable after ${this.cancellationAttempts.get(id) ?? 0} attempts; closing as failed`)
+      this.resetCancellationState(id)
+      void this.fail(id, "Cancellation could not be delivered to the agent server.", "cancellation_unavailable")
+    }
     const retry = () => {
       if (this.cancellationShutdown) return
+      const attempts = (this.cancellationAttempts.get(id) ?? 0) + 1
+      const startedAt = this.cancellationStartedAt.get(id) ?? Date.now()
+      if (Date.now() - startedAt >= cancellationTimeoutMs() || attempts > CANCELLATION_ATTEMPT_LIMIT) {
+        failExpired()
+        return
+      }
+      this.cancellationAttempts.set(id, attempts)
+      const delay = Math.min(30_000, 1_000 * 2 ** (attempts - 1))
       const timer = setTimeout(() => {
         this.cancellationTimers.delete(id)
         this.queueAuditCancellation(id)
-      }, 1000)
+      }, delay)
       timer.unref()
       this.cancellationTimers.set(id, timer)
     }
     const worker = this.processAuditCancellation(id).then((pending) => {
       if (pending) retry()
-      else this.forwardedCancellations.delete(id)
+      else this.resetCancellationState(id)
     }).catch(() => {
-      // Network failure is not proof of cancellation or of agent failure.
+      const attempts = (this.cancellationAttempts.get(id) ?? 0) + 1
+      const startedAt = this.cancellationStartedAt.get(id) ?? Date.now()
+      if (Date.now() - startedAt >= cancellationTimeoutMs() || attempts > CANCELLATION_ATTEMPT_LIMIT) {
+        // Network failure is not proof of cancellation or of agent failure, but a
+        // permanently unreachable auditor marks the request unavailable instead of
+        // retrying forever.
+        this.log.error(`Execution ${id}: cancellation unavailable after ${attempts} attempts; closing as failed`)
+        this.resetCancellationState(id)
+        void this.fail(id, "Cancellation could not be delivered to the agent server.", "cancellation_unavailable")
+        return
+      }
       this.log.info(`Execution ${id}: cancellation pending; retrying agent-server communication`)
       retry()
     }).finally(() => { this.cancellationWorkers.delete(id) })
@@ -131,11 +196,36 @@ export class AgentExecutionService {
     }
     if (!runId || !this.agents.cancelAudit || !this.agents.getAuditSnapshot) return true
     if (!this.forwardedCancellations.has(id)) {
-      await this.agents.cancelAudit(runId)
+      try {
+        await this.agents.cancelAudit(runId)
+      } catch (error) {
+        if (error instanceof AuditRunUnavailableError) {
+          // The audit server no longer retains this run; there is nothing left to
+          // stop, so the cancellation is considered delivered.
+          this.log.info(`Execution ${id}: audit no longer reachable; closing cancellation as confirmed`)
+          this.resetCancellationState(id)
+          await this.closeCancelledAudit(execution)
+          return false
+        }
+        throw error
+      }
       this.forwardedCancellations.add(id)
     }
     if (this.cancellationShutdown) return false
-    const snapshot = await this.agents.getAuditSnapshot(runId)
+    let snapshot: AgentInput
+    try {
+      snapshot = await this.agents.getAuditSnapshot(runId)
+    } catch (error) {
+      if (error instanceof AuditRunUnavailableError) {
+        // The audit server no longer retains this run; there is nothing left to
+        // stop, so the cancellation is considered delivered.
+        this.log.info(`Execution ${id}: audit no longer reachable; closing cancellation as confirmed`)
+        this.resetCancellationState(id)
+        await this.closeCancelledAudit(execution)
+        return false
+      }
+      throw error
+    }
     if (this.cancellationShutdown) return false
     if (snapshot.run_id !== runId) throw new Error("Cancellation snapshot belongs to another audit")
     if (snapshot.status === "cancelled") {
@@ -201,7 +291,22 @@ export class AgentExecutionService {
    * workspace guard on `root_path`). Traversal outside the workspace throws
    * synchronously; a missing checkout fails the row in the background.
    */
-  async openDirect(agentType: string, input: AgentInput): Promise<StoredAgentExecution> {
+  async openDirect(agentType: string, input: AgentInput, project?: DirectProjectTarget): Promise<StoredAgentExecution> {
+    if (project) {
+      if (agentType !== "architecture_context" || Object.keys(input).length !== 0) {
+        throw new InvalidDirectInputError("Project-targeted direct execution requires architecture_context and no explicit input")
+      }
+      const [configuration] = await this.settings.prepareExecution([agentType])
+      const created = await this.executions.createExecutionsForProject(
+        project.projectId, project.branch, project.commitHash, [configuration!], "ArchitectureContext",
+      )
+      const execution = created.executions[agentType]!
+      if (!created.reused) {
+        this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+        void this.dispatchProjectContext(execution, project.commitHash, configuration!.transport)
+      }
+      return execution
+    }
     const sanitized = sanitizeDirectInput(input, this.workspaceDir)
     const [configuration] = await this.settings.prepareExecution([agentType])
 
@@ -218,6 +323,47 @@ export class AgentExecutionService {
     void this.dispatchDirect(execution, sanitized, configuration!.transport)
 
     return execution
+  }
+
+  /** Standalone revalidation of persisted findings under the project version.
+   *  It is independent of the quality-audit pipeline and its callback contract. */
+  async openFindingResolution(projectId: number, branch: string | null, commitHash: string, findings: AgentInput[], sourceAuditId: number): Promise<StoredAgentExecution> {
+    const [configuration] = await this.settings.prepareExecution([FINDING_RESOLUTION_AGENT_TYPE])
+    const created = await this.executions.createExecutionsForProject(
+      projectId, branch, commitHash, [configuration!], "FindingResolution",
+    )
+    const execution = created.executions[FINDING_RESOLUTION_AGENT_TYPE]!
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    void this.dispatchFindingResolution(execution, commitHash, findings, sourceAuditId, configuration!.transport)
+    return execution
+  }
+
+  private async dispatchFindingResolution(execution: StoredAgentExecution, commitHash: string, findings: AgentInput[], sourceAuditId: number, config: AgentRunConfig): Promise<void> {
+    try {
+      if (execution.evaluationId === null) throw new Error("Finding resolution requires a project version")
+      const target = await this.targets.resolve(execution.evaluationId)
+      const input = sanitizeDirectInput({ root_path: String(target.root_path) }, this.workspaceDir)
+      assertDirectCheckout(input)
+      await this.agents.run(FINDING_RESOLUTION_AGENT_TYPE, {
+        repository_path: String(input.root_path),
+        findings,
+        commit_hash: commitHash,
+        source_audit_id: sourceAuditId,
+      }, execution.id, config)
+    } catch (error) {
+      await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
+    }
+  }
+
+  private async dispatchProjectContext(execution: StoredAgentExecution, commitHash: string, config: AgentRunConfig): Promise<void> {
+    try {
+      const input = await this.targets.resolve(execution.evaluationId!)
+      const sanitized = sanitizeDirectInput({ root_path: input.root_path, commit_hash: commitHash }, this.workspaceDir)
+      assertDirectCheckout(sanitized)
+      await this.agents.run(execution.agentType, sanitized, execution.id, config)
+    } catch (error) {
+      await this.fail(execution.id, "Architecture context dispatch failed", undefined, error)
+    }
   }
 
   async openProjectArchitecturePipelineForProject(projectId: number, branch: string, commitHash: string): Promise<ProjectArchitectureAnalysisRequest> {
@@ -237,7 +383,8 @@ export class AgentExecutionService {
     return { versionId: result.versionId, evaluationId: result.evaluationId, executions }
   }
 
-  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {}) {
+  async openQualityAudit(projectId: number, branch: string, commitHash: string, attributes: string[], options: AuditOperatingOptions = {},
+    contextSource?: import("../quality-audit/audit-run-configuration.js").AuditRunConfiguration["architectureContext"]) {
     if (options.maintainability_selection !== undefined) {
       await this.settings.validateMaintainabilitySelection(options.maintainability_selection)
     }
@@ -255,6 +402,7 @@ export class AgentExecutionService {
       for (const participant of participants) configs[participant] = configuration.transport
     }
     const scope = auditRunConfiguration(await this.settings.list(), branch, commitHash, attributes, options.maintainability_selection)
+    if (contextSource) scope.architectureContext = { ...contextSource }
     const maintainability = scope.scopes.find((attribute) => attribute.id === "maintainability")
     const effectiveOptions = maintainability ? { ...options, maintainability_selection: Object.fromEntries(
       maintainability.subcharacteristics.map((child) => [child.id, child.investigators.map((agent) => agent.id)])) } : options
@@ -265,6 +413,7 @@ export class AgentExecutionService {
     const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [{ ...rootConfiguration, snapshot }], "QualityAudit")
     const execution = result.executions[agentType]!
     await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
+    this.invalidateMonitorProjection(execution.id)
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
     void this.dispatchQualityAudit(execution, configs, commitHash, attributes, effectiveOptions)
     return { versionId: result.versionId, evaluationId: result.evaluationId, executionId: execution.id }
@@ -323,11 +472,16 @@ export class AgentExecutionService {
     if (!audit || !audit["report"] || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
       throw new Error("Quality-audit pipeline returned no report")
     }
+    const current = await this.require(id)
+    const inputs = (current.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
+    const outputs = (current.invocations ?? []).flatMap((receipt) => typeof receipt.output_tokens === "number" ? [receipt.output_tokens] : [])
+    const inputTokens = inputs.length ? inputs.reduce((total, value) => total + value, 0) : null
+    const outputTokens = outputs.length ? outputs.reduce((total, value) => total + value, 0) : null
     // Completion describes delivery, independently of the report's quality status.
     await this.close(id, {
       status: "Completed", result: JSON.stringify(audit), error: null,
       errorDetail: readExecutionErrorDetail(audit["error_detail"]),
-      inputTokens: null, outputTokens: null,
+      inputTokens, outputTokens, estimatedTokens: current.estimatedTokens ?? 0,
       interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
     })
   }
@@ -462,6 +616,7 @@ export class AgentExecutionService {
           },
         }),
       )
+      this.invalidateMonitorProjection(architecture.id)
       this.events.broadcast({ type: "agent-execution.updated", execution: toEvent(patched) })
     } catch {
       this.log.error(`Could not attach the diagram to execution ${architecture?.id}`)
@@ -474,13 +629,16 @@ export class AgentExecutionService {
     if (existing.status === "Completed" || existing.status === "Failed") return existing
 
     const execution = await this.executions.markRunning(id, runId)
+    this.invalidateMonitorProjection(id)
     if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
     return execution
   }
 
   async updateUsage(id: number, usage: AgentExecutionUsage): Promise<StoredAgentExecution> {
     await this.require(id)
-    return this.executions.updateUsage(id, usage)
+    const execution = await this.executions.updateUsage(id, usage)
+    this.invalidateMonitorProjection(id)
+    return execution
   }
 
   /**
@@ -510,11 +668,13 @@ export class AgentExecutionService {
       throw new InvalidCompletionError("Invalid structured execution error")
     }
 
+    this.invalidateMonitorProjection(id)
     return this.executions.complete(id, completion)
   }
 
   async recordInvocation(id: number, receipt: import("./invocationReceipt.js").InvocationReceipt): Promise<StoredAgentExecution> {
     await this.require(id)
+    this.invalidateMonitorProjection(id)
     const execution = await this.executions.recordInvocation(id, receipt)
     if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
     return execution
@@ -522,6 +682,36 @@ export class AgentExecutionService {
 
   async findById(id: number): Promise<StoredAgentExecution> {
     return this.require(id)
+  }
+
+  /** Serves the compact monitor projection without re-parsing the audit
+   *  report on every poll; the fingerprint query never reads the payload. */
+  async findMonitorExecution(id: number): Promise<StoredAgentExecution> {
+    const fingerprint = await this.executions.findMonitorFingerprint(id)
+    if (fingerprint === null) {
+      throw new AgentExecutionNotFoundError(id)
+    }
+    const cached = this.monitorProjections.get(id)
+    if (cached && cached.fingerprint === fingerprint) {
+      return cached.value
+    }
+    const value = monitorExecution(await this.require(id))
+    this.monitorProjections.delete(id)
+    this.monitorProjections.set(id, { fingerprint, value })
+    if (this.monitorProjections.size > 256) {
+      const oldest = this.monitorProjections.keys().next().value
+      if (oldest !== undefined) this.monitorProjections.delete(oldest)
+    }
+    return value
+  }
+
+  /** Executions are mutated on every callback; drop the stale projection. */
+  private invalidateMonitorProjection(id: number): void {
+    this.monitorProjections.delete(id)
+  }
+
+  async recentIds(): Promise<number[]> {
+    return this.executions.recentIds(50)
   }
 
   private async close(id: number, completion: AgentExecutionCompletion): Promise<void> {

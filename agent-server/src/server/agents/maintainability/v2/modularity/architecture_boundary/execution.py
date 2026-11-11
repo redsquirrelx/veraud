@@ -8,6 +8,7 @@ from uuid import uuid4
 from langgraph.graph import END, START, StateGraph
 from pydantic_core import PydanticCustomError
 
+from server.agent_services.budgeting.policy import budgets_enabled
 from server.runtimes.investigation.agent import InvestigationExecution
 from server.runtimes.investigation.structured import safe_diagnostic
 from server.runtimes.invocation_reporting import phase_node
@@ -138,7 +139,7 @@ class BoundaryExecution(InvestigationExecution):
             budget = self._active_budget
             reserve = math.ceil((len(json.dumps([m.model_dump() for m in messages], default=str)) + len(overhead)) * .5) + self.output_limit
             reason = self._task_exhaustion(budget)
-            if self.tokens + reserve > budget["token_end"]:
+            if budgets_enabled() and self.tokens + reserve > budget["token_end"]:
                 reason = reason or "investigation_token_limit"
                 if budget["token_end"] == self.token_limit:
                     self.stop = "token_limit"
@@ -151,7 +152,7 @@ class BoundaryExecution(InvestigationExecution):
             return await super().provider_request(model, messages, overhead, node, schema, 0)
         # Bound the shared retry loop as well as the first request.
         global_calls, global_tokens, timing = self.call_limit, self.token_limit, self.timing
-        self.call_limit = min(global_calls, budget["call_end"] if budget["call_end"] is not None else math.inf)
+        self.call_limit = min(global_calls, budget["call_end"] if budget["call_end"] is not None else math.inf) if budgets_enabled() else math.inf
         self.token_limit = min(global_tokens, budget["token_end"])
         self.timing = timing.fork(max(.001, self._task_seconds(budget)))
         try:
@@ -341,6 +342,8 @@ class BoundaryExecution(InvestigationExecution):
 
     def _task_exhaustion(self, budget):
         self.timing.check_cancellation()
+        if not budgets_enabled():
+            return self.stop
         if self.remaining_seconds() <= 0:
             self.stop = "time_limit"
         elif self.calls >= self.call_limit:
@@ -358,16 +361,18 @@ class BoundaryExecution(InvestigationExecution):
         return ""
 
     def _task_seconds(self, budget):
+        if not budgets_enabled():
+            return math.inf
         return budget["seconds"] - (budget["active_start"] - self.timing.active_remaining)
 
     def _new_task_budget(self, state):
         remaining = len(state["plan"].investigations) - state["current_investigation"]
-        task_calls = self.config.max_calls_per_investigation
+        task_calls = self.config.max_calls_per_investigation if budgets_enabled() else None
         global_calls = self._remaining_model_calls(self.call_limit)
         if global_calls is not None:
             share = math.ceil(global_calls / remaining)
             task_calls = share if task_calls is None else min(task_calls, share)
-        task_tools = self.config.max_tools_per_investigation
+        task_tools = self.config.max_tools_per_investigation if budgets_enabled() else None
         global_tools = self._remaining_tools(self.tool_limit)
         if global_tools is not None:
             share = math.ceil(global_tools / remaining)
@@ -382,7 +387,7 @@ class BoundaryExecution(InvestigationExecution):
             # The configured per-task and global admission limits remain hard.
             "token_share_end": self.tokens + math.ceil(max(0, self.token_limit - self.tokens) / remaining),
             "token_end": min(self.token_limit, self.tokens + self.config.max_tokens_per_investigation),
-            "active_start": self.timing.active_remaining,
+            "active_start": self.timing.active_remaining if budgets_enabled() else None,
             "seconds": min(self.config.max_seconds_per_investigation, self.remaining_seconds() / remaining)}
 
     def _remaining_tools(self, limit):

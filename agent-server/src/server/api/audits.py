@@ -12,7 +12,7 @@ from server.reporting.schemas import ReportGenerationSummary
 from server.reporting.snapshot import BlackboardSnapshot, report_from_snapshot
 
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
-from ..agents.maintainability.v1.manager import MaintainabilityRequest
+from ..agents.maintainability.v2.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
 from ..app.audit_attributes import QualityAttributes
 from ..app.audit_configuration import category_type, validate_category
@@ -53,7 +53,7 @@ class StartAuditRequest(AuditExecutionOptions):
         description="Security scope. With attributes, participates only when security is selected; without attributes, selects security for compatibility.")
     config: ExecutionConfig = Field(default_factory=ExecutionConfig)
     agent_configs: dict[str, ExecutionConfig] | None = Field(default=None,
-        description="Explicit model and API key for all selected participants: nine maintainability agent IDs, security, or all ten for a joint audit. Keys are never included in audit results.")
+        description="Explicit model and API key for every selected catalog participant. Maintainability V2 requires manager, modularity and architecture_boundary. Keys are never included in audit results.")
     agent_config: str = Field(default="dummy", min_length=1, description="Server YAML entry supplying model defaults.")
 
 

@@ -81,8 +81,5 @@ def apply_audit_call_limits(limits: CoordinatorConfig, overrides: AuditCallLimit
 
 def validate_audit_agents(limits: CoordinatorConfig) -> None:
     """Check specialized child contracts before scheduling the audit."""
-    for agent_id in ("modularity", "reusability"):
-        validate_developer_agent_config(agent_id, limits.invocation_limits.model_dump())
-    for agent_id in ("architecture_boundary", "responsibility", "dependency_impact",
-                     "abstraction", "reuse_opportunity", "component_adaptability"):
-        validate_developer_agent_config(agent_id, limits.invocation_limits.invocation_limits.model_dump())
+    validate_developer_agent_config("modularity", limits.invocation_limits.model_dump())
+    validate_developer_agent_config("architecture_boundary", limits.invocation_limits.invocation_limits.model_dump())

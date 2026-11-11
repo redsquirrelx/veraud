@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { AgentExecution, AgentSettings } from "../../infrastructure/http-client/httpClient.ts"
 import { agentTree, auditProgress, auditStateFrom } from "./auditStatus.ts"
 import { executionAudits } from "./executionAudits.ts"
+import { mergeExecution } from "../agent-monitor/mergeExecution.ts"
 
 const execution: AgentExecution = {
   id: 7, evaluationId: 9, agentType: "maintainability_manager", status: "Running", result: null,
@@ -15,6 +16,38 @@ function agent(agentType: string, qualityAttributes: string[], workflowIds = ["q
 }
 
 describe("executionAudits", () => {
+  it("keeps recovered token updates and partial-count metadata through stale events and final reports", () => {
+    const receipt = { invocation_id: "child", parent_invocation_id: null, agent_id: "responsibility", run_id: "audit",
+      status: "running" as const, started_at: "2026-10-20T10:00:00Z", finished_at: null,
+      input_tokens: 100, output_tokens: 20, error: null }
+    let live: AgentExecution = { ...execution, invocations: [receipt] }
+    live = mergeExecution(live, { ...execution, invocations: [{ ...receipt, input_tokens: null, output_tokens: null, unknown_usage_attempts: 1 }] })
+    live = mergeExecution(live, { ...execution, invocations: [{ ...receipt, input_tokens: 150, output_tokens: 30, unknown_usage_attempts: 1 }] })
+    live = mergeExecution(live, { ...execution, invocations: [receipt] })
+    const [audit] = executionAudits([live], [])
+    expect(audit!.pipelines.flatMap((pipeline) => pipeline.agents).find((agent) => agent.id === "child"))
+      .toMatchObject({ inputTokens: 150, outputTokens: 30, unknownUsageAttempts: 1 })
+    const [finished] = executionAudits([{ ...live, status: "Completed", result: JSON.stringify({
+      attributes: ["maintainability"], report: { annexes_and_traceability: { executions: [
+        { ...receipt, status: "completed", consumption: { input_tokens: null, output_tokens: null } },
+      ] } },
+    }) }], [])
+    expect(finished!.pipelines.flatMap((pipeline) => pipeline.agents).find((agent) => agent.id === "child"))
+      .toMatchObject({ inputTokens: 150, outputTokens: 30, unknownUsageAttempts: 1 })
+  })
+  it.each([["complete", "completed"], ["partial", "partial"], ["failed", "failed"]])(
+    "shows independent context with native %s outcome, not as a maintainability audit", (native, expected) => {
+      const [context] = executionAudits([{ ...execution, agentType: "architecture_context", status: "Completed",
+        result: JSON.stringify({ execution_status: native }), monitorContext: { ...execution.monitorContext!,
+          evaluationType: "ArchitectureContext", qualityAttributes: [], workflowIds: [] },
+      }], [])
+      expect(context?.state).toBe(expected)
+      expect(context?.canCancel).toBe(false)
+      expect(context?.reportAvailable).toBe(false)
+      expect(context?.project?.id).toBe(5)
+      expect(context?.pipelines[0]?.id).toBe("architecture_context")
+      expect(context?.pipelines[0]?.agents[0]?.state).toBe(expected)
+    })
   it("retains root and child incident provenance when compact report traces omit metadata", () => {
     const detail = { agentId: "responsibility", invocationId: "child", occurredAt: "2026-10-30T12:00:00Z",
       code: "execution_timeout", exceptionType: "TimeoutError", message: "The execution exceeded its allowed time." }

@@ -41,6 +41,10 @@
   max-width: 400px;
 }
 
+.ui-modal-wide {
+  max-width: min(980px, 94vw);
+}
+
 .ui-modal-head {
   display: flex;
   align-items: center;
