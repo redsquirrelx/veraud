@@ -189,7 +189,9 @@
 .quality-audit-run-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius-control); }
 .quality-audit-run-link:focus-visible { outline: none; }
 .quality-audit-run-link:focus-visible::after { outline: var(--focus-width) solid var(--color-focus-strong); outline-offset: 2px; }
-.quality-audit-run-row-actions { position: relative; z-index: 1; }
+/* z-index without positioning: flex item above the stretched link overlay,
+   while the overlay keeps the row as its positioning context. */
+.quality-audit-run-row-actions { z-index: 1; }
 .quality-audit-row-menu { position: relative; display: inline-flex; max-width: 100%; }
 .quality-audit-row-menu-trigger { flex-shrink: 0; }
 .quality-audit-row-menu-panel { position: absolute; top: calc(100% + 4px); right: 0; left: auto; z-index: var(--z-dropdown); min-width: 200px; width: max-content; max-width: min(320px, calc(100vw - 32px)); padding: 0.25rem; }
