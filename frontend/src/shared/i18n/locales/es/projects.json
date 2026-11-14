@@ -105,6 +105,7 @@
   "qualityAudits": {
     "loading": "Cargando auditorías",
     "viewDetails": "Ver detalles",
+    "viewDetailsLabel": "Ver detalles de la auditoría #{{id}}",
     "findingsList": {
       "pageRange": "Hallazgos {{start}}–{{end}} de {{total}} · {{order}}",
       "perPage": "Hallazgos por página", "sortOrder": "Orden de severidad",
