@@ -22,6 +22,7 @@ HTTP contracts. Update them alongside endpoint changes.
 - [Git branches, history and checkout](project-branches.md).
 - [Checkout file previews](project-files.md).
 - [AI providers, models and credentials](ai-providers.md).
+- [Local credential encryption and recovery (Windows)](local-credential-encryption.md).
 - [Agent discovery and saved configuration](agent-settings.md).
 - [Agent execution lifecycle and WebSocket events](agent-execution.md).
 
