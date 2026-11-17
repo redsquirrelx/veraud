@@ -15,6 +15,9 @@ from server.agents.maintainability.v2.modularity.coordinator.registry import (
 from server.agents.maintainability.v2.reusability.coordinator.registry import (
     registered_investigators as reusability_investigators,
 )
+from server.agents.maintainability.v2.testability.coordinator.registry import (
+    registered_investigators as _testability_investigators,
+)
 from server.api.executions import router
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app.agent_registry import AgentRegistry
@@ -54,16 +57,18 @@ def test_catalog_covers_existing_configuration_and_real_hierarchy_without_changi
     assert list(agents) == sorted(agents)
     assert {item["configuration_id"] for item in agents.values() if item["configuration_id"]} <= set(list_agent_configs())
     assert agents["maintainability_manager"]["child_ids"] == list(registered_coordinators())
-    assert set(agents) >= {"modularity", "reusability", "architecture_boundary", "responsibility", "abstraction"}
+    assert set(agents) >= {"modularity", "reusability", "testability", "architecture_boundary",
+        "responsibility", "abstraction", "test_isolation", "test_controllability"}
     assert not {"dependency_impact", "reuse_opportunity", "component_adaptability"} & agents.keys()
     assert "reuse_opportunity_doc_driven" not in agents
     assert "reuse_opportunity_doc_driven" not in reusability_investigators()
     assert "reuse_opportunity_doc_driven" not in MAINTAINABILITY_AGENT_TYPES
     assert {"abstraction", "reuse_parametrization_doc_driven"} <= set(reusability_investigators())
+    assert set(_testability_investigators()) == {"test_isolation", "test_controllability"}
     quality = next(item for item in catalog["workflows"] if item["workflow_id"] == "quality-audit")
     assert "reuse_opportunity_doc_driven" not in quality["model_configuration_groups"]["maintainability"]
     assert client.get("/api/agents/catalog/reuse_opportunity_doc_driven").status_code == 404
-    for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()))):
+    for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()), ("testability", _testability_investigators()))):
         assert agents[coordinator]["child_ids"] == list(investigators)
         for identifier in investigators:
             assert agents[identifier]["parent_ids"] == [coordinator]
