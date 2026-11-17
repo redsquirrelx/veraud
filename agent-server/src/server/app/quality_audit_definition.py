@@ -1,7 +1,6 @@
 """Quality-audit pipeline adapter over the existing audit and report lifecycle."""
 
 import asyncio
-import base64
 import subprocess
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from ..agents.security.audit import SecurityAuditRequest
 from ..blackboard.impls.memory import MemoryBlackboard
 from ..config.settings import resolve_workspace_root
 from ..runtimes.invocation_reporting import invocation_reporting
+from .audit_artifacts import publish_audit_artifacts
 from .audit_attributes import QualityAttributes, audit_root
 from .audit_models import validate_model_configs
 from .audit_options import AuditExecutionOptions
@@ -163,15 +163,16 @@ class QualityAuditRunner:
             snapshot = service.snapshot(state.run_id)
             report = await service.report(state.run_id)
             document = await asyncio.to_thread(render_audit_report_docx, report)
-            # The backend stores this envelope from the HTTP response. Lifecycle
-            # callbacks carry compact invocation lifecycle: large artifacts are sent once.
+            artifacts = await asyncio.to_thread(publish_audit_artifacts, state.run_id, report, document)
+            # The backend stores only the compact manifest. Artifact bytes are
+            # served directly from the shared artifact directory; the HTTP
+            # response must never carry the report or Word document again.
             audit: dict[str, object] = {
                 "attributes": parsed.attributes,
                 "status": snapshot.status,
                 "run_id": state.run_id,
                 "error_detail": snapshot.error_detail.model_dump(mode="json", by_alias=True) if snapshot.error_detail else None,
-                "report": report.model_dump(mode="json"),
-                "docx_base64": base64.b64encode(document).decode("ascii"),
+                "artifacts": artifacts.model_dump(),
             }
             if parsed.include_blackboard:
                 audit["blackboard"] = snapshot.model_dump(mode="json")

@@ -9,6 +9,8 @@ import { storedExecutionErrorDetail } from "../agent-execution/execution-error-d
 import { publicErrorText, publicErrorFields } from "../../infrastructure/security/public-errors.js"
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 import { findingResolutionFindings } from "./finding-resolution.js"
+import { AuditArtifactStore, parseArtifactManifest, type AuditArtifactManifest } from "./audit-artifacts.js"
+import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
@@ -21,12 +23,28 @@ interface AuditArtifacts {
   run_id?: string
   attributes: string[]
   status: string
-  report: Record<string, unknown>
-  docx_base64: string
+  report?: Record<string, unknown>
+  docx_base64?: string
+  artifacts?: unknown
 }
 
 function artifacts(row: AuditRow): AuditArtifacts | null {
   return row.result === null ? null : JSON.parse(row.result) as AuditArtifacts
+}
+
+function artifactManifest(row: AuditRow): AuditArtifactManifest | null {
+  const result = artifacts(row)
+  return result?.artifacts === undefined ? null : parseArtifactManifest(result.artifacts)
+}
+
+function reportRequired(row: AuditRow): AuditArtifacts | null {
+  const result = artifacts(row)
+  return result?.artifacts !== undefined && artifactManifest(row) !== null || result?.report ? result : null
+}
+
+function artifactRequired(row: AuditRow): AuditArtifacts | null {
+  const result = artifacts(row)
+  return result !== null && (artifactManifest(row) !== null || (result.report !== undefined && result.docx_base64 !== undefined)) ? result : null
 }
 
 type SummaryRow = Pick<AuditRow, "id" | "agentType" | "evaluationId" | "status" | "error" | "createdAt" | "startedAt" | "finishedAt" | "configurationSnapshot"> & {
@@ -65,8 +83,13 @@ function savedConfiguration(row: { configurationSnapshot: string | null }): Audi
 }
 
 export class QualityAuditService {
+  private readonly artifactStore: AuditArtifactStore
+
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
-    private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">) {}
+    private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">,
+    artifactStore?: AuditArtifactStore) {
+    this.artifactStore = artifactStore ?? new AuditArtifactStore()
+  }
 
   async cancel(projectId: number, id: number) {
     if (!await this.repository.findSummary(projectId, id)) throw new AuditNotFoundError("Audit not found for this project")
@@ -159,9 +182,17 @@ export class QualityAuditService {
       || findingIds.some((id) => typeof id !== "string" || id.trim() === ""))) {
       throw new InvalidGitRequestError("findingIds must be distinct nonempty identifiers")
     }
-    const result = artifacts(row)
-    if (!result?.report) throw new AuditReportUnavailableError("The audit report is not available yet")
-    const findings = findingResolutionFindings(result.report, findingIds)
+    const result = reportRequired(row)
+    if (!result) throw new AuditReportUnavailableError("The audit report is not available yet")
+    const manifest = artifactManifest(row)
+    let findings
+    if (manifest) {
+      await this.artifactStore.assertAvailable(manifest)
+      const section = await this.readReportSection(manifest, "quality_results")
+      findings = findingResolutionFindings({ quality_results: section }, findingIds)
+    } else {
+      findings = findingResolutionFindings(result.report!, findingIds)
+    }
     if (!findings.length) throw new InvalidGitRequestError("No findings are available to revalidate")
     return this.executions.openFindingResolution(projectId, row.evaluation?.projectVersion.branch ?? null,
       auditCommit.toLowerCase(), findings, auditId)
@@ -189,14 +220,30 @@ export class QualityAuditService {
 
   async reportSection(projectId: number, id: number, section: string) {
     if (!auditReportSections.includes(section as AuditReportSection)) throw new InvalidGitRequestError("Unknown audit report section")
-    const row = await this.repository.findReportSection(projectId, id, section as AuditReportSection)
-    if (!row) throw new AuditNotFoundError("Audit not found for this project")
-    if (row.reportType !== "object") throw new AuditReportUnavailableError("The audit report is not available yet")
-    return { section, data: publicErrorFields(JSON.parse(row.data ?? "null")) }
+    const legacy = await this.repository.findReportSection(projectId, id, section as AuditReportSection)
+    if (legacy?.reportType === "object") return { section, data: publicErrorFields(JSON.parse(legacy.data ?? "null")) }
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) throw legacy === null ? new AuditNotFoundError("Audit not found for this project") : new AuditReportUnavailableError("The audit report is not available yet")
+    await this.artifactStore.assertAvailable(artifact.manifest)
+    return { section, data: publicErrorFields(await this.readReportSection(artifact.manifest, section as AuditReportSection)) }
   }
 
   async report(projectId: number, id: number) {
-    return publicErrorFields((await this.requireArtifacts(projectId, id)).report)
+    return publicErrorFields((await this.requireArtifacts(projectId, id)).report!)
+  }
+
+  async reportFile(projectId: number, id: number) {
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) return null
+    await this.artifactStore.assertAvailable(artifact.manifest)
+    return this.artifactStore.path(artifact.manifest, "report.json")
+  }
+
+  async documentFile(projectId: number, id: number) {
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) return null
+    await this.artifactStore.assertAvailable(artifact.manifest)
+    return this.artifactStore.path(artifact.manifest, "report.docx")
   }
 
   async file(projectId: number, id: number, path: string) {
@@ -254,11 +301,23 @@ export class QualityAuditService {
     return Buffer.from((await this.requireArtifacts(projectId, id)).docx_base64, "base64")
   }
 
+  private async findArtifact(projectId: number, id: number) {
+    const row = await this.repository.find(projectId, id)
+    if (!row) return null
+    const result = artifacts(row)
+    const manifest = artifactManifest(row)
+    return manifest === null ? null : { row, result: result!, manifest }
+  }
+
+  private async readReportSection(manifest: AuditArtifactManifest, section: AuditReportSection): Promise<unknown> {
+    return await this.artifactStore.readSection(manifest, section)
+  }
+
   private async requireArtifacts(projectId: number, id: number) {
     const row = await this.repository.find(projectId, id)
     if (!row) throw new AuditNotFoundError("Audit not found for this project")
-    const result = artifacts(row)
+    const result = artifactRequired(row)
     if (!result?.report || !result.docx_base64) throw new AuditReportUnavailableError("The audit report is not available yet")
-    return result
+    return result as typeof result & { report: Record<string, unknown>, docx_base64: string }
   }
 }

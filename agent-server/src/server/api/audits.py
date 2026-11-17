@@ -14,6 +14,7 @@ from server.reporting.snapshot import BlackboardSnapshot, report_from_snapshot
 from ..agents.functional_adequacy.schemas import FunctionalRequirement
 from ..agents.maintainability.v2.manager import MaintainabilityRequest
 from ..agents.security.audit import SecurityAuditRequest
+from ..app.audit_artifacts import read_audit_artifacts
 from ..app.audit_attributes import QualityAttributes
 from ..app.audit_configuration import category_type, validate_category
 from ..app.audit_options import AuditExecutionOptions
@@ -134,6 +135,33 @@ async def get_audit(run_id: str, response: Response, service: ServiceDep) -> Aud
         raise HTTPException(status_code=404, detail="Audit not found.")
     response.headers["Cache-Control"] = "no-store"
     return AuditSnapshot.model_validate(public_error_fields(state.model_dump(mode="json")))
+
+
+@router.get("/{run_id}/summary", response_model=AuditState,
+    summary="Get compact audit execution status",
+    description="Returns lifecycle metadata and terminal error details without published evidence, findings, assessments or report artifacts.",
+    responses={200: {"description": "Compact audit state."},
+               404: {"model": DomainError, "description": "No audit with this run_id in this process."}})
+async def get_audit_summary(run_id: str, response: Response, service: ServiceDep) -> AuditState:
+    state = service.get(run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Audit not found.")
+    response.headers["Cache-Control"] = "no-store"
+    return AuditState.model_validate(public_error_fields(state.model_dump(mode="json")))
+
+
+@router.get("/{run_id}/artifacts",
+    summary="Get compact audit artifact manifest",
+    description="Returns metadata for the already-published report artifact files without reading their bytes.",
+    responses={200: {"description": "Available artifact manifest."},
+               404: {"model": DomainError, "description": "No artifact manifest for this run_id."}})
+async def get_audit_artifacts(run_id: str, response: Response) -> dict:
+    try:
+        manifest = read_audit_artifacts(run_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail=public_error_text(str(error))) from None
+    response.headers["Cache-Control"] = "no-store"
+    return manifest.model_dump()
 
 
 @router.get("/{run_id}/report", response_model=SoftwareAuditReport,

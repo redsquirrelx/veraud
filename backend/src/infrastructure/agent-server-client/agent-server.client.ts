@@ -2,6 +2,7 @@ import { logger } from "../../config/logger.js"
 import { executionRequest } from "./execution-request.js"
 import type { TraceEnvelope } from "../trace-writer.js"
 import { readExecutionErrorDetail } from "../../modules/agent-execution/execution-error-detail.js"
+import { parseArtifactManifest } from "../../modules/quality-audit/audit-artifacts.js"
 import { writeTraceEvent, traceFailureDetails } from "../trace-writer.js"
 import type { AgentRunConfig, ModelAccessVerifier } from "../../modules/agent-settings/agent-configuration.js"
 import { ModelAccessError, type ModelAccessErrorCode } from "../../modules/agent-settings/model-access-error.js"
@@ -25,6 +26,8 @@ export interface AgentInvoker {
    *  result is keyed by stage artifact name and stays opaque here. */
   runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>, timeoutMs?: number, trace?: TraceEnvelope): Promise<Record<string, AgentInput>>
   /** Read an already-started audit; never starts/replays the POST. Null means active. */
+  /** Read compact metadata for an already-started audit; never starts/replays the POST. Null means active. */
+  getAuditArtifacts?(runId: string, attributes: string[]): Promise<AgentInput | null>
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
   /** Read published records without reconciling, generating a report or starting work. */
   getAuditSnapshot?(runId: string): Promise<AgentInput>
@@ -67,6 +70,7 @@ export class AgentTransportError extends AgentInvocationError {
 }
 
 export class AuditRunUnavailableError extends Error {}
+export class AuditArtifactsUnavailableError extends Error {}
 
 function transportError(error: unknown): AgentTransportError {
   const entry = error as { code?: string, cause?: { code?: string } } | null
@@ -237,6 +241,25 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.completed", spanId: trace.spanId, status: "ok", message: `${pipeline} pipeline returned`, details: { stageKeys: Object.keys(payload) } })
 
     return payload
+  }
+
+  async getAuditArtifacts(runId: string, attributes: string[]): Promise<AgentInput | null> {
+    const base = `${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}`
+    const response = await fetch(`${base}/summary`, { signal: AbortSignal.timeout(30_000) })
+    if (response.status === 404) throw new AuditRunUnavailableError("The agent-server no longer retains this audit run")
+    if (!response.ok) throw new Error(`Audit reconciliation returned HTTP ${response.status}`)
+    const summary = await response.json() as AgentInput
+    if (summary.run_id !== runId) throw new Error("Audit reconciliation returned a different run")
+    if (["queued", "running", "cancelling"].includes(String(summary.status))) return null
+    if (!["completed", "partial", "failed", "cancelled"].includes(String(summary.status))) {
+      throw new Error("Audit reconciliation returned an invalid state")
+    }
+    const artifactResponse = await fetch(`${base}/artifacts`, { signal: AbortSignal.timeout(30_000) })
+    if (!artifactResponse.ok) throw new AuditArtifactsUnavailableError("The audit completed but its published artifacts are unavailable")
+    const manifest = parseArtifactManifest(await artifactResponse.json())
+    if (manifest === null) throw new AuditArtifactsUnavailableError("The agent-server returned an invalid artifact manifest")
+    return { attributes, status: summary.status, run_id: runId, error_detail: readExecutionErrorDetail(summary.error_detail),
+      artifacts: manifest }
   }
 
   async getAuditResult(runId: string, attributes: string[]): Promise<AgentInput | null> {

@@ -1,6 +1,5 @@
 import asyncio
-import base64
-import io
+import json
 import subprocess
 import zipfile
 from types import SimpleNamespace
@@ -10,6 +9,7 @@ import pytest
 
 from server.api.schemas import ExecutionConfig
 from server.app import audit_service, quality_audit_definition
+from server.app.audit_artifacts import read_audit_artifacts
 from server.app.audit_models import MAINTAINABILITY_AGENT_TYPES
 from server.app.audit_service import AuditService
 from server.app.callback_port import CallbackSink
@@ -28,8 +28,9 @@ pytest_plugins = ["test_audits"]
 
 
 @pytest.mark.parametrize("explicit_models", [False, True])
-def test_pipeline_preserves_partial_audit_and_returns_the_existing_report_and_docx(audit_environment, monkeypatch, explicit_models):
+def test_pipeline_preserves_partial_audit_and_returns_the_existing_report_and_docx(audit_environment, monkeypatch, explicit_models, tmp_path):
     root = audit_environment.root
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     for args in (["init"], ["add", "."], ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "fixture"]):
         subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
     commit = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
@@ -65,11 +66,16 @@ def test_pipeline_preserves_partial_audit_and_returns_the_existing_report_and_do
 
     payload = asyncio.run(execute())["audit"]
     assert payload["status"] == "partial"
-    assert payload["report"]["schema_version"] == "1.0"
-    assert payload["report"]["identification"]["status"] == "partial"
+    artifact_dir = tmp_path / "audit-artifacts" / payload["run_id"]
+    report = json.loads((artifact_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["schema_version"] == "1.0"
+    assert report["identification"]["status"] == "partial"
     assert payload["blackboard"]["assessments"]
     assert board.query_assessments(payload["run_id"])
-    with zipfile.ZipFile(io.BytesIO(base64.b64decode(payload["docx_base64"]))) as document:
+    assert payload["artifacts"]["report_bytes"] == (artifact_dir / "report.json").stat().st_size
+    assert payload["artifacts"]["docx_bytes"] == (artifact_dir / "report.docx").stat().st_size
+    assert read_audit_artifacts(payload["run_id"]).model_dump()["report_bytes"] == payload["artifacts"]["report_bytes"]
+    with zipfile.ZipFile(artifact_dir / "report.docx") as document:
         assert b"Cobertura pendiente" in document.read("word/document.xml")
     assert "private-key" not in str(payload)
     audit_environment.async_client.aclose.assert_awaited_once()
@@ -107,7 +113,8 @@ def _committed_checkout(root):
     return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
 
 
-def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts(audit_environment, monkeypatch):
+def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts(audit_environment, monkeypatch, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     commit = _committed_checkout(audit_environment.root)
     monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: audit_environment.root.parent)
     model = audit_environment.model
@@ -126,15 +133,20 @@ def test_security_pipeline_resolves_its_own_stage_and_returns_portable_artifacts
     payload = asyncio.run(execute())["audit"]
     assert payload["attributes"] == ["security"]
     assert payload["status"] == "completed"
-    assert payload["report"]["identification"]["status"] == "completed"
+    artifact_dir = tmp_path / "audit-artifacts" / payload["run_id"]
+    report = json.loads((artifact_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["identification"]["status"] == "completed"
     assert payload["blackboard"]["execution_issues"] == []
     assert payload["blackboard"]["assessments"][0]["agent_id"] == "security"
     assert sink.running == [(42, None), (42, payload["run_id"])]
-    assert payload["docx_base64"]
+    assert payload["artifacts"]["sections"][-1] == "annexes_and_traceability"
+    assert "docx_base64" not in payload
+    assert (tmp_path / "audit-artifacts" / payload["run_id"] / "sections" / "quality_results.json").is_file()
     assert "security-key" not in str(payload)
 
 
-def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolsets(audit_environment, monkeypatch):
+def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolsets(audit_environment, monkeypatch, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     root = audit_environment.root
     (root / "extra.py").write_text("first = 1\nsecond = 2\n", encoding="utf-8")
     commit = _committed_checkout(root)
@@ -187,7 +199,8 @@ def test_joint_pipeline_applies_common_and_security_overrides_to_the_real_toolse
 
 
 @pytest.mark.parametrize("failed_attribute", [None, "maintainability", "security", "security_timeout", "shared_token_limit"])
-def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_environment, monkeypatch, failed_attribute):
+def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_environment, monkeypatch, failed_attribute, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     if failed_attribute == "shared_token_limit":
         from server.config import token_budget
 
@@ -273,12 +286,13 @@ def test_joint_audit_shares_snapshot_run_and_report_and_isolates_failures(audit_
             for item in payload["blackboard"]["assessments"])
         assert any(item["quality_attribute"] == "maintainability" and item["status"] == "complete"
             for item in payload["blackboard"]["assessments"])
-    with zipfile.ZipFile(io.BytesIO(base64.b64decode(payload["docx_base64"]))) as document:
+    with zipfile.ZipFile(tmp_path / "audit-artifacts" / payload["run_id"] / "report.docx") as document:
         xml = document.read("word/document.xml").decode()
         assert "Mantenibilidad" in xml and "Seguridad" in xml
 
 
-def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment, monkeypatch):
+def test_pipeline_reports_the_run_id_before_the_audit_finishes(audit_environment, monkeypatch, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     """The backend learns the run id while the audit still runs, so its board page can follow it."""
     commit = _committed_checkout(audit_environment.root)
     monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: audit_environment.root.parent)
@@ -371,7 +385,8 @@ def test_direct_audit_rejects_incomplete_agent_models_before_scheduling(audit_en
     audit_environment.factory.assert_not_called()
 
 
-def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_environment, monkeypatch):
+def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_environment, monkeypatch, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     from fastapi.testclient import TestClient
 
     from server.config.schemas import ModelCredentials, ModelSettings
@@ -412,6 +427,12 @@ def test_direct_audit_resolves_distinct_models_and_closes_all_clients(audit_envi
         snapshot = client.get(f"/api/audits/{run_id}")
         assert snapshot.json()["status"] == "completed"
         assert "secret-" not in snapshot.text
+        summary = client.get(f"/api/audits/{run_id}/summary")
+        assert summary.status_code == 200
+        assert summary.json()["status"] == "completed"
+        assert "evidence" not in summary.json()
+        artifacts = client.get(f"/api/audits/{run_id}/artifacts")
+        assert artifacts.status_code == 404
     assert len(clients) == len(MAINTAINABILITY_AGENT_TYPES)
     for model in clients.values():
         model.async_client.aclose.assert_awaited_once()

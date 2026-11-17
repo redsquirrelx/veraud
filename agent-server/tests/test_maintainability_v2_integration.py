@@ -23,6 +23,7 @@ from server.reporting.snapshot import BlackboardSnapshot, report_from_snapshot
 
 
 def test_quality_pipeline_executes_only_v2_and_returns_portable_unreviewed_findings(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     tools = verified_tools(tmp_path, {"app/__init__.py": "", "app/api.py": "from .store import Store\ndef use(): return Store()\n",
         "app/store.py": "class Store: pass\n"})
     root = tmp_path / "repo"
@@ -87,7 +88,7 @@ def test_quality_pipeline_executes_only_v2_and_returns_portable_unreviewed_findi
             "request": {"objective": "Inspect architectural boundaries.", "targets": ["app"],
                 "documented_architecture": documented.model_dump(mode="json")},
             "call_limits": {"manager": {"max_model_calls": 48, "max_tool_calls": 90},
-                "coordinator": {"max_model_calls": 32, "max_tool_calls": 60}},
+                "coordinator": {"max_model_calls": 32, "max_tool_calls": 60}}, "include_blackboard": True,
         }, ExecutionConfig(), execution_ids={"maintainability_manager": 42}))["audit"]
         from server.agent_services.execution_tracking.buffer import (
             deliver_execution_events,
@@ -102,7 +103,10 @@ def test_quality_pipeline_executes_only_v2_and_returns_portable_unreviewed_findi
     assert sent_requests
     assert all(sent.documented_architecture == documented for sent in sent_requests)
     assert payload["status"] == "completed"
-    assert payload["docx_base64"] and restored.identification.audit_id == payload["run_id"]
+    artifact_dir = tmp_path / "audit-artifacts" / payload["run_id"]
+    report = json.loads((artifact_dir / "report.json").read_text(encoding="utf-8"))
+    assert (artifact_dir / "report.docx").read_bytes().startswith(b"PK")
+    assert restored.identification.audit_id == payload["run_id"]
     assert "private-test-key" not in json.dumps(payload)
     receipts = {receipt["agent_id"]: receipt for _, receipt in sink.invocations}
     assert set(receipts) == {"maintainability_manager", "modularity", "architecture_boundary"}
@@ -112,7 +116,7 @@ def test_quality_pipeline_executes_only_v2_and_returns_portable_unreviewed_findi
     assert sink.activity
     findings = payload["blackboard"]["findings"]
     assert findings and all(not {"validation_status", "review_rationale"} & finding["details"].keys() for finding in findings)
-    assert payload["report"]["executive_summary"]["findings"]["by_verification"]["unreviewed"] == len(findings)
+    assert report["executive_summary"]["findings"]["by_verification"]["unreviewed"] == len(findings)
 
 
 @pytest.mark.parametrize("selection", [{"reusability": ["legacy_abstraction"]}, {"modularity": []}, {"reusability": ["responsibility"]}, {"unknown": []}])
