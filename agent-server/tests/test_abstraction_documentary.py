@@ -350,6 +350,52 @@ def test_consolidated_origins_keep_documentary_references():
     assert origins["candidate-1"][0]["evidence_ids"] == ["e1"]
 
 
+def test_consolidated_candidates_do_not_merge_colliding_ids_with_different_content():
+    first = AbstractionInvestigationResult(
+        investigation_id="investigation-1",
+        status="finding_candidate",
+        summary="Contract leak.",
+        justification="Consumers bound to implementation details.",
+        components=["src/widget_gateway.py"],
+        evidence_ids=["e1"],
+        candidates=[_component_candidate([])],
+    )
+    second = first.model_copy(update={
+        "investigation_id": "investigation-2",
+        "candidates": [_component_candidate([]).model_copy(update={
+            "description": "A different substitution leak.",
+        })],
+    })
+    candidates, origins = consolidate_candidates([first, second])
+    assert len(candidates) == 2
+    assert len({candidate.id for candidate in candidates}) == 2
+    assert sorted(candidate.id for candidate in candidates) == sorted(origins)
+
+
+def test_consolidated_candidates_merge_equivalent_content_with_disjoint_evidence():
+    first = AbstractionInvestigationResult(
+        investigation_id="investigation-1",
+        status="finding_candidate",
+        summary="Contract leak.",
+        justification="Consumers bound to implementation details.",
+        components=["src/widget_gateway.py"],
+        evidence_ids=["e1"],
+        candidates=[_component_candidate([])],
+    )
+    second = first.model_copy(update={
+        "investigation_id": "investigation-2",
+        "candidates": [_component_candidate([]).model_copy(update={
+            "id": "candidate-2",
+            "evidence_ids": ["e2"],
+        })],
+    })
+    # Keep the overlapping stable fields equal; only non-key order/sets differ.
+    candidates, origins = consolidate_candidates([first, second])
+    assert len(candidates) == 1
+    assert candidates[0].evidence_ids == ["e1", "e2"]
+    assert len(origins[candidates[0].id]) == 2
+
+
 def test_close_records_delivery_and_host_pending_assessment():
     investigator = AbstractionInvestigation()
     investigator.tools = SimpleNamespace(
