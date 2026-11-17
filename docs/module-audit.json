@@ -1,0 +1,718 @@
+{
+  "documentType": "module-audit",
+  "title": "Auditoría técnica de los módulos principales de Veraud",
+  "scope": {
+    "included": "Módulos de negocio principales del frontend, backend y agent-server",
+    "excluded": [
+      "Páginas de componentes y playgrounds de /test",
+      "Suites de pruebas automatizadas",
+      "Utilidades transversales menores",
+      "Estilos CSS aislados"
+    ],
+    "sources": [
+      "frontend/src/app/router.tsx",
+      "frontend/src/pages/home/HomePage.tsx",
+      "frontend/src/pages/project/ProjectDetailPage.tsx",
+      "frontend/src/pages/settings/SettingsPage.tsx",
+      "frontend/src/app/task-manager/",
+      "backend/src/modules/",
+      "backend/src/infrastructure/task-runner/",
+      "agent-server/src/server/app/audit_service.py",
+      "agent-server/src/server/services/graph_extraction.py",
+      "agent-server/src/server/api/verification_suite.py"
+    ]
+  },
+  "summary": {
+    "architecturePattern": "Frontend de intención-evento, backend como controlador de persistencia y decisiones, agent-server como ejecutor especializado y artefactos compartidos",
+    "primaryRisk": "Las credenciales de proveedores de IA se almacenan en texto plano en SQLite y solo se enmascaran al salir del backend",
+    "strongestDecision": "Inmutabilidad por commit: snapshots, documentos de contexto y artefactos identificables por commit",
+    "mainCohesionDebt": "quality-audit concentra auditoría, informes, evidencia, suite y persistencia coordinada con agent-execution"
+  },
+  "modules": [
+    {
+      "id": "frontend-home",
+      "name": "Frontend — Home",
+      "layer": "frontend",
+      "package": "frontend/src/pages/home + features/project-management",
+      "functionalArea": "Gestión de proyectos",
+      "technicalFunction": [
+        "Captura la URL de un repositorio GitHub y la opción de clonado superficial.",
+        "Valida la entrada en cliente, evita envíos dobles mediante cooldown y muestra el resultado.",
+        "Solicita un clonado al backend y mantiene sincronizada la lista visible del usuario.",
+        "Separa la responsabilidad visual entre HomePage, ProjectRegistrationForm, ProjectList y useRegisterProject."
+      ],
+      "representativeCode": [
+        {
+          "source": "frontend/src/features/project-management/useRegisterProject.ts",
+          "lines": "46-72",
+          "description": "Registra el proyecto y refresca la lista al completar",
+          "language": "typescript",
+          "code": "async function register() {\n  const trimmed = url.trim()\n  const shallowClone = options?.shallowClone ?? false\n  if (trimmed === \"\" || cooling) return // Cooldown de doble envío\n\n  setCooling(true)                    // Bloqueo visual y temporal\n  setState(\"loading\")               // Entradas deshabilitadas/estado de espera\n  const created = await registerProject(trimmed, shallowClone) // POST hasta terminar clone\n  setProject(created)                 // Guarda el resultado para la vista\n  setState(\"success\")                // Feedback final\n  options?.onRegistered?.()            // Refresca el listado\n}"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml frontend-home\nstart\n:Usuario pulsa Registrar;\nif (URL vacía o cooldown activo) then (Sí)\n  :Ignorar envío;\n  stop\nendif\n:Validar URL recortada;\n:POST /api/projects {url, shallowClone};\nif (HTTP 201) then (Sí)\n  :Mostrar éxito y proyecto creado;\n  :Refrescar ProjectList;\nelse (Error)\n  :Mostrar error recuperable;\nendif\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Clonado dentro del request",
+          "decision": "La petición de registro espera la finalización del clone.",
+          "tradeoff": "Simplifica la semántica de éxito inicial, pero permite una solicitud larga; el cliente usa timeout amplio."
+        },
+        {
+          "topic": "Protección frente a doble envío",
+          "decision": "Cooldown de 2 segundos y contador pending en cliente.",
+          "tradeoff": "Mejora repetición accidental; la autorización definitiva sigue siendo del backend."
+        },
+        {
+          "topic": "Fuente de progreso",
+          "decision": "La página acepta el resultado HTTP y también escucha cambios vía hooks globales de tareas.",
+          "tradeoff": "Dos canales ofrecen mejor UX, pero deben coordinarse para no mostrar estados obsoletos."
+        }
+      ],
+      "primaryDependencies": ["httpClient", "ProjectList", "ProjectRegistrationForm"],
+      "consumerRoutes": ["/"]
+    },
+    {
+      "id": "frontend-project-detail",
+      "name": "Frontend — Detalle de proyecto",
+      "layer": "frontend",
+      "package": "frontend/src/pages/project + features/project-management",
+      "functionalArea": "Gestión y comprensión de un repositorio",
+      "technicalFunction": [
+        "Resuelve el parámetro /projects/:id con el estado del proyecto, la rama y el commit.",
+        "Presenta resumen, grafo, contexto arquitectónico, archivos, auditorías y versiones analizadas.",
+        "Coordina sync, checkout, visualización de archivos y lanzamiento del pipeline Analizar.",
+        "Consume eventos WS para reflejar tareas y actualiza selectivamente árbol, lista y contexto."
+      ],
+      "representativeCode": [
+        {
+          "source": "frontend/src/pages/project/ProjectDetailPage.tsx",
+          "lines": "151-167",
+          "description": "Derivación de disponibilidad y permisos de acción",
+          "language": "tsx",
+          "code": "const architectureContextAvailable = architectureContextAvailability.available\nconst graphAvailable = graphExtraction.graph?.graphAvailable === true\nconst syncActive = syncing || isSyncActive(liveTasks...)\nconst canAnalyze = activeHash !== null && activeBranch !== null\n  && !syncActive && !graphActive && !projectPipeline.running\n// Toda acción debe superar también las guardas del backend."
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml frontend-project-detail\nstart\n:Leer :id y sección de la URL;\n:Consultar listado completo de proyectos;\n:Localizar proyecto por id;\nif (No existe) then (Sí)\n  :Mostrar página no encontrada;\n  stop\nendif\n:Cargar detalle, rama, commit y estado;\nif (Sección Files) then (Sí)\n  :Consultar árbol y preparar preview;\nelse if (Sección Graph) then (Sí)\n  :Consultar grafo por commit;\nelse if (Audits) then (Sí)\n  :Cargar historial o detalle de auditoría;\nendif\n:Escuchar task.updated y ejecuciones por WS;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Detalle sin endpoint individual",
+          "decision": "El detalle se obtiene con GET /api/projects y filtrado en cliente.",
+          "tradeoff": "Evita otro endpoint, pero obliga a refrescar y escalar la lista."
+        },
+        {
+          "topic": "Mutabilidad del workspace",
+          "decision": "Checkout/sync se prohíben mientras hay ejecución abierta.",
+          "tradeoff": "Previene lecturas de estado inconsistente entre extracción, checkout y auditoría."
+        },
+        {
+          "topic": "Estado distribuido",
+          "decision": "WS para señales de terminación; consultas HTTP para recuperar snapshots completos.",
+          "tradeoff": "Evita enviar payloads completos por WS, pero require polling o reejecuciones posteriores."
+        },
+        {
+          "topic": "Acciones contextuales",
+          "decision": "canAnalyze se calcula en frontend pero se revalida en backend.",
+          "tradeoff": "UI inmediata sin convertir la UI en autoridad de seguridad ni de consistencia."
+        }
+      ],
+      "primaryDependencies": ["useProjectPipeline", "useProjectTree", "useProjectFile", "useTasks", "QualityAudits"],
+      "consumerRoutes": ["/projects/:id", "/projects/:id/:section", "/projects/:id/audits/:auditId"]
+    },
+    {
+      "id": "frontend-analyze-pipeline",
+      "name": "Frontend — Pipeline Analizar",
+      "layer": "frontend",
+      "package": "frontend/src/features/project-management/projectPipeline.ts + useProjectPipeline.ts",
+      "functionalArea": "Coordinación de análisis IA",
+      "technicalFunction": [
+        "Asegura o desencadena un grafo estructural para el commit solicitado.",
+        "Tras el grafo, solicita el contexto de arquitectura al backend mediante un AgentExecution.",
+        "Realiza polling del estado hasta recibir Completed, Failed o mismatch de versión/análisis.",
+        "Propaga errores identificables para mostrar mensajes de fallo y estados parciales."
+      ],
+      "representativeCode": [
+        {
+          "source": "frontend/src/features/project-management/projectPipeline.ts",
+          "lines": "96-124",
+          "description": "Polling y validación del contexto arquitectónico",
+          "language": "typescript",
+          "code": "let execution = await startArchitectureContext(context, signal)\nwhile (true) {\n  if (execution.status === \"Failed\") throw new Error(\"Architecture context execution failed\")\n  if (execution.status === \"Completed\") {\n    const output = JSON.parse(execution.result ?? \"null\")\n    // Valida schema, commit y veredicto antes de aceptarlo\n    return output\n  }\n  await pause(signal) // 3 segundos\n  execution = await getArchitectureContextExecution(id, signal)\n}"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml frontend-analyze-pipeline\nstart\n:Usuario pulsa Analizar;\n:Paso 1 structural-graph;\nif (Grafo reutilizable completo) then (Sí)\nelse\n  :POST /api/projects/:id/graph;\n  repeat\n    :Polling GET graph cada 3 s;\n  repeat while (No terminado) is (sí)\nendif\n:Paso 2 architecture-context;\n:POST agent-executions/direct;\nrepeat\n  :Polling GET agent-executions/:id cada 3 s;\n  if (Completado y artefacto válido) then (Sí)\n    :Marcar completado;\n    stop\n  elseif (Failed o JSON inválido) then\n    :Reportar fallo;\n    stop\n  endif\nrepeat while (No terminado) is (sí)\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Pipeline frontend-owned",
+          "decision": "La composición structuralGraph → architectureContext vive en React.",
+          "tradeoff": "Fácil de extender, pero la página debe estar abierta; no hay operación transaccional distribuida."
+        },
+        {
+          "topic": "Polling en lugar de push específico",
+          "decision": "El polling se usa con comprobaciones estrictas de commit y tipo agentType.",
+          "tradeoff": "Menos eventos específicos; el frontend es responsable de detectar inconsistencias."
+        },
+        {
+          "topic": "Validación de artefacto",
+          "decision": "No basta con status Completed; se verifica schema, commit y execution_status.",
+          "tradeoff": "Protege contra stale reads, pero duplica parte del contrato backend."
+        }
+      ],
+      "primaryDependencies": ["projectGraphApi", "architectureContextApi", "useArchitectureContextAvailability"],
+      "consumerRoutes": ["/projects/:id"]
+    },
+    {
+      "id": "frontend-settings",
+      "name": "Frontend — Settings IA y agentes",
+      "layer": "frontend",
+      "package": "frontend/src/pages/settings + features/llm-management",
+      "functionalArea": "Configuración de proveedores y agentes",
+      "technicalFunction": [
+        "Administra modelos y credenciales asociadas a proveedores preexistentes de sólo lectura.",
+        "Permite asignar un modelo y una credencial a cada agente y sincronizar el catálogo.",
+        "Configura opciones operativas y solicita una verificación real de acceso al modelo.",
+        "Mantiene coherente la UI con máscaras, contadores y errores tipados del backend."
+      ],
+      "representativeCode": [
+        {
+          "source": "frontend/src/pages/settings/SettingsPage.tsx",
+          "lines": "71-75",
+          "description": "Estado compartido de proveedores y selección de artefactos",
+          "language": "tsx",
+          "code": "const { providers, loading, loadError, refresh, addModel, editModel, removeModel, ... } = useAiProviders()\nconst [modelId, setModelId] = useState<string[]>([])       // Modelo elegido por agente\nconst [credentialId, setCredentialId] = useState<string[]>([]) // Credencial enmascarada\n// La asignación y verificación se delega a AgentsSettings"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml frontend-settings\nstart\n:Abrir Settings;\n:Cargar proveedores, modelos, credenciales y agentes;\nif (Errores HTTP) then (Sí)\n  :Mostrar error recuperable;\n  stop\nendif\nif (Acción = guardar asignación) then (Sí)\n  :PUT agent-settings/:agentType;\nelse if (Acción = verificar) then (Sí)\n  :POST agent-settings/:agentType/verify;\n  :Esperar generación real del proveedor;\nelse if (Acción = editar modelo o credencial) then (Sí)\n  :POST PATCH o DELETE ai-providers/:id/...;\nendif\n:Refrescar proveedores y mostrar toast;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Máscaras de credencial",
+          "decision": "El frontend sólo recibe preview, nunca la clave completa.",
+          "tradeoff": "Bueno para límite de exposición; falla la protección de la base subyacente, que contiene claves en claro."
+        },
+        {
+          "topic": "Proveedor read-only",
+          "decision": "Sólo se crean modelos y credenciales de providers seeded.",
+          "tradeoff": "Reduce configuración errónea y simplifica la validación; no soporta proveedores dinámicos."
+        },
+        {
+          "topic": "Verificación real",
+          "decision": "verify realiza una generación mínima en el proveedor.",
+          "tradeoff": "Confirma permisos reales, pero consume tokens."
+        }
+      ],
+      "primaryDependencies": ["useAiProviders", "AgentsSettings", "Agents model/credential pickers"],
+      "consumerRoutes": ["/settings"]
+    },
+    {
+      "id": "frontend-global-monitor",
+      "name": "Frontend — Dock y monitor de ejecuciones",
+      "layer": "frontend",
+      "package": "frontend/src/app/dock.tsx + shared/task-manager + shared/agent-monitor + shared/audit-monitor",
+      "functionalArea": "Visibilidad transversal de tareas y auditorías",
+      "technicalFunction": [
+        "Abre una suscripción WebSocket global a /ws y reintenta la conexión automáticamente.",
+        "Procesa task.updated para actualizar el dock de tareas y la sincronización de proyectos.",
+        "Procesa agent-execution.opened/updated para fusionar ejecuciones y presentar árboles manager/coordinador/investigador.",
+        "Consulta ?monitor=true para reconciliar recibos históricos y estado actual en un snapshot compacto."
+      ],
+      "representativeCode": [
+        {
+          "source": "frontend/src/shared/agent-monitor/agentMonitor.tsx",
+          "lines": "126-147",
+          "description": "Selección de eventos WS admitidos",
+          "language": "tsx",
+          "code": "const message = JSON.parse(raw)\nconst type = message.type\nif (type !== \"agent-execution.opened\" && type !== \"agent-execution.updated\") return\nconst execution = message.execution\nif (!validAgentExecution(execution)) return\napply(execution) // Fusiona, ordena y conserva como máximo 50"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml frontend-global-monitor\nstart\n:Conectar WS /ws;\n:GET /api/tasks/active y /api/agent-executions/recent;\nif (Evento task.updated) then (Sí)\n  :Actualizar dock de tareas;\nelse if (Evento agent-execution.opened/updated) then (Sí)\n  :Fusionar con snapshot existente;\n  :Actualizar monitor de auditorías;\nelse\n  :Ignorar evento desconocido;\nendif\nif (Conexión caída) then (Sí)\n  :Reintentar;\nendif\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Suscripción única",
+          "decision": "Un provider global comparte WS entre dock y monitor.",
+          "tradeoff": "Evita conexiones duplicadas; frontend pierde aislamiento entre vistas dentro de React Query o similares."
+        },
+        {
+          "topic": "WS no es fuente completa",
+          "decision": "Los eventos transportan señales; la recuperación definitiva recurre a HTTP.",
+          "tradeoff": "Evita dumps masivos de estado; agrega lógica de reconciliación."
+        },
+        {
+          "topic": "Compactación de monitor",
+          "decision": "monitor=true entrega ejecución compacta sin contenido de fuente extensa.",
+          "tradeoff": "Panel rápido, pero necesitas otro endpoint para la evidencia completa."
+        }
+      ],
+      "primaryDependencies": ["RealtimeGateway", "useTasks", "AuditStatusDrawer", "AgentExecutionsProvider"],
+      "consumerRoutes": ["/"]
+    },
+    {
+      "id": "backend-project",
+      "name": "Backend — project",
+      "layer": "backend",
+      "package": "backend/src/modules/project",
+      "functionalArea": "Registro y gestión de workspace",
+      "technicalFunction": [
+        "Convierte una URL GitHub en una entidad Project con estado QUEUED/SYNCING/READY.",
+        "Valida SSH/HTTPS, comprueba duplicados y crea tareas de clone o checkout.",
+        "Audita la API pública solo para HTTPS; SSH se maneja mediante la configuración local del usuario.",
+        "Sirve árbol y archivos bajo confinamiento de path y tamaño; puede leer por checkout o por commit.",
+        "Sincroniza el repositorio y conserva el historial Git de ramas, commits y checkout."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/modules/project/project.service.ts",
+          "lines": "71-82",
+          "description": "Parseo HTTPS y divergencia SSH/HTTPS",
+          "language": "typescript",
+          "code": "const parsed = parseGithubUrl(repositoryUrl)\nconst metadata = parsed.protocol === \"https\"\n  ? await this.github.checkAccess(parsed.owner, parsed.repo) // HTTPS: metadatos públicos\n  : null // SSH: no consulta la API pública\nconst existing = await this.projects.findByRepo(owner, name) // Comprueba duplicados"
+        },
+        {
+          "source": "backend/src/modules/project/project.service.ts",
+          "lines": "99-113",
+          "description": "Creación transaccional conceptual y lanzamiento del clone",
+          "language": "typescript",
+          "code": "const project = await this.projects.create({\n  cloneProtocol: parsed.protocol,\n  shallowClone, repositoryOwner: owner, repositoryName: name,\n  status: \"QUEUED\",\n})\nconst result = await this.tasks.launch(project.id, `cloning ${owner}/${name}`, command)"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-project\nstart\n:POST /api/projects {repositoryUrl};\n:parseGithubUrl;\nif (URL inválida) then (Sí)\n  :400;\n  stop\nendif\nif (HTTPS) then (Sí)\n  :GithubClient.checkAccess();\n  if (No accesible) then (Sí)\n    :422;\n    stop\n  endif\nendif\nif (Ya registrado) then (Sí)\n  :409;\n  stop\nendif\n:Crear Project QUEUED;\n:Lanzar tarea clone;\nif (Falla clone) then (Sí)\n  :Rollback de proyecto y tarea;\n  :422;\n  stop\nendif\n:201 RegisteredProject;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Snapshot de registro",
+          "decision": "Devuelve el project registrado aunque el estado ya haya sido READY.",
+          "tradeoff": "Contrato determinista; no promete el estado final en el 201."
+        },
+        {
+          "topic": "SSH sin API",
+          "decision": "Para SSH no se consulta la API pública.",
+          "tradeoff": "Funciona con repos privados, pero no puede prevalidar tamaño/licencia/archivabilidad."
+        },
+        {
+          "topic": "Confinamiento de archivos",
+          "decision": "Resolución canónica y comprobación de prefijo contra el checkout.",
+          "tradeoff": "Evita traversal por path relativo, aunque el subproceso y el FS aún definen el criterio real."
+        },
+        {
+          "topic": "Rollback de clone",
+          "decision": "Si el runner falla, se borra project y task.",
+          "tradeoff": "No deja residuos inconsistentes; presupone que borrar el checkout completo es seguro."
+        }
+      ],
+      "primaryDependencies": ["project.repository", "TaskService", "GithubClient", "GitExecutor"],
+      "consumerRoutes": ["GET /api/projects", "POST /api/projects", "POST /api/projects/:id/sync", "POST /api/projects/:id/file"]
+    },
+    {
+      "id": "backend-task-runner",
+      "name": "Backend — task + task-runner",
+      "layer": "backend",
+      "package": "backend/src/modules/task + backend/src/infrastructure/task-runner",
+      "functionalArea": "Ejecución de trabajo controlado",
+      "technicalFunction": [
+        "Modela las actividades como Task pendientes y resuelve su plan desde un catálogo de executors.",
+        "Encola tareas, gestiona la cola y evita conflictos peligrosos en checkouts.",
+        "Ejecuta Git y servicios en procesos separados, con timeout y límites de salida.",
+        "Emite actualizaciones task.updated y cambia estado del proyecto al iniciar o completar."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/infrastructure/task-runner/git.executor.ts",
+          "lines": "157-162",
+          "description": "Comandos Git tipados admitidos",
+          "language": "typescript",
+          "code": "export type GitCommand =\n  | { kind: \"clone\", cloneUrl: string, folder: string, shallowClone?: boolean }\n  | { kind: \"pull\", folder: string }\n  | { kind: \"fetch\", folder: string }\n  // tree, branches, checkout...\n// No se recibe un string shell ni se evalúa directamente por el runner."
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-task-runner\nstart\n:TaskService.launch();\n:Persistir Task Queued;\n:TaskRunner.enqueue();\n:Seleccionar executor para el plan;\nif (Plan desconocido) then (Sí)\n  :Marcar Failed;\n  stop\nendif\n:Esperar slot según grupo;\n:Marcar Task Running;\n:Actualizar proyecto a SYNCING cuando corresponda;\n:Ejecutar proceso con timeout;\nif (Éxito) then (Sí)\n  :Marcar Succeded y proyecto READY;\nelse\n  :Marcar Failed;\nendif\n:broadcast task.updated;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Plan en vez de comando directo",
+          "decision": "El command declara intención y el executor materializa el subproceso.",
+          "tradeoff": "No todos los procesos son iguales; la autorización vive en el plan y el executor."
+        },
+        {
+          "topic": "Aislamiento de mutaciones",
+          "decision": "Las tareas mutuamente excluyentes se agrupan conceptualmente como clone/checkout o pull.",
+          "tradeoff": "Evita carreras, pero las lecturas masivas pueden bloquearse innecesariamente."
+        },
+        {
+          "topic": "Progreso por WS",
+          "decision": "Cada transición publica task.updated por /ws.",
+          "tradeoff": "Mejor UX de estados, sin garantizar entrega histórica; el frontend restaura por listado."
+        }
+      ],
+      "primaryDependencies": ["TaskRepository", "TaskRunner", "GitExecutor", "ServiceTaskExecutor", "RealtimeGateway"],
+      "consumerRoutes": ["Interno de project, project-graph, quality-audit y AgentExecution"]
+    },
+    {
+      "id": "backend-quality-audit",
+      "name": "Backend — quality-audit",
+      "layer": "backend",
+      "package": "backend/src/modules/quality-audit",
+      "functionalArea": "Auditorías, informes y verification suite",
+      "technicalFunction": [
+        "Valida solicitud de auditoría y exige contexto arquitectónico usable para mantenibilidad.",
+        "Abre evaluation/execution y orquesta el pipeline quality-audit del agent-server.",
+        "Sirve informes en JSON, secciones y DOCX desde un artifact store compartido.",
+        "Administra evidence, cancelación, revalidación y verification suite.",
+        "Mantiene ejecución assíncrona mediante invocaciones y cierra transaccionalmente el resultado."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/modules/quality-audit/quality-audit.service.ts",
+          "lines": "142-151",
+          "description": "Guardas de commit y contexto documental",
+          "language": "typescript",
+          "code": "if (!/^[a-fA-F0-9]{40}$/.test(commitHash)) throw new InvalidGitRequestError(...)\nconst { project, cleanBranch, cleanHash } = await this.projects.validateAnalysisTarget(...)\nconst context = attributes.includes(\"maintainability\")\n  ? await this.repository.architectureContext(project.id, cleanHash)\n  : null // No todos los atributos requieren contexto"
+        },
+        {
+          "source": "backend/src/modules/quality-audit/quality-audit.service.ts",
+          "lines": "279-285",
+          "description": "Punto de entrada del suite",
+          "language": "typescript",
+          "code": "async verificationSuite(projectId: number, id: number, options: ...) {\n  await this.findArtifact(...) // recuperará run_id del manifest\n  const client = this.agents?.requestVerificationSuite\n  if (!client) throw new AuditReportUnavailableError(...)\n  // create: sí; execute: sin LLM ni AgentExecution nuevos"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-quality-audit\nstart\n:POST /api/projects/:id/audits;\n:Validar commit, atributos y target;\nif (Mantenibilidad) then (Sí)\n  if (Contexto usable) then (Sí)\n  else\n    :422 ArchitectureContextRequired;\n    stop\n  endif\nendif\n:openQualityAudit() en agent-execution;\n:Persistir Evaluation QualityAudit + AgentExecution;\n:Dispatch asíncrono al agent-server;\n:202 Accepted;\nnote right\n  Cierre:\n  callbacks running/progress/invocations/completion\n  hasta guardar manifest en la fila AgentExecution.\nend note\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Contexto por precondición",
+          "decision": "Mantenibilidad exige contexto usable del mismo commit.",
+          "tradeoff": "Evita auditorías sobre código mal descrito; obliga a ejecutar Analizar antes."
+        },
+        {
+          "topic": "Reporte no generado por el backend",
+          "decision": "El agent-server sintetiza el report desde el blackboard.",
+          "tradeoff": "Report más consistente con evidencia; los requisitos de ejecución son mayores."
+        },
+        {
+          "topic": "Manifest en SQLite, bytes en disco",
+          "decision": "El registro sólo referencia report.json/docx y tamaños.",
+          "tradeoff": "La DB se mantiene pequeña; sin volumen/volumen compartido no se pueden servir los artefactos."
+        },
+        {
+          "topic": "Suite separa create/execute",
+          "decision": "Crear con LLM; ejecutar sin LLM y sin filas de agente.",
+          "tradeoff": "Dos semánticas en una API; el controlan el campo action."
+        }
+      ],
+      "primaryDependencies": ["AgentExecutionService", "QualityAuditRepository", "AuditArtifactStore", "AgentServerClient", "ProjectService"],
+      "consumerRoutes": ["POST /api/projects/:id/audits", "GET .../report.docx", "POST .../verification-suite", "GET .../evidence"]
+    },
+    {
+      "id": "backend-agent-execution",
+      "name": "Backend — agent-execution",
+      "layer": "backend",
+      "package": "backend/src/modules/agent-execution",
+      "functionalArea": "Lifecycle de agentes IA",
+      "technicalFunction": [
+        "Despacha AgentExecution hacia el agent-server con transport y configurationSnapshot.",
+        "Gestiona sus callbacks running, progress, invocations, events y completion.",
+        "Valida y ensambla receipts anidados, tokens y fases.",
+        "Cierra transaccionalmente la ejecución y publica WS agent-execution.updated."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/modules/agent-execution/agent-execution.service.ts",
+          "lines": "348-364",
+          "description": "Apertura de architecture_context y dispatch",
+          "language": "typescript",
+          "code": "if (project) {\n  if (agentType !== \"architecture_context\") throw new InvalidDirectInputError(...)\n  const [config] = await this.settings.prepareExecution([agentType])\n  const created = await this.executions.createExecutionsForProject(...)\n  if (!created.reused) {\n    this.events.broadcast({ type: \"agent-execution.opened\", ... })\n    void this.dispatchProjectContext(execution, ...) // fire-and-forget\n  }\n  return execution\n}"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-agent-execution\nstart\n:POST agent-executions/direct;\n:Validar input y prepareExecution;\nif (Ya existe Waiting/Running equivalente) then (Sí)\n  :Reutilizar;\n  stop\nendif\n:Persistir Evaluation y AgentExecution;\n:Broadcast opened;\n:Dispatch HTTP al agent-server;\nrepeat\n  :Recibir callbacks running/progress/invocations;\n  :Actualizar contadores y receipts;\nrepeat while (No completion) is (sí)\n:Completion;\n:Transacción de cierre;\n:Broadcast updated;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Dispatch fire-and-forget",
+          "decision": "No se bloquea la HTTP request mientras la IA razona.",
+          "tradeoff": "Necesidad de callbacks y manejo de outcomeUncertain/recovering."
+        },
+        {
+          "topic": "Transacción con artefacto",
+          "decision": "El cierre crea artefactos y marca execution dentro de una TX.",
+          "tradeoff": "Evita partial closed state; requiere integridad fuerte entre repositorios."
+        },
+        {
+          "topic": "Receipts anidados",
+          "decision": "La ejecución guarda invocationReceipts en JSON.",
+          "tradeoff": "Arbitrariamente anidado y flexible; no es tan consultable como una tabla normalizada."
+        }
+      ],
+      "primaryDependencies": ["AgentExecutionRepository", "AgentSettingsService", "RealtimeGateway", "AgentServerClient"],
+      "consumerRoutes": ["POST /api/agent-executions/direct", "POST /api/agent-executions/:id/running", "POST /api/agent-executions/:id/invocations"]
+    },
+    {
+      "id": "backend-project-graph",
+      "name": "Backend — project-graph",
+      "layer": "backend",
+      "package": "backend/src/modules/project-graph",
+      "functionalArea": "Extracción y publicación de grafo estructural",
+      "technicalFunction": [
+        "Crea o reutiliza extracciones Graphify para un commit y proyecto.",
+        "Despacha POST /api/graphs y gestiona callbacks por fase.",
+        "Expone estado, fase y disponibilidad; sirve el JSON del grafo como proxy a agent-server.",
+        "Impide una segunda extracción en curso para el mismo proyecto/commit."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/modules/project-graph/project-graph.service.ts",
+          "lines": "131-151",
+          "description": "Dispatch y validación básica de tarea",
+          "language": "typescript",
+          "code": "private async execute(taskId: number) {\n  const token = randomBytes(32).toString(\"hex\")\n  // callbackToken se guarda como hash SHA-256\n  const plan = this.tasks.get(taskId) // obtención estricta de tarea y proyecto\n  await this.agents.startGraph({ repository_path: ... , callback_token: token, ... })\n  return await this.wait(taskId) // resolver/rechazar por callback terminal\n}"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-project-graph\nstart\n:POST /api/projects/:id/graph;\nif (Proyecto READY y no en curso) then (Sí)\n  :Crear GraphExtraction + Task;\n  :POST agent-server /api/graphs;\nelse\n  :Reutilizar o rechazar duplicado;\nendif\n:202 Accepted;\nrepeat\n  :Callback X-Graph-Token por fase;\n  :Actualizar GraphExtraction/Task;\n  :broadcast task.updated;\nrepeat while (No completed/failed) is (sí)\n:Marcar Succeded o Failed;\n:Reutilizar mismo artefacto en siguientes GET;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Grafo fuera del repo",
+          "decision": "graphs_root separado del checkout y de .veraud-artifacts.",
+          "tradeoff": "No ensucia el repositorio; coordinación de disco más rígida."
+        },
+        {
+          "topic": "Callback autenticado",
+          "decision": "El agent-server devuelve fase con un token de un solo uso por run.",
+          "tradeoff": "Evita inyección de estado de otra extracción; requiere coordinación del token."
+        },
+        {
+          "topic": "Sin artefacto embebido",
+          "decision": "El backend no guarda el grafo en SQLite.",
+          "tradeoff": "Base más pequeña; descarga depende de FileResponse del agent-server."
+        }
+      ],
+      "primaryDependencies": ["GitExecutor", "TaskRunner", "AgentServerClient", "GraphExtractionRepository", "RealtimeGateway"],
+      "consumerRoutes": ["POST /api/projects/:id/graph", "GET /api/projects/:id/graph", "GET /api/projects/:id/graph/:taskId/artifact"]
+    },
+    {
+      "id": "backend-ai-agent-settings",
+      "name": "Backend — ai-provider + agent-settings",
+      "layer": "backend",
+      "package": "backend/src/modules/ai-provider + backend/src/modules/agent-settings",
+      "functionalArea": "Configuration plane de IA",
+      "technicalFunction": [
+        "Seeds y lista los proveedores disponibles para el producto.",
+        "Crea, edita, enmascara y borra modelos y credenciales.",
+        "Sincroniza catálogo de agentes y guarda modelo + credencial por agente/categoría.",
+        "Prepara transports para ejecuciones y verifica real acceso al proveedor."
+      ],
+      "representativeCode": [
+        {
+          "source": "backend/src/modules/ai-provider/ai-provider.repository.ts",
+          "lines": "113-119",
+          "description": "Persistencia actual de la credencial",
+          "language": "typescript",
+          "code": "const credential = await this.db.aiCredential.create({\n  data: { aiProviderId, name, apiKey }, // Texto plano\n})\nreturn { id: credential.id, name: credential.name, ... }"
+        },
+        {
+          "source": "backend/src/modules/agent-settings/agent-settings.controller.ts",
+          "lines": "76-87",
+          "description": "Verificación real del modelo",
+          "language": "typescript",
+          "code": "app.post(\"/api/agent-settings/:agentType/verify\", ...,\n  async (request, reply) => {\n    // Ejecuta una generación mínima autenticada en el proveedor\n    return reply.code(200).send(await service.verify(request.params.agentType))\n  })"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml backend-ai-agent-settings\nstart\n:GET /api/agent-settings;\n:Devolver agentes sincronizados y configuración;\nif (Usuario pulsa verify) then (Sí)\n  :Verificar modelo y credencial en proveedor;\n  :Guardar estado verified/failed;\n  :Devolver estado con timestamp;\nendif\nif (Usuario asigna modelo) then (Sí)\n  :PUT /agent-settings/:agentType;\n  :Persistir modelId, credentialId, options;\n  :Invalida verificación anterior;\nendif\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Claves en claro en SQLite",
+          "decision": "La clave se guarda en aiCredential.apiKey sin KMS ni cifrado a nivel de aplicación.",
+          "tradeoff": "Simplicidad de despliegue, pero confidencialidad baja ante copia de DB/SQL."
+        },
+        {
+          "topic": "Verify real",
+          "decision": "El check realiza una llamada mínima de generación.",
+          "tradeoff": "Descubre credenciales realmente inválidas, aunque consume tokens."
+        },
+        {
+          "topic": "Configure requiere mismo provider",
+          "decision": "Modelo y credencial deben estar asociados al mismo provider.",
+          "tradeoff": "Evita cruzar keys y modelos incompatibles, pero limita flexibilidad de catálogos externos."
+        }
+      ],
+      "primaryDependencies": ["AiProviderRepository", "AgentSettingsRepository", "GithubClient-independent", "AgentServerClient verification endpoint"],
+      "consumerRoutes": ["GET/PUT /api/agent-settings", "POST /api/agent-settings/:agentType/verify", "GET/POST/PATCH/DELETE /api/ai-providers"]
+    },
+    {
+      "id": "agent-server-quality-audit",
+      "name": "Agent-server — Quality audit y blackboard",
+      "layer": "agent-server",
+      "package": "agent-server/src/server/app/audit_service.py + agents/ + runtimes/ + reporting/",
+      "functionalArea": "Motor de auditoría multi-agente",
+      "technicalFunction": [
+        "Ejecuta el pipeline quality-audit del backend con modelos por etapa y límites de tokens.",
+        "Construye snapshot inmutable del commit y blackboard compartido.",
+        "Mantiene jerarquía manager → coordinadores → investigadores con budget y deadlines.",
+        "Reporta running, progress, invocaciones y completion al backend por callbacks.",
+        "Genera SoftwareAuditReport determinista y artifacts publicados en .veraud-artifacts."
+      ],
+      "representativeCode": [
+        {
+          "source": "agent-server/src/server/app/audit_service.py",
+          "lines": "384-392",
+          "description": "Snapshot y validación del contexto auditada",
+          "language": "python",
+          "code": "with timing.stage(\"repository_snapshot\"):\n    snapshot = await RepositoryAnalysisService().analyze(RepositoryAnalysisInput(root_path=str(root)))\ndocumented = getattr(request, \"documented_architecture\", None)\nif documented is not None and (\n    documented.document_index.commit != snapshot.repository.commit\n):\n    # Rechaza contexto de otra revisión\n    raise InvalidConfigError(...)"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml agent-server-quality-audit\nstart\n:Recibir POST /api/pipelines/quality-audit/run;\n:Resolver snapshot de commit;\n:Validar contexto documental;\n:Inicializar blackboard y deadline;\n:Manager planifica;\n:Coordinadores delegan;\n:Investigadores recolectan evidence;\n:Manager sintetiza;\n:ReportAgent arma SoftwareAuditReport;\n:Publicar artifacts atómicamente;\n:Devolver audit manifest al backend;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Blackboard shared",
+          "decision": "Los agentes publican evidencia, assessments y lifecycle en un store común.",
+          "tradeoff": "Alto acoplamiento cognitivo de agente con contrato de blackboard; permite trazabilidad transversal."
+        },
+        {
+          "topic": "Report determinista",
+          "decision": "AuditReportAgent ensambla desde blackboard sin LLM.",
+          "tradeoff": "Reduce alucinación de informe; mayor carga de mantener contratos de blackboard."
+        },
+        {
+          "topic": "Budgets y \"unknown attempts\"",
+          "decision": "Los intentos y tokens se cuantifican aun cuando el proveedor no es fiable.",
+          "tradeoff": "Contabilidad más honesta, aunque los números puedan ser aproximados."
+        },
+        {
+          "topic": "Fan-in acotado",
+          "decision": "Coordinadores y manager aplican límites de tiempo y tokenes a sus niveles.",
+          "tradeoff": "Partial outcome aceptado como estado válido de auditoría."
+        }
+      ],
+      "primaryDependencies": ["LangGraph", "LangChain model adapters", "Audit artifacts", "Blackboard", "BackendCallbackSink"],
+      "consumerRoutes": ["POST /api/pipelines/quality-audit/run", "GET /api/audits/{run_id}"]
+    },
+    {
+      "id": "agent-server-graph-extraction",
+      "name": "Agent-server — graph_extraction",
+      "layer": "agent-server",
+      "package": "agent-server/src/server/services/graph_extraction.py + services/graphify.py",
+      "functionalArea": "Extracción estructural",
+      "technicalFunction": [
+        "Descarga el commit por git archive a un ZIP controlado por el servidor.",
+        "Desempaqueta en directorio temporal ambientado y valida rutas/symlinks/nombres.",
+        "Invoca Graphify sobre un snapshot limpio, no sobre el checkout mutante.",
+        "Publica grafos fuera del workspace con rename atómico y manifiesto."
+      ],
+      "representativeCode": [
+        {
+          "source": "agent-server/src/server/services/graph_extraction.py",
+          "lines": "69-75",
+          "description": "Snapshot del commit con git archive",
+          "language": "python",
+          "code": "process = await create_process(\n  \"git\", \"-C\", str(repository), \"archive\",\n  \"--format=zip\", f\"--output={archive}\", request.commit_hash,\n  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n)\nawait asyncio.wait_for(process.wait(), timeout=60)"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml agent-server-graph-extraction\nstart\n:job start;\n:git archive COMMIT -> source.zip;\n:Extraer a directorio temporal validado;\n:GraphifyAdapter invocado;\n:Generar graphify-out/graph.json;\n:Escribir manifest.json;\n:rename(output, graphs_root/<project>/<commit>/<task>);\n:Reportar saving/completed;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "git archive en lugar de copia de trabajo",
+          "decision": "El commit es la unidad de lectura de Graphify.",
+          "tradeoff": "Determinista, pero no refleja cambios no committed del usuario — y es correcto para análisis."
+        },
+        {
+          "topic": "Aislamiento de FS",
+          "decision": "Graphify opera fuera del checkout y sin symlinks/submódulos.",
+          "tradeoff": "Impide parsear código no destinado al snapshot; más trabajo de empaquetado."
+        },
+        {
+          "topic": "Publicación atómica",
+          "decision": "Los lectores nunca ven un grafo a medio escribir.",
+          "tradeoff": "Necesita FS local; rename puede ser atómico solo dentro del mismo filesystem."
+        }
+      ],
+      "primaryDependencies": ["graphifyy", "git", "graphs_root", "Graph jobs", "BackendCallbackSink"],
+      "consumerRoutes": ["POST /api/graphs", "GET /api/graphs/{project_id}/{commit}/{task_id}/artifact"]
+    },
+    {
+      "id": "agent-server-verification-suite",
+      "name": "Agent-server — verification-suite",
+      "layer": "agent-server",
+      "package": "agent-server/src/server/api/verification_suite.py + runtimes/verification + agents/finding_test_generation + agents/testability_probe",
+      "functionalArea": "Verification suite de hallazgos",
+      "technicalFunction": [
+        "action=create: reparte hallazgos entre FindingTestGenerationAgent y TestabilityProbeAgent, fusiona y empaqueta el ZIP.",
+        "action=execute: congela el ZIP, materializa el commit auditado y ejecuta el runner sin LLM.",
+        "Encreate: reporta ejecution running/invocations/completion solamente si hay execution_id.",
+        "Almacena verification-suite-summary.json y verification-executions/<attempt_id>.json."
+      ],
+      "representativeCode": [
+        {
+          "source": "agent-server/src/server/api/verification_suite.py",
+          "lines": "243-273",
+          "description": "Lectura de report input y decisión create/execute",
+          "language": "python",
+          "code": "report = json.loads(path.read_text(encoding=\"utf-8\"))\nadapted = _adapt_input(report)\nrepo_path = adapted.get(\"project_name\")\n# Callbacks solo en create: execute nunca reporta al backend\nexecution_id = body.execution_id if body.action == \"create\" else None\n# adapted contiene commit, findings agrupados y ruta de repo\n"
+        }
+      ],
+      "flowApplies": true,
+      "flowPlantuml": "@startuml agent-server-verification-suite\nstart\n:POST /api/audits/{run_id}/verification-suite;\n:Leer report.json;\nif (action create) then (Sí)\n  :Adaptar findings y emitir mark_running;\n  :ftg y probe en paralelo;\n  :fusionar ZIP .tallercito;\n  :Escribir summary;\n  :Reportar completion;\n  stop\nendif\n:action=execute;\nif (allow_execution = False) then (Sí)\n  :403;\n  stop\nendif\nif (ZIP no existe) then (Sí)\n  :409;\n  stop\nendif\n:Congelar ZIP y validar manifest;\n:materializar targetCommit;\n:Ejecutar runner en copia desechable;\n:Escribir summary y attempt JSON;\n:Responder validation_status global;\nstop\n@enduml",
+      "implementationDecisions": [
+        {
+          "topic": "Dos acciones en un endpoint",
+          "decision": "action=create genera con LLM y action=execute sólo verifica resultados.",
+          "tradeoff": "Superifice estrecha, pero mezcla semánticas de generación e inspección; se controla con discriminador."
+        },
+        {
+          "topic": "Snapshot inmutable del ZIP",
+          "decision": "validate_zip opera sobre bytes congelados y commit materializado.",
+          "tradeoff": "El artefacto no cambia a mitad de ejecución; la copia puede ser grande."
+        },
+        {
+          "topic": "Sin callbacks en execute",
+          "decision": "No emite running/progress/completions; el backend usa disco compartido.",
+          "tradeoff": "Simple y privado, pero la UI no puede basar el monitor en WS durante execute."
+        },
+        {
+          "topic": "Sin persistencia de filas en execute",
+          "decision": "El resultado vive en filesystem.",
+          "tradeoff": "Cero overhead de DB; el historial está acotado al directorio de artefactos."
+        }
+      ],
+      "primaryDependencies": ["FindingTestGenerationAgent", "TestabilityProbeAgent", "Runner .tallercito", "Filesystem shared artifact store"],
+      "consumerRoutes": ["POST /api/audits/{run_id}/verification-suite"]
+    }
+  ],
+  "globalDecisions": [
+    {
+      "topic": "Artefactos compartidos entre backend y agent-server",
+      "decision": "El directorio .veraud-artifacts, controlado por VERAUD_ARTIFACT_DIR, coordina report, DOCX y suite.",
+      "tradeoff": "Alto rendimiento sin DB hinchada; orquesta bind mount o filesystem común."
+    },
+    {
+      "topic": "Backend — Agent-server con callbacks",
+      "decision": "Se invocan por HTTP y se reportan fases, receipts y completion.",
+      "tradeoff": "Simple de integrar; soporte de múltiples fronts más variado que un queue managod."
+    },
+    {
+      "topic": "Inmutabilidad por commit",
+      "decision": "Snapshots, análisis, artefactos y reporte se ligan a commit_hash.",
+      "tradeoff": "Correctitud en código cambiable; multiplicación de datos por versión."
+    },
+    {
+      "topic": "Sin retries automatizados globales",
+      "decision": "Los errores suelen llegar al usuario como states fallidos de tarea o auditoría.",
+      "tradeoff": "Visibles pero sin auto-recovery genérico; ahorraría trabajo definir políticas explícitas por operación."
+    },
+    {
+      "topic": "Desacoplamiento parcial de fronts",
+      "decision": "HTTP directo en mucho del camino, WS sólo para señales y cambios de estado.",
+      "tradeoff": "UI estable y ligera; necesitas refrescar con HTTP cuando pierdes la websocket."
+    }
+  ],
+  "recommendedFixes": [
+    "Cifrar API keys en reposo o migrar credenciales a un gestor de secretos.",
+    "Normalizar invocationReceipts si hubiera consultas ad-hoc grandes.",
+    "Definir política de retry por comando/tarea en lugar de fallo terminal global.",
+    "Documentar cómo se comparten VERAUD_ARTIFACT_DIR y graphs_root.",
+    "Reducir tamaño de ProjectDetailPage y SettingsPage separando sus casos de uso."
+  ]
+}
