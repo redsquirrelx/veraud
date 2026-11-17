@@ -288,11 +288,11 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
       if (rawBody.action !== undefined && rawBody.action !== "create" && rawBody.action !== "execute") {
         return reply.code(400).send({ message: "action must be 'create' or 'execute'" })
       }
-      body.action = rawBody.action as "create" | "execute" | undefined
+      if (rawBody.action !== undefined) body.action = rawBody.action as "create" | "execute"
       if (rawBody.greenControl !== undefined && rawBody.greenControl !== null && typeof rawBody.greenControl !== "string") {
         return reply.code(400).send({ message: "greenControl must be a string path" })
       }
-      body.greenControl = (rawBody.greenControl ?? undefined) as string | undefined
+      if (rawBody.greenControl !== undefined && rawBody.greenControl !== null) body.greenControl = rawBody.greenControl as string
       if (rawBody.targetCommit !== undefined) {
         if (typeof rawBody.targetCommit !== "string" || !/^[a-f0-9]{40}$/i.test(rawBody.targetCommit) || body.action !== "execute") {
           return reply.code(400).send({ message: "targetCommit must be a full Git hash for action=execute" })

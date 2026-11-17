@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { join as joinPath } from "node:path"
 import { tmpdir } from "node:os"
-import { ProjectService } from "../project/project.service.js"
+import { ProjectService, type AnalysisRunner } from "../project/project.service.js"
 import type { GithubClient } from "../../infrastructure/github-client/github.client.js"
 import type { TaskService } from "../task/task.service.js"
 import type { ProjectStore, StoredProjectDetails } from "../project/project.repository.js"
@@ -40,7 +40,7 @@ function makeService(workspaceDir: string) {
     listSyncRecords: async () => [],
     findSyncRecord: async () => null,
   } as unknown as ProjectStore
-  return new ProjectService(store, {} as TaskService, {} as GithubClient, workspaceDir)
+  return new ProjectService(store, {} as TaskService, {} as GithubClient, workspaceDir, {} as AnalysisRunner)
 }
 
 function git(checkout: string, ...args: string[]): string {
