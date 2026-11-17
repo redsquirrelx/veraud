@@ -3,7 +3,8 @@ import { auditRunConfiguration } from "../quality-audit/audit-run-configuration.
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { configureTraceRoot, createTraceEnvelope, writeTraceEvent, traceFailureDetails, type TraceEnvelope } from "../../infrastructure/trace-writer.js"
 import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
-import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { AgentTransportError, AuditArtifactsUnavailableError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { parseArtifactManifest } from "../quality-audit/audit-artifacts.js"
 import { setTimeout as delay } from "node:timers/promises"
 import type { AgentTargetResolver } from "../../infrastructure/agent-target/agent-target.resolver.js"
 import { assertDirectCheckout, sanitizeDirectInput, InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
@@ -501,8 +502,10 @@ export class AgentExecutionService {
   }
 
   private async closeAudit(id: number, audit: AgentInput | undefined) {
-    if (!audit || !audit["report"] || typeof audit["report"] !== "object" || typeof audit["docx_base64"] !== "string") {
-      throw new Error("Quality-audit pipeline returned no report")
+    const manifest = audit?.["artifacts"] === undefined ? null : parseArtifactManifest(audit["artifacts"])
+    const hasLegacyArtifacts = typeof audit?.["report"] === "object" && typeof audit?.["docx_base64"] === "string"
+    if (!audit || typeof audit["run_id"] !== "string" || (!manifest && !hasLegacyArtifacts)) {
+      throw new Error("Quality-audit pipeline returned no report artifacts")
     }
     const current = await this.require(id)
     const inputs = (current.invocations ?? []).flatMap((receipt) => typeof receipt.input_tokens === "number" ? [receipt.input_tokens] : [])
@@ -510,8 +513,13 @@ export class AgentExecutionService {
     const inputTokens = inputs.length ? inputs.reduce((total, value) => total + value, 0) : null
     const outputTokens = outputs.length ? outputs.reduce((total, value) => total + value, 0) : null
     // Completion describes delivery, independently of the report's quality status.
+    const storedAudit = manifest
+      ? { attributes: audit["attributes"], status: audit["status"], run_id: audit["run_id"], error_detail: audit["error_detail"], artifacts: manifest }
+      : { attributes: audit["attributes"], status: audit["status"], run_id: audit["run_id"], error_detail: audit["error_detail"], report: audit["report"], docx_base64: audit["docx_base64"] }
+    const auditTrace = this.traceEnvelope(current)
+    if (auditTrace) writeTraceEvent(auditTrace, { event: "quality_audit.audit.closed", status: "ok", message: "Quality audit closed", details: { auditStatus: String(storedAudit.status), interruptionReason: storedAudit.status === "completed" ? null : String(storedAudit.status), runId: String(storedAudit.run_id), inputUnits: inputTokens, outputUnits: outputTokens, artifactFormat: manifest ? "manifest" : "legacy" } })
     await this.close(id, {
-      status: "Completed", result: JSON.stringify(audit), error: null,
+      status: "Completed", result: JSON.stringify(storedAudit), error: null,
       errorDetail: readExecutionErrorDetail(audit["error_detail"]),
       inputTokens, outputTokens, estimatedTokens: current.estimatedTokens ?? 0,
       interruptionReason: audit["status"] === "completed" ? null : String(audit["status"]),
@@ -520,22 +528,37 @@ export class AgentExecutionService {
 
   private async reconcileAudit(id: number, attributes: string[], deadline: number) {
     this.log.info(`Execution ${id}: connection interrupted; confirming the existing audit without restarting it`)
+    const trace = this.traceEnvelope(await this.require(id))
+    if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.started", message: "Audit reconciliation started", details: { attributes } })
+    let attempts = 0
     // At least one status lookup even if the HTTP deadline itself just expired.
     do {
       const current = await this.require(id)
-      if (current.status === "Completed" || current.status === "Failed") return
+      if (current.status === "Completed" || current.status === "Failed") {
+        if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.confirmed", status: "ok", message: "Audit already closed before reconciliation", details: { attempts } })
+        return
+      }
       let runId = current.invocations?.[0]?.run_id
       try { runId = (JSON.parse(current.result ?? "{}") as { run_id?: string }).run_id ?? runId } catch { /* Retained receipts are the fallback. */ }
-      if (runId && this.agents.getAuditResult) {
+      if (runId && (this.agents.getAuditArtifacts || this.agents.getAuditResult)) {
         try {
-          const audit = await this.agents.getAuditResult(runId, attributes)
+          const audit = this.agents.getAuditArtifacts
+            ? await this.agents.getAuditArtifacts(runId, attributes)
+            : await this.agents.getAuditResult?.(runId, attributes) ?? null
           if (audit) {
+            if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.confirmed", status: "ok", message: "Audit confirmed during reconciliation", details: { attempts } })
             await this.closeAudit(id, audit)
             return
           }
         } catch (error) {
+          attempts += 1
           if (error instanceof AuditRunUnavailableError) {
+            if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.unavailable", status: "error", errorCode: "audit_run_unavailable", message: "Audit outcome unrecoverable: the agent-server no longer retains the run", details: { attempts } })
             throw new Error("Audit outcome could not be recovered: the agent-server no longer retains the run; this does not confirm agent failure", { cause: error })
+          }
+          if (error instanceof AuditArtifactsUnavailableError) {
+            if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.unavailable", status: "error", errorCode: "audit_artifacts_unavailable", message: "Audit persisted but its report artifacts are unavailable", details: { attempts } })
+            throw new Error("Audit persisted to memory but its report artifacts are unavailable", { cause: error })
           }
           // A transient status/report retrieval failure must not close a live run.
           this.log.info(`Execution ${id}: audit reconciliation temporarily unavailable`)
@@ -544,6 +567,7 @@ export class AgentExecutionService {
       if (Date.now() >= deadline) break
       await delay(Math.min(5000, deadline - Date.now()), undefined, { ref: false })
     } while (Date.now() <= deadline)
+    if (trace) writeTraceEvent(trace, { event: "quality_audit.reconcile.failed", status: "error", errorCode: "audit_outcome_unconfirmed", message: "Audit outcome could not be confirmed before the recovery deadline", details: { attempts } })
     throw new Error("Audit outcome could not be confirmed before the recovery deadline; communication was interrupted, not a confirmed agent failure")
   }
 
