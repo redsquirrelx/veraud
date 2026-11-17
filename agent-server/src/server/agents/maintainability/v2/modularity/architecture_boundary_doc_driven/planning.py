@@ -55,8 +55,17 @@ def _documentary_profile(task, documents):
                 "subject_clear": False, "has_directed_relation": has_directed_relation,
                 "partial": True, "local_partial": True, "global_partial": True}
     constraints = {record.claim.constraint for record in records_}
-    if constraints & {"prohibited", "required"}:
+    # Positive dependency obligations can produce a large number of ordinary
+    # inward imports. They remain useful, but must not crowd explicit restricted
+    # interactions out of the bounded menu. An obligation is not a violation.
+    restrictive_requirement = any(record.claim.constraint == "required" and (
+        record.boundary_family != "dependency" or re.search(
+            r"\b(?:only|exclusively|never|must not|shall not|solo|solamente|únicamente|nunca)\b",
+            record.claim.statement, re.IGNORECASE)) for record in records_)
+    if "prohibited" in constraints or restrictive_requirement:
         normative = "strong"
+    elif "required" in constraints:
+        normative = "moderate"
     elif constraints & {"allowed", "exception"}:
         normative = "weak"
     else:
@@ -87,6 +96,30 @@ def _documentary_profile(task, documents):
         direct_local = any(
             relation_applies(record, relationship.source_path, relationship.target_path)
             for relationship in relevant_relations)
+        if record.boundary_family == "acyclicity" and task.structural_signal.kind != "cycle":
+            # A lone directed edge is a useful navigation lead, not strong
+            # evidence for investigating a closed path. Keep it available at a
+            # lower tier rather than letting many single-edge portions crowd
+            # distinct dependency/encapsulation mechanisms out of the menu.
+            adjacent = defaultdict(set)
+            for relationship in relevant_relations:
+                if relationship.kind != "type_only":
+                    adjacent[relationship.source_path].add(relationship.target_path)
+            has_return_path = False
+            for origin in list(adjacent):
+                pending, visited = list(adjacent[origin]), set()
+                while pending:
+                    current = pending.pop()
+                    if current == origin:
+                        has_return_path = True
+                        break
+                    if current not in visited:
+                        visited.add(current)
+                        pending.extend(adjacent.get(current, ()))
+                if has_return_path:
+                    break
+            if not has_return_path:
+                local_partial = True
         if has_directed_relation:
             local_association = local_association or direct_local
         else:
@@ -138,7 +171,7 @@ def candidate_rank(task):
     # relation is more useful for inspection than several generic endpoints.
     return ({"high": 0, "medium": 1, "low": 2}[task.priority],
             {"corroborated": 0, "indexed": 1, "inferred": 2}[signal.basis],
-            0 if signal.kind == "documented_boundary" else 1,
+            0 if signal.kind in {"documented_boundary", "component_boundary"} else 1,
             -runtime_relationships, -len(relationships), len(task.scope), task.id)
 
 
@@ -185,6 +218,10 @@ def balance_candidates(candidates, task_projects, limit, *, preferred=None, docu
                 return selected
     coverage_counts = Counter(unit for task in selected for unit in task_projects[task.id])
     claim_counts = Counter(key for task in selected for key in task.document_claim_ids)
+    def origin(task):
+        refs = task.structural_signal.relationships
+        return refs[0].source_path if refs else task.scope[0]
+    origin_counts = Counter(origin(task) for task in selected)
     family_counts = Counter(_documentary_family(task, documents) for task in selected)
     remaining = [task for task in ranked if task not in selected]
     while remaining and len(selected) < limit:
@@ -194,12 +231,14 @@ def balance_candidates(candidates, task_projects, limit, *, preferred=None, docu
         # quality and project diversification.
         task = min(remaining, key=lambda item: (
             *candidate_rank(item)[:2], min((coverage_counts[unit] for unit in task_projects[item.id]), default=0),
+            origin_counts[origin(item)],
             sum(bool(key in claim_counts) for key in set(item.document_claim_ids)),
             family_counts[_documentary_family(item, documents)],
             preferences.get(item.id, len(preferences)), *candidate_rank(item)[2:]))
         selected.append(task)
         coverage_counts.update(task_projects[task.id])
         claim_counts.update(task.document_claim_ids)
+        origin_counts[origin(task)] += 1
         family_counts[_documentary_family(task, documents)] += 1
         remaining.remove(task)
     return selected
@@ -499,20 +538,23 @@ def prepare_planning(snapshot, request, *, limit, check, config=None, character_
     represented = {ref.id for task in candidates
         if task.structural_signal.kind != "encapsulation" or task.structural_signal.basis != "inferred"
         for ref in task.structural_signal.relationships}
-    represented_boundaries = {frozenset((groups[owners[ref.source_id]], groups[owners[ref.target_id]]))
-        for task in candidates if task.structural_signal.basis != "inferred"
-        for ref in task.structural_signal.relationships}
     declarations = defaultdict(list)
     for symbol in symbols.values():
         if symbol.kind in {"class", "function", "interface", "method", "type_alias"}:
             declarations[symbol.file_id].append(symbol.id)
     boundary_filter_counts = Counter()
-    seen_groups = set()
-    for edge in relevant:
+    seen_groups = Counter()
+    seen_module_pairs = set()
+    pair_limit_discarded = 0
+    # Prefer declared endpoints, then stable paths, not index traversal order.
+    for edge in sorted(relevant, key=lambda item: (
+            not bool(declarations[item[1]] and declarations[item[2]]),
+            item[0].kind == "type_only", files[item[1]].path, files[item[2]].path, item[0].id)):
         check()
         r, a, b = edge
         pair = (groups[a], groups[b])
-        if r.id in represented or pair in seen_groups or frozenset(pair) in represented_boundaries:
+        module_pair = (a, b)
+        if r.id in represented or module_pair in seen_module_pairs:
             continue
         cross_application = file_projects[a] != file_projects[b]
         declared_endpoints = bool(declarations[a] and declarations[b])
@@ -520,7 +562,11 @@ def prepare_planning(snapshot, request, *, limit, check, config=None, character_
         if not cross_application and (groups[a] == groups[b] or not (declared_endpoints or repeated_interactions)):
             boundary_filter_counts[file_projects[a]] += 1
             continue
-        seen_groups.add(pair)
+        if seen_groups[pair] >= config.max_component_probes_per_group_pair:
+            pair_limit_discarded += 1
+            continue
+        seen_groups[pair] += 1
+        seen_module_pairs.add(module_pair)
         boundary_edges = [edge]
         if not cross_application and not declared_endpoints:
             # Preserve the independent indexed interaction that qualified this
@@ -636,6 +682,7 @@ def prepare_planning(snapshot, request, *, limit, check, config=None, character_
             "generated_by_scope": dict(Counter(task.scope_kind for task in generated)),
             "deduplicated": len(generated) - len(candidates),
             "quality_discarded_relationship_seeds": sum(boundary_filter_counts.values()),
+            "component_pair_limit_omitted": pair_limit_discarded,
             "menu_budget_omitted": len(candidates) - len(menu),
             "internal_relationships": sum(file_projects[a] == file_projects[b] for _, a, b in relevant),
             "cross_application_imports": sum(file_projects[a] != file_projects[b] for _, a, b in relevant)},

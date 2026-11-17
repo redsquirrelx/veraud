@@ -1,8 +1,9 @@
 """Canonical contracts for this maintainability participant."""
 
+import re
 from typing import ClassVar, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from server.agents.architecture_context.schemas import (
     ArchitectureContextResult,
@@ -75,6 +76,29 @@ class BoundaryReview(Review):
         "boundary_review_support_required": "An accepted boundary candidate requires scope_supported=true, no unverified_claims, and checked_evidence_ids covering every support item in its claim_check. Otherwise mark insufficient_evidence or rejected; do not invent verification.",
     }
 
+class ProhibitedImportDirective(Contract):
+    """Language-neutral test intent, not a test execution or acceptance verdict."""
+
+    kind: Literal["prohibited_import"] = "prohibited_import"
+    scope: list[str] = Field(min_length=1, max_length=40)
+    targets: list[str] = Field(min_length=1, max_length=40)
+    claim_ids: list[str] = Field(min_length=1, max_length=80)
+    basis: Literal["explicit-document-claim"] = "explicit-document-claim"
+
+    @field_validator("targets")
+    @classmethod
+    def literal_import_specifiers(cls, values):
+        if any(not re.fullmatch(r"[@\w./:#?%+=!-]+", value) for value in values):
+            raise ValueError("verification targets must be exact literal import specifiers, not prose or patterns")
+        return values
+
+
+class FindingVerification(Contract):
+    # Future kinds add typed directive variants here; no executable code belongs
+    # in this contract. Old findings need not supply it.
+    directives: list[ProhibitedImportDirective] = Field(min_length=1, max_length=80)
+
+
 class BoundaryFinding(CandidateFinding):
     """Source-linked investigation candidate, without a critical-review verdict."""
 
@@ -83,6 +107,22 @@ class BoundaryFinding(CandidateFinding):
     evidence: list[EvidenceReference]
     claim_check: BoundaryClaimCheck | None = None
     validation_issues: list[str] = Field(default_factory=list)
+    document_claim_ids: list[str] = Field(default_factory=list)
+    verification: FindingVerification | None = None
+    verification_limitations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def verification_references(self):
+        if self.verification is not None:
+            source_paths = {ref.path for ref in self.evidence if ref.kind == "source"}
+            if not set(self.components) <= source_paths:
+                raise ValueError("verification requires source-backed file components")
+            for directive in self.verification.directives:
+                if not set(directive.scope) <= set(self.components):
+                    raise ValueError("verification scope must be a subset of finding components")
+                if not set(directive.claim_ids) <= set(self.document_claim_ids):
+                    raise ValueError("verification claim_ids must be retained documentary claim IDs")
+        return self
 
 
 class StructuralRelationship(Contract):

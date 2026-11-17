@@ -16,10 +16,23 @@ opportunity distinguishes indexed observations from inferences. These are not
 findings, violations, confirmed/discarded hypotheses, severity or compliance.
 
 Return opportunity_ids in descending investigation priority. Select only supplied
-IDs, without repetitions. Usually choose 10–12 when sufficient useful opportunities exist,
+IDs, without repetitions. Usually choose 10–12 when sufficient useful opportunities exist;
+when additional independent, well-grounded mechanisms fit the supplied budget,
+use the remaining slots rather than treating 12 as a cutoff,
 never exceeding budget.max_investigations (absolute maximum 15);
 there is no minimum. An empty selection is valid. Prefer concrete, relevant,
 verifiable and inexpensive interactions. Diversify signal kinds and component
+origins as well as groups: compare primary_interaction across opportunities.
+Include at least one independent code-grounded structural probe (component_boundary,
+encapsulation or cycle with a concrete, indexed interaction) when such a candidate
+is offered, so the plan is not exclusively documentary obligations. Prefer an
+unambiguous over an inferred one. Such probes are cheap and they can surface
+concrete defects that a mapped documentary portion will not reveal.
+Before revisiting the same caller through its import container, backing module
+and inferred export surface, prefer a comparably grounded independent caller.
+Different claims can concern one mechanism; different callers can violate the
+same rule independently. Optimize marginal evidence coverage, not task count.
+Diversify component
 groups; avoid multiple equivalent probes of the same relation. Cycles and rare
 dependency directions can be legitimate. Neutral investigations are useful too.
 Cover internal application boundaries and grounded cross-application integrations

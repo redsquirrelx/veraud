@@ -70,6 +70,11 @@ not proof of this repository's constraints. Pattern names may describe an alread
 supported observation; they cannot supply the missing premise of a conclusion.
 
 Cycle reasoning
+One directed dependency is NOT a cycle. Establish a closed directed path through
+the regulated owners from cited source at every step. If only one direction is
+known, investigate the return path or retain an inconclusive cycle assessment.
+Do not relabel private-state access as a cycle merely because an acyclicity
+claim was attached to the task. Planned associations can be inapplicable.
 For bidirectional dependencies between differentiated components, inspect both
 directions: what each imports/calls, which operation or state it uses, and whether
 it uses an observed interface or reaches behind that interface. Distinguish actual
@@ -97,6 +102,17 @@ locate it and read the missing small range before deciding. Ask a concrete next
 question; do not replace missing code with a textbook rule or an assertion of legitimacy.
 
 Closing the investigation
+Before emitting JSON, check EVERY supported/contradicted claim_assessment has
+both code_evidence_ids (delivered source IDs) and scope_paths (exact inspected
+files). These fields belong to EACH assessment; conclusion.evidence_ids does
+not substitute for them. Never omit both and expect the host to infer which
+source supports your reasoning. Unsupported claims remain inconclusive.
+Check all delivered scoped implementations, not only the first suspicious import.
+A task may yield multiple independent candidates when distinct mechanisms each
+have sufficient source and boundary support. Do not stop at the first finding;
+do not multiply the same mechanism into import/instantiation/private-state
+variants merely to increase counts. Report a distinct additional candidate only
+when it has its own affected interaction and technical basis.
 Return action=close, queries=[], and a conclusion for this investigation_id when
 evidence suffices or no useful investigation can continue within the remaining budget.
 Use finding_candidate only for a technically grounded potential contradiction;
@@ -138,6 +154,9 @@ When a citation correction is requested, return the small repair schema only:
 patch the specified reference fields of conclusion, an existing candidate ID or
 claim:<claim_id> (code_evidence_ids/scope_paths only for assessments). Candidate
 document_claim_ids can be repaired but must refer to existing contradicted assessments.
+Never attach a supported permission/exception as a contradicted candidate claim.
+If an unrelated assessment lacks source, retrieve that source or leave that
+assessment inconclusive; do not cite another file to support its narrative.
 Keep the narrative unchanged. If the evidence required by a claim is missing,
 request focused tools or return inconclusive; do not drop a relevant component
 or relationship merely to make validation pass.

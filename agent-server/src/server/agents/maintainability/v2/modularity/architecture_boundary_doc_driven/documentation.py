@@ -147,6 +147,18 @@ def prepare_documentation(snapshot, request, files, seeds, file_projects, *, che
         if status != "unmapped":
             continue
         text = " ".join([claim.subject, claim.statement, *claim.related_subjects]).replace("\\", "/")
+        if family == "acyclicity":
+            # Explicit graph-owner lists can omit the common source/package
+            # root. Resolve their exact directory basenames only through the
+            # existing unique-suffix resolver, never through fuzzy vocabulary.
+            owner_list = re.search(r"\b(?:among|between|entre)\s+(.+?)(?=\b(?:must|shall|should|debe|deben)\b|[;]|$)",
+                                   claim.statement, re.IGNORECASE)
+            if owner_list:
+                for name in re.split(r",|\s+(?:and|y)\s+", owner_list.group(1), flags=re.IGNORECASE):
+                    name = name.strip(" `\"'.")
+                    name = re.sub(r"^(?:and|y)\s+", "", name, flags=re.IGNORECASE).strip(" `\"'.")
+                    if name and re.fullmatch(r"[\w./-]+", name):
+                        text += " " + name.rstrip("/") + "/"
         mapping = resolver.resolve(text)
         subject = resolver.resolve(claim.subject)
         # An explicit documented layer in the statement is the regulated
@@ -213,7 +225,28 @@ def prepare_documentation(snapshot, request, files, seeds, file_projects, *, che
         # Broad rules and cycle obligations are partitioned by actual directed
         # interactions first; remaining declared owners get bounded source probes.
         portions = []
-        if len(matched) > 12 or family == "acyclicity":
+        if family == "acyclicity" and len(matched) <= 12:
+            # Acyclicity is a property of a graph, not of one directed edge.
+            # Keep each connected scope together so the investigator can inspect
+            # a return path; isolated owners remain explicit local probes.
+            adjacent = {key: set() for key in matched}
+            for _, a, b in eligible_edges:
+                if a in adjacent and b in adjacent:
+                    adjacent[a].add(b)
+                    adjacent[b].add(a)
+            remaining = set(matched)
+            while remaining:
+                pending = [min(remaining)]
+                component = set()
+                while pending:
+                    node = pending.pop()
+                    if node in component:
+                        continue
+                    component.add(node)
+                    pending.extend(adjacent[node] - component)
+                remaining -= component
+                portions.append((tuple(sorted({file_projects[key] for key in component})), sorted(component)))
+        elif len(matched) > 12:
             seen_pairs = set()
             for r, a, b in sorted(eligible_edges, key=lambda edge: (files[edge[1]].path, files[edge[2]].path, edge[0].id)):
                 check()
