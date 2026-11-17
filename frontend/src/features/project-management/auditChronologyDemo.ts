@@ -8,6 +8,7 @@ const demoAgentNames: Record<string, string> = {
   dependency_impact: "Investigador de impacto de dependencias",
   testability: "Coordinador de capacidad de prueba",
   test_isolation: "Investigador de aislamiento de pruebas",
+  test_controllability: "Investigador de controlabilidad de pruebas",
   security: "Coordinador de seguridad",
 }
 
@@ -28,6 +29,7 @@ export const demoChronologyPipelines: AuditPipelineRun[] = [
     execution("demo-responsibility-2", "responsibility", "investigator", "demo-modularity", "completed", "2026-10-30T10:01:20Z", "2026-10-30T10:01:55Z"),
     execution("demo-testability", "testability", "coordinator", "demo-manager", "running", "2026-10-30T10:01:30Z", null),
     execution("demo-pending", "test_isolation", "investigator", "demo-testability", "waiting", null, null),
+    execution("demo-pending-controllability", "test_controllability", "investigator", "demo-testability", "waiting", null, null),
   ] },
   { id: "security", state: "completed", agents: [
     execution("demo-security", "security", "coordinator", null, "completed", "2026-10-30T10:00:06Z", "2026-10-30T10:01:40Z"),
