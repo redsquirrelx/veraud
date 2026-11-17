@@ -1,29 +1,29 @@
-//// Tables
+//// Schema snapshot generated from prisma/schema.prisma (database/diagram.dbml).
 
 Table project {
-  id int [pk, not null]
+  id int [pk, increment]
   name varchar
-  
-  created_at datetime [not null]
+  created_at datetime [not null, default: `now()`]
   last_synced_at datetime
   status varchar [not null]
-
-  github_repository_id bigint [unique, not null]
+  github_repository_id bigint [unique]
+  clone_protocol varchar [not null, default: 'https']
+  shallow_clone boolean [not null, default: false]
   repository_owner varchar [not null]
   repository_name varchar [not null]
-  clone_protocol varchar [not null]
-  shallow_clone int [not null]
+  selected_version_id int [unique]
 
-  selected_version_id int
+  indexes {
+    (repository_owner, repository_name) [unique]
+  }
 }
 
 Table project_version {
-  id int [pk, not null]
+  id int [pk, increment]
   project_id int [not null]
 
-  branch varchar [not null]
-  commit_hash varchar [not null]
-
+  branch varchar
+  commit_hash varchar
   analysis_status varchar [not null]
   analyzed_at datetime
 
@@ -33,51 +33,121 @@ Table project_version {
 }
 
 Table evaluation {
-  id int [pk, not null]
+  id int [pk, increment]
   project_version_id int [not null]
 
   type varchar [not null]
 
-  created_at datetime [not null]
+  created_at datetime [not null, default: `now()`]
   started_at datetime
   finished_at datetime
-}
-
-Table task {
-  id int [pk, not null]
-  project_id int [not null]
-  description varchar
-  command varchar
-  status varchar [not null]
-  kind varchar [not null]
-  exit_code int
-  log_trail varchar
 }
 
 Table agent_execution {
-  id int [pk, not null]
+  id int [pk, increment]
   evaluation_id int
   agent_type varchar [not null]
   status varchar [not null]
-  created_at datetime [not null]
+  created_at datetime [not null, default: `now()`]
   started_at datetime
   finished_at datetime
+  cancellation_requested_at datetime
+  dispatch_started_at datetime
   input_tokens int
   output_tokens int
   estimated_tokens int
   interruption_reason varchar
   error text
+  error_detail text
   result text
   configuration_snapshot text
+  invocation_receipts text [not null, default: '[]']
+}
+
+// Immutable canonical output, including partial/failed documentary outcomes.
+// A new attempt creates a new artifact; old version context is never overwritten.
+Table architecture_context_artifact {
+  execution_id int [pk, not null]
+  project_version_id int [not null]
+  schema_version varchar [not null]
+  execution_status varchar [not null]
+  result text [not null]
+  created_at datetime [not null, default: `now()`]
+
+  indexes {
+    (project_version_id, execution_id)
+  }
+}
+
+Table execution_event_stream {
+  id varchar [pk, not null]
+  execution_id int [not null]
+  run_id varchar
+  created_at datetime [not null, default: `now()`]
+
+  indexes {
+    execution_id
+  }
+}
+
+Table execution_event {
+  id int [pk, increment]
+  event_id varchar [not null, unique]
+  stream_id varchar [not null]
+  sequence int [not null]
+  occurred_at datetime [not null]
+  received_at datetime [not null, default: `now()`]
+  run_id varchar
+  invocation_id varchar
+  parent_invocation_id varchar
+  agent_id varchar
+  action_id varchar [not null]
+  parent_action_id varchar
+  source_id varchar
+  kind varchar [not null]
+  name varchar
+  status varchar
+  metadata text [not null, default: '{}']
+
+  indexes {
+    (stream_id, sequence) [unique]
+    (stream_id, occurred_at, sequence)
+  }
+}
+
+Table task {
+  id int [pk, increment]
+  project_id int [not null]
+  description varchar
+  command varchar
+  status varchar [not null]
+  kind varchar [not null, default: 'unknown']
+  exit_code int
+  log_trail text
+}
+
+Table graph_extraction {
+  task_id int [pk, not null]
+  project_id int [not null]
+  branch varchar [not null]
+  commit_hash varchar [not null]
+  phase varchar [not null, default: 'queued']
+  error varchar
+  callback_hash varchar
+  created_at datetime [not null, default: `now()`]
+
+  indexes {
+    (project_id, commit_hash, task_id)
+  }
 }
 
 Table ai_provider {
-  id int [pk, not null]
-  name varchar [not null, unique]
+  id int [pk, increment]
+  name varchar [not null]
 }
 
 Table ai_credential {
-  id int [pk, not null]
+  id int [pk, increment]
   ai_provider_id int [not null]
 
   name varchar [not null]
@@ -86,14 +156,10 @@ Table ai_credential {
 }
 
 Table ai_model {
-  id int [pk, not null]
+  id int [pk, increment]
   ai_provider_id int [not null]
   name varchar [not null]
   revision int [not null, default: 1]
-  
-  indexes {
-    (ai_provider_id, name) [unique]
-  }
 }
 
 Table agent_settings {
@@ -116,39 +182,44 @@ Table agent_settings {
   token_budget int
   absolute_token_limit int
   verification_fingerprint varchar
-  verification_checked_at timestamp
+  verification_checked_at datetime
   verification_error text
 }
 
 Table agent_hierarchy {
   parent_agent_type varchar [not null]
   child_agent_type varchar [not null]
+
   indexes {
     (parent_agent_type, child_agent_type) [pk]
     child_agent_type
   }
 }
 
+Table audit_settings {
+  attribute varchar [pk, not null]
+  options text [not null, default: '{}']
+}
+
+Ref: "project_version"."project_id" > "project"."id"
+Ref: "project"."selected_version_id" -? "project_version"."id"
+Ref: "evaluation"."project_version_id" > "project_version"."id"
+Ref: "agent_execution"."evaluation_id" -? "evaluation"."id"
+Ref: "agent_execution"."agent_type" > "agent_settings"."agent_type"
+
+Ref: "architecture_context_artifact"."execution_id" - "agent_execution"."id"
+Ref: "architecture_context_artifact"."project_version_id" > "project_version"."id"
+
+Ref: "execution_event_stream"."execution_id" > "agent_execution"."id" [delete: cascade]
+Ref: "execution_event"."stream_id" > "execution_event_stream"."id" [delete: cascade]
+
+Ref: "task"."project_id" > "project"."id"
+Ref: "graph_extraction"."task_id" - "task"."id" [delete: cascade]
+
+Ref: "ai_model"."ai_provider_id" > "ai_provider"."id"
+Ref: "ai_credential"."ai_provider_id" > "ai_provider"."id"
+Ref: "agent_settings"."ai_model_id" -? "ai_model"."id" [delete: restrict]
+Ref: "agent_settings"."ai_credential_id" -? "ai_credential"."id" [delete: restrict]
+
 Ref: "agent_hierarchy"."parent_agent_type" > "agent_settings"."agent_type" [delete: cascade, update: cascade]
 Ref: "agent_hierarchy"."child_agent_type" > "agent_settings"."agent_type" [delete: cascade, update: cascade]
-
-
-Ref: "public"."ai_provider"."id" <? "public"."ai_model"."ai_provider_id"
-
-Ref: "public"."ai_provider"."id" <? "public"."ai_credential"."ai_provider_id"
-
-Ref: "public"."ai_credential"."id" <? "public"."agent_settings"."ai_credential_id"
-
-Ref: "public"."ai_model"."id" <? "public"."agent_settings"."ai_model_id"
-
-Ref: "public"."project_version"."project_id" ?> "public"."project"."id"
-
-Ref: "project_version"."id" <? "evaluation"."project_version_id"
-
-Ref: "evaluation"."id" -? "agent_execution"."evaluation_id"
-
-Ref: "agent_execution"."agent_type" ?> "agent_settings"."agent_type"
-
-Ref: "project"."selected_version_id" -? "project_version"."id"
-
-Ref: "project"."id" <? "task"."project_id"

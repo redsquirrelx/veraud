@@ -159,6 +159,7 @@ model AiCredential {
   id           Int    @id @default(autoincrement())
   aiProviderId Int    @map("ai_provider_id")
   name         String
+  /// Versioned AES-256-GCM envelope. Plaintext legacy rows migrate at startup.
   apiKey       String @map("api_key")
   revision     Int    @default(1)
 
