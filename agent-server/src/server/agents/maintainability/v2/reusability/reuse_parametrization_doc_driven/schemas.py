@@ -11,6 +11,7 @@ from server.contracts.audit import (
     CandidateFinding,
     Contract,
     Criterion,
+    Finding,
     InvestigationPlan,
 )
 from server.services.document_indexing import IndexReference
@@ -113,6 +114,12 @@ class ParametrizationInvestigationCandidate(CandidateFinding):
 
 
 SelectionPhase = Literal["assembly", "startup", "runtime", "mixed", "unknown"]
+
+
+class ParametrizationFinding(Finding):
+    """Consolidated provisional candidate; documentary IDs are never evidence IDs."""
+
+    document_claim_ids: list[str] = Field(default_factory=list)
 
 
 class ParametrizationInvestigationResult(Contract):
@@ -223,9 +230,12 @@ class ReuseParametrizationDocDrivenRequest(Contract):
 
 
 class ReuseParametrizationDocDrivenResult(AuditResult):
-    """Investigator result; synthesis and final findings are intentionally absent."""
+    """Investigator result; final findings are deterministic host-lifted provisional candidates."""
 
     plan: ParametrizationPlan | InvestigationPlan | None
     investigation_results: list[ParametrizationInvestigationResult] = Field(default_factory=list)
+    candidates: list[ParametrizationInvestigationCandidate] = Field(default_factory=list)
+    candidate_origins: dict[str, list[dict]] = Field(default_factory=dict)
+    findings: list[ParametrizationFinding] = Field(default_factory=list)
     status: Literal["planning_only", "investigation_completed"] = "planning_only"
     planning_diagnostics: dict[str, Any] = Field(default_factory=dict)

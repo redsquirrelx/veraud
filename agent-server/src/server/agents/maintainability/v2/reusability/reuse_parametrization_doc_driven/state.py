@@ -3,6 +3,7 @@
 from server.runtimes.investigation.state import InvestigationState
 
 from .schemas import (
+    ParametrizationInvestigationCandidate,
     ParametrizationInvestigationResult,
     ParametrizationToolQuery,
 )
@@ -17,3 +18,5 @@ class ParametrizationState(InvestigationState, total=False):
     coverage_recovery_done: bool
     task_limitations: list[str]
     investigation_results: list[ParametrizationInvestigationResult]
+    candidates: list[ParametrizationInvestigationCandidate]
+    candidate_origins: dict[str, list[dict]]

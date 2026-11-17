@@ -215,6 +215,63 @@ def _base_token(base):
     return re.sub(r"\[.*?\]|<.*?>", "", str(base)).casefold().split(".")[-1].strip()
 
 
+_COMPOSITION_ROOT_NAMES = frozenset({
+    "bootstrap.py", "composition.py", "composer.py", "container.py",
+    "wiring.py", "composition_root.py", "factory.py", "main.py", "app.py",
+})
+
+
+def _is_composition_root_path(path):
+    """Files conventionally reserved for binding concrete implementations."""
+    return str(PurePosixPath(path).name).casefold() in _COMPOSITION_ROOT_NAMES
+
+
+def _method_owners(symbols):
+    """Owner class name -> ordered method names, from Class.method qualified spans."""
+    owners = defaultdict(list)
+    for symbol in symbols.values():
+        if symbol.kind not in {"method", "function"}:
+            continue
+        qualified = getattr(symbol, "qualified_name", "") or ""
+        if "." not in qualified:
+            continue
+        owner_name, method_name = qualified.split(".", 1)
+        if owner_name and method_name:
+            owners[owner_name].append(method_name)
+    return {name: list(dict.fromkeys(names)) for name, names in owners.items()}
+
+
+def _duck_implementations(all_surfaces, surface_methods, symbols_by_file, files, method_owners):
+    """Classes sharing a detected surface's method names without inheriting it.
+
+    Plain Protocols and duck typing carry no heritage edges, so this works off
+    method-name overlap alone and never assumes project-specific class names.
+    """
+    ducks = []
+    surface_ids = {surface.id for surface, _kind in all_surfaces}
+    for file_id in sorted(symbols_by_file, key=lambda key: files[key].path):
+        for symbol in symbols_by_file[file_id]:
+            if symbol.kind != "class":
+                continue
+            if symbol.id in surface_ids:
+                # A Protocol/ABC surface is not an implementation of itself.
+                continue
+            names = set(method_owners.get(symbol.name, ()))
+            if not names:
+                continue
+            match = None
+            for surface, _kind in all_surfaces:
+                shared = names & surface_methods[surface.id]
+                if not shared:
+                    continue
+                need = max(1, round(2 * len(surface_methods[surface.id]) / 3))
+                if len(shared) >= need and (match is None or len(shared) > match[1]):
+                    match = (surface, len(shared), _kind)
+            if match is not None:
+                ducks.append((file_id, symbol, match[0]))
+    return ducks
+
+
 def _variation_surface_kind(symbol):
     """Recognize substitutable surfaces the index can see; not by name alone."""
     if symbol.kind == "interface":
@@ -407,6 +464,9 @@ def build_parametrization_plan(snapshot, request, *, check, max_investigations,
             kind = _variation_surface_kind(symbol)
             if kind is not None:
                 structural_surfaces.append((symbol, kind))
+    # A surface detected at all (even without heritage implementers or enough
+    # consumers) is still a variation point worth probing from source.
+    all_surfaces = list(structural_surfaces)
     for symbol, kind in structural_surfaces:
         file = files[symbol.file_id]
         primary = file.path
@@ -446,6 +506,89 @@ def build_parametrization_plan(snapshot, request, *, check, max_investigations,
                 "Identify the indexed implementations that make the surface substitutable"],
             document_claim_ids=[]))
 
+    # Code-first variation seeds (no architecture context required). A class
+    # sharing a detected surface's method names without inheriting it is a
+    # substitution point, even in plain Protocol/duck repositories.
+    method_owners = _method_owners(symbols)
+    surface_methods = {surface.id: set(method_owners.get(surface.name, ()))
+        for surface, _kind in all_surfaces}
+    ducks = _duck_implementations(all_surfaces, surface_methods, symbols_by_file, files, method_owners)
+    ducks_by_file = defaultdict(list)
+    for file_id, symbol, surface in ducks:
+        ducks_by_file[file_id].append((symbol, surface))
+    surface_paths = {surface.id: files[surface.file_id].path for surface, _kind in all_surfaces}
+    for file_id in sorted(ducks_by_file, key=lambda key: files[key].path):
+        primary = files[file_id].path
+        if primary in covered or _is_composition_root_path(primary):
+            continue
+        entries = ducks_by_file[file_id]
+        covered.add(primary)
+        classes = sorted({symbol.name for symbol, _surface in entries})[:6]
+        surface_names = sorted({surface.name for _symbol, surface in entries})
+        anchors = list(dict.fromkeys([surface_paths[surface.id] for _symbol, surface in entries]))[:2]
+        consumer_paths = consumers_of(file_id)
+        candidates.append(ParametrizationCandidate(
+            id=create_identifier("investigation", snapshot_hash, "parametrization", primary,
+                "duck-substitution"),
+            priority="medium",
+            scope=list(dict.fromkeys([primary, *anchors, *consumer_paths[:2]]))[:4],
+            primary_component=primary,
+            variation_mechanism=f"{'/'.join(surface_names[:2])} substitution",
+            alternatives=classes,
+            documented_capability=None,
+            variation_basis="inferred",
+            initial_locations=list(dict.fromkeys([primary, *anchors, *consumer_paths]))[:10],
+            observed_indicators=[
+                f"{', '.join(classes)} declare the method signature(s) of {', '.join(surface_names)}.",
+                *([f"{len(consumer_paths)} internal consumer file(s) import {primary}."] if consumer_paths else [])],
+            question=(f"Do the implementations in {primary} satisfy the {', '.join(surface_names)} contract "
+                f"(return types, identity and absence of implementation-shaped data), or do they break substitutability?"),
+            evidence_needed=[*COMMON_EVIDENCE,
+                "Contrast each implementation's observed guarantees against the surface's contract"],
+            document_claim_ids=[]))
+    for file_id in sorted(files, key=lambda key: files[key].path):
+        primary = files[file_id].path
+        if _is_composition_root_path(primary) or primary in covered:
+            continue
+        bound = []
+        imported_paths = {}
+        for relation, source, target in edges:
+            if getattr(relation, "kind", None) != "from_import" or source != file_id:
+                continue
+            for symbol, surface in ducks_by_file.get(target, ()):
+                key = (symbol.id, surface.id)
+                if key not in imported_paths:
+                    imported_paths[key] = files[target].path
+                    bound.append((symbol, surface))
+        if not bound:
+            continue
+        covered.add(primary)
+        implementation_paths = list(dict.fromkeys(imported_paths.values()))[:2]
+        alternatives = sorted({symbol.name for symbol, _surface in bound})[:6]
+        surfaces = sorted({surface.name for _symbol, surface in bound})
+        anchors = list(dict.fromkeys(
+            [surface_paths[surface.id] for _symbol, surface in bound]))[:2]
+        candidates.append(ParametrizationCandidate(
+            id=create_identifier("investigation", snapshot_hash, "parametrization", primary,
+                "concrete-binding"),
+            priority="medium",
+            scope=list(dict.fromkeys([primary, *implementation_paths, *anchors]))[:4],
+            primary_component=primary,
+            variation_mechanism=f"{surfaces[0]} substitution",
+            alternatives=alternatives,
+            documented_capability=None,
+            variation_basis="inferred",
+            initial_locations=list(dict.fromkeys([primary, *implementation_paths, *anchors]))[:10],
+            observed_indicators=[
+                f"{primary} imports infrastructure implementations directly ({', '.join(alternatives)}).",
+                f"The abstraction substitution surface is at: {', '.join(anchors)}."],
+            question=(f"Does {primary} bind concrete implementations ({', '.join(alternatives)}) instead of the abstraction, "
+                f"preventing substitution of alternatives without modifying {primary}?"),
+            evidence_needed=[*COMMON_EVIDENCE,
+                "Inspect why the consumer names concrete implementations rather than the port"],
+            document_claim_ids=[]))
+    # The seeds above may exceed the menu; the full set still flows through the
+    # deterministic rank, with documentation kept as orientation, not constraint.
     documented = [item for item in candidates if item.document_claim_ids]
     structural = [item for item in candidates if not item.document_claim_ids]
     rank = {"high": 0, "medium": 1, "low": 2}

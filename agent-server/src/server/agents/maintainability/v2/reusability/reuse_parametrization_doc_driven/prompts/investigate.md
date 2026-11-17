@@ -227,6 +227,21 @@ For closing:
   implementation body, return-value path, branch, consumer or selection site
   remains unread, request tools or close inconclusive. Do not mark a required
   verification resolved solely because the ADR says the design should work.
+- Audit every inspected implementation and consumer individually, line by line where
+  needed:
+  - For each class you inspect, state its observed return rendering (domain model,
+    dictionary or None) and its observable guarantee behavior (e.g. amount sign,
+    matching ride identity). A `supported` assessment for an alternative requires
+    the guarantee to hold for that alternative, not merely that a class exists.
+  - A single conforming control does not make its siblings conform. If any inspected
+    implementation violates the contract — a wrong return type, lost ride identity,
+    negative payable amount, raw processor acknowledgement — the surface is not
+    substitutable and you must emit finding_candidate or inconclusive, never no_finding.
+  - Adapter classes own their private state. A consumer-visible exposure occurs only
+    when the violation crosses the adapter boundary (a public API or member a caller
+    can reach) before it is reportable.
+- A close that names an alternative without citing inspected evidence of its rendering
+  is not a definitive close. If you have not verified it, say so and close inconclusive.
 - no_finding means no supported problem in the explicitly inspected scope, not a
   global claim about architecture. Name the sample and its limits.
 - components must be exact file paths inspected by get_source_excerpt or another
@@ -243,8 +258,9 @@ reward the mere presence of dependency injection with an automatic finding.
   reuse-parametrization observation. This may concern an actionable limitation
   to documented substitutability, including a contract guarantee contradicted
   by an implementation or consumer, when the existing candidate schema can
-  express it faithfully. Use the schema's allowed `kind=design_observation`;
-  do not invent a defect kind or pretend a positive observation is a defect.
+  express it faithfully. Use `kind=violation` when inspected source contradicts a
+  documented behavioral guarantee, and `kind=design_observation` only for an
+  observation that is not a violation. Never pretend a positive observation is a defect.
   Describe the actual gap, scope, code evidence and impact in the candidate.
   A finding may be supported by the primary component alone when its inspected
   source establishes the contract violation and the impact on substitutability;
