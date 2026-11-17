@@ -165,6 +165,13 @@ def _definitions(service):
         workflows=["quality-audit"], attributes=["maintainability", "security", "functional_adequacy"], request=_symbol("reporting.schemas", "AuditReportRequest"),
         result=_symbol("reporting.schemas", "SoftwareAuditReport"))
 
+    # Model-access discovery only: generators remain private to the suite
+    # composition and are never registered for /api/agents/run.
+    add("verification_suite", "Verification Suite", "verification_suite", ["internal"],
+        "Shared model access for FindingTestGenerationAgent and TestabilityProbeAgent. "
+        "Used only when generating a suite; re-execution requires no model.",
+        workflows=["verification-suite"])
+
     pipelines = default_pipeline_registry()
     groups = {"maintainability": list(MAINTAINABILITY_AGENT_TYPES), "security": ["security"], "functional_adequacy": ["functional_adequacy"]}
     selections = [
