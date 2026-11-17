@@ -27,6 +27,7 @@ from ...infrastructure.llm.diagnostics import (
     retry_hint,
     transient,
 )
+from ...infrastructure.tracing_sink import child_span_id, trace_event
 from ..cancellation import check_cancellation
 from ..invocation_reporting import phase_node, report_invocation_usage
 from ..repository.tools import TOOL_SCHEMAS, RepositoryToolset
@@ -523,14 +524,29 @@ class InvestigationExecution:
             self.logger.info("%s: provider_request_budget call=%d accounted=%d input_estimate=%d "
                 "output_allowance=%d closing_reserve=%d effective_limit=%d",
                 node, self.calls + 1, self.tokens, input_estimate, self.output_limit, closing_reserve, self.token_limit)
+            call_span = child_span_id("provider")
+            call_started = monotonic()
+            trace_event("provider.request_started", span_id=call_span,
+                        message=f"provider request {node} attempt {retry + 1}",
+                        details={"node": node, "attempt": retry + 1,
+                                 "inputEstimate": input_estimate,
+                                 "outputAllowance": self.output_limit,
+                                 "reserve": reserve})
             try:
-                async def wait_for_slot(wait, reservation_tokens=reserve):
+                async def wait_for_slot(wait, reservation_tokens=reserve, span=call_span):
                     if isinstance(self.provider_pacer, ProviderPacer):
                         def on_wait(wait_seconds, reasons):
                             wait.update(reason="+".join(reasons), until=self.timing.clock() + wait_seconds,
                                 source=("global_rolling_window" if self.provider_pacer.scope is not None else "local_rolling_window")
                                     if "rpm" in reasons or "tpm" in reasons else "local_pacing")
                             self.logger.warning("%s: provider_rate_limit_wait seconds=%g reasons=%s", node, wait_seconds, ",".join(reasons))
+                            trace_event("provider.rate_limit_wait", span_id=span,
+                                        message=f"Provider admission wait {wait_seconds:g}s ({'+'.join(reasons)})",
+                                        details={"node": node, "waitSeconds": wait_seconds,
+                                                 "reasons": list(reasons),
+                                                 "source": ("global_rolling_window" if self.provider_pacer.scope is not None
+                                                            else "local_rolling_window")
+                                                    if "rpm" in reasons or "tpm" in reasons else "local_pacing"})
                         return await self.provider_pacer.acquire(reservation_tokens, on_wait=on_wait)
                     async with self.provider_pacer.lock:
                         await self.provider_pacer.wait()
@@ -544,9 +560,21 @@ class InvestigationExecution:
             except RequestTokenQuotaExceeded:
                 self.stop = "provider_tpm_request_limit"
                 self.issues.append(f"{node}: request token reservation exceeds configured provider TPM.")
+                trace_event("provider.error", span_id=call_span, status="error",
+                            error_code="provider_tpm_request_limit",
+                            message="Request token reservation exceeds configured provider TPM",
+                            duration_ms=round((monotonic() - call_started) * 1000, 3),
+                            details={"node": node, "attempt": retry + 1,
+                                     "errorType": "RequestTokenQuotaExceeded"})
                 return None
             except TimeoutError:
                 self.stop = "time_limit"
+                trace_event("provider.error", span_id=call_span, status="timeout",
+                            error_code="time_limit",
+                            message="Provider admission deadline exceeded",
+                            duration_ms=round((monotonic() - call_started) * 1000, 3),
+                            details={"node": node, "attempt": retry + 1,
+                                     "errorType": "TimeoutError"})
                 return None
             token_budget = self.tools.token_budget
             self.timing.check_cancellation()
@@ -576,6 +604,14 @@ class InvestigationExecution:
                 detail = f"{node}: provider_request: {safe_diagnostic(error, schema)}{provider_diagnostic(error)}"
                 self.logger.warning("%s", detail)
                 self.issues.append(detail)
+                status_code = provider_status(error)
+                trace_event("provider.error", span_id=call_span, status="error",
+                            error_code=f"http_{status_code}" if status_code is not None else type(error).__name__,
+                            message=f"Provider failed with {type(error).__name__}",
+                            duration_ms=round((monotonic() - call_started) * 1000, 3),
+                            details={"node": node, "attempt": retry + 1, "httpStatus": status_code,
+                                     "errorType": type(error).__name__,
+                                     "retryable": transient(error)})
                 if isinstance(error, TimeoutError):
                     # Stop this invocation rather than accumulating live requests
                     # when a provider is slow or does not acknowledge cancellation.
@@ -630,6 +666,12 @@ class InvestigationExecution:
                         # Reserve before sleeping: concurrent siblings keep
                         # their own allowances and no wait holds the pacer lock.
                         self.recovery_wait_seconds += delay
+                        trace_event("provider.recovery_wait", span_id=call_span,
+                                    message=f"Provider recovery wait {delay:g}s ({reason})",
+                                    details={"node": node, "reason": reason, "waitSeconds": delay,
+                                             "recoveryWaitSeconds": self.recovery_wait_seconds,
+                                             "recoveryBudgetSeconds": self.config.provider_recovery_budget_seconds,
+                                             "source": source})
                         await within_deadline(recover(), self.timing)
                     except TimeoutError:
                         self.stop = "time_limit"
@@ -640,15 +682,24 @@ class InvestigationExecution:
                 return None
             raw = response.get("raw") if isinstance(response, dict) else response
             usage = getattr(raw, "usage_metadata", None)
+            reported_input = None
+            reported_output = None
             if usage and all(isinstance(usage.get(key), int) and not isinstance(usage[key], bool) and usage[key] >= 0
                              for key in ("input_tokens", "output_tokens")):
-                actual_tokens = usage["input_tokens"] + usage["output_tokens"]
+                reported_input, reported_output = usage["input_tokens"], usage["output_tokens"]
+                actual_tokens = reported_input + reported_output
                 self.tokens += actual_tokens - reserve
                 self.estimates -= reserve
                 if quota_reservation is not None:
                     self.provider_pacer.settle(quota_reservation, actual_tokens)
                 if token_reservation is not None:
                     token_reservation.settle(actual_tokens)
+            trace_event("provider.response", span_id=call_span, status="ok",
+                        message="Provider returned a response",
+                        duration_ms=round((monotonic() - call_started) * 1000, 3),
+                        details={"node": node, "attempt": retry + 1,
+                                 "inputReported": reported_input,
+                                 "outputReported": reported_output})
             self.retryable_failure = False
             return response
 
@@ -662,6 +713,14 @@ class InvestigationExecution:
             f"recovery_wait_seconds={self.recovery_wait_seconds:g} "
             f"recovery_budget_seconds={self.config.provider_recovery_budget_seconds:g}. "
             "Etapa pendiente por indisponibilidad del proveedor; evidencias, hipótesis y resultados parciales conservados.")
+        trace_event("provider.defer", status="error", error_code=reason,
+                    message=f"Provider stage deferred: {reason}",
+                    details={"node": node, "reason": reason, "httpStatus": provider_status(error),
+                             "requestedWaitSeconds": delay,
+                             "maxWaitSeconds": self.config.provider_max_retry_wait_seconds,
+                             "recoveryWaitSeconds": self.recovery_wait_seconds,
+                             "recoveryBudgetSeconds": self.config.provider_recovery_budget_seconds,
+                             "attempts": attempts})
 
     async def plan_investigation(self, state):
         plan = await self.call("plan_investigation", state, self.plan_schema)

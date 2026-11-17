@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from server.infrastructure.llm.retry import RequestPacer
 from server.infrastructure.tracing import LangSmithTracingBackend
+from server.infrastructure.tracing_sink import trace_event
 
 from ...agent_services.budgeting.policy import (
     budgets_enabled,
@@ -308,6 +309,12 @@ class CoordinatorExecution(ABC):
                     stage="reserve_invocation", summary="No ejecutado: no se pudo reservar el presupuesto de la investigación.",
                     resources=shortfalls)
                 dispatch.append((assignment, None))
+                trace_event("coordination.investigation_skipped", status="error",
+                            error_code="execution_budget_exhausted",
+                            message=f"Investigation {assignment.investigator_id} skipped: budget exhausted",
+                            details={"investigatorId": assignment.investigator_id,
+                                     "invocationId": assignment.invocation_id,
+                                     "reason": "execution_budget_exhausted"})
                 continue
             budget = ExecutionBudget(
                 max_model_calls=limits.max_model_calls,
@@ -335,6 +342,12 @@ class CoordinatorExecution(ABC):
             async with semaphore:
                 self.timing.check_cancellation()
                 started = monotonic()
+                trace_event("coordination.investigation_dispatched",
+                            message=f"Dispatching investigator {assignment.investigator_id}",
+                            details={"investigatorId": assignment.investigator_id,
+                                     "invocationId": assignment.invocation_id,
+                                     "round": assignment.round,
+                                     "maxModelCalls": budget.max_model_calls})
                 try:
                     async def wait_for_start():
                         async with self.investigation_start_pacer.lock:
@@ -343,6 +356,12 @@ class CoordinatorExecution(ABC):
                     await within_deadline(wait_for_start(), self.timing)
                 except TimeoutError:
                     # No investigator was started: do not charge its reserved envelope.
+                    trace_event("coordination.investigation_skipped", status="timeout",
+                                error_code="assessment_time_exhausted",
+                                message=f"Investigation {assignment.investigator_id} skipped: time exhausted",
+                                details={"investigatorId": assignment.investigator_id,
+                                         "invocationId": assignment.invocation_id,
+                                         "reason": "assessment_time_exhausted"})
                     return self.raw_invocation_type(assignment=assignment.model_copy(update={"budget": None}),
                         status="skipped", error="assessment_time_exhausted", duration_seconds=monotonic() - started)
                 child = None
@@ -577,6 +596,29 @@ class CoordinatorExecution(ABC):
                     "Follow-up did not validly resolve its assigned subjects/boundary/context; original task remains open."]})
             records.append(record)
             self._collected_records[assignment.invocation_id] = record
+            tool_failures = getattr(result, "tool_failures", None)
+            evidence_kinds: dict[str, int] = {}
+            for ref in evidence:
+                kind = ref.get("kind") if isinstance(ref, dict) else getattr(ref, "kind", None)
+                if isinstance(kind, str):
+                    evidence_kinds[kind] = evidence_kinds.get(kind, 0) + 1
+            termination = getattr(result, "termination_reason", None) if result is not None else None
+            event_status = ("ok" if record.status == "completed" else
+                "error" if record.status == "failed" else
+                record.status if record.status in {"timeout", "cancelled"} else "running")
+            trace_event("coordination.investigation_finished", status=event_status,
+                        error_code=error if isinstance(error, str) else None,
+                        message=f"Investigator {assignment.investigator_id} finished: {record.status}",
+                        details={"investigatorId": assignment.investigator_id,
+                                 "invocationId": assignment.invocation_id,
+                                 "status": record.status,
+                                 "terminationReason": termination,
+                                 "durationSeconds": raw.duration_seconds,
+                                 "evidenceCount": len(evidence),
+                                 "sourceEvidence": any(kind == "source" for kind in evidence_kinds),
+                                 "evidenceKinds": evidence_kinds,
+                                 "toolFailures": len(tool_failures) if isinstance(tool_failures, list) else 0,
+                                 "error": error})
             self.synth.logger.info("%s invocation=%s investigator=%s round=%s status=%s duration=%.3f tokens=%s",
                 self.trace_name, assignment.invocation_id, assignment.investigator_id, assignment.round, status,
                 raw.duration_seconds, usage.accounted_tokens)
