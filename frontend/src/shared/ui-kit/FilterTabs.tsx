@@ -12,11 +12,13 @@ interface FilterTabsProps {
   onChange: (id: string) => void
   label?: string
   disabled?: boolean
+  /** Tighter tabs for dense toolbars such as the Execution Explorer filters. */
+  compact?: boolean
 }
 
-export function FilterTabs({ options, value, onChange, label, disabled = false }: FilterTabsProps) {
+export function FilterTabs({ options, value, onChange, label, disabled = false, compact = false }: FilterTabsProps) {
   return (
-    <div className="ui-filter-tabs" role="tablist" aria-label={label}>
+    <div className={compact ? "ui-filter-tabs ui-filter-tabs-compact" : "ui-filter-tabs"} role="tablist" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.id}
