@@ -26,6 +26,8 @@ import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
 import { QualityAuditRepository } from "./modules/quality-audit/quality-audit.repository.js"
 import { QualityAuditService } from "./modules/quality-audit/quality-audit.service.js"
+import { join } from "node:path"
+import { configureTraceRoot } from "./infrastructure/trace-writer.js"
 import { AuditSettingsService } from "./modules/quality-audit/audit-settings.service.js"
 import { registerAuditSettingsRoutes } from "./modules/quality-audit/audit-settings.controller.js"
 import { registerQualityAuditRoutes } from "./modules/quality-audit/quality-audit.controller.js"
@@ -74,6 +76,7 @@ export async function buildApp(options: BuildAppOptions) {
   })
 
   mkdirSync(options.workspaceDir, { recursive: true })
+  configureTraceRoot(process.env.VERAUD_TRACE_DIR ?? join(options.workspaceDir, "logs"))
 
   const gateway = new RealtimeGateway()
   const github = new GithubClient()
