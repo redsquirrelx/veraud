@@ -87,7 +87,7 @@ export interface AgentExecutionStore {
   requestAuditCancellation(id: number): Promise<StoredAgentExecution>
   claimAuditDispatch(id: number): Promise<boolean>
   pendingAuditCancellations(): Promise<number[]>
-  recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution>
+  recordInvocation(id: number, receipt: InvocationReceipt, onRetry?: (attempt: number, code: string) => void): Promise<StoredAgentExecution>
   create(data: NewAgentExecution): Promise<StoredAgentExecution>
   complete(id: number, data: AgentExecutionCompletion): Promise<StoredAgentExecution>
   markRunning(id: number, runId?: string): Promise<StoredAgentExecution>
@@ -155,11 +155,13 @@ export class AgentExecutionRepository implements AgentExecutionStore {
     })).map((row) => row.id)
   }
 
-  async recordInvocation(id: number, receipt: InvocationReceipt): Promise<StoredAgentExecution> {
+  async recordInvocation(id: number, receipt: InvocationReceipt, onRetry?: (attempt: number, code: string) => void): Promise<StoredAgentExecution> {
     receipt = { ...receipt, error: publicErrorText(receipt.error), error_detail: readExecutionErrorDetail(receipt.error_detail) }
     return this.withSerializationRetry(() => this.db.$transaction(async (tx) => {
       const execution = await tx.agentExecution.findUniqueOrThrow({ where: { id }, include: { evaluation: true } })
-      if (execution.evaluation?.type !== "QualityAudit") throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit")
+      if (execution.evaluation?.type !== "QualityAudit" && execution.evaluation?.type !== "VerificationSuite") {
+        throw new UnknownExecutionTargetError("Invocation callbacks require a quality audit or verification suite evaluation")
+      }
       const receipts = (JSON.parse(execution.invocationReceipts) as InvocationReceipt[]).map((item) => ({ ...item,
         error: publicErrorText(item.error), error_detail: readExecutionErrorDetail(item.error_detail) }))
       let runId: string | undefined
@@ -194,18 +196,19 @@ export class AgentExecutionRepository implements AgentExecutionStore {
         unknown_usage_attempts: Math.max(previous?.unknown_usage_attempts ?? 0, receipt.unknown_usage_attempts ?? 0) }
       const next = previous ? receipts.map((item) => item.invocation_id === receipt.invocation_id ? updated : item) : [...receipts, updated]
       return this.toStored(await tx.agentExecution.update({ where: { id }, data: { invocationReceipts: JSON.stringify(next) } }))
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }))
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 10_000 }), 5, onRetry)
   }
 
   /** Retry transactions aborted by PostgreSQL serialization failures (P2034).
    *  Several agents report to the same execution row concurrently, so the JSON
    *  read-modify-write above is inherently contended. */
-  private async withSerializationRetry<T>(action: () => Promise<T>, attempts = 5): Promise<T> {
+  private async withSerializationRetry<T>(action: () => Promise<T>, attempts = 5, onRetry?: (attempt: number, code: string) => void): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await action()
       } catch (error) {
         if (attempt < attempts && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          onRetry?.(attempt, error.code)
           continue
         }
         throw error

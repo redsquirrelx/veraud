@@ -1,6 +1,7 @@
 import { logger } from "../../config/logger.js"
 import { auditRunConfiguration } from "../quality-audit/audit-run-configuration.js"
 import type { AgentExecutionEvent } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
+import { configureTraceRoot, createTraceEnvelope, writeTraceEvent, traceFailureDetails, type TraceEnvelope } from "../../infrastructure/trace-writer.js"
 import type { AgentInput, AgentInvoker, AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { AgentTransportError, AuditRunUnavailableError, QUALITY_AUDIT_INVOKE_TIMEOUT_MS } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { setTimeout as delay } from "node:timers/promises"
@@ -70,6 +71,7 @@ export interface AgentExecutionEvents {
 
 export class AgentExecutionService {
   private log = logger.withTag("agent-execution")
+  private traceEnvelopes = new Map<number, TraceEnvelope>()
   private cancellationWorkers = new Map<number, Promise<void>>()
   private cancellationTimers = new Map<number, ReturnType<typeof setTimeout>>()
   private forwardedCancellations = new Set<number>()
@@ -115,6 +117,14 @@ export class AgentExecutionService {
     await Promise.all(this.cancellationWorkers.values())
   }
 
+  private traceEnvelope(execution: StoredAgentExecution, options?: { projectId?: number, branch?: string | null, commitHash?: string }): TraceEnvelope | undefined {
+    const existing = this.traceEnvelopes.get(execution.id)
+    if (existing !== undefined) return existing
+    const trace = createTraceEnvelope(execution, options)
+    this.traceEnvelopes.set(execution.id, trace)
+    return trace
+  }
+
   private isTerminal(execution: StoredAgentExecution): boolean {
     return execution.status === "Completed" || execution.status === "Failed"
   }
@@ -140,6 +150,10 @@ export class AgentExecutionService {
 
   private queueAuditCancellation(id: number): void {
     if (this.cancellationShutdown || this.cancellationWorkers.has(id) || this.cancellationTimers.has(id)) return
+    void this.require(id).then((execution) => {
+      const queuedTrace = this.traceEnvelope(execution)
+      if (queuedTrace) writeTraceEvent(queuedTrace, { event: "quality_audit.cancellation.queued", status: "running", message: "Audit cancellation queued", details: {} })
+    }).catch(() => { /* telemetry only */ })
     this.startCancellationWindow(id)
     const failExpired = () => {
       this.log.error(`Execution ${id}: cancellation unavailable after ${this.cancellationAttempts.get(id) ?? 0} attempts; closing as failed`)
@@ -243,6 +257,8 @@ export class AgentExecutionService {
   }
 
   private async closeCancelledAudit(execution: StoredAgentExecution, snapshot?: AgentInput): Promise<void> {
+    const cancelledTrace = this.traceEnvelope(execution)
+    if (cancelledTrace) writeTraceEvent(cancelledTrace, { event: "quality_audit.execution.closed_cancelled", status: "ok", message: "Audit closed as cancelled", details: { interruptionReason: "cancelled", runId: typeof snapshot?.["run_id"] === "string" ? String(snapshot["run_id"]) : null } })
     let retained: AgentInput = {}
     try { retained = JSON.parse(execution.result ?? "{}") as AgentInput } catch { /* Preserve valid metadata when available. */ }
     await this.close(execution.id, {
@@ -274,6 +290,8 @@ export class AgentExecutionService {
       configuration: configuration!,
     } satisfies NewAgentExecution)
 
+    const trace = this.traceEnvelope(execution)
+    if (trace) writeTraceEvent(trace, { event: "agent.execution.opened", status: "running", message: `Opened execution ${execution.id}`, details: { agentType: execution.agentType, evaluationId: execution.evaluationId } })
     this.log.info(`Opened execution ${execution.id} agentType=${agentType}`)
 
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
@@ -301,6 +319,8 @@ export class AgentExecutionService {
         project.projectId, project.branch, project.commitHash, [configuration!], "ArchitectureContext",
       )
       const execution = created.executions[agentType]!
+      const trace = this.traceEnvelope(execution, project)
+      if (trace !== undefined) writeTraceEvent(trace, { event: created.reused ? "agent.execution.reused" : "agent.execution.opened", status: "running", message: created.reused ? "Reused project architecture context execution" : "Opened architecture context execution", details: { reused: created.reused } })
       if (!created.reused) {
         this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
         void this.dispatchProjectContext(execution, project.commitHash, configuration!.transport)
@@ -356,12 +376,16 @@ export class AgentExecutionService {
   }
 
   private async dispatchProjectContext(execution: StoredAgentExecution, commitHash: string, config: AgentRunConfig): Promise<void> {
+    const trace = this.traceEnvelope(execution, { commitHash })
     try {
+      if (trace) writeTraceEvent(trace, { event: "agent.project_context.dispatch_started", spanId: trace.spanId, parentSpanId: trace.traceId, status: "running", message: "Resolving repository target and queued checkout" })
       const input = await this.targets.resolve(execution.evaluationId!)
       const sanitized = sanitizeDirectInput({ root_path: input.root_path, commit_hash: commitHash }, this.workspaceDir)
       assertDirectCheckout(sanitized)
-      await this.agents.run(execution.agentType, sanitized, execution.id, config)
+      if (trace) writeTraceEvent(trace, { event: "agent.project_context.dispatch_ready", spanId: trace.spanId, parentSpanId: trace.traceId, status: "running", message: "Repository target resolved and checkout asserted", details: { repositoryPath: sanitized.root_path, commitHash } })
+      await this.agents.run(execution.agentType, sanitized, execution.id, config, trace)
     } catch (error) {
+      if (trace) writeTraceEvent(trace, { event: "agent.project_context.dispatch_failed", spanId: trace.spanId, status: "error", message: error instanceof Error ? error.message : "Architecture context dispatch failed", details: traceFailureDetails(error) })
       await this.fail(execution.id, "Architecture context dispatch failed", undefined, error)
     }
   }
@@ -412,6 +436,8 @@ export class AgentExecutionService {
     const snapshot = { ...rootConfiguration.snapshot, auditConfiguration: scope }
     const result = await this.executions.createExecutionsForProject(projectId, branch, commitHash, [{ ...rootConfiguration, snapshot }], "QualityAudit")
     const execution = result.executions[agentType]!
+    const trace = this.traceEnvelope(execution, { projectId, branch, commitHash })
+    if (trace) writeTraceEvent(trace, { event: "quality_audit.execution.opened", status: "running", message: "Opened quality audit execution", details: { projectId, branch, commitHash, attributes } })
     await this.executions.patchResult(execution.id, JSON.stringify({ attributes }))
     this.invalidateMonitorProjection(execution.id)
     this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
@@ -428,13 +454,16 @@ export class AgentExecutionService {
 
   private async dispatchQualityAudit(execution: StoredAgentExecution, configs: Record<string, AgentRunConfig>, commitHash: string, attributes: string[], options: AuditOperatingOptions) {
     const recoveryDeadline = Date.now() + QUALITY_AUDIT_INVOKE_TIMEOUT_MS
+    const trace = this.traceEnvelope(execution, { commitHash })
     let posted = false
     try {
       if (execution.evaluationId === null || !this.agents.runPipelineByName) throw new Error("Quality-audit pipeline is unavailable")
       if (!await this.executions.claimAuditDispatch(execution.id)) {
+        if (trace) writeTraceEvent(trace, { event: "quality_audit.dispatch.claim", status: "error", errorCode: "claim_contended", message: "Quality audit dispatch claim was contended", details: { claimed: false } })
         this.queueAuditCancellation(execution.id)
         return
       }
+      if (trace) writeTraceEvent(trace, { event: "quality_audit.dispatch.claim", status: "ok", message: "Quality audit dispatch claimed", details: { claimed: true } })
       const input = await this.targets.resolve(execution.evaluationId)
       await this.markRunning(execution.id)
       const current = await this.require(execution.id)
@@ -444,10 +473,12 @@ export class AgentExecutionService {
         return
       }
       posted = true
+      if (trace) writeTraceEvent(trace, { event: "quality_audit.dispatch.sent", spanId: trace.spanId, parentSpanId: trace.traceId, status: "running", message: "Quality audit pipeline dispatched", details: { attributes } })
       const payload = await this.agents.runPipelineByName("quality-audit", {
         ...options,
         root_path: String(input.root_path), commit_hash: commitHash, attributes,
-      }, { [execution.agentType]: execution.id }, configs)
+      }, { [execution.agentType]: execution.id }, configs, undefined, trace)
+      if (trace) writeTraceEvent(trace, { event: "quality_audit.dispatch.response", spanId: trace.spanId, status: "ok", message: "Quality audit pipeline returned", details: { stageKeys: Object.keys(payload ?? {}) } })
       await this.closeAudit(execution.id, payload["audit"])
     } catch (error) {
       const current = await this.require(execution.id)
@@ -456,6 +487,7 @@ export class AgentExecutionService {
         else this.queueAuditCancellation(execution.id)
         return
       }
+      if (trace) writeTraceEvent(trace, { event: "quality_audit.dispatch.failed", spanId: trace.spanId, status: "error", errorCode: error instanceof AgentTransportError ? error.code : error instanceof Error ? error.name : "quality_audit_dispatch_failed", message: error instanceof Error ? error.message : "Quality audit dispatch failed", details: traceFailureDetails(error) })
       if (error instanceof AgentTransportError && error.outcomeUncertain) {
         try {
           await this.reconcileAudit(execution.id, attributes, recoveryDeadline)
@@ -519,6 +551,7 @@ export class AgentExecutionService {
    *  is written to the row instead, because a run that failed silently is worse
    *  than one that failed loudly. */
   private async dispatch(execution: StoredAgentExecution, config: AgentRunConfig): Promise<void> {
+    const trace = this.traceEnvelope(execution)
     try {
       if (execution.evaluationId === null) {
         throw new Error(`Execution ${execution.id} has no evaluation to resolve`)
@@ -526,8 +559,9 @@ export class AgentExecutionService {
 
       const input = await this.targets.resolve(execution.evaluationId)
 
-      await this.agents.run(execution.agentType, input, execution.id, config)
+      await this.agents.run(execution.agentType, input, execution.id, config, trace)
     } catch (error) {
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.failed", status: "error", message: error instanceof Error ? error.message : "Agent dispatch failed", details: traceFailureDetails(error) })
       // The agent never got far enough to report for itself.
       await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
     }
@@ -536,11 +570,13 @@ export class AgentExecutionService {
   /** Direct twin of dispatch: the input is already known, only the checkout is
    *  verified before handing it to the agent. Never throws. */
   private async dispatchDirect(execution: StoredAgentExecution, input: AgentInput, config: AgentRunConfig): Promise<void> {
+    const trace = this.traceEnvelope(execution)
     try {
       assertDirectCheckout(input)
 
-      await this.agents.run(execution.agentType, input, execution.id, config)
+      await this.agents.run(execution.agentType, input, execution.id, config, trace)
     } catch (error) {
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.failed", status: "error", message: error instanceof Error ? error.message : "Agent dispatch failed", details: traceFailureDetails(error) })
       await this.fail(execution.id, error instanceof Error ? error.message : String(error), undefined, error)
     }
   }
@@ -673,11 +709,21 @@ export class AgentExecutionService {
   }
 
   async recordInvocation(id: number, receipt: import("./invocationReceipt.js").InvocationReceipt): Promise<StoredAgentExecution> {
-    await this.require(id)
+    const current = await this.require(id)
     this.invalidateMonitorProjection(id)
-    const execution = await this.executions.recordInvocation(id, receipt)
-    if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
-    return execution
+    const recordedTrace = this.traceEnvelope(current)
+    const startedAt = Date.now()
+    try {
+      const execution = await this.executions.recordInvocation(id, receipt, recordedTrace
+        ? (attempt, code) => writeTraceEvent(recordedTrace, { event: "quality_audit.invocation.retry", status: "running", message: `Invocation receipt write retried (attempt ${attempt})`, details: { attempt, code, invocationId: receipt.invocation_id, agentType: receipt.agent_id } })
+        : undefined)
+      if (recordedTrace) writeTraceEvent(recordedTrace, { event: "quality_audit.invocation.recorded", status: "ok", message: "Invocation receipt persisted", durationMs: Date.now() - startedAt, details: { invocationId: receipt.invocation_id, agentType: receipt.agent_id, status: receipt.status } })
+      if (execution.cancellationRequestedAt) this.queueAuditCancellation(id)
+      return execution
+    } catch (error) {
+      if (recordedTrace) writeTraceEvent(recordedTrace, { event: "quality_audit.invocation.failed", status: "error", errorCode: error instanceof Error ? error.name : "record_invocation_failed", message: "Invocation receipt failed to persist", durationMs: Date.now() - startedAt, details: { invocationId: receipt.invocation_id, agentType: receipt.agent_id, status: receipt.status } })
+      throw error
+    }
   }
 
   async findById(id: number): Promise<StoredAgentExecution> {
@@ -716,6 +762,7 @@ export class AgentExecutionService {
 
   private async close(id: number, completion: AgentExecutionCompletion): Promise<void> {
     const execution = await this.complete(id, completion)
+    this.traceEnvelopes.delete(id)
 
     this.log.info(`Execution ${id} closed as ${execution.status}`)
 
@@ -728,6 +775,8 @@ export class AgentExecutionService {
   private async fail(id: number, _message: string, interruptionReason?: string, cause?: unknown): Promise<void> {
     const occurredAt = new Date().toISOString()
     this.log.error(`Execution ${id} failed (${interruptionReason ?? "backend_dispatch_failed"})`)
+    const failureTrace = await this.require(id).then((execution) => this.traceEnvelope(execution)).catch(() => undefined)
+    if (failureTrace) writeTraceEvent(failureTrace, { event: "quality_audit.execution.failed", status: "error", errorCode: interruptionReason ?? "backend_dispatch_failed", message: `Execution closed as failed (${interruptionReason ?? "backend_dispatch_failed"})`, details: { interruptionReason: interruptionReason ?? "backend_dispatch_failed", exceptionType: cause instanceof Error ? cause.name : undefined } })
 
     try {
       const retained = interruptionReason === "audit_outcome_unconfirmed" ? await this.require(id) : null
