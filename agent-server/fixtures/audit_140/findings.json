@@ -1,0 +1,560 @@
+{
+  "auditId": 140,
+  "commitHash": "52b23bc085b55b00d340620ad2055d69672469bb",
+  "attributes": [
+    "maintainability"
+  ],
+  "exportedAt": "2026-11-13T08:13:03.765Z",
+  "findings": [
+    {
+      "assessed_context": "",
+      "sharing_boundary": "",
+      "conditions": [],
+      "assumptions": [],
+      "unknowns": [],
+      "limitations": [],
+      "id": "a8b28bba-84cb-5411-bf74-1f956b157fc8",
+      "title": "Direct dependency on infrastructure adapter",
+      "quality_attribute": "maintainability",
+      "subcharacteristic": "modularity",
+      "kind": "violation",
+      "severity": "medium",
+      "description": "The application layer directly imports and uses a concrete infrastructure class, violating the layer isolation rule.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "justification": "The code imports 'MemoryInventoryCatalog' from the infrastructure layer, which is explicitly forbidden by the architectural documentation.",
+      "evidence_ids": [
+        "c654e3f9-4396-5ded-a146-7ad94bb5597d",
+        "2f364d94-7f89-565d-af5b-824f67a17fcf"
+      ],
+      "components": [
+        "src/urbanmesh/application/inventory/allocator.py",
+        "src/urbanmesh/infrastructure/storage/memory.py"
+      ],
+      "impact": "Tight coupling between the application logic and a specific infrastructure implementation, preventing the use of alternative storage backends or ports.",
+      "recommendation": "Introduce an abstract port interface in the application layer and inject the infrastructure implementation via dependency injection at the composition root (bootstrap.py).",
+      "verification_status": "unreviewed",
+      "verification_rationale": "No consta una revisión explícita. Decisión documental: unreviewed; violation_requires_explicit_criterion.",
+      "validation_issues": [
+        "violation_requires_explicit_criterion"
+      ],
+      "source_refs": [
+        {
+          "record_type": "finding",
+          "record_id": "a8b28bba-84cb-5411-bf74-1f956b157fc8",
+          "agent_id": "architecture_boundary",
+          "invocation_id": "modularity-invocation-60503e32dbd92f36fd7d"
+        }
+      ],
+      "consolidation_ids": [
+        "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4/modularity-finding-345357b01fa76aeb08b7"
+      ],
+      "classification": "problem",
+      "technical_details": {
+        "id": "candidate:boundary_violation_001",
+        "title": "Direct dependency on infrastructure adapter",
+        "description": "The application layer directly imports and uses a concrete infrastructure class, violating the layer isolation rule.",
+        "criterion_id": "architectural-boundaries",
+        "kind": "violation",
+        "components": [
+          "src/urbanmesh/application/inventory/allocator.py",
+          "src/urbanmesh/infrastructure/storage/memory.py"
+        ],
+        "evidence_ids": [
+          "retrieval:8cadc945b51f24a5b815ace2",
+          "retrieval:972e888027702df53d062bfe"
+        ],
+        "justification": "The code imports 'MemoryInventoryCatalog' from the infrastructure layer, which is explicitly forbidden by the architectural documentation.",
+        "modularity_impact": "Tight coupling between the application logic and a specific infrastructure implementation, preventing the use of alternative storage backends or ports.",
+        "severity": "medium",
+        "confidence": 1,
+        "recommendation": "Introduce an abstract port interface in the application layer and inject the infrastructure implementation via dependency injection at the composition root (bootstrap.py).",
+        "criterion": {
+          "id": "architectural-boundaries",
+          "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+          "origin": "design_principle",
+          "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+        },
+        "claim_check": null,
+        "validation_issues": [],
+        "document_claim_ids": [
+          "document_claim_70557d24b4a690db694131a15203f1f01ae884c4b8acd065611d8056ba974787"
+        ],
+        "documentary_references": [
+          {
+            "document_claim_id": "document_claim_70557d24b4a690db694131a15203f1f01ae884c4b8acd065611d8056ba974787",
+            "subject": "application/",
+            "statement": "application/ no debe importar, construir o anotar como colaborador obligatorio un adaptador concreto de infrastructure/, ni acceder a sus atributos internos.",
+            "constraint": "prohibited",
+            "certainty": "explicit",
+            "category": "constraints",
+            "section_paths": {
+              "c611020188a6182e3bdc2f96ac859a55f242900d2f03a3df25f41afacb0efdc4": "docs/architecture/03-layer-rules.md"
+            },
+            "quotes": [
+              {
+                "section_id": "c611020188a6182e3bdc2f96ac859a55f242900d2f03a3df25f41afacb0efdc4",
+                "path": "docs/architecture/03-layer-rules.md",
+                "start_line": 11,
+                "end_line": 11,
+                "quote": "**DEBE:** `application/` recibir puertos declarados en `application/ports.py` o contratos de dominio. **NO DEBE:** importar, construir o anotar como colaborador obligatorio un adaptador concreto de `infrastructure/`, ni acceder a sus atributos internos. `bootstrap.py` es la excepción autorizada para enlazar implementaciones.\n"
+              }
+            ],
+            "status": "applicable",
+            "reason": "explicit dependency/interface boundary",
+            "commit": "52b23bc085b55b00d340620ad2055d69672469bb"
+          }
+        ]
+      },
+      "lifecycle": "current",
+      "superseded_by": [],
+      "original_validation_status": null,
+      "original_review_rationale": "",
+      "disposition": "defect"
+    },
+    {
+      "assessed_context": "",
+      "sharing_boundary": "",
+      "conditions": [],
+      "assumptions": [],
+      "unknowns": [],
+      "limitations": [],
+      "id": "a95cbb6d-1244-54f3-acca-903a3eaaf1bb",
+      "title": "Domain layer imports infrastructure",
+      "quality_attribute": "maintainability",
+      "subcharacteristic": "modularity",
+      "kind": "violation",
+      "severity": "high",
+      "description": "The domain layer violates the architectural boundary by importing and instantiating a concrete infrastructure gateway.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "justification": "The code in 'src/urbanmesh/domain/recommendations.py' imports 'AnalyticsClient' from 'src/urbanmesh/infrastructure/gateways/analytics.py' and instantiates it, which is explicitly forbidden by the architectural documentation.",
+      "evidence_ids": [
+        "f3ca6f0e-f11e-5c00-a9f7-69d28df4d019",
+        "5b82e33b-afec-5800-bf8d-d27692a25a2c"
+      ],
+      "components": [
+        "src/urbanmesh/domain/recommendations.py",
+        "src/urbanmesh/infrastructure/gateways/analytics.py"
+      ],
+      "impact": "The domain layer is tightly coupled to a specific infrastructure implementation, preventing independent evolution or testing of the domain logic.",
+      "recommendation": "Introduce an interface (e.g., 'PartProvider') in the domain layer and implement it in the infrastructure layer, using dependency injection to provide the implementation to the domain.",
+      "verification_status": "unreviewed",
+      "verification_rationale": "No consta una revisión explícita. Decisión documental: unreviewed; violation_requires_explicit_criterion.",
+      "validation_issues": [
+        "violation_requires_explicit_criterion"
+      ],
+      "source_refs": [
+        {
+          "record_type": "finding",
+          "record_id": "a95cbb6d-1244-54f3-acca-903a3eaaf1bb",
+          "agent_id": "architecture_boundary",
+          "invocation_id": "modularity-invocation-60503e32dbd92f36fd7d"
+        }
+      ],
+      "consolidation_ids": [
+        "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4/modularity-finding-360285707d7c0b0da3c3"
+      ],
+      "classification": "problem",
+      "technical_details": {
+        "id": "candidate:domain_infrastructure_violation",
+        "title": "Domain layer imports infrastructure",
+        "description": "The domain layer violates the architectural boundary by importing and instantiating a concrete infrastructure gateway.",
+        "criterion_id": "architectural-boundaries",
+        "kind": "violation",
+        "components": [
+          "src/urbanmesh/domain/recommendations.py",
+          "src/urbanmesh/infrastructure/gateways/analytics.py"
+        ],
+        "evidence_ids": [
+          "retrieval:863f73fdad027031f8a7bca8",
+          "retrieval:26dc83266e0b6c9b69dcf467"
+        ],
+        "justification": "The code in 'src/urbanmesh/domain/recommendations.py' imports 'AnalyticsClient' from 'src/urbanmesh/infrastructure/gateways/analytics.py' and instantiates it, which is explicitly forbidden by the architectural documentation.",
+        "modularity_impact": "The domain layer is tightly coupled to a specific infrastructure implementation, preventing independent evolution or testing of the domain logic.",
+        "severity": "high",
+        "confidence": 1,
+        "recommendation": "Introduce an interface (e.g., 'PartProvider') in the domain layer and implement it in the infrastructure layer, using dependency injection to provide the implementation to the domain.",
+        "criterion": {
+          "id": "architectural-boundaries",
+          "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+          "origin": "design_principle",
+          "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+        },
+        "claim_check": null,
+        "validation_issues": [],
+        "document_claim_ids": [
+          "document_claim_65bc324030d74938d9480e35407b7684f0696ee2a6c8e226cda4f9f46ba758a7"
+        ],
+        "documentary_references": [
+          {
+            "document_claim_id": "document_claim_65bc324030d74938d9480e35407b7684f0696ee2a6c8e226cda4f9f46ba758a7",
+            "subject": "domain/",
+            "statement": "domain/ no debe importar application/, infrastructure/, presentation/ ni construir adaptadores concretos, aun si lo hace a través de un helper.",
+            "constraint": "prohibited",
+            "certainty": "explicit",
+            "category": "constraints",
+            "section_paths": {
+              "46520ea047b492c60801bb4228662fdadc26825d326761740d37243baa7863fb": "docs/architecture/03-layer-rules.md"
+            },
+            "quotes": [
+              {
+                "section_id": "46520ea047b492c60801bb4228662fdadc26825d326761740d37243baa7863fb",
+                "path": "docs/architecture/03-layer-rules.md",
+                "start_line": 7,
+                "end_line": 7,
+                "quote": "**DEBE:** `domain/` depender únicamente de código del propio dominio y biblioteca estándar. **NO DEBE:** importar `application/`, `infrastructure/`, `presentation/` ni construir adaptadores concretos, aun si lo hace a través de un helper. Los valores de dominio no incorporan HTML ni campos específicos de un procesador.\n"
+              }
+            ],
+            "status": "applicable",
+            "reason": "explicit dependency/interface boundary",
+            "commit": "52b23bc085b55b00d340620ad2055d69672469bb"
+          }
+        ]
+      },
+      "lifecycle": "current",
+      "superseded_by": [],
+      "original_validation_status": null,
+      "original_review_rationale": "",
+      "disposition": "defect"
+    },
+    {
+      "assessed_context": "",
+      "sharing_boundary": "",
+      "conditions": [],
+      "assumptions": [],
+      "unknowns": [],
+      "limitations": [],
+      "id": "b229a9fa-643e-5675-8f4f-a4cdf6886c5d",
+      "title": "Direct access to private inventory store",
+      "quality_attribute": "maintainability",
+      "subcharacteristic": "modularity",
+      "kind": "violation",
+      "severity": "medium",
+      "description": "The billing module violates the inventory module's encapsulation by directly accessing _store.py.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "justification": "The documentation explicitly states that external modules must not read or modify _store.py. The billing service imports _store and accesses the STOCK dictionary directly.",
+      "evidence_ids": [
+        "f96221d6-cb11-563f-bed6-5964089ac948",
+        "41c91f35-c784-50f6-bad8-b641037bb03b"
+      ],
+      "components": [
+        "src/urbanmesh/modules/billing/service.py",
+        "src/urbanmesh/modules/inventory/_store.py"
+      ],
+      "impact": "Bypasses the defined public API, creating tight coupling to internal implementation details.",
+      "recommendation": "Refactor billing/service.py to use the public API of modules/inventory/api.py instead of direct access to _store.py.",
+      "verification_status": "unreviewed",
+      "verification_rationale": "No consta una revisión explícita. Decisión documental: unreviewed; violation_requires_explicit_criterion.",
+      "validation_issues": [
+        "violation_requires_explicit_criterion"
+      ],
+      "source_refs": [
+        {
+          "record_type": "finding",
+          "record_id": "b229a9fa-643e-5675-8f4f-a4cdf6886c5d",
+          "agent_id": "architecture_boundary",
+          "invocation_id": "modularity-invocation-60503e32dbd92f36fd7d"
+        }
+      ],
+      "consolidation_ids": [
+        "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4/modularity-finding-d3807a6e2bd8ba3e0c22"
+      ],
+      "classification": "problem",
+      "technical_details": {
+        "id": "candidate:inventory_boundary_violation",
+        "title": "Direct access to private inventory store",
+        "description": "The billing module violates the inventory module's encapsulation by directly accessing _store.py.",
+        "criterion_id": "architectural-boundaries",
+        "kind": "violation",
+        "components": [
+          "src/urbanmesh/modules/billing/service.py",
+          "src/urbanmesh/modules/inventory/_store.py"
+        ],
+        "evidence_ids": [
+          "retrieval:85409aa78b40a39c77e70437",
+          "retrieval:6c507cb5d2338459bb1efae6"
+        ],
+        "justification": "The documentation explicitly states that external modules must not read or modify _store.py. The billing service imports _store and accesses the STOCK dictionary directly.",
+        "modularity_impact": "Bypasses the defined public API, creating tight coupling to internal implementation details.",
+        "severity": "medium",
+        "confidence": 1,
+        "recommendation": "Refactor billing/service.py to use the public API of modules/inventory/api.py instead of direct access to _store.py.",
+        "criterion": {
+          "id": "architectural-boundaries",
+          "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+          "origin": "design_principle",
+          "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+        },
+        "claim_check": null,
+        "validation_issues": [],
+        "document_claim_ids": [
+          "document_claim_b4b66cc2ef7ae80c93db0deac6572f5d67e54c8be4c87768e82325e27fc8a390"
+        ],
+        "documentary_references": [
+          {
+            "document_claim_id": "document_claim_b4b66cc2ef7ae80c93db0deac6572f5d67e54c8be4c87768e82325e27fc8a390",
+            "subject": "inventory module",
+            "statement": "Any consumer outside modules/inventory/ must use the public API of modules/inventory/api.py or an agreed port",
+            "constraint": "required",
+            "certainty": "explicit",
+            "category": "interfaces_and_contracts",
+            "section_paths": {
+              "085e49dd0285dae43e42ca5f574b93d95dc24938cab43d2cbfda7336e4ec84a8": "docs/architecture/03-layer-rules.md"
+            },
+            "quotes": [
+              {
+                "section_id": "085e49dd0285dae43e42ca5f574b93d95dc24938cab43d2cbfda7336e4ec84a8",
+                "path": "docs/architecture/03-layer-rules.md",
+                "start_line": 23,
+                "end_line": 23,
+                "quote": "**DEBE:** todo consumidor exterior a `modules/inventory/` usar el API pública de `modules/inventory/api.py` o un puerto acordado. **NO DEBE:** leer o modificar `modules/inventory/_store.py` y `STOCK` desde pedidos, facturación u otros módulos. El mismo criterio se aplica a almacenamiento privado de adaptadores.\n"
+              }
+            ],
+            "status": "applicable",
+            "reason": "explicit access/ownership boundary",
+            "commit": "52b23bc085b55b00d340620ad2055d69672469bb"
+          }
+        ]
+      },
+      "lifecycle": "current",
+      "superseded_by": [],
+      "original_validation_status": null,
+      "original_review_rationale": "",
+      "disposition": "defect"
+    },
+    {
+      "assessed_context": "",
+      "sharing_boundary": "",
+      "conditions": [],
+      "assumptions": [],
+      "unknowns": [],
+      "limitations": [],
+      "id": "bc95f7b0-9fd0-5891-9fac-fc644ec83282",
+      "title": "Infrastructure layer imports from presentation layer",
+      "quality_attribute": "maintainability",
+      "subcharacteristic": "modularity",
+      "kind": "violation",
+      "severity": "medium",
+      "description": "The infrastructure gateway imports a template rendering function from the presentation layer, violating the architectural rule that infrastructure must not depend on presentation.",
+      "criterion": {
+        "id": "architectural-boundaries",
+        "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "justification": "The documentation explicitly states that infrastructure/ must not import templates from presentation/. The implementation in email.py performs this exact import.",
+      "evidence_ids": [
+        "6716e957-9442-5f80-9780-745f697e92ed",
+        "e6f6118c-9f74-5a65-8479-638ba3440126"
+      ],
+      "components": [
+        "src/urbanmesh/infrastructure/gateways/email.py",
+        "src/urbanmesh/presentation/email_templates.py"
+      ],
+      "impact": "This violation creates a tight coupling between the infrastructure layer and the presentation layer, hindering the ability to modify presentation logic without impacting infrastructure components.",
+      "recommendation": "Refactor the email gateway to accept pre-rendered content or use an abstraction (e.g., a service or interface) that does not require direct dependency on the presentation layer.",
+      "verification_status": "unreviewed",
+      "verification_rationale": "No consta una revisión explícita. Decisión documental: unreviewed; violation_requires_explicit_criterion.",
+      "validation_issues": [
+        "violation_requires_explicit_criterion"
+      ],
+      "source_refs": [
+        {
+          "record_type": "finding",
+          "record_id": "bc95f7b0-9fd0-5891-9fac-fc644ec83282",
+          "agent_id": "architecture_boundary",
+          "invocation_id": "modularity-invocation-60503e32dbd92f36fd7d"
+        }
+      ],
+      "consolidation_ids": [
+        "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4/modularity-finding-1c1b616dabf84a666183"
+      ],
+      "classification": "problem",
+      "technical_details": {
+        "id": "candidate:1",
+        "title": "Infrastructure layer imports from presentation layer",
+        "description": "The infrastructure gateway imports a template rendering function from the presentation layer, violating the architectural rule that infrastructure must not depend on presentation.",
+        "criterion_id": "architectural-boundaries",
+        "kind": "violation",
+        "components": [
+          "src/urbanmesh/infrastructure/gateways/email.py",
+          "src/urbanmesh/presentation/email_templates.py"
+        ],
+        "evidence_ids": [
+          "retrieval:f5ea091c778335e4871c1ead",
+          "retrieval:92f9ccf0afb604ad25f21963"
+        ],
+        "justification": "The documentation explicitly states that infrastructure/ must not import templates from presentation/. The implementation in email.py performs this exact import.",
+        "modularity_impact": "This violation creates a tight coupling between the infrastructure layer and the presentation layer, hindering the ability to modify presentation logic without impacting infrastructure components.",
+        "severity": "medium",
+        "confidence": 1,
+        "recommendation": "Refactor the email gateway to accept pre-rendered content or use an abstraction (e.g., a service or interface) that does not require direct dependency on the presentation layer.",
+        "criterion": {
+          "id": "architectural-boundaries",
+          "description": "Investigate whether dependency directions and integration access paths respect boundaries supported by code declarations and structural relationships.",
+          "origin": "design_principle",
+          "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+        },
+        "claim_check": null,
+        "validation_issues": [],
+        "document_claim_ids": [
+          "document_claim_1a9f26218d87a4422ca4dab5994dcc55b49f63877ab6dc4d1257ba9d3191a23e"
+        ],
+        "documentary_references": [
+          {
+            "document_claim_id": "document_claim_1a9f26218d87a4422ca4dab5994dcc55b49f63877ab6dc4d1257ba9d3191a23e",
+            "subject": "infrastructure layer",
+            "statement": "infrastructure/ must not import formats, templates, or modules from presentation/",
+            "constraint": "prohibited",
+            "certainty": "explicit",
+            "category": "constraints",
+            "section_paths": {
+              "f6fdf0e41df05afd4d2bcbd8ce860b2f171f44f21e1d8c2b54493b7b2e632974": "docs/architecture/03-layer-rules.md"
+            },
+            "quotes": [
+              {
+                "section_id": "f6fdf0e41df05afd4d2bcbd8ce860b2f171f44f21e1d8c2b54493b7b2e632974",
+                "path": "docs/architecture/03-layer-rules.md",
+                "start_line": 15,
+                "end_line": 15,
+                "quote": "**NO DEBE:** `infrastructure/` importar formatos, plantillas o módulos de `presentation/`. El renderizado HTML, la estructura JSON de HTTP y los códigos de estado pertenecen a `presentation/`. Un gateway maneja transporte o persistencia, no formato de UI.\n"
+              }
+            ],
+            "status": "applicable",
+            "reason": "explicit dependency/interface boundary",
+            "commit": "52b23bc085b55b00d340620ad2055d69672469bb"
+          }
+        ]
+      },
+      "lifecycle": "current",
+      "superseded_by": [],
+      "original_validation_status": null,
+      "original_review_rationale": "",
+      "disposition": "defect"
+    },
+    {
+      "assessed_context": "",
+      "sharing_boundary": "",
+      "conditions": [],
+      "assumptions": [],
+      "unknowns": [],
+      "limitations": [],
+      "id": "01cccad2-f1c9-53ec-ad05-c98ff4eb65b8",
+      "title": "Cohesion violation in quality policies",
+      "quality_attribute": "maintainability",
+      "subcharacteristic": "modularity",
+      "kind": "design_observation",
+      "severity": "medium",
+      "description": "The module mixes multiple, independently evolving quality assessment policies with inconsistent return contracts.",
+      "criterion": {
+        "id": "single-responsibility",
+        "description": "Each class and component should own one cohesive responsibility aligned with its reason to change.",
+        "origin": "design_principle",
+        "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+      },
+      "justification": "The module contains three distinct policy classes (ThresholdQualityRule, AlwaysClearQualityRule, VendorQualityRule) that implement different business logic and return incompatible status strings, violating the requirement that variants of QualityRule.assess must use the same states.",
+      "evidence_ids": [
+        "247bee49-5429-5359-9602-ca7ec595f996"
+      ],
+      "components": [
+        "src/urbanmesh/domain/policies/quality.py"
+      ],
+      "impact": "High: Consumers of these policies cannot rely on a uniform interface, leading to conditional logic in callers that should be handled by polymorphism.",
+      "recommendation": "Split each quality rule into its own module and enforce a unified return type contract for the 'assess' method.",
+      "verification_status": "inconclusive",
+      "verification_rationale": "No critical review performed; consolidated provisional candidate.",
+      "validation_issues": [],
+      "source_refs": [
+        {
+          "record_type": "finding",
+          "record_id": "01cccad2-f1c9-53ec-ad05-c98ff4eb65b8",
+          "agent_id": "responsibility",
+          "invocation_id": "modularity-invocation-e7059379eeb6b8482649"
+        },
+        {
+          "record_type": "assessment",
+          "record_id": "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4",
+          "agent_id": "modularity",
+          "invocation_id": "coordinator-assignment-6623a750acd508d49667"
+        }
+      ],
+      "consolidation_ids": [
+        "8a4e4d0e-cf53-57b8-96a5-8404fff8b0a4/modularity-finding-a1a81f787909a8086226"
+      ],
+      "classification": "observation",
+      "technical_details": {
+        "id": "candidate:quality-policy-cohesion",
+        "title": "Cohesion violation in quality policies",
+        "description": "The module mixes multiple, independently evolving quality assessment policies with inconsistent return contracts.",
+        "criterion_id": "single-responsibility",
+        "kind": "design_observation",
+        "components": [
+          "src/urbanmesh/domain/policies/quality.py"
+        ],
+        "evidence_ids": [
+          "retrieval:bd9c2be2a1339356ba98b7d1"
+        ],
+        "justification": "The module contains three distinct policy classes (ThresholdQualityRule, AlwaysClearQualityRule, VendorQualityRule) that implement different business logic and return incompatible status strings, violating the requirement that variants of QualityRule.assess must use the same states.",
+        "modularity_impact": "High: Consumers of these policies cannot rely on a uniform interface, leading to conditional logic in callers that should be handled by polymorphism.",
+        "severity": "medium",
+        "confidence": 0.9,
+        "recommendation": "Split each quality rule into its own module and enforce a unified return type contract for the 'assess' method.",
+        "criterion": {
+          "id": "single-responsibility",
+          "description": "Each class and component should own one cohesive responsibility aligned with its reason to change.",
+          "origin": "design_principle",
+          "provenance": "Auditor design heuristic, not a normative ISO rule or a documented project constraint."
+        },
+        "validation_status": "insufficient_evidence",
+        "review_rationale": "No critical review performed; consolidated provisional candidate.",
+        "document_claim_ids": [
+          "claim-49"
+        ],
+        "documentary_references": [
+          {
+            "document_claim_id": "claim-49",
+            "subject": "QualityRule.assess",
+            "statement": "Variants of QualityRule.assess must use the same states.",
+            "constraint": "required",
+            "certainty": "explicit",
+            "category": "interfaces_and_contracts",
+            "section_paths": {
+              "2438db495da022aa95f9142bbcadd241d997b6907786b2ef926f7de96e65fdd8": "docs/architecture/03-layer-rules.md"
+            },
+            "quotes": [
+              {
+                "section_id": "2438db495da022aa95f9142bbcadd241d997b6907786b2ef926f7de96e65fdd8",
+                "path": "docs/architecture/03-layer-rules.md",
+                "start_line": 43,
+                "end_line": 43,
+                "quote": "**DEBE:** las variantes de `FarePolicy.quote` entregar una cotización final no negativa y las variantes de `QualityRule.assess` usar los mismos estados. Una política puede tener fórmulas distintas sin cambiar la semántica del puerto.\n"
+              }
+            ],
+            "status": "applicable",
+            "reason": "Capability affinity match: attached to 1 selected component(s) by shared domain tokens; no explicit index anchor.",
+            "commit": "52b23bc085b55b00d340620ad2055d69672469bb"
+          }
+        ]
+      },
+      "lifecycle": "current",
+      "superseded_by": [],
+      "original_validation_status": "insufficient_evidence",
+      "original_review_rationale": "No critical review performed; consolidated provisional candidate.",
+      "disposition": "observation"
+    }
+  ]
+}
