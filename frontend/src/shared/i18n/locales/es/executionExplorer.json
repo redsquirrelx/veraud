@@ -1,0 +1,54 @@
+{
+  "title": "Explorador de ejecuciones",
+  "description": "Monitoriza e inspecciona las ejecuciones de agentes",
+  "filters": {
+    "type": {
+      "label": "Tipo de ejecución",
+      "all": "Todas las ejecuciones",
+      "audit": "Auditorías",
+      "agent": "Agentes independientes"
+    },
+    "status": {
+      "label": "Estado de la ejecución",
+      "all": "Todos"
+    },
+    "search": {
+      "label": "Buscar ejecuciones",
+      "placeholder": "Buscar ejecuciones…"
+    }
+  },
+  "list": {
+    "label": "Ejecuciones",
+    "empty": "Ninguna ejecución coincide con los filtros actuales.",
+    "agents": "{{count}} agentes"
+  },
+  "inspector": {
+    "empty": "Selecciona una ejecución para inspeccionarla.",
+    "backToList": "Volver a la lista",
+    "tree": "Agentes",
+    "resizeTree": "Redimensionar la lista de agentes",
+    "createdAt": "Creada",
+    "finishedAt": "Finalizada",
+    "placeholder": {
+      "events": "Eventos",
+      "traces": "Trazas",
+      "results": "Resultados",
+      "comingSoon": "Disponible en la próxima iteración"
+    }
+  },
+  "agent": {
+    "findingTestGeneration": "Generación de pruebas de hallazgos",
+    "testabilityProbe": "Testability probe",
+    "verificationSuite": "Suite de verificación"
+  },
+  "node": {
+    "execution": "Ejecución",
+    "dates": "Fechas",
+    "tokens": "Tokens",
+    "error": "Error",
+    "started": "Inicio",
+    "finished": "Fin",
+    "notRecorded": "Sin registro",
+    "toggle": "Alternar {{name}}"
+  }
+}
