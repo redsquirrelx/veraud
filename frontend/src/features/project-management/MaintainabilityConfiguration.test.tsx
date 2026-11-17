@@ -18,10 +18,12 @@ describe("maintainability configuration", () => {
     vi.mocked(listAgentSettings).mockResolvedValue([
       { ...agent("modularity"), childAgentTypes: ["architecture_boundary", "responsibility", "blocked"] },
       agent("reusability"),
+      { ...agent("testability"), childAgentTypes: ["test_isolation"] },
       { ...agent("architecture_boundary"), role: "investigator", name: "ArchitectureBoundaryAgent" },
       { ...agent("responsibility"), role: "investigator", name: "ResponsibilityAgent" },
       { ...agent("blocked", "not_executed"), role: "investigator", name: "BlockedAgent" },
       { ...agent("abstraction"), role: "investigator", name: "AbstractionAgent", parentAgentTypes: ["reusability"] },
+      { ...agent("test_isolation"), role: "investigator", name: "TestIsolationAgent", parentAgentTypes: ["testability"] },
       { ...agent("unrelated"), role: "investigator", name: "UnrelatedAgent" },
     ])
     const user = userEvent.setup()
@@ -84,12 +86,13 @@ describe("maintainability configuration", () => {
   it("selects only registered, available subcharacteristics by default regardless of model configuration", async () => {
     vi.mocked(listAgentSettings).mockResolvedValue([
       agent("modularity"), agent("reusability"), agent("testability", "not_implemented"),
+      { ...agent("test_isolation"), role: "investigator", name: "TestIsolationAgent", parentAgentTypes: ["testability"] },
       { ...agent("modifiability"), qualityAttributes: ["security"] },
     ])
     render(<MaintainabilityConfiguration />)
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Modularity" })).toBeEnabled())
-    expect(screen.getAllByRole("checkbox")).toHaveLength(5)
+    expect(screen.getAllByRole("checkbox")).toHaveLength(6)
     for (const name of ["Modularity", "Reusability"]) expect(screen.getByRole("checkbox", { name })).toBeChecked()
     for (const name of ["Analyzability", "Modifiability", "Testability"]) {
       expect(screen.getByRole("checkbox", { name })).toBeDisabled()
@@ -100,6 +103,24 @@ describe("maintainability configuration", () => {
     await changeLanguage("es")
     expect(screen.getByRole("checkbox", { name: "Reusabilidad" })).toBeChecked()
     expect(listAgentSettings).toHaveBeenCalledOnce()
+  })
+
+  it("renders testability as available with its registered investigators once registered", async () => {
+    vi.mocked(listAgentSettings).mockResolvedValue([
+      agent("modularity"), agent("reusability"),
+      { ...agent("testability"), childAgentTypes: ["test_isolation", "test_controllability"] },
+      { ...agent("test_isolation"), role: "investigator", name: "TestIsolationAgent", parentAgentTypes: ["testability"] },
+      { ...agent("test_controllability"), role: "investigator", name: "TestControllabilityAgent", parentAgentTypes: ["testability"] },
+    ])
+    const user = userEvent.setup()
+    render(<MaintainabilityConfiguration />)
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Testability" })).toBeEnabled())
+    expect(screen.getByRole("checkbox", { name: "Testability" })).toBeChecked()
+    await user.click(screen.getAllByText("View investigators")[2]!)
+    expect(screen.getByRole("checkbox", { name: "TestIsolationAgent" })).toBeChecked()
+    expect(screen.getByText("Evaluates whether dependencies can be substituted or their effects controlled for independent testing.", { exact: false })).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "TestControllabilityAgent" })).toBeChecked()
+    expect(screen.getByText("Evaluates whether the entries, states, dependencies and conditions needed to test documented behaviors can be controlled.", { exact: false })).toBeInTheDocument()
   })
 
   it("does not assume availability while loading or after a failure and allows retrying", async () => {

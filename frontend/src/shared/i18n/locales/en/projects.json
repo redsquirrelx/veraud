@@ -179,7 +179,7 @@
         "architectureBoundary": "Architectural boundaries", "responsibility": "Responsibilities", "dependencyImpact": "Dependency impact",
         "abstraction": "Abstractions", "reuseOpportunity": "Reuse opportunities", "componentAdaptability": "Adaptability",
         "sast": "Static analysis", "secrets": "Secrets", "dependencies": "Dependencies", "enrichment": "Context",
-        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification", "functionalExploratory": "Static capability analysis"
+        "remediation": "Remediation", "validation": "Validation", "verification": "Verification", "functional": "Functional verification", "functionalExploratory": "Static capability analysis", "testability": "Testability", "testIsolation": "Test isolation", "testControllability": "Test controllability"
       }
     },
     "title": "Quality audit",
@@ -231,7 +231,9 @@
         "dependencyImpact": "Analyzes dependency impacts on maintenance and change propagation.",
         "abstraction": "Evaluates whether abstractions enable reuse or introduce unnecessary complexity.",
         "reuseOpportunity": "Identifies functionality that could share an implementation and weighs its differences.",
-        "componentAdaptability": "Examines constraints that make components difficult to reuse in other contexts."
+        "componentAdaptability": "Examines constraints that make components difficult to reuse in other contexts.",
+        "testIsolation": "Evaluates whether dependencies can be substituted or their effects controlled for independent testing.",
+        "testControllability": "Evaluates whether the entries, states, dependencies and conditions needed to test documented behaviors can be controlled."
       },
       "noAttributes": "Enable at least one attribute in this panel to start the audit."
     },

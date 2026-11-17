@@ -179,7 +179,7 @@
         "architectureBoundary": "Límites arquitectónicos", "responsibility": "Responsabilidades", "dependencyImpact": "Impacto de dependencias",
         "abstraction": "Abstracciones", "reuseOpportunity": "Oportunidades de reúso", "componentAdaptability": "Adaptabilidad",
         "sast": "Análisis estático", "secrets": "Secretos", "dependencies": "Dependencias", "enrichment": "Contexto",
-        "remediation": "Remediación", "validation": "Validación", "verification": "Verificación", "functional": "Verificación funcional", "functionalExploratory": "Análisis estático de capacidades"
+        "remediation": "Remediación", "validation": "Validación", "verification": "Verificación", "functional": "Verificación funcional", "functionalExploratory": "Análisis estático de capacidades", "testability": "Testabilidad", "testIsolation": "Aislamiento de pruebas", "testControllability": "Controlabilidad de pruebas"
       }
     },
     "title": "Auditoría de calidad",
@@ -231,7 +231,9 @@
         "dependencyImpact": "Analiza el impacto de las dependencias en el mantenimiento y la propagación de cambios.",
         "abstraction": "Evalúa si las abstracciones facilitan la reutilización o añaden complejidad innecesaria.",
         "reuseOpportunity": "Identifica funcionalidades que podrían compartir una implementación y valora sus diferencias.",
-        "componentAdaptability": "Examina las restricciones que dificultan reutilizar componentes en otros contextos."
+        "componentAdaptability": "Examina las restricciones que dificultan reutilizar componentes en otros contextos.",
+        "testIsolation": "Evalúa si las dependencias pueden sustituirse o sus efectos controlarse para pruebas independientes.",
+        "testControllability": "Evalúa si pueden controlarse las entradas, estados, dependencias y condiciones necesarias para probar comportamientos documentados."
       },
       "noAttributes": "Activa al menos un atributo en este panel para iniciar la auditoría."
     },
