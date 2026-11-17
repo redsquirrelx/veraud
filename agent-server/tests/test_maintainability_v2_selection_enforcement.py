@@ -84,8 +84,8 @@ def test_selection_may_enumerate_several_coordinators(tools):
 def test_no_selection_preserves_the_legacy_full_catalog(tools):
     request = MaintainabilityRequest(objective="Investigate architecture.")
     update, context = execute(
-        tools, plan(assignment("modularity"), assignment("reusability")), request)
-    assert {item["id"] for item in context["coordinator_catalog"]} == {"modularity", "reusability"}
+        tools, plan(assignment("modularity"), assignment("reusability"), assignment("testability")), request)
+    assert {item["id"] for item in context["coordinator_catalog"]} == {"modularity", "reusability", "testability"}
     assert update["plan"].assignments != []
 
 

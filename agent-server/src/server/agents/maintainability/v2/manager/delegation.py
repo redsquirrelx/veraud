@@ -51,7 +51,9 @@ def assignment_identifier(snapshot_hash, index, assignment):
 
 
 def coordinator_request(spec, request, assignment):
-    values = {"objective": assignment.objective, "original_objective": request.objective,
+    # The coordinator owns this assignment, not the manager's global selection
+    # manifesto. Sibling capabilities must not become its uncovered requirements.
+    values = {"objective": assignment.objective, "original_objective": assignment.objective,
         "targets": list(assignment.scope), "constraints": list(assignment.constraints), "repository_context": request.repository_context}
     if "documented_architecture" in spec.request_class.model_fields:
         values["documented_architecture"] = request.documented_architecture
