@@ -46,9 +46,9 @@ export interface AgentInvoker {
    *  Stage keys must match the agent-server's registered stage names; the
    *  result is keyed by stage artifact name and stays opaque here. */
   runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>, timeoutMs?: number, trace?: TraceEnvelope): Promise<Record<string, AgentInput>>
-  /** Read an already-started audit; never starts/replays the POST. Null means active. */
   /** Read compact metadata for an already-started audit; never starts/replays the POST. Null means active. */
   getAuditArtifacts?(runId: string, attributes: string[]): Promise<AgentInput | null>
+  /** Read an already-started audit; never starts/replays the POST. Null means active. */
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
   /** Read published records without reconciling, generating a report or starting work. */
   getAuditSnapshot?(runId: string): Promise<AgentInput>

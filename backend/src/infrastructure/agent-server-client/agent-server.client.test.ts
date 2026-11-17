@@ -8,6 +8,47 @@ import { executionRequest } from "./execution-request.js"
 import { AgentCatalogError } from "../../modules/agent-settings/agent-catalog.js"
 import { ModelAccessError } from "../../modules/agent-settings/model-access-error.js"
 
+test("suite dispatch uses execution transport, forwards attempt identity and preserves uncertainty on socket loss", async () => {
+  const app = Fastify({ logger: false })
+  logger.configure(app.log)
+  let disconnect = false
+  let payload: Record<string, unknown> = {}
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    payload = JSON.parse(Buffer.concat(chunks).toString())
+    if (disconnect) { request.socket.destroy(); return }
+    setTimeout(() => {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ run_id: "suite-run", attempt_id: payload.attempt_id }))
+    }, 30)
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const original = globalThis.fetch
+  globalThis.fetch = async () => { throw new Error("suite execution must not use native fetch") }
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== "string")
+    const client = new AgentServerClient(`http://127.0.0.1:${address.port}`)
+    assert.equal((await client.requestVerificationSuite("suite-run", { action: "execute", attemptId: "current", targetCommit: "a".repeat(40), timeoutMs: 2000 })).attempt_id, "current")
+    assert.equal(payload.action, "execute")
+    assert.equal(payload.target_commit, "a".repeat(40))
+    const config = { model: { provider: "OpenAI", name: "suite-model", temperature: 0, max_tokens: 24000 }, api_key: "suite-test-secret" }
+    await client.requestVerificationSuite("suite-run", { action: "create", llm: "provider", config })
+    assert.deepEqual(payload.config, config)
+    disconnect = true
+    await assert.rejects(client.requestVerificationSuite("suite-run"), (error: unknown) => {
+      assert.ok(error instanceof AgentTransportError)
+      assert.equal(error.outcomeUncertain, true)
+      return true
+    })
+  } finally {
+    globalThis.fetch = original
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await app.close()
+  }
+})
+
 test("snapshot reads only the existing live GET endpoint and validates audit identity", async () => {
   const app = Fastify({ logger: false })
   logger.configure(app.log)
@@ -264,6 +305,41 @@ test("audit cancellation posts to the existing run and treats cancelling as acti
     assert.deepEqual(requests, ["POST /api/audits/run-1/cancel", "GET /api/audits/run-1"])
     wrongIdentity = true
     await assert.rejects(() => client.cancelAudit("run-1"), /invalid audit cancellation state/)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test("reconciliation prefers compact summary and artifact manifests", async () => {
+  let state = "running"
+  const paths: string[] = []
+  const manifest = { format: "veraud.audit.artifacts.v1", run_id: "run-1", report_bytes: 12, docx_bytes: 11, sections: [
+    "identification", "executive_summary", "objectives_and_scope", "methodology_and_criteria", "software_description",
+    "quality_results", "consolidated_risks", "general_conclusions", "recommendations_and_improvement_plan", "annexes_and_traceability",
+  ] }
+  const server = createServer((request, response) => {
+    assert.equal(request.method, "GET")
+    paths.push(request.url!)
+    if (request.url?.endsWith("summary")) {
+      response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ run_id: "run-1", status: state, error_detail: null })); return
+    }
+    if (request.url?.endsWith("artifacts")) {
+      response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify(manifest)); return
+    }
+    response.writeHead(404); response.end()
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    assert.ok(address && typeof address !== "string")
+    const client = new AgentServerClient(`http://127.0.0.1:${address.port}`)
+    assert.equal(await client.getAuditArtifacts("run-1", ["security"]), null)
+    state = "partial"
+    const result = await client.getAuditArtifacts("run-1", ["security"])
+    assert.deepEqual(result?.["artifacts"], manifest)
+    assert.equal(result?.["status"], "partial")
+    assert.deepEqual(paths, ["/api/audits/run-1/summary", "/api/audits/run-1/summary", "/api/audits/run-1/artifacts"])
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
