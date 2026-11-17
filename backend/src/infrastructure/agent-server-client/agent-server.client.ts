@@ -1,6 +1,8 @@
 import { logger } from "../../config/logger.js"
 import { executionRequest } from "./execution-request.js"
+import type { TraceEnvelope } from "../trace-writer.js"
 import { readExecutionErrorDetail } from "../../modules/agent-execution/execution-error-detail.js"
+import { writeTraceEvent, traceFailureDetails } from "../trace-writer.js"
 import type { AgentRunConfig, ModelAccessVerifier } from "../../modules/agent-settings/agent-configuration.js"
 import { ModelAccessError, type ModelAccessErrorCode } from "../../modules/agent-settings/model-access-error.js"
 import { AgentCatalogError, parseAgentCatalog, type AgentCatalog, type AgentCatalogSource } from "../../modules/agent-settings/agent-catalog.js"
@@ -16,12 +18,12 @@ export interface AgentInvoker {
    *  own progress back to it over HTTP, so the caller does not write the result
    *  itself. Rejects only when the agent-server could not be reached or the run
    *  failed to start; a run that fails mid-flight is reported by the agent. */
-  run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig): Promise<AgentInput>
+  run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig, trace?: TraceEnvelope): Promise<AgentInput>
   /** Runs any registered pipeline by name with per-stage ids and configs.
    *
    *  Stage keys must match the agent-server's registered stage names; the
    *  result is keyed by stage artifact name and stays opaque here. */
-  runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>): Promise<Record<string, AgentInput>>
+  runPipelineByName?(pipeline: string, input: PipelineInput, executionIds: Record<string, number>, configs: Record<string, AgentRunConfig>, timeoutMs?: number, trace?: TraceEnvelope): Promise<Record<string, AgentInput>>
   /** Read an already-started audit; never starts/replays the POST. Null means active. */
   getAuditResult?(runId: string, attributes: string[]): Promise<AgentInput | null>
   /** Read published records without reconciling, generating a report or starting work. */
@@ -127,24 +129,27 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     if (result.verified !== true) throw new Error("Agent-server did not confirm model access")
   }
 
-  async run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig): Promise<AgentInput> {
+  async run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig, trace?: TraceEnvelope): Promise<AgentInput> {
     const url = `${this.baseUrl}/api/agents/run`
 
     this.log.info(`Invoking ${agentType} for execution ${executionId}`)
+    if (trace) writeTraceEvent(trace, { event: "agent.dispatch.sent", spanId: trace.traceId, status: "running", message: `Dispatching ${agentType}`, details: { method: "POST", path: "/api/agents/run", agentType } })
 
     let response: Response
 
     try {
-      response = await executionRequest(url, { agent_type: agentType, input, execution_id: executionId, config }, this.timeoutMs)
+      response = await executionRequest(url, { agent_type: agentType, input, execution_id: executionId, config }, this.timeoutMs, trace ? { "x-veraud-trace-id": trace.traceId, "x-veraud-execution-id": String(trace.executionId), "x-veraud-agent-type": trace.agentType } : {})
     } catch (error) {
       const failure = transportError(error)
       this.log.error(failure.message)
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.failed", spanId: trace.traceId, status: "error", errorCode: failure.code, message: failure.message, details: traceFailureDetails(failure) })
       throw failure
     }
 
     if (!response.ok) {
       const detail = "Agent-server rejected the execution; check model access and agent input"
       this.log.error(`Agent ${agentType} failed with ${response.status}`)
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.rejected", spanId: trace.traceId, status: "error", errorCode: `http_${response.status}`, message: detail, details: { httpStatus: response.status } })
 
       throw new AgentInvocationError(
         `Agent ${agentType} failed with ${response.status}: ${detail}`,
@@ -154,15 +159,19 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
 
     let payload: { result?: AgentInput }
     try { payload = await response.json() as { result?: AgentInput } }
-    catch { throw new AgentInvocationError("Agent-server returned an invalid execution response") }
+    catch {
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.invalid_response", spanId: trace.traceId, status: "error", errorCode: "invalid_response", message: "Agent-server returned an invalid execution response" })
+      throw new AgentInvocationError("Agent-server returned an invalid execution response")
+    }
     const result = payload.result
 
     this.log.info(`Agent ${agentType} returned`)
-
     if (result === undefined || result === null) {
+      if (trace) writeTraceEvent(trace, { event: "agent.dispatch.empty_response", spanId: trace.traceId, status: "error", errorCode: "empty_result", message: "Agent-server returned no result" })
       throw new AgentInvocationError(`Agent ${agentType} returned no result`)
     }
 
+    if (trace) writeTraceEvent(trace, { event: "agent.dispatch.completed", spanId: trace.traceId, status: "ok", message: `${agentType} returned`, details: { resultKeys: Object.keys(result).slice(0, 50) } })
     return result
   }
 
@@ -174,6 +183,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     executionIds: Record<string, number>,
     configs: Record<string, AgentRunConfig>,
     timeoutMs: number = PIPELINE_INVOKE_TIMEOUT_MS,
+    trace?: TraceEnvelope,
   ): Promise<Record<string, AgentInput>> {
     const url = `${this.baseUrl}/api/pipelines/${encodeURIComponent(pipeline)}/run`
 
@@ -186,6 +196,7 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     const pipelineTimeoutSeconds = qualityAudit ? 1860 : undefined
     let response: Response
 
+    if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.sent", spanId: trace.spanId, parentSpanId: trace.traceId, status: "running", message: `Dispatching pipeline ${pipeline}`, details: { pipeline, executionIds: Object.values(executionIds).join(",") } })
     try {
       response = await executionRequest(url,
         // execution_ids are what the pipeline reports each stage against, so
@@ -195,16 +206,19 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
           stage_configs: configs,
           execution_ids: executionIds,
           ...(pipelineTimeoutSeconds === undefined ? {} : { timeout_seconds: pipelineTimeoutSeconds }),
-        }, qualityAudit ? QUALITY_AUDIT_INVOKE_TIMEOUT_MS : timeoutMs)
+        }, qualityAudit ? QUALITY_AUDIT_INVOKE_TIMEOUT_MS : timeoutMs,
+        trace ? { "x-veraud-trace-id": trace.traceId, "x-veraud-execution-id": String(Object.values(executionIds)[0] ?? 0), "x-veraud-agent-type": pipeline } : {})
     } catch (error) {
       const failure = transportError(error)
       this.log.error(failure.message)
+      if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.failed", spanId: trace.spanId, status: "error", errorCode: failure.code, message: failure.message, details: traceFailureDetails(failure) })
       throw failure
     }
 
     if (!response.ok) {
       const detail = "Agent-server rejected the pipeline; check model access and agent input"
       this.log.error(`Pipeline ${pipeline} failed with ${response.status}`)
+      if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.rejected", spanId: trace.spanId, status: "error", errorCode: `http_${response.status}`, message: detail, details: { httpStatus: response.status } })
 
       throw new AgentInvocationError(
         `Pipeline ${pipeline} failed with ${response.status}: ${detail}`,
@@ -214,9 +228,13 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
 
     let payload: Record<string, AgentInput>
     try { payload = await response.json() as Record<string, AgentInput> }
-    catch { throw new AgentInvocationError("Agent-server returned an invalid pipeline response") }
+    catch {
+      if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.invalid_response", spanId: trace.spanId, status: "error", errorCode: "invalid_response", message: "Agent-server returned an invalid pipeline response" })
+      throw new AgentInvocationError("Agent-server returned an invalid pipeline response")
+    }
 
     this.log.info(`Pipeline ${pipeline} returned`)
+    if (trace) writeTraceEvent(trace, { event: "pipeline.dispatch.completed", spanId: trace.spanId, status: "ok", message: `${pipeline} pipeline returned`, details: { stageKeys: Object.keys(payload) } })
 
     return payload
   }
@@ -265,4 +283,5 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     }
     return state
   }
+
 }
