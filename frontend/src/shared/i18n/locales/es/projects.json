@@ -1,4 +1,34 @@
 {
+  "verificationWorkspace": {
+    "targetCommit": "Commit objetivo (SHA completo)", "browseCommits": "Consultar commits de la rama", "loadingCommits": "Consultando commits…",
+    "descendantsLabel": "Versiones posteriores a la auditada", "noDescendants": "No hay versiones posteriores disponibles en la rama.",
+    "loadMoreCommits": "Cargar más commits", "descendantsUnavailable": "No se pudieron consultar los commits posteriores.",
+    "noRequestedCommit": "Selecciona un commit objetivo",
+    "useBaseline": "Usar baseline", "commitList": "Commits recientes", "selectCommit": "Selecciona un commit",
+    "commitLoadError": "No se pudieron consultar los commits. Puedes introducir el SHA completo manualmente.",
+    "fullHashRequired": "Introduce un hash Git completo de 40 caracteres para ejecutar.",
+    "commitExecution": "Se ejecutará el mismo ZIP sobre una copia temporal del commit seleccionado, sin cambiar el workspace ni incluir cambios sin commit. Los resultados conservan el commit realmente verificado.",
+    "actionError": "No se pudo completar la operación de verificación.",
+    "suiteTitle": "Suite de verificación", "suiteDescription": "Artefacto reutilizable generado a partir de los hallazgos del baseline. Crear y descargar no ejecuta las pruebas.",
+    "runTitle": "Ejecutar verificación", "runDescription": "Ejecuta el ZIP existente, sin regenerarlo ni consultar al LLM.",
+    "resultsTitle": "Resultados de verificación", "baseline": "Commit baseline de la auditoría", "target": "Repositorio objetivo", "auditRepository": "Repositorio asociado a esta auditoría",
+    "effectiveCommit": "Commit efectivamente verificado", "notReported": "No reportado", "checks": "Verificaciones en la suite",
+    "available": "Disponible", "noSuite": "Sin suite", "createFirst": "Crea una suite para poder descargarla o ejecutarla.",
+    "create": "Crear suite de verificación", "creating": "Creando suite…", "download": "Descargar suite", "downloading": "Descargando…",
+    "execute": "Ejecutar suite de verificación", "running": "Ejecutando suite…",
+    "passedExplanation": "Una prueba aprobada solo indica que no observó la condición en su alcance; no confirma por sí sola una corrección.",
+    "noRuns": "Todavía no hay resultados de ejecución disponibles. Crear una suite no equivale a ejecutarla.",
+    "latestRun": "Última ejecución disponible (sin historial de ejecuciones en este contrato)", "auditRun": "Auditoría", "attempt": "Intento",
+    "all": "Total", "passed": "Aprobadas", "violation": "Violaciones", "error": "Errores", "other": "Otros / sin veredicto",
+    "filterLabel": "Filtrar resultados de verificación", "noMatches": "No hay verificaciones con este resultado.",
+    "rule": "Regla evaluada", "result": "Resultado original", "strategy": "Estrategia", "fullMessage": "Ver mensaje completo",
+    "referencedFiles": "Archivos referenciados (baseline)", "baselineSource": "Código del baseline; no es evidencia del checkout ejecutado",
+    "noReferences": "No se proporcionaron referencias verificables a archivos o líneas.", "sourceUnavailable": "No se pudo verificar el archivo en el baseline.",
+    "limitations": "Limitaciones", "reconnecting": "Conexión interrumpida. Seguimos consultando el resultado sin volver a generar la suite.",
+    "scopeLabel": "Alcance de la verificación",
+    "scopeAll": "Todas las verificaciones",
+    "groups": "Grupos"
+  },
   "home": {
     "title": "Proyectos y repositorios",
     "description": "Supervisión autónoma continua de atributos de calidad según <strong>ISO/IEC 25010</strong>: Rendimiento, Mantenibilidad, Seguridad operacional y Adecuación funcional.",
@@ -80,6 +110,7 @@
       "structuralGraph": "Generar grafo estructural",
       "architectureContext": "Extraer contexto arquitectónico",
       "contextAgent": "Contexto arquitectónico",
+      "verificationSuite": "Suite de verificación",
       "contextConfigurationError": "El paso del grafo finalizó. Architecture Context no pudo iniciarse: configura su modelo y credencial y verifica el acceso al modelo en la configuración de agentes. Luego vuelve a pulsar Analizar.",
       "graphStepFailed": "No se pudo completar el paso del grafo estructural. Architecture Context no se inició.",
       "contextStepFailed": "El paso del grafo finalizó, pero Architecture Context no pudo iniciarse o finalizar. Vuelve a pulsar Analizar para reutilizar el grafo y reintentar este paso.",
@@ -149,7 +180,7 @@
     },
     "results": {
       "noFindings": "No se identificaron hallazgos en esta auditoría", "unfinished": "La auditoría aún no ha finalizado", "retry": "Reintentar",
-      "generalTab": "Resumen General", "findingsTab": "Hallazgos", "tabsLabel": "Vistas de resultados de auditoría",
+      "generalTab": "Resumen General", "findingsTab": "Hallazgos", "verificationTab": "Verificación", "tabsLabel": "Vistas de resultados de auditoría",
       "headerLabel": "Datos de la auditoría", "executionDate": "Fecha de ejecución", "finalStatus": "Estado final",
       "sectionFailed": "No se pudo cargar esta sección.", "showMore": "Mostrar más ({{remaining}} restantes)",
       "title": "Resultados de auditoría · #{{id}}", "back": "Volver a auditorías",
@@ -245,7 +276,8 @@
       "load": "No se pudieron cargar las auditorías",
       "start": "No se pudo iniciar la auditoría",
       "report": "No se pudo cargar el informe",
-      "download": "No se pudo descargar el informe"
+      "download": "No se pudo descargar el informe",
+      "export": "No se pudo exportar los hallazgos"
     },
     "runId": {
       "label": "ID de ejecución",
@@ -269,6 +301,8 @@
     },
     "viewReport": "Ver informe",
     "downloadWord": "Descargar informe Word",
+    "exportJson": "Exportar hallazgos JSON",
+    "exporting": "Exportando…",
     "downloading": "Descargando…",
     "report": {
       "title": "Informe de auditoría · #{{id}}",

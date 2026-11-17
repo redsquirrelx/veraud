@@ -110,7 +110,10 @@ export function ProjectDetailPage() {
   const semanticValidationSummary = semanticValidationExec === null ? null : parseSemanticValidationResult(semanticValidationExec.result)
   const versionKey = `${version.applied?.branch ?? ""}:${version.applied?.commitHash ?? ""}:${version.detached ?? ""}`
   const activeHash = version.detached ?? version.applied?.commitHash ?? null
-  const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch ?? null
+  // A historical commit is applied in detached HEAD, but retains its branch
+  // of reference for audit requests. Do not treat a pending checkout as applied.
+  const activeBranch = version.applied?.branch ?? selectedAnalyzed?.branch
+    ?? (version.detached !== null ? version.branch || null : null)
   const projectPipeline = useProjectPipeline(project?.id ?? null)
   const lastPipelineToast = useRef("")
   useEffect(() => {

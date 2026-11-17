@@ -18,9 +18,10 @@ import { useAuditStateLabel } from "../../shared/audit-monitor/monitorLabels.ts"
 import { useAuditCancellationRevision } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import { QualityAuditFindingsPanel, QualityAuditReport } from "./QualityAuditReport.tsx"
 import { useAuditReportSection } from "./useAuditReportSection.ts"
-import { downloadQualityAuditReport, getQualityAudit, startFindingResolution, type QualityAuditSummary } from "./qualityAuditApi.ts"
+import { downloadQualityAuditFindings, downloadQualityAuditReport, downloadVerificationSuite, findingsFromQualityResults, getQualityAudit, getQualityAuditReportSection, getVerificationSuite, requestVerificationSuite, startFindingResolution, type QualityAuditSummary, type SuiteAction, type VerificationSuitePage } from "./qualityAuditApi.ts"
 import "./QualityAudits.css"
 import { publicErrorText } from "../../infrastructure/http-client/publicErrors.ts"
+import { VerificationWorkspace } from "./VerificationWorkspace.tsx"
 
 type ResultsError = { key: ParseKeys<"projects"> } | { detail: string }
 const evaluationLabels: Record<string, ParseKeys<"projects">> = {
@@ -41,12 +42,27 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const [error, setError] = useState<ResultsError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const [revalidationStarting, setRevalidationStarting] = useState(false)
   const [revalidationError, setRevalidationError] = useState<string | null>(null)
   const [revalidationStarted, setRevalidationStarted] = useState<number | null>(null)
+  const [suiteBusy, setSuiteBusy] = useState(false)
+  const [suiteReconnecting, setSuiteReconnecting] = useState(false)
+  const [suiteAction, setSuiteAction] = useState<SuiteAction | null>(null)
+  const [suiteError, setSuiteError] = useState<string | null>(null)
+  const [suiteSummary, setSuiteSummary] = useState<VerificationSuitePage | null>(null)
+  const [suiteDefinition, setSuiteDefinition] = useState<VerificationSuitePage | null>(null)
+  const [suiteExecution, setSuiteExecution] = useState<VerificationSuitePage | null>(null)
+  const [suiteArtifactKey, setSuiteArtifactKey] = useState<string | null>(null)
+  const suiteAvailable = suiteArtifactKey === `${projectId}:${auditId}`
+  const [suiteScope, setSuiteScope] = useState<string>("all")
+  const [suiteTarget, setSuiteTarget] = useState<{ key: string, commit: string } | null>(null)
+  const suiteTargetCommit = suiteTarget?.key === `${projectId}:${auditId}` ? suiteTarget.commit : audit?.commitHash ?? ""
+  const [suiteDownloading, setSuiteDownloading] = useState(false)
   const [search, setSearch] = useSearchParams()
   const requestedTab = search.get("tab")
-  const activeTab = requestedTab === "revalidation" || requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
+  const activeTab = requestedTab === "revalidation" || requestedTab === "verification" || requestedTab === "findings" || requestedTab === "evidence" || requestedTab === "incidents" || requestedTab === "chronology" ? requestedTab : "general"
   const requestedEvidenceId = search.get("evidence") || undefined
   const [evidenceVisited, setEvidenceVisited] = useState(false)
   const [qualityResultsOpen, setQualityResultsOpen] = useState(false)
@@ -54,6 +70,7 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
   const tabs = [
     { id: "general", label: t("qualityAudits.results.generalTab") },
     { id: "revalidation", label: revalidationLabels.tab },
+    { id: "verification", label: t("qualityAudits.results.verificationTab") },
     { id: "findings", label: t("qualityAudits.results.findingsTab") },
     { id: "evidence", label: tEvidence("tab") },
     { id: "incidents", label: incidentLabels.tab },
@@ -87,11 +104,59 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     return () => { controller.abort(); clearTimeout(timer) }
   }, [projectId, auditId, attempt, cancellationRevision])
 
+  // Recover an existing operation/result on navigation without dispatching another POST.
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function loadSuite() {
+      try {
+        const states = await Promise.all([
+          getVerificationSuite(projectId, auditId, "execute", suiteScope === "all" ? undefined : suiteScope),
+          getVerificationSuite(projectId, auditId, "create", undefined),
+        ])
+        if (cancelled) return
+        const pending = states.find((state) => state.status === "building" || state.status === "recovering")
+        if (pending) {
+          setSuiteBusy(true)
+          setSuiteReconnecting(pending.status === "recovering")
+          timer = setTimeout(() => void loadSuite(), 4000)
+          return
+        }
+        setSuiteBusy(false)
+        setSuiteReconnecting(false)
+        const ready = states.find((state) => state.status === "ready")
+        if (ready?.status === "ready") {
+          setSuiteSummary(ready)
+          if (ready.action === "execute") setSuiteExecution(ready)
+          else setSuiteDefinition(ready)
+          setSuiteArtifactKey(ready.zip_path ? `${projectId}:${auditId}` : null)
+        }
+      } catch {
+        if (!cancelled) timer = setTimeout(() => void loadSuite(), 4000)
+      }
+    }
+    void loadSuite()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [projectId, auditId, suiteScope])
+
   async function download() {
     setDownloading(true)
     try { await downloadQualityAuditReport(projectId, auditId) }
     catch { setError({ key: "qualityAudits.errors.download" }) }
     finally { setDownloading(false) }
+  }
+
+  async function exportFindings() {
+    if (!audit) return
+    setExporting(true)
+    setExportError(null)
+    try {
+      const findings = qualityResults.state.status === "loaded"
+        ? findingsFromQualityResults(qualityResults.state.data)
+        : findingsFromQualityResults((await getQualityAuditReportSection(projectId, auditId, "quality_results")).data)
+      await downloadQualityAuditFindings(auditId, audit, findings)
+    } catch { setExportError(t("qualityAudits.errors.export")) }
+    finally { setExporting(false) }
   }
 
   function selectTab(id: string) {
@@ -119,6 +184,65 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
     } finally {
       setRevalidationStarting(false)
     }
+  }
+
+  async function runSuiteAction(action: SuiteAction) {
+    if (!audit?.commitHash) return
+    setSuiteBusy(true)
+    setSuiteAction(action)
+    setSuiteError(null)
+    setSuiteSummary(null)
+    setSuiteReconnecting(false)
+    try {
+      const kicked = await requestVerificationSuite(projectId, auditId, {
+        action, ...(action === "execute" ? { targetCommit: suiteTargetCommit, group: suiteScope === "all" ? undefined : suiteScope } : {}),
+      })
+      if (kicked.status === "ready") {
+        setSuiteSummary(kicked)
+        if (action === "execute") setSuiteExecution(kicked)
+        else { setSuiteDefinition(kicked); setSuiteExecution(null) }
+        setSuiteArtifactKey(kicked.zip_path ? `${projectId}:${auditId}` : null)
+        return
+      }
+      if (kicked.status === "failed") { setSuiteError(kicked.message ?? t("verificationWorkspace.actionError")); return }
+      let failures = 0
+      // The backend owns the build; this polls until the artifact is ready, failed or the attempt budget runs out (~10 min).
+      for (let attempt = 0; attempt < 150; attempt += 1) {
+        await new Promise((resolve) => { setTimeout(resolve, 4000) })
+        try {
+          const state = await getVerificationSuite(projectId, auditId, action, action === "execute" && suiteScope !== "all" ? suiteScope : undefined)
+          failures = 0
+          setSuiteReconnecting(state.status === "recovering")
+          if (state.status === "ready") {
+            setSuiteSummary(state)
+            if (action === "execute") setSuiteExecution(state)
+            else { setSuiteDefinition(state); setSuiteExecution(null) }
+            setSuiteArtifactKey(state.zip_path ? `${projectId}:${auditId}` : null)
+            return
+          }
+          if (state.status === "failed") { setSuiteError(state.message ?? t("verificationWorkspace.actionError")); return }
+        } catch {
+          failures += 1
+          if (failures >= 1) setSuiteReconnecting(true)
+        }
+      }
+      setSuiteError(t("verificationWorkspace.actionError"))
+    } catch (cause) {
+      setSuiteError(cause instanceof Error ? cause.message : t("verificationWorkspace.actionError"))
+    } finally {
+      setSuiteBusy(false)
+      setSuiteReconnecting(false)
+      setSuiteAction(null)
+    }
+  }
+
+  async function downloadSuite() {
+    if (!suiteAvailable) return
+    setSuiteDownloading(true)
+    setSuiteError(null)
+    try { await downloadVerificationSuite(projectId, auditId) }
+    catch (cause) { setSuiteError(cause instanceof Error ? cause.message : t("verificationWorkspace.actionError")) }
+    finally { setSuiteDownloading(false) }
   }
 
   const auditStateLabel = useAuditStateLabel()
@@ -188,9 +312,31 @@ export function QualityAuditResults({ projectId, auditId, projectName, repositor
         <AuditValidationHistoryPreview />
       </>}
     </div>
+    <div role="tabpanel" id={`${tabsId}-panel-verification`} aria-labelledby={`${tabsId}-tab-verification`} hidden={activeTab !== "verification"} tabIndex={0}>
+      {activeTab === "verification" && <VerificationWorkspace
+        key={`${projectId}:${auditId}`}
+        projectId={projectId} auditId={auditId} baseline={audit?.commitHash ?? null}
+        branch={audit?.branch ?? null} targetCommit={suiteTargetCommit}
+        onTargetChange={(commit) => setSuiteTarget({ key: `${projectId}:${auditId}`, commit })}
+        suite={suiteDefinition ?? suiteSummary} execution={suiteExecution}
+        suiteScope={suiteScope} onSuiteScopeChange={setSuiteScope}
+        available={suiteAvailable} enabled={!!audit && !pending && audit.reportAvailable && !!audit.commitHash}
+        busy={suiteBusy} action={suiteAction} downloading={suiteDownloading}
+        error={suiteError} reconnecting={suiteReconnecting}
+        create={() => void runSuiteAction("create")} execute={() => void runSuiteAction("execute")}
+        download={() => void downloadSuite()} />}
+    </div>
     <div role="tabpanel" id={`${tabsId}-panel-findings`} aria-labelledby={`${tabsId}-tab-findings`} hidden={activeTab !== "findings"} tabIndex={0}>
       {activeTab === "findings" && (loading ? <Spinner /> : pending || (error !== null && audit === null) ? null : audit?.reportAvailable
-        ? <QualityAuditFindingsPanel resource={qualityResults} projectId={projectId} repositoryName={repositoryName ?? ""} />
+        ? <>
+            <div className="quality-audit-history-actions">
+              <Button variant="secondary" disabled={exporting} onClick={() => void exportFindings()}>
+                {exporting ? t("qualityAudits.exporting") : t("qualityAudits.exportJson")}
+              </Button>
+            </div>
+            {exportError && <p role="alert">{exportError}</p>}
+            <QualityAuditFindingsPanel resource={qualityResults} projectId={projectId} repositoryName={repositoryName ?? ""} />
+          </>
         : <p className="label">{t("qualityAudits.results.noReport")}</p>)}
     </div>
     <div role="tabpanel" id={`${tabsId}-panel-evidence`} aria-labelledby={`${tabsId}-tab-evidence`} hidden={activeTab !== "evidence"} tabIndex={0}>
