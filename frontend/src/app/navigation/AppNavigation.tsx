@@ -1,8 +1,10 @@
 import { NavLink } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { Badge, DropdownLinks, ExternalIcon, GridIcon, ShieldIcon, SlidersIcon, Tooltip, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
+import { Badge, DropdownLinks, ExternalIcon, ActivityIcon, GridIcon, ShieldIcon, SlidersIcon, Tooltip, type DropdownLinkItem } from "../../shared/ui-kit/index.ts"
 import type { ServiceStatus } from "../useBackendStatus.ts"
 import { useSettings } from "../settingsContext.tsx"
+import { useExecutionExplorer } from "../../shared/execution-explorer/index.ts"
+import { useAgentExecutions } from "../../shared/agent-monitor/useAgentExecutions.ts"
 import "./AppNavigation.css"
 
 const backendDocsUrl = `${(import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501").replace(/\/+$/, "")}/docs`
@@ -16,14 +18,26 @@ export function AppBrand({ compact = false }: { compact?: boolean }) {
   </NavLink>
 }
 
+/** Executions currently waiting or running; cancellation is not tracked here. */
+const ACTIVE_STATUSES = new Set(["waiting", "running", "cancelling"])
+
 export function AppMainNavigation({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation("common")
   const { openSettings } = useSettings()
+  const { openExplorer } = useExecutionExplorer()
+  const executions = useAgentExecutions()
+  const activeExecutions = executions.filter((execution) => ACTIVE_STATUSES.has(execution.status.toLowerCase())).length
+  const executionsLabel = activeExecutions > 0 ? t("navigation.executionsActive", { count: activeExecutions }) : t("navigation.executions")
   return <><nav className="app-nav" aria-label={t("navigation.main")}>
     <Tooltip content={t("navigation.home")} disabled={!compact}>{(props) => <NavLink {...props} to="/" end aria-label={t("navigation.home")} title={compact ? undefined : t("navigation.home")} className={({ isActive }) => isActive ? "app-nav-active" : ""}>
       <GridIcon />
       {!compact && t("navigation.home")}
     </NavLink>}</Tooltip>
+    <Tooltip content={t("navigation.executions")} disabled={!compact}>{(props) => <button {...props} type="button" onClick={() => openExplorer()} aria-label={executionsLabel} title={compact ? undefined : t("navigation.executions")}>
+      <ActivityIcon />
+      {!compact && t("navigation.executions")}
+      {activeExecutions > 0 && <span className="app-nav-badge" aria-hidden="true">{activeExecutions}</span>}
+    </button>}</Tooltip>
     <Tooltip content={t("navigation.settings")} disabled={!compact}>{(props) => <button {...props} type="button" onClick={() => openSettings()} aria-haspopup="dialog" aria-label={t("navigation.settings")} title={compact ? undefined : t("navigation.settings")}>
       <SlidersIcon />
       {!compact && t("navigation.settings")}
