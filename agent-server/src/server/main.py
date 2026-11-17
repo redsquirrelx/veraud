@@ -16,6 +16,7 @@ from .api.executions import router as executions_router
 from .api.graphs import router as graphs_router
 from .api.pipelines import router as pipelines_router
 from .api.schemas import StatusResponse
+from .api.verification_suite import router as verification_suite_router
 from .app.audit_service import AuditService
 from .app.graph_jobs import GraphJobs
 from .blackboard.impls.memory import MemoryBlackboard
@@ -120,6 +121,7 @@ app.include_router(executions_router)
 app.include_router(pipelines_router)
 app.include_router(audits_router)
 app.include_router(graphs_router)
+app.include_router(verification_suite_router, prefix="/api/audits")
 app.include_router(web_router)
 app.mount("/static", static_files, name="web_static")
 
