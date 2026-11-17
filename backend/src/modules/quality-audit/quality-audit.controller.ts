@@ -259,4 +259,90 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
         .send(content)
     } catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
+
+  app.get("/api/projects/:id/audits/:auditId/verification-commits", { schema: {
+    tags: ["Projects"], summary: "List strict descendants of the audited baseline on its recorded branch",
+    description: "Returns the commits that descend from the audited baseline commit on the audited branch, newest first, excluding the baseline itself. Used to pick a target revision for a verification-suite execution; status codes follow the same rules as the other audit routes.",
+    params: { ...params, required: ["id", "auditId"] },
+    querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100, default: 30 }, offset: { type: "integer", minimum: 0, default: 0 } } },
+    response: { 200: { type: "object", additionalProperties: true }, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    const query = request.query as { limit?: number, offset?: number }
+    try { return await service.verificationCommits(Number(id), Number(auditId), query.limit, query.offset) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.post("/api/projects/:id/audits/:auditId/verification-suite", { schema: {
+    tags: ["Projects"], summary: "Start a verification-suite build or validation for an audit", params: { ...params, required: ["id", "auditId"] },
+    description: "Starts the verification pipeline in the background against the audited repository (or runs the already-built portable suite for action=execute against a checkout, optionally a green-control path or a single verification group via 'group'). Returns immediately with status=building; poll the GET route for progress.",
+    response: { 202: { type: "object", additionalProperties: true }, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    const rawBody = request.body as { action?: unknown, greenControl?: unknown, targetCommit?: unknown, group?: unknown } | null | undefined
+    const body: { action?: "create" | "execute", greenControl?: string, targetCommit?: string, group?: string } = {}
+    if (rawBody !== null && rawBody !== undefined) {
+      if (typeof rawBody !== "object" || Array.isArray(rawBody)) {
+        return reply.code(400).send({ message: "body must be an object" })
+      }
+      if (rawBody.action !== undefined && rawBody.action !== "create" && rawBody.action !== "execute") {
+        return reply.code(400).send({ message: "action must be 'create' or 'execute'" })
+      }
+      body.action = rawBody.action as "create" | "execute" | undefined
+      if (rawBody.greenControl !== undefined && rawBody.greenControl !== null && typeof rawBody.greenControl !== "string") {
+        return reply.code(400).send({ message: "greenControl must be a string path" })
+      }
+      body.greenControl = (rawBody.greenControl ?? undefined) as string | undefined
+      if (rawBody.targetCommit !== undefined) {
+        if (typeof rawBody.targetCommit !== "string" || !/^[a-f0-9]{40}$/i.test(rawBody.targetCommit) || body.action !== "execute") {
+          return reply.code(400).send({ message: "targetCommit must be a full Git hash for action=execute" })
+        }
+        body.targetCommit = rawBody.targetCommit.toLowerCase()
+      }
+      if (rawBody.group !== undefined) {
+        if (typeof rawBody.group !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(rawBody.group)) {
+          return reply.code(400).send({ message: "group must be a short identifier matching [A-Za-z0-9_-], 1..32 characters" })
+        }
+        if (body.action === "create") {
+          return reply.code(400).send({ message: "group is only valid for action=execute; use the unified suite's --only flag to run subsets" })
+        }
+        body.group = rawBody.group.toLowerCase()
+      }
+    }
+    try { return await reply.code(202).send(await service.verificationSuite(Number(id), Number(auditId), body)) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId/verification-suite", { schema: {
+    tags: ["Projects"], summary: "Read the verification-suite build state for an audit", params: { ...params, required: ["id", "auditId"] },
+    description: "Returns building while work runs, recovering when communication is interrupted and the outcome is uncertain, failed for terminal errors, ready with the matching attempt summary, or not_built when no suite exists. Status reads never regenerate a suite. Pass ?group=<name> to read the state of a grouped execute.",
+    response: { 200: { type: "object", additionalProperties: true }, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    const query = (request.query ?? {}) as { action?: "create" | "execute", group?: string }
+    if (query.action !== undefined && !["create", "execute"].includes(query.action)) {
+      return reply.code(400).send({ message: "action must be 'create' or 'execute'" })
+    }
+    if (query.group !== undefined && !/^[A-Za-z0-9_-]{1,32}$/.test(query.group)) {
+      return reply.code(400).send({ message: "group must be a short identifier matching [A-Za-z0-9_-], 1..32 characters" })
+    }
+    const group = query.action === "execute" && query.group ? query.group.toLowerCase() : undefined
+    try { return await service.verificationSuiteStatus(Number(id), Number(auditId), query.action, group) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
+  app.get("/api/projects/:id/audits/:auditId/verification-suite.zip", { schema: {
+    tags: ["Projects"], summary: "Download the verification-suite ZIP built for an audit", params: { ...params, required: ["id", "auditId"] },
+    description: "Downloads the suite ZIP produced by the verification-suite build. Returns 404 when the suite has not been built yet.",
+    response: { 200: { type: "string", format: "binary" }, ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    try {
+      const zip = await service.verificationSuiteZip(Number(id), Number(auditId))
+      if (zip === null) return reply.code(404).send({ message: "Verification suite has not been built yet" })
+      return reply.type("application/zip")
+        .header("Content-Disposition", `attachment; filename="verification-suite-${auditId}.zip"`)
+        .send(zip)
+    } catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
 }

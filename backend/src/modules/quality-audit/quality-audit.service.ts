@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto"
 import type { AgentExecutionService } from "../agent-execution/agent-execution.service.js"
 import type { AuditSettingsService } from "./audit-settings.service.js"
-import { AuditRunUnavailableError, type AgentInvoker, type AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
+import { AgentInvocationError, AgentTransportError, AuditRunUnavailableError, VERIFICATION_SUITE_INVOKE_TIMEOUT_MS, type AgentInvoker, type AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { InvalidGitRequestError, ProjectFileError, ProjectNotFoundError, type ProjectService } from "../project/project.service.js"
 import type { QualityAuditRepository } from "./quality-audit.repository.js"
 import type { AuditRunConfiguration } from "./audit-run-configuration.js"
@@ -12,6 +13,7 @@ import { findingResolutionFindings } from "./finding-resolution.js"
 import { AuditArtifactStore, parseArtifactManifest, type AuditArtifactManifest } from "./audit-artifacts.js"
 import { projectAuditIssues, readAuditIssues } from "./audit-issues.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
+import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 
 export class AuditNotFoundError extends Error {}
 export class AuditReportUnavailableError extends Error {}
@@ -87,10 +89,18 @@ export class QualityAuditService {
   private readonly artifactStore: AuditArtifactStore
 
   constructor(private repository: QualityAuditRepository, private projects: ProjectService, private executions: AgentExecutionService,
-    private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot">,
-    artifactStore?: AuditArtifactStore) {
+    private settings?: AuditSettingsService, private agents?: Pick<AgentInvoker, "getAuditSnapshot" | "requestVerificationSuite" | "downloadVerificationSuite" | "getVerificationSuite">,
+    artifactStore?: AuditArtifactStore, private modelSettings?: Pick<AgentSettingsService, "prepareExecution">) {
     this.artifactStore = artifactStore ?? new AuditArtifactStore()
   }
+
+  /** Verification-suite builds are multi-minute; they run in the background and
+   *  are deduped per run so the UI can poll for a stable artifact. */
+  private readonly suiteInFlight = new Map<string, Promise<void>>()
+  private readonly suiteOutcomes = new Map<string, { status: "failed" | "recovering", message: string } | { status: "ready", summary: Record<string, unknown> }>()
+  private readonly suiteAttempts = new Map<string, string>()
+  private readonly suiteTargets = new Map<string, string | undefined>()
+  private static suiteKey(runId: string, action: "create" | "execute", group?: string) { return `${runId}:${action}${group ? `:${group}` : ""}` }
 
   async cancel(projectId: number, id: number) {
     if (!await this.repository.findSummary(projectId, id)) throw new AuditNotFoundError("Audit not found for this project")
@@ -264,6 +274,120 @@ export class QualityAuditService {
     if (!artifact) return null
     await this.artifactStore.assertAvailable(artifact.manifest)
     return this.artifactStore.path(artifact.manifest, "report.docx")
+  }
+
+  async verificationSuite(projectId: number, id: number, options: { action?: "create" | "execute", greenControl?: string, targetCommit?: string, group?: string } = {}) {
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) throw new AuditNotFoundError("Audit not found for this project")
+    const runId = artifact.manifest.run_id
+    if (!runId) throw new AuditReportUnavailableError("The audit run is not recorded yet")
+    const requestVerificationSuite = this.agents?.requestVerificationSuite?.bind(this.agents)
+    if (!requestVerificationSuite) {
+      throw new AuditReportUnavailableError("Verification suite generation is not configured in this deployment")
+    }
+    const action = options.action ?? "create"
+    if (options.targetCommit && (action !== "execute" || !/^[a-f0-9]{40}$/i.test(options.targetCommit))) {
+      throw new InvalidGitRequestError("targetCommit must be a full Git hash and is only valid for execution")
+    }
+    const group = options.group?.toLowerCase()
+    if (group !== undefined && !/^[a-z0-9_-]{1,32}$/.test(group)) {
+      throw new InvalidGitRequestError("group must be a short identifier matching [A-Za-z0-9_-]{1,32}")
+    }
+    if (group !== undefined && action !== "execute") {
+      throw new InvalidGitRequestError("group is only valid for action=execute")
+    }
+    const key = QualityAuditService.suiteKey(runId, action, action === "execute" ? options.group?.toLowerCase() : undefined)
+    const targetCommit = options.targetCommit?.toLowerCase()
+    if ((this.suiteInFlight.has(key) || this.suiteOutcomes.get(key)?.status === "recovering")
+      && this.suiteTargets.get(key) !== targetCommit) {
+      throw new InvalidGitRequestError("Another verification target is still running; wait for its result before changing commits")
+    }
+    if (this.suiteOutcomes.get(key)?.status === "recovering") {
+      return { status: "recovering", run_id: runId, action }
+    }
+    // Only generation needs provider access; never use development credentials.
+    let config
+    let generation: import("../agent-execution/agent-execution.repository.js").StoredAgentExecution | null = null
+    if (action === "create" && !this.suiteInFlight.has(key)) {
+      if (!this.modelSettings) throw new AgentConfigurationError([{ agentType: "verification_suite", reason: "Configure the Verification Suite model and credential in Settings" }])
+      const [prepared] = await this.modelSettings.prepareExecution(["verification_suite"])
+      config = prepared!.transport
+      if (artifact.row.evaluation?.projectVersionId !== undefined) {
+        generation = await this.executions.openVerificationSuiteGeneration(artifact.row.evaluation.projectVersionId)
+      }
+    }
+    // Access verification may yield to another request for this same run.
+    if (!this.suiteInFlight.has(key)) {
+      this.suiteOutcomes.delete(key)
+      const attemptId = randomUUID()
+      this.suiteAttempts.set(key, attemptId)
+      this.suiteTargets.set(key, targetCommit)
+      const promise = (async () => {
+        try {
+          const summary = await requestVerificationSuite(runId, { llm: "provider", config, allowExecution: true, timeoutMs: VERIFICATION_SUITE_INVOKE_TIMEOUT_MS, action, greenControl: options.greenControl, attemptId, targetCommit: options.targetCommit?.toLowerCase(), group, executionId: generation?.id })
+          this.suiteOutcomes.set(key, { status: "ready", summary })
+        } catch (error) {
+          if (generation) await this.executions.closeVerificationSuiteGenerationAsFailed(generation.id)
+          this.suiteOutcomes.set(key, {
+            status: (error instanceof AgentTransportError && error.outcomeUncertain) || error instanceof TypeError || (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) ? "recovering" : "failed",
+            message: error instanceof AgentInvocationError ? error.message : "Verification suite generation failed; check the agent-server diagnostics.",
+          })
+        } finally {
+          this.suiteInFlight.delete(key)
+        }
+      })()
+      this.suiteInFlight.set(key, promise)
+    }
+    return { status: "building", run_id: runId, action }
+  }
+
+  async verificationCommits(projectId: number, id: number, limit = 30, offset = 0) {
+    const audit = await this.detail(projectId, id)
+    if (!audit.commitHash || !audit.branch) throw new InvalidGitRequestError("The audit baseline or branch is unavailable")
+    return this.projects.verificationCommits(projectId, audit.commitHash, audit.branch, limit, offset)
+  }
+
+  async verificationSuiteStatus(projectId: number, id: number, action: "create" | "execute" = "create", group?: string) {
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) throw new AuditNotFoundError("Audit not found for this project")
+    const runId = artifact.manifest.run_id
+    if (!runId) throw new AuditReportUnavailableError("The audit run is not recorded yet")
+    const key = QualityAuditService.suiteKey(runId, action, action === "execute" ? group?.toLowerCase() : undefined)
+    const outcome = this.suiteOutcomes.get(key)
+    const attemptId = this.suiteAttempts.get(key)
+    // Primary source: the artifact on disk — reading the state never blocks on a busy agent-server.
+    const diskSummary = await this.artifactStore.verificationSuiteSummary(artifact.manifest)
+    if (diskSummary) {
+      const persistedAction = typeof diskSummary.action === "string" ? diskSummary.action : "create"
+      if (persistedAction === action && (!attemptId || diskSummary.attempt_id === attemptId)) {
+        this.suiteOutcomes.set(key, { status: "ready", summary: diskSummary })
+        return { ...diskSummary, status: "ready", action }
+      }
+    }
+    if (outcome?.status === "ready") return { ...outcome.summary, status: "ready", run_id: runId, action }
+    if (this.suiteInFlight.has(key)) return { status: "building", run_id: runId, action }
+    if (outcome?.status === "failed") return { status: "failed", run_id: runId, action, message: outcome.message }
+    if (!this.agents?.getVerificationSuite) return { status: outcome?.status === "recovering" ? "recovering" : "not_built", run_id: runId, action }
+    try {
+      const summary = await this.agents.getVerificationSuite(runId)
+      if (!summary) return { status: outcome?.status === "recovering" ? "recovering" : "not_built", run_id: runId, action }
+      const agentAction = typeof summary.action === "string" ? summary.action : null
+      if ((agentAction !== null && agentAction !== action) || (attemptId && summary.attempt_id !== attemptId)) return { status: outcome?.status === "recovering" ? "recovering" : "not_built", run_id: runId, action }
+      this.suiteOutcomes.set(key, { status: "ready", summary })
+      return { ...summary, status: "ready", action }
+    } catch {
+      return { status: "recovering", run_id: runId, action, message: "Waiting to reconnect to the agent server; the operation may still be running." }
+    }
+  }
+
+  async verificationSuiteZip(projectId: number, id: number) {
+    const artifact = await this.findArtifact(projectId, id)
+    if (!artifact) return null
+    const runId = artifact.manifest.run_id
+    if (!runId) return null
+    if (!this.agents?.downloadVerificationSuite) return null
+    const response = await this.agents.downloadVerificationSuite(runId)
+    return Buffer.from(await response.arrayBuffer())
   }
 
   async file(projectId: number, id: number, path: string) {

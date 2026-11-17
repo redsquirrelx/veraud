@@ -48,7 +48,7 @@ describe("OpenAPI portal", () => {
       const operations = Object.values(specification.paths).flatMap((item: unknown) =>
         Object.entries(item as Record<string, unknown>).filter(([method]) => ["get", "post", "patch", "delete", "put"].includes(method)).map(([, operation]) => operation as { tags?: string[]; summary?: string; description?: string; responses?: Record<string, unknown> }),
       )
-      assert.equal(operations.length, 55)
+      assert.equal(operations.length, 60)
       const expectedOperations = [
         "DELETE /api/ai-providers/{id}/credentials/{nestedId}",
         "DELETE /api/ai-providers/{id}/models/{nestedId}",
@@ -69,9 +69,13 @@ describe("OpenAPI portal", () => {
         "GET /api/projects/{id}/audits/{auditId}/report",
         "GET /api/projects/{id}/audits/{auditId}/report.docx",
         "GET /api/projects/{id}/audits/{auditId}/report/sections/{section}",
+        "GET /api/projects/{id}/audits/{auditId}/execution-issues",
         "GET /api/projects/{id}/graph",
         "GET /api/projects/{id}/graph/{taskId}/artifact",
         "GET /api/projects/{id}/versions",
+        "GET /api/projects/{id}/audits/{auditId}/verification-commits",
+        "GET /api/projects/{id}/audits/{auditId}/verification-suite",
+        "GET /api/projects/{id}/audits/{auditId}/verification-suite.zip",
         "GET /api/tasks/active",
         "GET /status",
         "PATCH /api/ai-providers/{id}/credentials/{nestedId}",
@@ -93,6 +97,7 @@ describe("OpenAPI portal", () => {
         "POST /api/projects/{id}/audits/{auditId}/cancel",
         "POST /api/projects/{id}/audits/{auditId}/file",
         "POST /api/projects/{id}/audits/{auditId}/finding-resolution",
+        "POST /api/projects/{id}/audits/{auditId}/verification-suite",
         "POST /api/projects/{id}/file",
         "POST /api/projects/{id}/git/branches",
         "POST /api/projects/{id}/git/checkout",
