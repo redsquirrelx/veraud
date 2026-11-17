@@ -7,11 +7,14 @@ from ..agents.maintainability.v2.modularity.coordinator.registry import (
 from ..agents.maintainability.v2.reusability.coordinator.registry import (
     registered_investigators as reusability_investigators,
 )
+from ..agents.maintainability.v2.testability.coordinator.registry import (
+    registered_investigators as testability_investigators,
+)
 from .errors import InvalidConfigError
 
 MAINTAINABILITY_AGENT_TYPES = (
     "maintainability_manager", *registered_coordinators(),
-    *modularity_investigators(), *reusability_investigators(),
+    *modularity_investigators(), *reusability_investigators(), *testability_investigators(),
 )
 
 

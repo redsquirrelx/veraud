@@ -8,6 +8,8 @@
     "label": "Settings sections"
   },
   "audit": {
+    "verificationSuite": "Verification Suite",
+    "verificationSuiteHint": "Shared model for FindingTestGenerationAgent and TestabilityProbeAgent. Configure generation here; running an existing suite needs no model. Each generator retains its own execution budgets.",
     "drawer": {
       "title": "Configure audit · {{category}}", "description": "Advanced operating configuration. Changes apply to future audits.",
       "sharedBudget": "Shared audit budget", "sharedBudgetHint": "One global token cap shared by all selected attributes. This setting is common to every audit category.",

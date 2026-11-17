@@ -19,6 +19,9 @@ const titles: Record<string, ParseKeys<"projects">> = {
   patch_validator: "qualityAudits.summary.titles.validation",
   security_verifier: "qualityAudits.summary.titles.verification",
   functional_adequacy: "qualityAudits.summary.titles.functional",
+  testability: "qualityAudits.summary.titles.testability",
+  test_isolation: "qualityAudits.summary.titles.testIsolation",
+  test_controllability: "qualityAudits.summary.titles.testControllability",
 }
 
 /** Compact read-only projection of the same catalog and scope used by the drawer. */

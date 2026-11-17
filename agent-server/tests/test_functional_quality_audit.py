@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -39,7 +38,8 @@ def test_impossible_output_is_rejected_before_accepting_an_audit(audit_environme
 @pytest.mark.parametrize("provider_failure", [False, True])
 @pytest.mark.parametrize("output_override", [None, 24000])
 def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts_and_portable_reports(
-        audit_environment, monkeypatch, attributes, provider_failure, output_override):
+        audit_environment, monkeypatch, attributes, provider_failure, output_override, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     root = audit_environment.root
     commit = _committed_checkout(root)
     monkeypatch.setattr(quality_audit_definition, "resolve_workspace_root", lambda: root.parent)
@@ -86,7 +86,7 @@ def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts
                     else {"security_config": {"max_scan_files": 1}} if attribute == "security"
                     else {"agent_defaults": {"max_context_characters": 220000, "max_output_tokens": 16000}, "functional_config": {"retrieval_top_k": 2}})
                     for attribute in attributes},
-                "functional_requirements": [{"requirement_id": "REQ-001", "description": "Devolver el número solicitado."}]},
+                "functional_requirements": [{"requirement_id": "REQ-001", "description": "Devolver el número solicitado."}], "include_blackboard": True},
              ExecutionConfig(), stage_configs={name: ExecutionConfig(model={"provider": "openai", "name": name,
                  "max_tokens": output_override if name == "functional_adequacy" else None}, api_key="private-key")
                 for name in participants}, execution_ids={stage: 42}))["audit"]
@@ -99,14 +99,16 @@ def test_functional_attribute_runs_in_shared_quality_pipeline_with_live_receipts
     assert functional["details"]["functional_output"]["results"][0]["status"] == (
         "evidencia_insuficiente" if provider_failure else "no_cumple")
     assert {item["quality_attribute"] for item in payload["blackboard"]["assessments"]} == set(attributes)
-    assert base64.b64decode(payload["docx_base64"]).startswith(b"PK")
+    artifact_dir = tmp_path / "audit-artifacts" / payload["run_id"]
+    assert (artifact_dir / "report.docx").read_bytes().startswith(b"PK")
     traces = [receipt for execution_id, receipt in sink.invocations if receipt["agent_id"] == "functional_adequacy"]
     assert list(dict.fromkeys(trace["phase"] for trace in traces if trace.get("phase"))) == [
         "prepare", "code_mapping", "verify", "build_results"]
     assert traces[-1]["phase"] is None
     assert traces[0]["status"] == "running" and traces[-1]["status"] == ("partial" if provider_failure else "completed")
     assert traces[-1]["input_tokens"] == (None if provider_failure else 20)
-    findings = payload["report"]["quality_results"]["findings"]
+    report = json.loads((artifact_dir / "report.json").read_text(encoding="utf-8"))
+    findings = report["quality_results"]["findings"]
     assert any(item["quality_attribute"] == "functional_adequacy" for item in findings)
     assert all(item["verification_status"] != "verified" for item in findings if item["quality_attribute"] == "functional_adequacy")
     assert "private-provider-payload" not in str(payload) and "private-key" not in str(payload)
@@ -124,7 +126,8 @@ def test_functional_requirements_are_validated_before_audit_execution(requiremen
 @pytest.mark.parametrize("requirements", [None, []])
 @pytest.mark.parametrize("with_security", [False, True])
 def test_exploration_reuses_snapshot_and_publishes_identical_agent_output_without_functional_model(
-        audit_environment, monkeypatch, requirements, with_security):
+        audit_environment, monkeypatch, requirements, with_security, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     from server.agents.functional_adequacy.config import FunctionalAdequacyConfig
     from server.agents.functional_adequacy.repository_adapter import (
         prepare_snapshot_input,
@@ -154,7 +157,7 @@ def test_exploration_reuses_snapshot_and_publishes_identical_agent_output_withou
     async def run():
         payload = (await GenericPipelineService(callbacks_factory=lambda: sink, tracing_backend=NoOpTracingBackend()).run(
             "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": attributes,
-                "functional_requirements": requirements}, ExecutionConfig(), stage_configs=configs,
+                "functional_requirements": requirements, "include_blackboard": True}, ExecutionConfig(), stage_configs=configs,
             execution_ids={"security" if with_security else "functional_adequacy": 42}))["audit"]
         assert len(snapshots) == 1, "All attributes must use the same retained revision"
         direct = FunctionalAdequacyAgent(AgentSettings(agent_id="functional_adequacy", timeout_seconds=120), model=None,
@@ -178,10 +181,12 @@ def test_exploration_reuses_snapshot_and_publishes_identical_agent_output_withou
             if evidence["tool_call_id"] == "functional-exploration":
                 lines = source_files[evidence["source"]].content.splitlines()
                 assert evidence["content"] == "\n".join(lines[evidence["start_line"] - 1:evidence["end_line"]])
-        findings = [item for item in payload["report"]["quality_results"]["findings"] if item["quality_attribute"] == "functional_adequacy"]
+        artifact_dir = tmp_path / "audit-artifacts" / payload["run_id"]
+        report = json.loads((artifact_dir / "report.json").read_text(encoding="utf-8"))
+        findings = [item for item in report["quality_results"]["findings"] if item["quality_attribute"] == "functional_adequacy"]
         assert len(findings) == len(published)
         assert all(item["verification_status"] != "verified" for item in findings)
-        assert base64.b64decode(payload["docx_base64"]).startswith(b"PK")
+        assert (artifact_dir / "report.docx").read_bytes().startswith(b"PK")
         phases = [receipt["phase"] for _, receipt in sink.invocations
             if receipt["agent_id"] == "functional_adequacy" and receipt.get("phase")]
         assert list(dict.fromkeys(phases)) == ["prepare", "exploratory_analysis", "build_exploratory_results"]
@@ -191,7 +196,8 @@ def test_exploration_reuses_snapshot_and_publishes_identical_agent_output_withou
         audit_environment.factory.assert_not_called()
 
 
-def test_exploration_without_source_retains_uncertainty_in_audit_status(audit_environment, monkeypatch):
+def test_exploration_without_source_retains_uncertainty_in_audit_status(audit_environment, monkeypatch, tmp_path):
+    monkeypatch.setenv("VERAUD_ARTIFACT_DIR", str(tmp_path / "audit-artifacts"))
     root = audit_environment.root
     for source in root.glob("*.py"):
         source.unlink()
@@ -201,7 +207,7 @@ def test_exploration_without_source_retains_uncertainty_in_audit_status(audit_en
 
     async def run():
         return (await GenericPipelineService(callbacks_factory=lambda: None, tracing_backend=NoOpTracingBackend()).run(
-            "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": ["functional_adequacy"]},
+            "quality-audit", {"root_path": str(root), "commit_hash": commit, "attributes": ["functional_adequacy"], "include_blackboard": True},
             ExecutionConfig(), stage_configs={}))["audit"]
 
     result = asyncio.run(run())

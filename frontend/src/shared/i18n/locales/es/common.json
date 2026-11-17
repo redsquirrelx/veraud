@@ -8,6 +8,9 @@
     "brand": "Veraud",
     "home": "Inicio",
     "settings": "Configuración",
+    "executions": "Ejecuciones",
+    "executionsActive_one": "{{count}} ejecución activa",
+    "executionsActive_other": "{{count}} ejecuciones activas",
     "main": "Navegación principal",
     "apiDocs": "Docs de API",
     "docs": {

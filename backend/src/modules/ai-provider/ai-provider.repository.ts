@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
+import { credentialCipherFor } from "../../infrastructure/security/credential-cipher.js"
 
 export interface StoredAiProvider {
   id: number
@@ -111,12 +112,21 @@ export class AiProviderRepository implements AiProviderStore {
   }
 
   async createCredential(aiProviderId: number, name: string, apiKey: string): Promise<StoredAiCredential> {
-    const credential = await this.db.aiCredential.create({ data: { aiProviderId, name, apiKey } })
+    const credential = await this.db.$transaction(async (tx) => {
+      // Allocate the identity before sealing; plaintext is never sent to SQLite.
+      const row = await tx.aiCredential.create({ data: { aiProviderId, name, apiKey: "" } })
+      return tx.aiCredential.update({ where: { id: row.id }, data: { apiKey: credentialCipherFor(this.db).encrypt(apiKey, row) } })
+    })
     return { id: credential.id, aiProviderId: credential.aiProviderId, name: credential.name, apiKey: credential.apiKey }
   }
 
   async updateCredential(id: number, name: string, apiKey?: string): Promise<StoredAiCredential> {
-    const credential = await this.db.aiCredential.update({ where: { id }, data: { name, ...(apiKey === undefined ? {} : { apiKey, revision: { increment: 1 } }) } })
+    const credential = await this.db.$transaction(async (tx) => {
+      const row = await tx.aiCredential.findUniqueOrThrow({ where: { id } })
+      return tx.aiCredential.update({ where: { id }, data: { name, ...(apiKey === undefined ? {} : {
+        apiKey: credentialCipherFor(this.db).encrypt(apiKey, row), revision: { increment: 1 },
+      }) } })
+    })
     return { id: credential.id, aiProviderId: credential.aiProviderId, name: credential.name, apiKey: credential.apiKey }
   }
 

@@ -92,13 +92,13 @@ def test_run_loads_capabilities_and_closes_model_on_failure(runner, tmp_path, mo
     assert closed == [model]
 
 
-def test_runner_uses_registered_modularity_when_capabilities_omitted(runner, monkeypatch):
+def test_runner_uses_registered_coordinators_when_capabilities_omitted(runner, monkeypatch):
     args = runner.parser().parse_args(["repo", "--prompt", "Investiga problemas arquitectónicos en Checkout"])
     model = object()
     monkeypatch.setattr(runner, "load_test_model", lambda key: (model, SimpleNamespace(max_tokens=1800)))
 
     async def inspect(args, request, capabilities, config, model, settings, **kwargs):
-        assert [item.id for item in capabilities] == ["modularity"]
+        assert [item.id for item in capabilities] == ["modularity", "reusability", "testability"]
         assert request.objective == args.prompt
         return "planning-only"
 

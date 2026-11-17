@@ -344,6 +344,54 @@ def test_consolidated_origins_keep_documentary_references():
     assert origins["candidate-1"][0]["evidence_ids"] == ["e1"]
 
 
+def test_consolidated_candidates_do_not_merge_colliding_ids_with_different_content():
+    _replace_first = ResponsibilityInvestigationResult(
+        investigation_id="investigation-1",
+        status="finding_candidate",
+        summary="Distinct responsibilities.",
+        justification="First task.",
+        components=["src/widget_service.py"],
+        evidence_ids=["e1"],
+        candidates=[_component_candidate([])],
+    ).model_copy(update={"investigation_id": "investigation-1"})
+    second = _replace_first.model_copy(update={
+        "investigation_id": "investigation-2",
+        "justification": "Second task.",
+        "candidates": [_component_candidate([]).model_copy(update={
+            "description": "A different local cohesion finding.",
+        })],
+    })
+    candidates, origins = consolidate_candidates([_replace_first, second])
+    assert len(candidates) == 2
+    assert len({candidate.id for candidate in candidates}) == 2
+    assert sum(map(len, origins.values())) == 2
+    assert sorted(candidate.id for candidate in candidates) == sorted(origins)
+
+
+def test_consolidated_candidates_merge_equivalent_content_with_disjoint_evidence():
+    first = ResponsibilityInvestigationResult(
+        investigation_id="investigation-1",
+        status="finding_candidate",
+        summary="Distinct responsibilities.",
+        justification="Mixed cohesion.",
+        components=["src/widget_service.py"],
+        evidence_ids=["e1"],
+        candidates=[_component_candidate([])],
+    )
+    second = first.model_copy(update={
+        "investigation_id": "investigation-2",
+        "candidates": [_component_candidate([]).model_copy(update={
+            "id": "candidate-2",
+            "evidence_ids": ["e2"],
+            "observed_responsibilities": ["Persistence", "Orchestration"],  # Own-set order changes to set semantics.
+        })],
+    })
+    candidates, origins = consolidate_candidates([first, second])
+    assert len(candidates) == 1
+    assert candidates[0].evidence_ids == ["e1", "e2"]
+    assert len(origins[candidates[0].id]) == 2
+
+
 def test_close_records_delivery_and_host_pending_assessment():
     investigator = ResponsibilityInvestigation()
     investigator.tools = SimpleNamespace(

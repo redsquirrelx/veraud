@@ -20,9 +20,12 @@ from .document_investigation import (
     investigation_coverage,
     pending_assessments,
 )
+from .final_verification import build_verification
 from .investigation import (
+    complete_citation_links,
     examined_relationships,
     initial_queries,
+    normalize_candidate_links,
     reference_catalog,
     reference_errors,
 )
@@ -102,7 +105,12 @@ class BoundaryExecution(InvestigationExecution):
             if repairing:
                 result = self._apply_citation_repair(result)
             if result.conclusion is not None:
+                result = result.model_copy(update={"conclusion": normalize_candidate_links(result.conclusion)})
                 task = state["plan"].investigations[state["current_investigation"]]
+                refs = [ref for ref in self.references() if ref.id in self._delivered_ids(state)]
+                catalog = reference_catalog(self.tools.accessible_snapshot, refs,
+                    examined_relationships(self.tools.accessible_snapshot, state), task)
+                result = result.model_copy(update={"conclusion": complete_citation_links(result.conclusion, catalog)})
                 result = result.model_copy(update={"conclusion": result.conclusion.model_copy(update={
                     "claim_assessments": pending_assessments(task, [assessment if repairing else assessment.model_copy(
                         update={"assessment_origin": "investigator"}) for assessment in result.conclusion.claim_assessments],
@@ -213,7 +221,10 @@ class BoundaryExecution(InvestigationExecution):
                     "integration_diagnostics": inventory["integration_diagnostics"]},
                 "opportunities": [{"id": item.id, "priority": item.priority, "scope": item.scope[:3],
                     "project_ids": inventory["_task_projects"][item.id], "scope_kind": item.scope_kind,
-                    "kind": item.structural_signal.kind, "basis": item.structural_signal.basis,
+                     "kind": item.structural_signal.kind, "basis": item.structural_signal.basis,
+                     "primary_interaction": ([item.structural_signal.relationships[0].source_path,
+                         item.structural_signal.relationships[0].target_path]
+                         if item.structural_signal.relationships else item.scope[:2]),
                     "signal": item.structural_signal.observed[:2], "omitted_paths": max(0, len(item.scope) - 3),
                     **({"document_claim_ids": item.document_claim_ids, "question": item.question,
                         "evidence_needed": item.evidence_needed} if item.document_claim_ids else {})}
@@ -468,8 +479,16 @@ class BoundaryExecution(InvestigationExecution):
     def _normalize_query(self, query, task):
         if query.tool not in self.config.tools:
             raise ValueError("disabled_tool")
-        args = TOOL_SCHEMAS[query.tool].model_validate(query.arguments).model_dump()
         files = self._allowed_files()
+        arguments = dict(query.arguments)
+        if query.tool == "get_source_excerpt" and "file_id" in arguments:
+            file = files.get(arguments.pop("file_id"))
+            if file is None:
+                raise ValueError("unavailable_entity")
+            if arguments.get("path", file.path) != file.path:
+                raise ValueError("conflicting_source_path")
+            arguments["path"] = file.path
+        args = TOOL_SCHEMAS[query.tool].model_validate(arguments).model_dump()
         paths = {file.path: file for file in files.values()}
         snapshot = self.tools.accessible_snapshot
         entity_files = {symbol.id: symbol.file_id for symbol in snapshot.symbols} | {key: key for key in files}
@@ -488,6 +507,10 @@ class BoundaryExecution(InvestigationExecution):
                 selected_paths.append(files[file_id].path)
         if (not selected_paths or any(path not in task.scope for path in selected_paths)) and not query.scope_expansion.strip():
             raise ValueError("scope_expansion_reason_required")
+        if query.tool == "get_source_excerpt" and args["end_line"] is None:
+            # Match the tool's default before computing cache containment. With
+            # budgets disabled the default is EOF, not a nullable range bound.
+            args["end_line"] = paths[args["path"]].line_count
         if budgets_enabled() and "limit" in args:
             args["limit"] = min(args["limit"], 10, self.tools.limits.max_page_size, self.tools.limits.max_metadata_items)
         if budgets_enabled() and query.tool == "get_source_excerpt":
@@ -556,11 +579,17 @@ class BoundaryExecution(InvestigationExecution):
         return {"investigation_id": task.id, "validation_error": self._citation_error,
             "errors": reference_errors(self._invalid_turn, self._citation_error, catalog),
             "reference_catalog": catalog,
+            "tools": {key: value for key, value in tool_signatures().items() if key in self.config.tools},
             "source_not_retrieved": [path for path in task.scope if path not in catalog["source_evidence_by_component"]],
             "limitations": state["task_limitations"],
             "documentary_context": self._documentary_context(state),
             "claim_assessments": [item.model_dump(mode="json") for item in conclusion.claim_assessments],
             "candidate_document_claim_ids": {item.id: item.document_claim_ids for item in conclusion.candidates},
+            "repair_field_rules": {
+                "conclusion_and_candidates": ["components", "evidence_ids", "symbol_ids", "relationship_ids"],
+                "candidates_only": ["document_claim_ids"],
+                "claim_assessments_only": ["code_evidence_ids", "scope_paths"],
+                "notice": "Each correction must use the fields allowed for its exact subject_id. Fix all listed missing references together; never change statuses or narratives."},
             "subjects": [{"subject_id": identifier, **{field: getattr(subject, field) for field in
                 ("components", "evidence_ids", "symbol_ids", "relationship_ids")}}
                 for identifier, subject in [("conclusion", conclusion), *((item.id, item) for item in conclusion.candidates)]]}
@@ -618,7 +647,9 @@ class BoundaryExecution(InvestigationExecution):
         snapshot = self.tools.accessible_snapshot
         symbols = {symbol.id: symbol for symbol in snapshot.symbols}
         relationship_ids = examined_relationships(snapshot, state).keys()
-        candidate_ids = {item.id for item in state["candidates"]}
+        # IDs supplied by the model are investigation-local. Synthesis already
+        # disambiguates collisions across tasks by substantive claim identity.
+        candidate_ids = set()
         for subject in [result, *result.candidates]:
             if set(subject.evidence_ids) - set(result.evidence_ids):
                 raise ValueError("candidate_evidence_not_in_conclusion")
@@ -939,16 +970,21 @@ class BoundaryExecution(InvestigationExecution):
         ledger, mismatch = self.verify_references(self.references())
         references = {reference.id: reference for reference in ledger}
         criteria = {criterion.id: criterion for criterion in self.request.criteria}
-        findings = [BoundaryFinding(
-            **candidate.model_dump(exclude={"inferred_boundary", "contradictory_dependency", "technical_basis",
-                "symbol_ids", "relationship_ids", "document_claim_ids"}),
-            criterion=criteria[candidate.criterion_id],
-            evidence=[references[identifier] for identifier in candidate.evidence_ids],
-        ) for candidate in state["candidates"]]
+        findings = []
+        for candidate in state["candidates"]:
+            verification, verification_limitations = build_verification(
+                candidate, state, self.tools.accessible_snapshot, references)
+            findings.append(BoundaryFinding(
+                **candidate.model_dump(exclude={"inferred_boundary", "contradictory_dependency", "technical_basis",
+                    "symbol_ids", "relationship_ids"}),
+                criterion=criteria[candidate.criterion_id],
+                evidence=[references[identifier] for identifier in candidate.evidence_ids],
+                verification=verification, verification_limitations=verification_limitations,
+            ))
         limitations = list(dict.fromkeys([*state["limitations"], *self.issues,
             *(f"Documentary synthesis {issue.code}: {issue.message}" for issue in
                 getattr(state.get("documentary_synthesis"), "integrity_issues", [])),
-            *(limitation for item in state["investigation_results"] for limitation in item.limitations),
+            *(limitation for finding in findings for limitation in finding.verification_limitations),
             "Coverage is bounded; absence of findings does not establish architectural compliance.",
             *(["Some retained evidence could not be attributed to the declared commit."] if mismatch else []),
             *([] if state["commit"] else ["No commit is available; evidence is attributed to retained snapshot bytes only."])]))

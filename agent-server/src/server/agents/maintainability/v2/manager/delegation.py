@@ -13,6 +13,7 @@ from server.blackboard.publication import publication_for
 from server.contracts.audit import Consumption
 from server.infrastructure.llm.retry import RequestPacer
 from server.infrastructure.tracing import LangSmithTracingBackend
+from server.infrastructure.tracing_sink import trace_event
 from server.runtimes.coordination.execution import CoordinatorExecution
 from server.runtimes.coordination.synthesis import stable_id
 from server.runtimes.invocation_reporting import observe_invocation
@@ -51,7 +52,9 @@ def assignment_identifier(snapshot_hash, index, assignment):
 
 
 def coordinator_request(spec, request, assignment):
-    values = {"objective": assignment.objective, "original_objective": request.objective,
+    # The coordinator owns this assignment, not the manager's global selection
+    # manifesto. Sibling capabilities must not become its uncovered requirements.
+    values = {"objective": assignment.objective, "original_objective": assignment.objective,
         "targets": list(assignment.scope), "constraints": list(assignment.constraints), "repository_context": request.repository_context}
     if "documented_architecture" in spec.request_class.model_fields:
         values["documented_architecture"] = request.documented_architecture
@@ -98,7 +101,13 @@ async def delegate_coordinators(execution, state):
         except (ValueError, KeyError) as error:
             if type(error) is ValueError:
                 error = ExecutionValidationError("invalid_assignment", "Coordinator assignment failed deterministic scope validation.")
-            records[index] = record.model_copy(update={"failure": failure_from_exception(error, "validate_assignment")})
+            failure = failure_from_exception(error, "validate_assignment")
+            records[index] = record.model_copy(update={"failure": failure})
+            trace_event("manager.coordinator_skipped", status="error", error_code=failure.code,
+                        message=f"Coordinator {record.assignment.coordinator_id} skipped",
+                        details={"coordinatorId": record.assignment.coordinator_id,
+                                 "assignmentId": identifier,
+                                 "reason": failure.code, "stage": failure.stage})
 
     from server.agent_services.budgeting.policy import budgets_enabled
 
@@ -196,6 +205,14 @@ async def delegate_coordinators(execution, state):
                 failure, status = failure_from_exception(error, "retain_child_evidence"), "failed"
             execution.logger.info("coordinator_delegated assignment=%s coordinator=%s status=%s", record.assignment_id,
                 record.assignment.coordinator_id, status)
+            trace_event("manager.coordinator_finished",
+                        status="ok" if status == "completed" else ("timeout" if status == "timeout" else "error"),
+                        message=f"Coordinator {record.assignment.coordinator_id} finished: {status}",
+                        details={"coordinatorId": record.assignment.coordinator_id,
+                                 "assignmentId": record.assignment_id,
+                                 "status": status,
+                                 "durationSeconds": monotonic() - started,
+                                 "failureCode": getattr(failure, "code", None)})
             return record.model_copy(update={"budget": budget, "status": status, "result": result, "failure": failure,
                 "consumption": usage, "limitations": limitations, "duration_seconds": monotonic() - started,
                 "evidence": evidence})
@@ -207,6 +224,11 @@ async def delegate_coordinators(execution, state):
         if budgets_enabled() and (token_exhausted or offset >= execution.config.max_invocations or reserved_calls < 4 or execution.remaining_seconds() <= 0):
             error = ExecutionValidationError("execution_budget_exhausted", "Coordinator was not started: invocation, call or time budget exhausted.")
             records[index] = record.model_copy(update={"failure": failure_from_exception(error, "reserve_coordinator")})
+            trace_event("manager.coordinator_skipped", status="error", error_code="execution_budget_exhausted",
+                        message=f"Coordinator {record.assignment.coordinator_id} not started: budget exhausted",
+                        details={"coordinatorId": record.assignment.coordinator_id,
+                                 "assignmentId": record.assignment_id,
+                                 "reason": "execution_budget_exhausted"})
             continue
         budget = ExecutionBudget(max_model_calls=reserved_calls, max_tool_calls=max(1, reserved_tools),
             max_total_tokens=min(limits.max_total_tokens, ledger.limit), max_tokens_per_objective=min(limits.max_total_tokens, ledger.limit),
@@ -216,6 +238,11 @@ async def delegate_coordinators(execution, state):
             max_retrieved_characters=global_budget.max_retrieved_characters)
         calls, tools = calls - reserved_calls, tools - reserved_tools
         tasks.append((index, asyncio.create_task(invoke(record, spec, request, budget, reserved_tools))))
+        trace_event("manager.coordinator_dispatched",
+                    message=f"Dispatching coordinator {record.assignment.coordinator_id}",
+                    details={"coordinatorId": record.assignment.coordinator_id,
+                             "assignmentId": record.assignment_id,
+                             "index": index})
     try:
         values = await asyncio.gather(*(task for _, task in tasks))
         records.update({index: value for (index, _), value in zip(tasks, values, strict=True)})
@@ -224,6 +251,12 @@ async def delegate_coordinators(execution, state):
     ordered = [records[index] for index in sorted(records)]
     status = ("not_required" if not ordered else "completed" if all(record.status == "completed" for record in ordered)
         else "partial" if any(record.status in {"completed", "partial"} for record in ordered) else "failed")
+    counts = {key: sum(1 for record in ordered if record.status == key)
+        for key in ("completed", "partial", "failed", "timeout", "skipped")}
+    trace_event("manager.delegation_completed",
+                status="ok" if status in {"completed", "not_required"} else ("error" if status == "failed" else "running"),
+                message=f"Manager delegation finished: {status}",
+                details={"delegationStatus": status, **counts})
     diagnostics = [f"{record.assignment_id}/{record.assignment.coordinator_id}: {message}" for record in ordered
         for message in [*record.limitations, *([record.failure.summary] if record.failure else [])]]
     return {"coordinator_results": ordered, "delegation_status": status,

@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { AgentConfigurationError } from "../agent-settings/agent-configuration.js"
 import { configurationIssuesSchema } from "../agent-settings/agent-settings.schemas.js"
 import { errorResponses } from "../../infrastructure/openapi/routeSchemas.js"
@@ -7,6 +7,7 @@ import type {
   RealtimeGateway,
 } from "../../infrastructure/realtime-gateway/realtime.gateway.js"
 import { logger } from "../../config/logger.js"
+import { writeTraceEvent, traceFailureDetails, type TraceEnvelope } from "../../infrastructure/trace-writer.js"
 import { executionErrorDetailSchema, executionErrorEvent, type ExecutionErrorDetail } from "./execution-error-detail.js"
 import { invocationEvents, invocationReceiptSchema, type InvocationReceipt } from "./invocationReceipt.js"
 import { InvalidDirectInputError } from "../../infrastructure/agent-target/direct-input.guard.js"
@@ -187,9 +188,13 @@ export function registerAgentExecutionRoutes(
     try {
       const execution = await service.recordInvocation(Number(request.params.id), request.body)
       const compact = { ...execution, result: null }
+      const trace = callbackTrace(request, Number(request.params.id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.invocation", status: "ok", message: "Invocation receipt persisted", details: { invocationId: request.body.invocation_id, agentType: request.body.agent_id, invocationStatus: request.body.status, phase: request.body.phase ?? null } })
       broadcast(gateway, "agent-execution.updated", compact)
       return toResponse(compact)
     } catch (error) {
+      const trace = callbackTrace(request, Number(request.params.id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.invocation_failed", status: "error", errorCode: error instanceof UnknownExecutionTargetError ? "unknown_execution" : typeof (error as { code?: unknown }).code === "string" ? String((error as { code: string }).code) : "callback_failed", message: error instanceof Error ? error.message : "Invalid invocation callback", details: traceFailureDetails(error) })
       if (error instanceof UnknownExecutionTargetError) return reply.code(422).send({ error: error.message })
       return notFoundOrRethrow(error, reply)
     }
@@ -206,11 +211,15 @@ export function registerAgentExecutionRoutes(
 
     try {
       const execution = await service.markRunning(Number(id), (request.body as { runId?: string } | undefined)?.runId)
+      const trace = callbackTrace(request, Number(id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.running", status: "ok", message: "Execution marked running", details: { runId: (request.body as { runId?: string } | undefined)?.runId ?? null } })
 
       broadcast(gateway, "agent-execution.updated", execution)
 
       return toResponse(execution)
     } catch (error) {
+      const trace = callbackTrace(request, Number(id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.running_failed", status: "error", message: error instanceof Error ? error.message : "Running callback failed", details: traceFailureDetails(error) })
       return notFoundOrRethrow(error, reply)
     }
   })
@@ -225,9 +234,15 @@ export function registerAgentExecutionRoutes(
     const body = request.body as { inputTokens: number | null, outputTokens: number | null, estimatedTokens?: number }
     try {
       const execution = await service.updateUsage(Number(id), { ...body, estimatedTokens: body.estimatedTokens ?? 0 })
+      const trace = callbackTrace(request, Number(id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.progress", status: "ok", message: "Usage persisted", details: { inputTokens: body.inputTokens, outputTokens: body.outputTokens, estimatedTokens: body.estimatedTokens ?? 0 } })
       broadcast(gateway, "agent-execution.updated", execution)
       return toResponse(execution)
-    } catch (error) { return notFoundOrRethrow(error, reply) }
+    } catch (error) {
+      const trace = callbackTrace(request, Number(id))
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.progress_failed", status: "error", message: error instanceof Error ? error.message : "Progress callback failed", details: traceFailureDetails(error) })
+      return notFoundOrRethrow(error, reply)
+    }
   })
 
   /** Called by the agent-server when the run finishes, successfully or not. */
@@ -267,14 +282,31 @@ export function registerAgentExecutionRoutes(
           .withTag("agent-execution")
           .info(`Closed agent execution ${execution.id} status=${execution.status}`)
 
+        const trace = callbackTrace(request, Number(id))
+        if (trace) writeTraceEvent(trace, { event: "callback.backend.completion", status: body.status === "Failed" ? "error" : "ok", errorCode: body.status === "Failed" ? body.interruptionReason ?? "agent_failed" : undefined, message: `Execution closed as ${execution.status}`, details: { status: execution.status, resultBytes: body.result?.length ?? 0, interruptionReason: execution.interruptionReason, error: execution.error } })
         broadcast(gateway, "agent-execution.updated", execution)
 
         return toResponse(execution)
       } catch (error) {
+        const trace = callbackTrace(request, Number(id))
+        if (trace) writeTraceEvent(trace, { event: "callback.backend.completion_failed", status: "error", errorCode: error instanceof InvalidCompletionError ? "invalid_completion" : typeof (error as { code?: unknown }).code === "string" ? String((error as { code: string }).code) : "callback_failed", message: error instanceof Error ? error.message : "Completion callback failed", details: traceFailureDetails(error) })
         return notFoundOrRethrow(error, reply)
       }
     },
   )
+}
+
+/** Best-effort trace context sent back by the agent-server callback. */
+function callbackTrace(request: FastifyRequest, executionId: number): TraceEnvelope | undefined {
+  const traceId = request.headers["x-veraud-trace-id"]
+  if (typeof traceId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(traceId)) return undefined
+  const agentType = request.headers["x-veraud-agent-type"]
+  return {
+    traceId,
+    executionId,
+    agentType: typeof agentType === "string" ? agentType : "architecture_context",
+    spanId: traceId,
+  }
 }
 
 function toResponse(execution: StoredAgentExecution, includeContext = true) {

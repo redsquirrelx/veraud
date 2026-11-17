@@ -1,4 +1,4 @@
-"""Version placement must not register V2 or make it depend on V1."""
+"""Version placement: V1 identifiers must not import V2; registered V2 identifiers must resolve."""
 
 import subprocess
 import sys
@@ -34,7 +34,15 @@ from server.agents.maintainability.v1.modularity.coordinator.registry import INV
 from server.agents.maintainability.v1.reusability.coordinator.registry import INVESTIGATORS as reusability
 for spec in [*COORDINATORS.values(), *modularity.values(), *reusability.values()]:
     assert spec.agent_class.__module__.startswith('server.agents.maintainability.v1.')
-for identifier in AGENT_CONFIGS:
-    configuration_type(identifier)
+for identifier, spec in AGENT_CONFIGS.items():
+    if 'maintainability.v2' not in spec.package:
+        configuration_type(identifier)
 assert not any(name.startswith('server.agents.maintainability.v2') for name in sys.modules)
+"""], check=True, capture_output=True, text=True)
+    subprocess.run([sys.executable, "-c", """
+import sys
+from config.agents.catalog import AGENT_CONFIGS, configuration_type
+for identifier, spec in AGENT_CONFIGS.items():
+    if 'maintainability.v2' in spec.package:
+        configuration_type(identifier)
 """], check=True, capture_output=True, text=True)

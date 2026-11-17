@@ -44,6 +44,14 @@ export function SlidersIcon({ size = 14 }: IconProps) {
   )
 }
 
+export function ActivityIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...baseProps(size)} aria-hidden="true">
+      <path d="M1.5 8h3l2-4.5 2.5 7 2-4.5h3.5" />
+    </svg>
+  )
+}
+
 export function CloneIcon({ size = 14 }: IconProps) {
   return (
     <svg {...baseProps(size)} aria-hidden="true">

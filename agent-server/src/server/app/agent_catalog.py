@@ -81,6 +81,9 @@ def _definitions(service):
     from ..agents.maintainability.v2.reusability.coordinator.registry import (
         registered_investigators as reusability_investigators,
     )
+    from ..agents.maintainability.v2.testability.coordinator.registry import (
+        registered_investigators as testability_investigators,
+    )
     from .audit_models import MAINTAINABILITY_AGENT_TYPES
     from .project_architecture_definition import ProjectArchitectureInput
     from .quality_audit_definition import QualityAuditInput
@@ -124,6 +127,7 @@ def _definitions(service):
     investigators_by_coordinator = {
         "modularity": modularity_investigators,
         "reusability": reusability_investigators,
+        "testability": testability_investigators,
     }
     for identifier, spec in coordinators.items():
         investigators = investigators_by_coordinator.get(identifier, modularity_investigators)()
@@ -160,6 +164,13 @@ def _definitions(service):
         "Deterministic ten-section report from Blackboard; no model or repository reads.", model=False,
         workflows=["quality-audit"], attributes=["maintainability", "security", "functional_adequacy"], request=_symbol("reporting.schemas", "AuditReportRequest"),
         result=_symbol("reporting.schemas", "SoftwareAuditReport"))
+
+    # Model-access discovery only: generators remain private to the suite
+    # composition and are never registered for /api/agents/run.
+    add("verification_suite", "Verification Suite", "verification_suite", ["internal"],
+        "Shared model access for FindingTestGenerationAgent and TestabilityProbeAgent. "
+        "Used only when generating a suite; re-execution requires no model.",
+        workflows=["verification-suite"])
 
     pipelines = default_pipeline_registry()
     groups = {"maintainability": list(MAINTAINABILITY_AGENT_TYPES), "security": ["security"], "functional_adequacy": ["functional_adequacy"]}

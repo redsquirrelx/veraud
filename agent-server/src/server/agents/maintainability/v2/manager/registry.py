@@ -33,6 +33,14 @@ def registered_coordinators() -> dict[str, CoordinatorSpec]:
     from ..reusability.coordinator.registry import (
         registered_investigators as reusability_investigators,
     )
+    from ..testability.coordinator import (
+        TestabilityCoordinator,
+        TestabilityRequest,
+        TestabilityResult,
+    )
+    from ..testability.coordinator.registry import (
+        registered_investigators as testability_investigators,
+    )
 
     investigators = modularity_investigators().values()
     capabilities = [spec.capability for spec in investigators]
@@ -51,7 +59,20 @@ def registered_coordinators() -> dict[str, CoordinatorSpec]:
         constraints=sorted({constraint for item in reusability_items for constraint in item.capability.constraints}))
     reusability_spec = CoordinatorSpec(ReusabilityCoordinator, ReusabilityRequest, reusability_capability,
         result_kind="assessment", result_class=ReusabilityResult)
-    return {modularity_spec.capability.id: modularity_spec, reusability_spec.capability.id: reusability_spec}
+
+    testability_items = list(testability_investigators().values())
+    testability_capability = CoordinatorCapability(id="testability", agent_name="TestabilityCoordinator",
+        capability="Assess testability through specialized investigators (none registered yet)." if not testability_items
+        else "Assess testability through specialized investigators: " + " ".join(item.capability.capability for item in testability_items),
+        problem_types=sorted({problem for item in testability_items for problem in item.capability.problem_types}),
+        constraints=sorted({constraint for item in testability_items for constraint in item.capability.constraints}))
+    testability_spec = CoordinatorSpec(TestabilityCoordinator, TestabilityRequest, testability_capability,
+        result_kind="assessment", result_class=TestabilityResult)
+    return {
+        modularity_spec.capability.id: modularity_spec,
+        reusability_spec.capability.id: reusability_spec,
+        testability_spec.capability.id: testability_spec,
+    }
 
 
 def coordinator_catalog(capabilities: Iterable[CoordinatorCapability] | None = None) -> dict[str, CoordinatorCapability]:

@@ -7,6 +7,34 @@ import { changeLanguage } from "../../shared/i18n/index.ts"
 afterEach(() => vi.unstubAllGlobals())
 
 describe("AgentsSettings", () => {
+  it("configures shared verification-suite generation from the audit tab without fake budget controls", async () => {
+    const agent = { agentType: "verification_suite", name: "Verification Suite", role: "verification_suite",
+      requiresModel: true, modelConfigurationAgentType: "verification_suite", availability: "available",
+      executionModes: ["internal"], qualityAttributes: [], workflowIds: ["verification-suite"],
+      configured: true, configuration: {
+        model: { id: 1, name: "suite-model", providerId: 1, providerName: "OpenAI" },
+        credential: { id: 2, name: "suite-key", providerId: 1, providerName: "OpenAI" },
+        temperature: 0, maxTokens: 4000,
+      } }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([agent]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...agent, configuration: { ...agent.configuration, maxTokens: 24000 } }), { status: 200 }))
+    vi.stubGlobal("fetch", fetch)
+    render(<AgentsSettings qualityCategories modelAccessOnly providers={[{ id: 1, name: "OpenAI",
+      models: [{ id: 1, name: "suite-model", inUse: true }], credentials: [{ id: 2, name: "suite-key", apiKeyPreview: "****1234", inUse: true }] }]} />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("button", { name: "Configure Verification Suite" }))
+    const drawer = within(screen.getByRole("dialog", { name: "Configure Verification Suite" }))
+    expect(drawer.getAllByRole("spinbutton")).toHaveLength(2)
+    const output = drawer.getByRole("spinbutton", { name: /Maximum output tokens per call/ })
+    await user.clear(output)
+    await user.type(output, "24000")
+    await user.click(drawer.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(fetch.mock.calls[1]?.[0]).toContain("/api/agent-settings/verification_suite")
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ modelId: 1, credentialId: 2, temperature: 0, maxTokens: 24000 })
+  })
+
   it("renders discovered types including unconfigured agents and shows saved configuration", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([
       { agentType: "analyzer", configured: true, configuration: {

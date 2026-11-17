@@ -120,10 +120,28 @@ oversight.
 and send only shapes and timings, which is enough to debug latency and token
 spend without shipping anyone's code.
 
-## Not wired yet
+## Local execution traces
 
-The backend creates an `agent_execution` row and agents call back to report
-progress, but nothing passes the row id to the agent, so a trace cannot be
-linked to the execution shown in the UI. Tagging traces with that id is the
-obvious next step once the execution id reaches the agent
-(see `docs/backend/agent-execution.md`).
+Alongside LangSmith, executions can write a local newline-delimited trace for
+cross-process diagnosis. The backend creates an execution trace context and the
+agent-server receives it through `X-Veraud-Trace-Id`; both sides append to:
+
+```text
+<WORKSPACE_DIR>/logs/<timestamp>-<random>-<agentType>-exec-<executionId>/
+  trace.ndjson
+  backend.log
+  agent-server.log
+```
+
+Each JSON line carries `at`, `traceId`, `executionId`, `agentType`, `service`,
+`spanId`, `parentSpanId`, `event`, `status`, `errorCode`, `durationMs` and redacted
+`details`. Secrets are redacted by key name. Set `VERAUD_TRACE_ENABLED=0` to
+disable these local files; `VERAUD_TRACE_DIR` can override the directory. Local
+traces are deliberately fail-soft and never block agent execution.
+
+## LangSmith execution binding
+
+The local trace now correlates the backend row and agent-server lifecycle. It
+does not automatically attach that execution ID as tags to every LangSmith
+span; LangSmith correlation can be added in `traced_agent_run` later with the
+same execution ID/headers if needed.

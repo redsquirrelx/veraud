@@ -22,6 +22,7 @@ interface Props {
 
 export function AgentSettingsDrawer({ agent, open, providers, providersLoading, providersError, onClose, onSaved, onVerified }: Props) {
   const { t } = useTranslation("settings")
+  const suite = agent.agentType === "verification_suite"
   const [modelId, setModelId] = useState<number | null>(agent.configuration?.model.id ?? null)
   const [credentialId, setCredentialId] = useState<number | null>(agent.configuration?.credential.id ?? null)
   const [temperature, setTemperature] = useState(String(agent.configuration?.temperature ?? ""))
@@ -104,7 +105,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
     try {
       const updated = await saveAgentSettings(agent.agentType, modelId, credentialId, {
         temperature: numericTemperature, maxTokens: numericMaxTokens,
-        tokenBudget: numericBudget, absoluteTokenLimit: numericAbsolute,
+        ...(!suite ? { tokenBudget: numericBudget, absoluteTokenLimit: numericAbsolute } : {}),
       })
       onSaved(updated)
       onClose()
@@ -125,7 +126,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
 
   return <Drawer
     open={open}
-    title={t("agents.drawer.title", { agentType: agent.agentType })}
+    title={t("agents.drawer.title", { agentType: suite ? t("audit.verificationSuite") : agent.agentType })}
     description={t("agents.drawer.description")}
     onClose={() => { if (!saving) onClose() }}
     footer={<>
@@ -188,7 +189,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
         {!temperatureValid && <p className="settings-error" role="alert">{t("agents.drawer.temperatureInvalid")}</p>}
         {!tokensValid && <p className="settings-error" role="alert">{t("agents.drawer.maxTokensInvalid")}</p>}
       </section>
-      <section className="settings-agent-editor-section">
+      {!suite && <section className="settings-agent-editor-section">
         <h3>{t("agents.drawer.tokenBudget")}</h3>
         <p className="settings-hint">{t("agents.drawer.tokenBudgetHint")}</p>
         <div className="settings-agent-parameters">
@@ -214,8 +215,8 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
         {budgetValid && absoluteValid && limitsValid && <p className="settings-hint">
           {t(effectiveAbsolute === effectiveBudget ? "agents.drawer.toleranceMarginStrict" : "agents.drawer.toleranceMargin", { margin: formatNumber(effectiveAbsolute - effectiveBudget), percent: formatNumber((effectiveAbsolute - effectiveBudget) / effectiveBudget * 100, { maximumFractionDigits: 1 }) })}
         </p>}
-      </section>
-      <section className="settings-agent-editor-section">
+      </section>}
+      {!suite && <section className="settings-agent-editor-section">
         <div className="settings-agent-options-heading">
           <h3>{t("agents.drawer.agentOptions")}</h3>
           <Badge tone="info">{t("agents.drawer.comingSoon")}</Badge>
@@ -224,7 +225,7 @@ export function AgentSettingsDrawer({ agent, open, providers, providersLoading, 
           <p>{t("agents.drawer.customSettings", { agentType: agent.agentType })}</p>
           <p className="settings-hint">{t("agents.drawer.agentOptionsHint")}</p>
         </div>
-      </section>
+      </section>}
     </form>
   </Drawer>
 }

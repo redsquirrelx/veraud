@@ -8,6 +8,7 @@ import { useAuditStateLabel } from "./monitorLabels.ts"
 import { useExpansion } from "./useExpansion.ts"
 import "./AuditStatusDisclosure.css"
 import { AuditActions } from "./AuditActions.tsx"
+import { AuditMonitorIssues } from "./AuditMonitorIssues.tsx"
 import { ExecutionErrorIndicator } from "./ExecutionError.tsx"
 import { auditHasError, auditErrorIsInherited } from "./executionErrors.ts"
 
@@ -41,6 +42,7 @@ export function AuditStatusDisclosure({ audit, defaultExpanded = true, evidenceL
             <ArrowRightIcon size={12} />
           </Link>}
           <AuditActions audit={audit} />
+          <AuditMonitorIssues audit={audit} />
           </div>
           <button
             type="button"

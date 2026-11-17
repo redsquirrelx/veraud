@@ -1,4 +1,5 @@
 import type { AiProviderStore } from "./ai-provider.repository.js"
+import { credentialPreview } from "../../infrastructure/security/credential-cipher.js"
 
 export class AiProviderNotFoundError extends Error {}
 export class AiModelNotFoundError extends Error {}
@@ -33,11 +34,7 @@ const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/:-]*$/
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _-]*$/
 
 export function maskApiKey(apiKey: string): string {
-  if (apiKey.length <= 4) {
-    return "****"
-  }
-
-  return `****${apiKey.slice(-4)}`
+  return credentialPreview(apiKey)
 }
 
 export class AiProviderService {

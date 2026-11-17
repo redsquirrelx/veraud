@@ -1,0 +1,209 @@
+@startuml descarga-y-muestra-proyecto
+!theme plain
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+autonumber "<b>[00]"
+
+title Descarga (clonado) y muestra de un proyecto\nveraud — React + Fastify + SQLite/Prisma
+
+actor "Usuario" as Usuario
+
+box "Frontend (React + Vite)" #E8F4FD
+  boundary "HomePage /\nProjectRegistrationForm" as HomeUI <<interface>>
+  boundary "ProjectList /\nProjectCard" as ListUI <<interface>>
+  boundary "ProjectDetailPage\n+ Sidebar/Header\n+ DirectoryTree / CodeViewer" as DetailUI <<interface>>
+  control "Hooks\n(useRegisterProject, useProjects,\nuseTasks, useProjectTree,\nuseProjectFile)" as Hooks
+  control "httpClient\n(requestJson / fetch)" as HTTP
+end box
+
+box "Backend (Fastify)" #FFF8E1
+  control "ProjectController\n(project.controller.ts)" as Controller <<controller>>
+  control "ProjectService\n(project.service.ts)" as Service <<control>>
+  entity "ProjectRepository /\nTaskRepository\n(project.repository.ts)" as Repo <<repository>>
+  control "TaskService\n(task.service.ts)" as TaskSvc
+  control "TaskRunner\n(task.runner.ts)" as Runner
+  control "GitExecutor\n(git.executor.ts)" as Git
+  control "GithubClient\n(github.client.ts)" as GH
+  control "RealtimeGateway\n(WebSocket /ws)" as Gateway <<gateway>>
+end box
+
+box "Persistencia" #EAF7EA
+  database "SQLite (Prisma)\nProject · ProjectVersion · Task" as DB <<entity>>
+end box
+
+== Fase A — Descarga: registro y clonado ==
+
+Usuario -> HomeUI : pega URL del repo\n(+ «Shallow clone») y pulsa «Registrar»
+HomeUI -> Hooks : register()
+
+note right of Hooks
+  Valida URL, cooldown 2 s,
+  AbortSignal.timeout(600 s)
+end note
+
+Hooks -> HTTP : registerProject(url, shallowClone)\nPOST /api/projects
+HTTP -> Controller : POST /api/projects\n{ repositoryUrl, shallowClone }
+Controller -> Service : registerProject(url, shallowClone)
+Service -> Service : parseGithubUrl(url)
+
+alt URL inválida
+  Service --> Controller : InvalidUrlError
+  Controller --> HTTP : 400 { message }
+  HTTP --> Hooks : ApiError(400)
+  Hooks --> HomeUI : toast de error
+
+else URL válida
+
+  alt protocolo HTTPS
+    Service -> GH : checkAccess(owner, repo)
+    GH --> Service : metadata { id, owner, name }
+  else SSH
+    note over Service
+      SSH no consulta la API pública
+      (admite repos privados)
+    end note
+  end
+
+  Service -> Repo : findByRepo(owner, name)\n[+ findByGithubId si hay HTTPS]
+  Repo -> DB : SELECT project ...
+  DB --> Repo : fila / null
+
+  alt ya registrado
+    Service --> Controller : DuplicateProjectError
+    Controller --> HTTP : 409 { message }
+    HTTP --> Hooks : ApiError(409)
+    Hooks --> HomeUI : toast «ya registrado»
+
+  else proyecto nuevo
+    Service -> Repo : create({ status: QUEUED,\ncloneProtocol, shallowClone, ... })
+    Repo -> DB : INSERT INTO project
+    DB --> Repo : project { id, QUEUED }
+    Repo --> Service : project
+
+    Service -> TaskSvc : launch(projectId,\n"cloning owner/repo",\n{ kind: "clone", cloneUrl, folder, shallowClone })
+    TaskSvc -> Repo : create({ status: QUEUED, kind: "clone" })
+    Repo -> DB : INSERT INTO task
+    TaskSvc -> Runner : enqueue({ taskId, projectId, command })
+
+    Runner -> Git : git clone [--depth 1] «cloneUrl» «folder»\n(spawn git · GIT_TERMINAL_PROMPT=0\nBatchMode SSH · timeout 5 min)
+
+    note over Runner, Git
+      folder = appdata/workspace/
+      {githubRepositoryId|project-id}-{owner}-{repo}
+    end note
+
+    Runner -> Repo : update(Running)\n→ setStatus(SYNCING)
+    Runner -> Gateway : broadcast task.updated
+    Gateway -> Hooks : WS /ws · task.updated
+
+    note right of Hooks
+      useTasks → dock «TaskMenu»
+      («Clonando / Descarga inicial…»)
+      + refresco de listProjects()
+    end note
+
+    Git --> Runner : exit code 0
+    Runner -> Repo : update(Succeded)\n→ setStatus(READY) + markSynced(now)
+    Repo -> DB : UPDATE project ...
+    Runner -> Gateway : broadcast task.updated (Succeded)
+    Gateway -> Hooks : WS /ws · task.updated
+
+    alt clone fallido
+      Runner --> TaskSvc : TaskResult { Failed }
+      TaskSvc --> Service : { task, result }
+      Service -> TaskSvc : remove(task.id)
+      Service -> Repo : delete(project.id)
+      Service --> Controller : RepoNotAccessibleError
+      Controller --> HTTP : 422 { message }
+      HTTP --> Hooks : ApiError(422)
+      Hooks --> HomeUI : toast de error
+
+    else clone correcto
+      Runner --> TaskSvc : TaskResult { Succeded }
+      TaskSvc --> Service : { task, result }
+      Service --> Controller : project (snapshot QUEUED)
+      Controller --> HTTP : 201 RegisteredProject
+      HTTP --> Hooks : RegisteredProject
+      Hooks --> HomeUI : estado success + onRegistered()
+      HomeUI -> ListUI : refresca el listado
+    end
+  end
+end
+
+== Refresco del listado (useProjects → GET /api/projects) ==
+
+Hooks -> HTTP : listProjects()\nGET /api/projects
+HTTP -> Controller : GET /api/projects
+Controller -> Service : listProjects()
+Service -> Repo : list()  (include selectedVersion)
+Repo -> DB : SELECT project + project_version\n(ORDER BY id)
+DB --> Repo : filas
+Repo --> Service : StoredProjectDetails[]
+Service --> Controller : projects
+Controller --> HTTP : 200 ProjectSummary[]
+HTTP --> ListUI : render tarjetas\n(badges QUEUED / SYNCING / READY)
+
+== Fase B — Muestra: navegación al detalle ==
+
+Usuario -> ListUI : clic en nombre / «Inspeccionar»
+ListUI -> DetailUI : navigate("/projects/:id")\n(router.tsx: projects/:id)
+DetailUI -> Hooks : useEffect → listProjects()
+Hooks -> HTTP : GET /api/projects
+HTTP -> Controller : GET /api/projects
+
+note right of Controller
+  No existe GET /api/projects/:id:
+  el detalle se deriva de la lista
+end note
+
+Controller -> Service : listProjects()
+Service -> Repo : list()
+Repo -> DB : SELECT ...
+DB --> Repo : todos los proyectos
+Repo --> Service : ProjectSummary[]
+Service --> Controller : lista completa
+Controller --> HTTP : 200
+HTTP --> DetailUI : rows
+DetailUI -> DetailUI : rows.find(row => row.id === Number(id))
+DetailUI --> Usuario : ProjectHeader (owner/repo, badges,\nSync, Analizar) + ProjectSidebar
+
+== Fase B.1 — Files: árbol del checkout ==
+
+Usuario -> DetailUI : sección «Files»
+DetailUI -> Hooks : useProjectTree.refresh()
+Hooks -> HTTP : listProjectFiles(id)\nPOST /api/projects/:id/git/tree
+HTTP -> Controller : POST /api/projects/:id/git/tree
+Controller -> Service : listTree(id)
+Service -> TaskSvc : launch({ kind: "git-ls-tree" })
+TaskSvc -> Runner : enqueue(...)
+Runner -> Git : git ls-tree -r --name-only HEAD
+Git --> Runner : lista de rutas
+Runner --> TaskSvc : { files }
+TaskSvc --> Service : { files, taskId }
+Service --> Controller : { files, taskId }
+Controller --> HTTP : 200
+HTTP --> DetailUI : files[]
+DetailUI --> Usuario : «DirectoryTree»
+
+== Fase B.2 — Files: vista previa de un archivo ==
+
+Usuario -> DetailUI : clic en un archivo
+DetailUI -> Hooks : useProjectFile.open(path)
+Hooks -> HTTP : readProjectFile(id, path)\nPOST /api/projects/:id/file
+HTTP -> Controller : POST /api/projects/:id/file { path }
+Controller -> Service : readFile(id, path)
+Service -> Service : validar ruta (confinada al\ncheckout) · ≤ 512 KiB · UTF-8\n· sin bytes nulos
+Service -> Service : statSync + readFileSync\n(checkout en disco, sin task)
+Service --> Controller : { path, content, size }
+Controller --> HTTP : 200 ProjectFile
+HTTP --> DetailUI : ProjectFile
+DetailUI --> Usuario : «CodeViewer code={content}»
+
+note over Usuario, DB
+  En veraud la «descarga» del proyecto ES el git clone de la Fase A;
+  no hay archivo ZIP del repositorio completo.
+  El artefacto descargable posterior (graph.json, informes .docx)
+  sigue el mismo patrón: GET /api/projects/:id/graph/:taskId/artifact.
+end note
+
+@enduml

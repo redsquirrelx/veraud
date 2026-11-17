@@ -323,7 +323,7 @@ describe("project quality audits", () => {
     const article = await screen.findByRole("article")
     const history = within(article)
     // View Details and Reuse Configuration are visible first-hand in the explorer row.
-    expect(history.getByRole("link", { name: "View details" })).toHaveClass("ui-button-secondary")
+    expect(history.getByRole("link", { name: "View audit #8 details" })).toHaveClass("ui-button-secondary", "quality-audit-run-link")
     expect(history.getByRole("button", { name: "Reuse configuration" })).toHaveClass("ui-button-secondary")
     expect(history.queryByRole("link", { name: "View Blackboard" })).not.toBeInTheDocument()
     await openAuditMenu(article)
@@ -539,7 +539,7 @@ describe("project quality audits", () => {
     show()
     const article = await screen.findByRole("article")
     await openAuditMenu(article)
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "View audit #8 details" })).toHaveAttribute("href", "/projects/5/audits/8")
   })
 
   it.each([false, true])("reuses historical selections without changing the original audit (separate views: %s)", async (separateViews) => {
@@ -876,7 +876,7 @@ describe("project quality audits", () => {
     expect(screen.queryByText("bdeb6efb73bd45fe9cb193f54710cf60")).not.toBeInTheDocument()
     expect(api.getQualityAudit).not.toHaveBeenCalled()
     const article = screen.getByRole("article")
-    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(within(article).getByRole("link", { name: "View audit #8 details" })).toHaveAttribute("href", "/projects/5/audits/8")
     await openAuditMenu(article)
     expect(screen.getByRole("link", { name: "View Blackboard" })).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Audit report · #8" })).not.toBeInTheDocument()
@@ -893,7 +893,7 @@ describe("project quality audits", () => {
     expect(within(article).getByRole("heading", { name: /Functional adequacy · #8/ })).toBeInTheDocument()
     expect(article).not.toHaveTextContent("Functional adequacy · exploratory")
     await openAuditMenu(article)
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "View audit #8 details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(JSON.stringify(historical)).toBe(original)
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
   })
@@ -938,7 +938,7 @@ describe("project quality audits", () => {
     // The full run ID stays out of the explorer row.
     expect(screen.queryByText("c".repeat(32))).not.toBeInTheDocument()
     const article = await screen.findByRole("article")
-    expect(within(article).getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/9")
+    expect(within(article).getByRole("link", { name: "View audit #9 details" })).toHaveAttribute("href", "/projects/5/audits/9")
     expect(within(article).getByRole("button", { name: "Reuse configuration" })).toBeInTheDocument()
     // A running audit has no report yet, so no extra request is made for it.
     expect(api.getQualityAuditReport).not.toHaveBeenCalled()
@@ -972,14 +972,14 @@ describe("project quality audits", () => {
     await toggleAttribute("Functional adequacy")
     expect(screen.queryByRole("textbox", { name: "Functional requirements" })).not.toBeInTheDocument()
     await openAuditMenu()
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "View audit #8 details" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(api.getQualityAudit).not.toHaveBeenCalled()
     const requestCounts = [vi.mocked(api.listQualityAudits).mock.calls.length, vi.mocked(api.getQualityAudit).mock.calls.length]
 
     await changeLanguage("es")
 
     expect(screen.getByRole("heading", { name: "Auditoría de calidad" })).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Ver detalles" })).toHaveAttribute("href", "/projects/5/audits/8")
+    expect(screen.getByRole("link", { name: "Ver detalles de la auditoría #8" })).toHaveAttribute("href", "/projects/5/audits/8")
     expect(screen.getByRole("heading", { name: "Auditorías del proyecto" })).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Adecuación funcional · exploratoria" })).toHaveTextContent("Activado")
     expect(screen.queryByRole("textbox", { name: "Requisitos funcionales" })).not.toBeInTheDocument()
@@ -1049,7 +1049,7 @@ describe("project quality audits", () => {
     trigger.focus()
     await user.keyboard("{Enter}")
     expect(await screen.findByRole("button", { name: "View configuration" })).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View details" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "View audit #8 details" })).toBeInTheDocument()
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("button", { name: "View configuration" })).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())

@@ -103,7 +103,7 @@ def test_single_assignment_preserves_inputs_output_provenance_and_usage(tools, m
     assert state == before and not model.contexts
     assert record.assignment == assignment() and record.status == "completed"
     assert child.request.objective == assignment().objective
-    assert child.request.original_objective == state["request"].objective
+    assert child.request.original_objective == assignment().objective
     assert child.request.targets == assignment().scope
     assert child.request.repository_context == state["request"].repository_context
     assert set(child.request.constraints) == {"Do not inspect Inventory.", "Read only.", "Retain uncertainty."}
@@ -116,6 +116,36 @@ def test_single_assignment_preserves_inputs_output_provenance_and_usage(tools, m
     assert runtime.tracing.events[0]["assignment_id"] == record.assignment_id
     assert runtime.tracing.events[0]["coordinator_id"] == record.assignment.coordinator_id
     assert CoordinatorExecutionRecord.model_validate_json(record.model_dump_json()) == record
+
+
+@pytest.mark.parametrize("coordinator_id,objective", [
+    ("modularity", "Evaluate component responsibility cohesion."),
+    ("testability", "Evaluate controllability and isolation for independent tests."),
+])
+def test_coordinator_request_excludes_sibling_selection_manifest(coordinator_id, objective):
+    # Regression: run 153 marked modularity partial solely because its planner
+    # interpreted the global testability assignment as missing local coverage.
+    from server.agents.maintainability.v2.manager.agent import deterministic_objective
+
+    selection = {"modularity": ["responsibility"],
+        "testability": ["test_controllability", "test_isolation"]}
+    request = deterministic_objective(MaintainabilityRequest(
+        objective="Investigate architectural maintainability.",
+        maintainability_selection=selection,
+        repository_context="Repository context retained."))
+    global_objective = request.objective
+    assert "modularity" in global_objective and "testability" in global_objective
+    delegated = assignment(coordinator_id, objective=objective)
+    child_request = delegation.coordinator_request(registered_coordinators()[coordinator_id], request, delegated)
+
+    assert child_request.objective == child_request.original_objective == objective
+    assert global_objective not in child_request.model_dump_json()
+    assert child_request.investigator_selection == selection[coordinator_id]
+    assert child_request.targets == delegated.scope
+    assert child_request.constraints == delegated.constraints
+    assert child_request.repository_context == request.repository_context
+    assert request.objective == global_objective
+    assert request.maintainability_selection == selection
 
 
 def test_multiple_assignments_are_concurrent_isolated_and_stably_ordered(tools, monkeypatch):
@@ -253,7 +283,7 @@ def test_real_modularity_planner_is_invoked_and_explicitly_remains_partial(tools
     assert registered_coordinators()["modularity"].result_kind == "assessment"
     assert record.status == result["delegation_status"] == "partial"
     assert record.result["plan"]["uncovered_requirements"] == ["No technical assessment was executed."]
-    assert record.result["request"]["original_objective"] == request.objective
+    assert record.result["request"]["original_objective"] == assignment_value.objective
     assert record.consumption.model_calls == len(model.contexts) == 1
     assert record.result["status"] == "not_applicable"
     assert tools.budget_usage.tool_calls == 0

@@ -19,6 +19,8 @@ class BoundaryConfig(InvestigationConfig):
         description="Active time per task, further limited by its share of remaining execution time.")
     max_planned_investigations: int = Field(default=12, ge=1, le=15,
         description="Usual planning target (10–12); never a minimum quota, hard maximum 15.")
+    max_component_probes_per_group_pair: int = Field(default=2, ge=1, le=8,
+        description="Distinct declared module interactions retained per directed ownership-group pair before documentary ranking; never findings or a selection quota.")
     max_integration_scan_files: int = Field(default=60, ge=0, le=200,
         description="Maximum retained production files inspected for integration declarations; zero disables scanning.")
     max_integration_scan_characters: int = Field(default=120_000, ge=0, le=1_000_000,

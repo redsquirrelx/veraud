@@ -83,7 +83,15 @@ def deterministic_objective(request: MaintainabilityRequest, capabilities: Itera
         reusability_investigators = set(_reusability_investigators())
     except Exception:  # noqa: BLE001 - hierarchy stays deterministic without investigators
         reusability_investigators = set()
-    registered = {"modularity": modularity_investigators, "reusability": reusability_investigators}
+    try:
+        from server.agents.maintainability.v2.testability.coordinator.registry import (
+            registered_investigators as _testability_investigators,
+        )
+        testability_investigators = set(_testability_investigators())
+    except Exception:  # noqa: BLE001 - hierarchy stays deterministic without investigators
+        testability_investigators = set()
+    registered = {"modularity": modularity_investigators, "reusability": reusability_investigators,
+        "testability": testability_investigators}
     selection = getattr(request, "maintainability_selection", None)
     lines = []
     for coordinator_id in sorted(catalog):

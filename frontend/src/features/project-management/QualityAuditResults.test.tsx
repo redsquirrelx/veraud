@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { changeLanguage } from "../../shared/i18n/index.ts"
@@ -8,19 +8,167 @@ import { ApiError } from "../../infrastructure/http-client/httpClient.ts"
 import { QualityAuditResults } from "./QualityAuditResults.tsx"
 import * as api from "./qualityAuditApi.ts"
 
-vi.mock("./qualityAuditApi.ts", () => ({ getQualityAudit: vi.fn(), getQualityAuditReportSection: vi.fn(), listQualityAudits: vi.fn(), getQualityAuditReport: vi.fn(), downloadQualityAuditReport: vi.fn(), getQualityAuditConfiguration: vi.fn() }))
+vi.mock("./qualityAuditApi.ts", () => ({ getQualityAudit: vi.fn(), getQualityAuditReportSection: vi.fn(), listQualityAudits: vi.fn(), getQualityAuditReport: vi.fn(), downloadQualityAuditReport: vi.fn(), getQualityAuditConfiguration: vi.fn(), getVerificationSuite: vi.fn(), requestVerificationSuite: vi.fn(), downloadVerificationSuite: vi.fn(), listVerificationCommits: vi.fn().mockResolvedValue({
+  commits: [{ commitHash: "c".repeat(40), subject: "Corrected implementation" }], hasMore: false,
+  baselineCommit: "a".repeat(40), branch: "original-branch", branchTip: "c".repeat(40), limit: 30, offset: 0,
+}) }))
 const audit: api.QualityAuditSummary = { id: 8, evaluationId: 4, branch: "original-branch", commitHash: "b".repeat(40), attributes: ["maintainability"],
   executionStatus: "Completed", auditStatus: "partial", runId: "original-run", error: null, createdAt: "2026-10-17T10:00:00Z", startedAt: "2026-10-17T10:05:00Z", finishedAt: "2026-10-17T11:00:00Z", reportAvailable: true }
 beforeEach(() => {
+  vi.mocked(api.listVerificationCommits).mockResolvedValue({
+    commits: [{ commitHash: "c".repeat(40), subject: "Corrected implementation" }],
+    hasMore: false, baselineCommit: "a".repeat(40), branch: "original-branch", branchTip: "c".repeat(40), limit: 30, offset: 0,
+  })
+  vi.mocked(api.getVerificationSuite).mockResolvedValue({ status: "not_built" })
   vi.mocked(api.getQualityAudit).mockResolvedValue(audit)
   vi.mocked(api.getQualityAuditReportSection).mockImplementation(async (_project, _id, section) => ({ section, data: section === "executive_summary" ? {
     conclusion: "Original report conclusion.", summary: { text: "Original report content", source_refs: ["source-1", "source-2"] },
   } : null }))
 })
 afterEach(async () => { cleanup(); vi.resetAllMocks(); await changeLanguage("en") })
-function show() { render(<MemoryRouter><QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" /></MemoryRouter>) }
+function show(initialEntry = "/") { render(<MemoryRouter initialEntries={[initialEntry]}><QualityAuditResults projectId={5} auditId={8} projectName="acme/Shop" /></MemoryRouter>) }
 
 describe("dedicated audit results", () => {
+  it("executes the selected commit without changing baseline creation or prior result identity", async () => {
+    await changeLanguage("en")
+    const previous = { status: "ready" as const, ok: true, action: "execute" as const, run_id: "original-run",
+      termination_reason: "suite_validated", zip_path: "suite.zip", validation_status: "partial", limitations: [],
+      checkout_commit: "d".repeat(40), target_commit: "d".repeat(40), verifications: [] }
+    vi.mocked(api.getVerificationSuite).mockResolvedValue(previous)
+    vi.mocked(api.requestVerificationSuite).mockResolvedValue(previous)
+    show("/?tab=verification")
+    const user = userEvent.setup()
+    const execute = await screen.findByRole("button", { name: "Run verification suite" })
+    await waitFor(() => expect(execute).toBeEnabled())
+    // Switch the target from the default (audited commit) to the descendant list commit.
+    await user.click(screen.getByRole("button", { name: "Select a target commit" }))
+    await user.click(screen.getByRole("option", { name: new RegExp(`^${"c".repeat(10)}`) }))
+    expect(screen.getAllByText("d".repeat(40)).length).toBe(2)
+    await user.click(execute)
+    expect(api.requestVerificationSuite).toHaveBeenCalledExactlyOnceWith(5, 8, { action: "execute", targetCommit: "c".repeat(40) })
+  })
+  it("does not mix a previous execution with a newly generated suite", async () => {
+    await changeLanguage("en")
+    const old: api.VerificationSuiteReady = { status: "ready", ok: true, action: "execute", run_id: "original-run",
+      termination_reason: "suite_validated", zip_path: "suite.zip", validation_status: "partial", limitations: [],
+      verifications: [{ verification_id: "old-check", rule_id: null, strategy: "static_ast", covered_property: "Old execution", status: "VIOLATION_PRESENT" }] }
+    vi.mocked(api.getVerificationSuite).mockResolvedValue(old)
+    vi.mocked(api.requestVerificationSuite).mockResolvedValue({ ...old, action: "create", validation_status: "generated", verifications: [] })
+    show("/?tab=verification")
+    expect(await screen.findByText("old-check")).toBeVisible()
+    await userEvent.click(screen.getByRole("button", { name: "Create verification suite" }))
+    await waitFor(() => expect(screen.queryByText("old-check")).not.toBeInTheDocument())
+    expect(screen.getByText(/No execution results are available yet/)).toBeVisible()
+    expect(api.requestVerificationSuite).toHaveBeenCalledExactlyOnceWith(5, 8, { action: "create" })
+  })
+  it.each(["completed", "failed"])("can rerun an existing ZIP after a %s execution without recreating it", async (outcome) => {
+    await changeLanguage("en")
+    const summary: api.VerificationSuiteReady = { status: "ready", ok: true, action: "execute",
+      run_id: "original-run", termination_reason: "suite_validated", zip_path: "suite.zip",
+      validation_status: "partial", limitations: [], verifications: [] }
+    vi.mocked(api.getVerificationSuite).mockResolvedValue(summary)
+    vi.mocked(api.requestVerificationSuite)
+      .mockResolvedValueOnce(outcome === "failed" ? { status: "failed", message: "Execution failed" } : summary)
+      .mockResolvedValueOnce(summary)
+    show("/?tab=verification")
+    const user = userEvent.setup()
+    const execute = await screen.findByRole("button", { name: "Run verification suite" })
+    await waitFor(() => expect(execute).toBeEnabled())
+    await user.click(execute)
+    await waitFor(() => expect(api.requestVerificationSuite).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(execute).toBeEnabled())
+    expect(screen.getByRole("button", { name: "Download suite" })).toBeEnabled()
+    await user.click(execute)
+    await waitFor(() => expect(api.requestVerificationSuite).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(execute).toBeEnabled())
+    for (const call of vi.mocked(api.requestVerificationSuite).mock.calls) {
+      expect(call).toEqual([5, 8, { action: "execute", targetCommit: audit.commitHash }])
+    }
+  })
+
+  it("does not enable execution when a summary has no ZIP", async () => {
+    await changeLanguage("en")
+    vi.mocked(api.getVerificationSuite).mockResolvedValue({ status: "ready", ok: false, action: "create",
+      run_id: "original-run", termination_reason: "not_verifiable", zip_path: null,
+      validation_status: "not_run", limitations: [], verifications: [] })
+    show("/?tab=verification")
+    expect(await screen.findByRole("button", { name: "Run verification suite" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Download suite" })).toBeDisabled()
+  })
+  it("separates suite controls and results from finding revalidation", async () => {
+    await changeLanguage("es")
+    vi.mocked(api.getVerificationSuite).mockResolvedValue({ status: "ready", ok: true, action: "create",
+      run_id: "original-run", termination_reason: "suite_packaged", zip_path: "suite.zip",
+      validation_status: "generated", limitations: ["Límite de la suite"],
+      verifications: [{ verification_id: "suite-test", rule_id: null, strategy: "static_ast",
+        covered_property: "Propiedad verificada", status: "generated", generated_by: "llm" }] })
+    show()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole("tab", { name: "Revalidación de hallazgos" }))
+    expect(screen.getByRole("button", { name: "Iniciar revalidación" })).toBeVisible()
+    expect(screen.queryByRole("button", { name: "Crear suite de verificación" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: "Verificación" }))
+    const panel = within(screen.getByRole("tabpanel", { name: "Verificación" }))
+    expect(panel.getByRole("button", { name: "Crear suite de verificación" })).toBeVisible()
+    expect(panel.getByRole("button", { name: "Ejecutar suite de verificación" })).toBeEnabled()
+    expect(panel.getByRole("button", { name: "Descargar suite" })).toBeVisible()
+    expect(panel.getByText(/Todavía no hay resultados de ejecución/)).toBeVisible()
+    await user.click(panel.getByText("Limitaciones (1)"))
+    expect(panel.getByText("Límite de la suite")).toBeVisible()
+    expect(panel.queryByRole("button", { name: "Iniciar revalidación" })).not.toBeInTheDocument()
+  })
+
+  it("opens the verification tab directly from the URL", async () => {
+    await changeLanguage("en")
+    show("/?tab=verification")
+    expect(await screen.findByRole("button", { name: "Create verification suite" })).toBeVisible()
+    expect(screen.getByRole("tab", { name: "Verification" })).toHaveAttribute("aria-selected", "true")
+  })
+  it("resumes an existing recovery on page entry without starting a new suite", async () => {
+    await changeLanguage("en")
+    vi.useFakeTimers()
+    let finished = false
+    vi.mocked(api.getVerificationSuite).mockImplementation(async (_project, _audit, action) => {
+      if (action === "execute") return { status: "not_built" }
+      if (!finished) return { status: "recovering" }
+      return { status: "ready", ok: true, action: "create", run_id: "original-run",
+        termination_reason: "suite_packaged", zip_path: "suite.zip", validation_status: "generated",
+        limitations: [], verifications: [] }
+    })
+    try {
+      await act(async () => { show() })
+      fireEvent.click(screen.getByRole("tab", { name: "Verification" }))
+      expect(screen.getByText(/Connection interrupted/)).toBeVisible()
+      finished = true
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(screen.getByRole("button", { name: "Download suite" })).toBeVisible()
+      expect(api.requestVerificationSuite).not.toHaveBeenCalled()
+    } finally { cleanup(); vi.useRealTimers() }
+  })
+  it("keeps polling through recovery and displays the result without a second generation request", async () => {
+    await changeLanguage("en")
+    vi.useFakeTimers()
+    try {
+      await act(async () => { show() })
+      fireEvent.click(screen.getByRole("tab", { name: "Verification" }))
+      vi.mocked(api.requestVerificationSuite).mockResolvedValue({ status: "building" })
+      vi.mocked(api.getVerificationSuite)
+        .mockResolvedValueOnce({ status: "recovering" })
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce({ status: "ready", ok: true, run_id: "original-run", action: "create",
+          termination_reason: "suite_packaged", zip_path: "suite.zip", validation_status: "generated",
+          limitations: [], verifications: [{ verification_id: "current-test", rule_id: null, strategy: "static_ast",
+            covered_property: "Current generated property", status: "generated", generated_by: "llm" }] })
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create verification suite" })) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(screen.getByText(/Connection interrupted/)).toBeVisible()
+      await act(async () => { await vi.advanceTimersByTimeAsync(8000) })
+      expect(screen.getByRole("button", { name: "Run verification suite" })).toBeEnabled()
+      expect(screen.getByText(/No execution results are available yet/)).toBeVisible()
+      expect(screen.queryByText("fetch failed")).not.toBeInTheDocument()
+      expect(api.requestVerificationSuite).toHaveBeenCalledTimes(1)
+    } finally { cleanup(); vi.useRealTimers() }
+  })
   it("refreshes active audit metadata automatically and stops after completion", async () => {
     vi.useFakeTimers()
     try {
@@ -153,7 +301,7 @@ describe("dedicated audit results", () => {
     show()
     await screen.findByRole("region", { name: "Findings summary" })
     expect(screen.getByRole("tab", { name: "General Overview" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getAllByRole("tab")).toHaveLength(6)
+    expect(screen.getAllByRole("tab")).toHaveLength(7)
     expect(api.getQualityAuditReportSection).toHaveBeenCalledOnce()
     await user.click(screen.getByRole("tab", { name: "Findings" }))
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))
@@ -203,6 +351,9 @@ describe("dedicated audit results", () => {
     await user.keyboard("{ArrowRight}")
     expect(screen.getByRole("tab", { name: "Findings revalidation" })).toHaveFocus()
     expect(screen.getByRole("tabpanel", { name: "Findings revalidation" })).toBeVisible()
+    await user.keyboard("{ArrowRight}")
+    expect(screen.getByRole("tab", { name: "Verification" })).toHaveFocus()
+    expect(screen.getByRole("tabpanel", { name: "Verification" })).toBeVisible()
     await user.keyboard("{ArrowRight}")
     expect(screen.getByRole("tab", { name: "Findings" })).toHaveFocus()
     const panel = within(screen.getByRole("tabpanel", { name: "Findings" }))

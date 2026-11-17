@@ -308,8 +308,8 @@ def test_graph_extends_through_investigation(tmp_path):
     assert "plan_investigation" in node_names
     assert "investigate" in node_names
     assert "tools" in node_names
-    assert "synthesize" not in node_names
-    assert "finalize" not in node_names
+    assert "synthesis" in node_names
+    assert "finalize" in node_names
 
 
 def test_debug_output_reports_menu_raw_response_and_selection(tmp_path, capsys):

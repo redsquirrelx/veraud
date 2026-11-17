@@ -1,3 +1,4 @@
+import { writeTraceEvent, type TraceEnvelope } from "../../infrastructure/trace-writer.js"
 import type { FastifyInstance } from "fastify"
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js"
 import { publicIdentifier } from "../../infrastructure/security/public-errors.js"
@@ -94,6 +95,12 @@ export class ExecutionEventRepository {
   }
 }
 
+function eventTrace(request: import("fastify").FastifyRequest, executionId: number): TraceEnvelope | undefined {
+  const traceId = request.headers["x-veraud-trace-id"]
+  if (typeof traceId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(traceId)) return undefined
+  const agentType = request.headers["x-veraud-agent-type"]
+  return { traceId, executionId, agentType: typeof agentType === "string" ? agentType : "architecture_context", spanId: traceId }
+}
 export function registerExecutionEventRoutes(app: FastifyInstance, repository: ExecutionEventRepository) {
   const params = { type: "object", required: ["id"], properties: { id: { type: "string", pattern: "^[1-9][0-9]*$" } } } as const
   const errors = errorResponses([400, 404, 422], "ExecutionError", false)
@@ -110,8 +117,17 @@ export function registerExecutionEventRoutes(app: FastifyInstance, repository: E
     body: { type: "object", additionalProperties: false, required: ["events"], properties: { events: { type: "array", minItems: 1, maxItems: 100, items: executionEventSchema } } },
     response: { 200: { type: "object", required: ["acknowledged"], properties: { acknowledged: { type: "boolean" } } }, ...errors },
   } }, async (request, reply) => {
-    try { return await repository.append(Number(request.params.id), request.body.events) }
-    catch (error) { return failure(error, reply) }
+    const id = Number(request.params.id)
+    const trace = eventTrace(request, id)
+    try {
+      const result = await repository.append(id, request.body.events)
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.events", status: "ok", message: "Agent events persisted", details: { count: request.body.events.length, actions: request.body.events.map((event) => event.actionId ?? event.name).slice(0, 100) } })
+      return result
+    }
+    catch (error) {
+      if (trace) writeTraceEvent(trace, { event: "callback.backend.events_failed", status: "error", message: error instanceof Error ? error.message : "Events callback failed", details: { errorType: error instanceof Error ? error.name : typeof error } })
+      return failure(error, reply)
+    }
   })
   app.get<{ Params: { id: string }, Querystring: { offset?: number, limit?: number } }>("/api/agent-executions/:id/events", { schema: {
     params, tags: ["Agent Executions"], summary: "Read execution chronology, ordered by occurrence time",

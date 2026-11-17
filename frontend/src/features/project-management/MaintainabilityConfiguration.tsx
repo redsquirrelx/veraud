@@ -11,6 +11,8 @@ const investigatorDescriptions: Record<string, ParseKeys<"projects">> = {
   abstraction: "qualityAudits.configuration.investigators.abstraction",
   reuse_opportunity: "qualityAudits.configuration.investigators.reuseOpportunity",
   component_adaptability: "qualityAudits.configuration.investigators.componentAdaptability",
+  test_isolation: "qualityAudits.configuration.investigators.testIsolation",
+  test_controllability: "qualityAudits.configuration.investigators.testControllability",
 }
 
 /** Select the investigator scope; managers and coordinators are implicit dependencies. */

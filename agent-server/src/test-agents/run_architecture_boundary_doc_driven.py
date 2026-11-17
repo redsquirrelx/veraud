@@ -119,11 +119,13 @@ class DebugArchitectureBoundaryAgent(ArchitectureBoundaryAgent):
     execution_type = DebugFullExecution
 
 
-def load_test_model(agent_config="dummy"):
+def load_test_model(agent_config="dummy", *, model_name=None):
     configurations = load_dev_agents_config()
     if agent_config not in configurations:
         raise ValueError(f"No agent configuration {agent_config!r} in config/dev-agents.yaml.")
     _, settings = configurations[agent_config]
+    if model_name:
+        settings = settings.model_copy(update={"name": model_name})
     key = RunnerCredentials(_env_file=ENV_FILE).llm_api_key.get_secret_value()
     if not key.strip():
         raise ValueError("Set LLM_API_KEY in the repository .env or environment.")
@@ -151,7 +153,8 @@ async def run(args):
             **config.model_dump(), "max_output_tokens": args.max_output_tokens})
     token_policy = token_budget_policy()
     # Validate settings before repository analysis; credentials never enter graph state.
-    model, settings = load_test_model(args.agent_config)
+    model, settings = (load_test_model(args.agent_config, model_name=args.model)
+        if getattr(args, "model", None) else load_test_model(args.agent_config))
     try:
         await run_audit(args, root, request, config, model, settings, token_policy=token_policy)
     finally:
@@ -311,6 +314,7 @@ def main():
     parser.add_argument("--architecture-context", type=Path,
         help="Canonical ArchitectureContextResult JSON file; overrides documented_architecture from --request")
     parser.add_argument("--agent-config", default="dummy", help="Agent entry in config/dev-agents.yaml (default: dummy)")
+    parser.add_argument("--model", help="Explicit model-name override within the configured provider (no automatic fallback)")
     parser.add_argument("--request", help="Data-only JSON: documented_architecture, targets, constraints and optional continuation; no external prompts")
     parser.add_argument("--config", help="JSON operating limits; this investigator does not accept prompt overrides")
     parser.add_argument("--max-files", type=int, default=2000)

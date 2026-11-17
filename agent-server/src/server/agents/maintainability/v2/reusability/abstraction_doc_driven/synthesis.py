@@ -1,7 +1,6 @@
 """Deterministic consolidation of abstraction investigation results."""
 
 import json
-from collections import defaultdict
 from itertools import combinations
 
 from server.services.repository_analysis.context import create_identifier
@@ -16,34 +15,49 @@ from .schemas import (
     LocalClaimAssessment,
 )
 
+_SET_FIELDS = (
+    "components", "symbol_ids", "relationship_ids", "document_claim_ids",
+    "guarantees", "implementers", "consumers",
+)
+
 
 def consolidate_candidates(results: list[AbstractionInvestigationResult]):
-    grouped = defaultdict(list)
+    """Merge only identical claims, never local IDs or similar prose.
+
+    Investigation-local IDs may collide across tasks. Candidate content is the
+    identity; each source remains available through `candidate_origins`.
+    """
+    groups = {}
     for result in results:
         for candidate in result.candidates:
-            grouped[candidate.id].append(candidate)
-    candidates = []
-    origins: dict[str, list[dict]] = {}
-    for candidate_id in sorted(grouped):
-        group = grouped[candidate_id]
-        first = group[0]
-        merged = first.model_copy(update={
-            "evidence_ids": list(dict.fromkeys(v for item in group for v in item.evidence_ids)),
-            "components": list(dict.fromkeys(v for item in group for v in item.components)),
-            "symbol_ids": list(dict.fromkeys(v for item in group for v in item.symbol_ids)),
-            "relationship_ids": list(dict.fromkeys(v for item in group for v in item.relationship_ids)),
-            "document_claim_ids": list(dict.fromkeys(v for item in group for v in item.document_claim_ids)),
-            "guarantees": list(dict.fromkeys(v for item in group for v in item.guarantees)),
-            "implementers": list(dict.fromkeys(v for item in group for v in item.implementers)),
-            "consumers": list(dict.fromkeys(v for item in group for v in item.consumers)),
-        })
-        candidates.append(merged)
-        origins[candidate_id] = [
-            {"investigation_id": result.investigation_id, "candidate_id": candidate.id,
-             "evidence_ids": list(candidate.evidence_ids),
-             "document_claim_ids": list(candidate.document_claim_ids)}
-            for result in results for candidate in result.candidates if candidate.id == candidate_id
-        ]
+            claim = candidate.model_dump(exclude={"id", "evidence_ids"})
+            for field in _SET_FIELDS:
+                claim[field] = sorted(set(claim[field]))
+            key = json.dumps(claim, sort_keys=True)
+            if key not in groups:
+                groups[key] = (candidate.model_copy(deep=True), [])
+            retained, origins_list = groups[key]
+            retained = retained.model_copy(update={
+                "evidence_ids": list(dict.fromkeys([*retained.evidence_ids, *candidate.evidence_ids]))})
+            groups[key] = (retained, origins_list)
+            origin = {"investigation_id": result.investigation_id, "candidate_id": candidate.id,
+                      "evidence_ids": list(candidate.evidence_ids),
+                      "document_claim_ids": list(candidate.document_claim_ids)}
+            if origin not in origins_list:
+                origins_list.append(origin)
+
+    reserved = {candidate.id for candidate, _ in groups.values()}
+    used, candidates, origins = set(), [], {}
+    for key, (candidate, investigations) in groups.items():
+        identifier = candidate.id
+        if identifier in used:
+            identifier = create_identifier("abstraction-candidate", key)
+            while identifier in reserved or identifier in used:
+                identifier = create_identifier("abstraction-candidate", identifier, key)
+        candidate = candidate.model_copy(update={"id": identifier})
+        used.add(identifier)
+        candidates.append(candidate)
+        origins[identifier] = investigations
     return candidates, origins
 
 

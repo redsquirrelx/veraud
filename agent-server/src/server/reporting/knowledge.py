@@ -14,6 +14,9 @@ AGENT_CATEGORIES = {
     "reuse_opportunity": ("maintainability", "reusability"),
     "component_adaptability": ("maintainability", "reusability"),
     "reusability": ("maintainability", "reusability"),
+    "test_isolation": ("maintainability", "testability"),
+    "test_controllability": ("maintainability", "testability"),
+    "testability": ("maintainability", "testability"),
     "maintainability_manager": ("maintainability", "unspecified"),
     "security": ("security", "static_security"),
 }

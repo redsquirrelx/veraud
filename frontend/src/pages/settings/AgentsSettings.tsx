@@ -109,7 +109,9 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
   const contextCards = agents.filter((agent) => agent.agentType === "architecture_context"
     && agent.requiresModel !== false && (agent.availability === undefined || agent.availability === "available"))
     .map((agent) => ({ agent, attribute: undefined, mixed: false }))
-  const cards = qualityCategories ? [...contextCards, ...categories] : agents.filter((agent) => agent.agentType !== "functional_adequacy"
+  const suiteCards = agents.filter((agent) => agent.agentType === "verification_suite" && agent.availability === "available")
+    .map((agent) => ({ agent, attribute: undefined, mixed: false }))
+  const cards = qualityCategories ? [...contextCards, ...categories, ...suiteCards] : agents.filter((agent) => agent.agentType !== "functional_adequacy"
     && (!agentTypes || agentTypes.includes(agent.agentType)))
     .map((agent) => ({ agent, attribute: undefined, mixed: false }))
 
@@ -145,11 +147,12 @@ export function AgentsSettings({ providers = [], providersLoading = false, provi
                 key={attribute ?? agent.agentType}
                 agent={agent}
                  label={attribute ? labels[attribute] ?? attribute : labels[agent.agentType]
-                   ?? (agent.agentType === "architecture_context" ? tProjects("analyze.pipeline.contextAgent") : undefined)}
+                   ?? (agent.agentType === "architecture_context" ? tProjects("analyze.pipeline.contextAgent")
+                     : agent.agentType === "verification_suite" ? t("audit.verificationSuite") : undefined)}
                 qualityAttribute={attribute}
                 categoryMixed={mixed}
                 onCategorySaved={setAgents}
-                modelAccessOnly={modelAccessOnly}
+                modelAccessOnly={modelAccessOnly && agent.agentType !== "verification_suite"}
                 providers={providers}
                 providersLoading={providersLoading || !!providersError || synchronizing}
                 onSaved={saved}

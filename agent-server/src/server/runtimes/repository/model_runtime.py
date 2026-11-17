@@ -19,6 +19,7 @@ from server.infrastructure.llm.retry import (
     retryable,
 )
 from server.infrastructure.llm.usage import extract_text, response_usage
+from server.infrastructure.tracing_sink import child_span_id, trace_event
 
 from ...agent_services.budgeting.telemetry import (
     ModelCallMeasurement,
@@ -78,6 +79,8 @@ class ModelGateway:
     @record_action("model", name="model_gateway")
     async def __call__(self, prompt, *, return_response=False):
         if self.stopped:
+            trace_event("provider.request_blocked", status="error", error_code="provider_unavailable",
+                        message="Provider unavailable after an earlier terminal failure")
             raise RuntimeError("Provider unavailable after a terminal failure.")
         record = {
             "attempts": 0,
@@ -116,6 +119,7 @@ class ModelGateway:
             if self.on_event is not None:
                 self.on_event(event, {"call": call_number, **values})
 
+        call_span = child_span_id("provider")
         emit(
             "model_call_started",
             stage=measurement.stage,
@@ -127,6 +131,9 @@ class ModelGateway:
                 part.category: part.characters for part in measurement.context
             },
         )
+        trace_event("provider.request_started", span_id=call_span, parent_span_id=None, message=f"provider request {call_number}",
+                    details={"stage": measurement.stage, "attempt": 0, "estimatedInputTokens": measurement.estimated_input_tokens,
+                             "promptCharacters": len(prompt)})
         try:
             async with self.pacer.lock:
                 for index in range(self.pacer.max_retries + 1):
@@ -187,6 +194,10 @@ class ModelGateway:
                             "STOP", "stop", "MAX_TOKENS", "length", "SAFETY", "RECITATION",
                             "PROHIBITED_CONTENT", "content_filter", "OTHER",
                         } else ("other" if raw_finish is not None else None)
+                        trace_event("provider.response", span_id=call_span, status="ok", message="Provider returned a response",
+                                    duration_ms=round((monotonic() - started) * 1000, 3),
+                                    details={"attempt": index + 1, "httpStatus": 200, "finishReason": finish_reason,
+                                             "inputTokens": record["input_tokens"], "outputTokens": record["output_tokens"]})
                         if text.strip().startswith("```json") and text.strip().endswith(
                             "```"
                         ):
@@ -196,6 +207,11 @@ class ModelGateway:
                     except Exception as error:
                         record["http_status"] = http_status(error)
                         record["error_type"] = type(error).__name__
+                        status = http_status(error)
+                        trace_event("provider.error", span_id=call_span, status="error",
+                                    error_code=f"http_{status}" if status is not None else type(error).__name__,
+                                    message=f"Provider failed with {type(error).__name__}", duration_ms=round((monotonic() - started) * 1000, 3),
+                                    details={"attempt": index + 1, "httpStatus": status, "errorType": type(error).__name__})
                         emit(
                             "provider_error",
                             error_type=type(error).__name__,

@@ -8,6 +8,8 @@
     "label": "Secciones de configuración"
   },
   "audit": {
+    "verificationSuite": "Suite de verificación",
+    "verificationSuiteHint": "Modelo compartido por FindingTestGenerationAgent y TestabilityProbeAgent. Configura aquí la generación; ejecutar una suite existente no requiere modelo. Cada generador conserva sus presupuestos de ejecución.",
     "drawer": {
       "title": "Configurar auditoría · {{category}}", "description": "Configuración operativa avanzada. Los cambios se aplican a nuevas auditorías.",
       "sharedBudget": "Presupuesto global de auditoría", "sharedBudgetHint": "Límite global de tokens compartido por todos los atributos seleccionados. Esta configuración es común a todas las categorías.",

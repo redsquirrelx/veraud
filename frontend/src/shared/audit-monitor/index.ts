@@ -1,6 +1,7 @@
 export { AuditStatusView } from "./AuditStatusView.tsx"
 export { LiveAuditMonitor } from "./LiveAuditMonitor.tsx"
 export { AuditStatusDisclosure } from "./AuditStatusDisclosure.tsx"
+export { AuditMonitorIssues } from "./AuditMonitorIssues.tsx"
 export type { AuditStatusDisclosureProps } from "./AuditStatusDisclosure.tsx"
 export { AuditStatusDrawer } from "./AuditStatusDrawer.tsx"
 export type { AuditStatusDrawerProps } from "./AuditStatusDrawer.tsx"

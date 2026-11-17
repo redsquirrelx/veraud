@@ -66,3 +66,19 @@
 }
 
 .app-nav a.app-nav-active:hover { color: var(--color-brand); }
+
+/* Live count of queued/running executions next to the global Executions button. */
+.app-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}

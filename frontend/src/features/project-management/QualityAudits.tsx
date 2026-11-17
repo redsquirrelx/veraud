@@ -404,7 +404,7 @@ export function QualityAudits({ projectId, branch, commitHash, canRun, cardLayou
                 ? t("qualityAudits.report.notRecorded") : formatDateTime(audit.createdAt)}</span>
             </p>
             <div className="quality-audit-run-row-actions">
-              <Link className="ui-button ui-button-secondary" to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewDetails")}</Link>
+              <Link className="ui-button ui-button-secondary quality-audit-run-link" aria-label={t("qualityAudits.viewDetailsLabel", { id: audit.id })} to={`/projects/${projectId}/audits/${audit.id}`}>{t("qualityAudits.viewDetails")}</Link>
               <ReuseAuditConfiguration key={`${projectId}-${audit.id}`} projectId={projectId} auditId={audit.id}
                 available={audit.configurationAvailable === true} catalog={agentCatalog} lazyCatalog={view === "history"} disabled={starting} onReuse={reuseConfiguration} />
               <AuditRowMenu audit={audit}

@@ -71,10 +71,10 @@ export class QualityAuditRepository {
       const rows = await tx.agentExecution.findMany({
         where, take: limit, skip: actualOffset, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { id: true, agentType: true, evaluationId: true, status: true, error: true, createdAt: true,
-          startedAt: true, finishedAt: true, cancellationRequestedAt: true,
+          startedAt: true, finishedAt: true, cancellationRequestedAt: true, errorDetail: true,
           evaluation: { select: { projectVersion: { select: { branch: true, commitHash: true } } } } },
       })
-      // SQLite projects only summary metadata; result contains Blackboard and base64 DOCX.
+      // SQLite stores compact metadata only for new audits; large artifacts are filesystem-backed.
       const projections = await tx.$queryRaw<Array<{ id: number, runId: string | null, attributes: string | null,
         auditStatus: string | null, reportType: string | null, configurationSnapshot: string | null }>>`
         WITH page AS (
@@ -87,7 +87,8 @@ export class QualityAuditRepository {
           CASE WHEN json_valid(a.result) THEN COALESCE(json_extract(a.result, '$.run_id'), json_extract(a.result, '$.report.identification.audit_id')) END AS runId,
           CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.attributes') END AS attributes,
           CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.status') END AS auditStatus,
-          CASE WHEN json_valid(a.result) THEN json_type(a.result, '$.report') END AS reportType,
+          CASE WHEN json_valid(a.result)
+            THEN CASE WHEN json_extract(a.result, '$.artifacts.format') = 'veraud.audit.artifacts.v1' THEN 'object' ELSE json_type(a.result, '$.report') END END AS reportType,
           CASE WHEN json_valid(a.configuration_snapshot) THEN json_object('auditConfiguration', json_object(
             'version', json_extract(a.configuration_snapshot, '$.auditConfiguration.version'),
             'branch', json_extract(a.configuration_snapshot, '$.auditConfiguration.branch'),
@@ -112,7 +113,7 @@ export class QualityAuditRepository {
   }
 
   async findSummary(projectId: number, executionId: number) {
-    // Do not materialize result: it also contains Blackboard data and base64 DOCX.
+    // Do not materialize result: it also contains legacy report data and base64 DOCX.
     const [row, projected] = await this.db.$transaction([
       this.db.agentExecution.findFirst({
         where: { id: executionId, evaluation: { type: "QualityAudit", projectVersion: { projectId } } },
@@ -124,7 +125,8 @@ export class QualityAuditRepository {
         SELECT CASE WHEN json_valid(a.result) THEN COALESCE(json_extract(a.result, '$.run_id'), json_extract(a.result, '$.report.identification.audit_id')) END AS runId,
           CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.attributes') END AS attributes,
           CASE WHEN json_valid(a.result) THEN json_extract(a.result, '$.status') END AS auditStatus,
-          CASE WHEN json_valid(a.result) THEN json_type(a.result, '$.report') END AS reportType
+          CASE WHEN json_valid(a.result)
+            THEN CASE WHEN json_extract(a.result, '$.artifacts.format') = 'veraud.audit.artifacts.v1' THEN 'object' ELSE json_type(a.result, '$.report') END END AS reportType
         FROM agent_execution a JOIN evaluation e ON e.id = a.evaluation_id
           JOIN project_version v ON v.id = e.project_version_id
         WHERE a.id = ${executionId} AND v.project_id = ${projectId} AND e.type = 'QualityAudit'

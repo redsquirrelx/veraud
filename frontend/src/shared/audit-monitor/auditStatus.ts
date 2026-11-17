@@ -128,6 +128,8 @@ const pipelineLabelKeys: Record<string, ParseKeys<"projects">> = {
   maintainability: "auditStatus.pipelines.maintainability",
   security: "auditStatus.pipelines.security",
   functional_adequacy: "auditStatus.pipelines.functionalAdequacy",
+  verification_suite: "analyze.pipeline.verificationSuite",
+  "verification-suite": "analyze.pipeline.verificationSuite",
 }
 
 /** Translation key for a quality attribute, or null when the backend sends an

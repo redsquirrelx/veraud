@@ -5,6 +5,7 @@ import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
+from time import monotonic
 
 from langchain_core.runnables import Runnable, RunnableConfig
 
@@ -13,6 +14,7 @@ from ..agent_services.execution_tracking.events import (
     record_event,
 )
 from ..config.logs import get_logger
+from ..infrastructure.tracing_sink import child_span_id, trace_event
 from ..services.execution_error_details import (
     capture_execution_errors,
     exception_error_detail,
@@ -82,13 +84,32 @@ async def report_invocation_phase(phase):
 def phase_node(name, operation):
     """Observe an existing graph node without changing its outputs or routes."""
     async def node(state, config: RunnableConfig):
-        check_cancellation()
-        await report_invocation_phase(name)
-        check_cancellation()
-        if isinstance(operation, Runnable):
-            return await operation.ainvoke(state, config)
-        result = operation(state)
-        return await result if inspect.isawaitable(result) else result
+        active = _active.get()
+        receipt = active[0] if active else {}
+        span_id = child_span_id(f"node-{name}")
+        details = {"node": name, "invocationId": receipt.get("invocation_id"),
+                   "agentId": receipt.get("agent_id"), "parentInvocationId": receipt.get("parent_invocation_id")}
+        began = monotonic()
+        trace_event("node.started", span_id=span_id, message=f"node {name} started", details=details)
+        try:
+            check_cancellation()
+            await report_invocation_phase(name)
+            check_cancellation()
+            if isinstance(operation, Runnable):
+                result = await operation.ainvoke(state, config)
+            else:
+                result = operation(state)
+                result = await result if inspect.isawaitable(result) else result
+        except BaseException as error:
+            status = "cancelled" if isinstance(error, asyncio.CancelledError) else (
+                "timeout" if isinstance(error, TimeoutError) else "error")
+            trace_event("node.finished", span_id=span_id, status=status, error_code=type(error).__name__,
+                        message=f"node {name} failed with {type(error).__name__}",
+                        duration_ms=round((monotonic() - began) * 1000, 3), details=details)
+            raise
+        trace_event("node.finished", span_id=span_id, status="ok", message=f"node {name} finished",
+                    duration_ms=round((monotonic() - began) * 1000, 3), details=details)
+        return result
     return node
 
 

@@ -85,7 +85,7 @@ api/web → app composition → quality implementation → runtimes/contracts/in
 
 `runtimes/`, `contracts/` and `infrastructure/` must not import `app/`, `api/` or concrete
 agents. One quality implementation must not import another. Maintainability hierarchy is
-manager → modularity/reusability → investigators; shared coordinator runtime has no registry
+manager → modularity/reusability/testability → investigators; shared coordinator runtime has no registry
 of concrete agents. Catalogs may resolve module paths lazily, without constructing execution
 resources. `contracts/legacy_schemes/` exists only as a same-object compatibility boundary;
 production code uses `contracts/audit.py`, `runtimes/coordination/contracts.py` and local

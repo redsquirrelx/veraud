@@ -303,6 +303,35 @@ export class ProjectService {
     }
   }
 
+  /** Strict descendants of the audit baseline on its branch; dates do not imply ancestry. */
+  async verificationCommits(id: number, baseline: string, branch: string, limit = 30, offset = 0) {
+    if (!/^[a-f0-9]{40}$/i.test(baseline) || !Number.isInteger(limit) || limit < 1 || limit > 100
+      || !Number.isSafeInteger(offset) || offset < 0) throw new InvalidGitRequestError("Invalid verification commit page")
+    const cleanBranch = assertValidBranch(branch)
+    const project = await this.projects.findById(id)
+    if (!project) throw new ProjectNotFoundError(`Project ${id} does not exist`)
+    const cwd = join(this.workspaceDir, this.requireWorkspace(project))
+    const git = async (...args: string[]) => (await executeFile("git", ["--no-replace-objects", ...args], {
+      cwd, encoding: "utf8", maxBuffer: 2 * 1024 * 1024, timeout: 10000, windowsHide: true,
+      env: { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" },
+    })).stdout.trim()
+    try {
+      const base = await git("rev-parse", "--verify", `${baseline}^{commit}`)
+      const tip = await git("rev-parse", "--verify", `refs/heads/${cleanBranch}^{commit}`)
+      const log = await git("log", "--ancestry-path", "--topo-order", `--max-count=${limit + 1}`,
+        `--skip=${offset}`, "--format=%H%x00%s", `${base}..${tip}`, "--")
+      const rows = log ? log.split("\n").filter(Boolean).map((line) => {
+        const separator = line.indexOf("\0")
+        if (separator !== 40) throw new Error("Invalid Git log record")
+        return { commitHash: line.slice(0, separator), subject: line.slice(separator + 1) }
+      }) : []
+      return { commits: rows.slice(0, limit), hasMore: rows.length > limit, baselineCommit: base,
+        branch: cleanBranch, branchTip: tip, limit, offset }
+    } catch {
+      throw new InvalidGitRequestError("Could not read descendants of the audited commit on the recorded branch; local history may be unavailable")
+    }
+  }
+
   async resolveBranchHash(id: number, branch: string): Promise<{ branch: string, commitHash: string, taskId: number }> {
     const cleanBranch = assertValidBranch(branch)
     const project = await this.projects.findById(id)

@@ -5,6 +5,112 @@ ArchitectureContextResult | None`. No registra ni integra participantes nuevos.
 Sin documentación conserva el menú estructural. `documentation.py` añade semillas
 `documented_boundary`, sin declarar conformidad ni incumplimiento.
 
+## Contrato `verification` en el finding final
+
+Cada `BoundaryFinding` conserva `document_claim_ids` verbatim (como
+`ResponsibilityFinding`) y añade dos campos con default seguro, retrocompatibles:
+
+- `document_claim_ids: list[str]` — IDs de las claims documentales que acreditan el candidato.
+- `verification`: `FindingVerification | None` — metadata de un test declarativo, no veredicto.
+  - `verification.directives: list[ProhibitedImportDirective]` con:
+    - `kind: "prohibited_import"`
+    - `scope: ["<ruta exacta>"]` (subconjunto de `components`)
+    - `targets: ["@/lib/prisma"]` (literal import-specifier; nunca texto libre ni ruta)
+    - `claim_ids: [...]` (no vacíos; ⊆ `finding.document_claim_ids`)
+    - `basis: "explicit-document-claim"` (único valor soportado en esta fase)
+  - extensible a otros `kind` posteriores; el campo `basis` es fijo.
+- `verification_limitations: list[str]` — razón por la cual no se emite directiva.
+
+**Validación del contrato (a nivel de tipos):** `ProhibitedImportDirective` restringe
+`targets` a forma de specifier literal (`[@\w./:#?%+=!-]+`); un spec de candidato
+nunca acepta un path del snapshot como target; `components` sigue siendo exclusivamente
+paths reales del snapshot **inspeccionados por la investigación** (nunca incluye specifiers).
+`FindingVerification` exige `directives` no vacíos (no se publica un contrato vacío).
+`BoundaryFinding` + `finalize()` — reglas deterministas, no en el grafo: directa emisión
+`prohibited_import` sólo si la claim es una **prohibición literal**, explícita y
+específica del specifier citado, la evaluación es contradicted con source entregada, y el
+consumidor es `subject_paths`/`scope_paths` de la claim:
+
+1. ninguna claim aplicable respalda el candidato;
+2. la claim no es prohibitiva ni específica de specifier;
+3. **no hay evidencia source inspeccionada y citada directamente en anchor lines**;
+4. cualquier `allowed`/`exception` aplicable para ese consumidor/specifier suprime la emisión;
+5. el candidato cerró `inconclusive` o la evaluación documental no es efectiva y contradicted;
+6. el consumidor no es la `subject_paths` de la claim (por el mapping de ownership) ni está en el scope evaluado.
+
+`subject_paths` se usa como discriminante preferente; si faltan o no hay coincidencia,
+se usa `assessment.scope_paths`. Si ambos faltan, `verification` queda `None`.
+
+**Motivación:** el resultado publica el `BoundaryFinding` directamente al
+blackboard con `Finding.details = {"verification": ..., "document_claim_ids": ...}`.
+El runner existente emite el campo en el JSON canónico. `reporting/technical_details`
+conserva los mismos nombres sin cambios de código (verificado en test).
+
+**Reportes antiguos** validan alineación ausente/en `None`; su verificación de
+compatibilidad no requiere cambios.
+
+**Qué NO hace este contrato:** no genera tests, no decide conformidad, no
+eleva candidatos a items aceptados por "aprobación" documental. No toca `partiality`
+ni estándares de acceptance.
+
+**Integración al reporte:** el resultado publica el `BoundaryFinding` directamente al
+blackboard con `Finding.details = {"verification": ..., "document_claim_ids": ...}`.
+El runner existente los emite en el JSON canónico. `reporting/technical_details`
+conserva los mismos nombres sin cambios de código (verificado en test). Reportes antiguos
+(o sin módulo TS) validan ausente/`None` sin cambios.
+
+**Qué NO hace este contrato:** no genera tests, no decide conformidad, no eleva candidatos a
+items aceptados por "aprobación" documental. No toca `partiality`, ni validation de aceptación.
+
+## Robustez de planificación e investigación
+
+Resultados reales de ecommerce y Pollería, costes y limitaciones:
+[VALIDATION_ECOMMERCE_POLLERIA.md](VALIDATION_ECOMMERCE_POLLERIA.md).
+
+- `max_component_probes_per_group_pair` (developer, por defecto 2, rango 1–8)
+  conserva interacciones independientes por par dirigido de grupos. Primero se
+  consideran extremos declarados y rutas estables; una investigación de ciclo o
+  dirección no elimina otras interacciones del mismo par por compartir carpetas.
+  `component_pair_limit_omitted` registra los descartes. Los límites de menú y
+  selección siguen vigentes; más oportunidades no significan más hallazgos.
+  Las obligaciones positivas de dependencia mantienen prioridad de exploración,
+  pero no desplazan prohibiciones explícitas mediante muchos imports legítimos.
+  Las semillas `documented_boundary` y `component_boundary` con evidencia
+  corroborada reciben la misma prioridad de menú por evidencia disponible; la
+  selección del modelo es la que reparte dónde se invierte el cupo.
+- Las obligaciones de aciclicidad cuyo alcance cabe en 12 archivos se investigan
+  por componente conectado, no como aristas aisladas. El LLM debe justificar un
+  camino dirigido cerrado; una dependencia unidireccional no prueba un ciclo.
+  Las listas explícitas de propietarios de un grafo pueden resolver nombres de
+  directorios sin su raíz solo si el sufijo indexado es único; no se adivinan
+  propietarios cuando dos raíces contienen el mismo nombre.
+- Las lecturas iniciales priorizan ambos extremos de la relación primaria.
+  Los diagnósticos de reparación identifican el extremo no citado y sus fuentes
+  disponibles; incluyen firmas de herramientas y estados documentales por candidato.
+  El host completa enlaces de citación de candidatos a archivos y relaciones
+  examinadas que el investigador ya nombró, usando solo fuentes entregadas. Puede
+  derivar un `scope_paths` omitido de los IDs fuente elegidos para esa evaluación,
+  pero nunca elige evidencia para una evaluación sin citas ni completa sus extremos
+  por cuenta propia. Cada cambio conserva un recibo antes/después en limitaciones;
+  se revalidan contrato, límites, procedencia y correspondencia documental.
+- `get_source_excerpt(file_id=...)` se normaliza a una ruta únicamente si el ID
+  pertenece al índice accesible. Se rechazan rutas contradictorias; la validación
+  de alcance, producción y evidencia permanece activa.
+  El extremo omitido de una lectura se resuelve antes de consultar la caché,
+  preservando EOF con budgets desactivados y el límite vigente al activarlos.
+- El host puede quitar referencias `supported`/`not_applicable` de un candidato
+  que ya referencia otra evaluación `contradicted`. Registra la operación en
+  limitaciones, conserva narrativas y dictámenes y vuelve a validar evidencia.
+  No elimina IDs desconocidos ni convierte candidatos favorables en code-first.
+- Los IDs de candidatos del modelo son locales por investigación. Se rechazan
+  duplicados dentro de un cierre, pero las colisiones entre tareas se resuelven
+  en la síntesis existente, sin perder hallazgos por reutilizar un ID local.
+- El runner admite `--model NOMBRE` como override explícito dentro del proveedor
+  configurado. No aplica fallback automático ni modifica `dev-agents.yaml`.
+
+No se modifican nodos, aristas, routers ni el estado del grafo. Los tests nuevos
+son sintéticos y no incluyen rutas, reglas ni IDs del oráculo de evaluación.
+
 ## Integración documental (fase de planificación)
 
 - La identidad documental del repositorio usa la misma función que el indexador

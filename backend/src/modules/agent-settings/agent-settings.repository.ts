@@ -3,6 +3,7 @@ import { InvalidAgentAssignmentError } from "./agent-settings.errors.js"
 import { AgentConfigurationError, configurationFingerprint, type AgentVerification, type PreparedAgentConfiguration } from "./agent-configuration.js"
 import { parseAgentCatalog, type AgentCatalog } from "./agent-catalog.js"
 import { storedVerificationFailure } from "./model-access-error.js"
+import { credentialCipherFor, isEncryptedCredential } from "../../infrastructure/security/credential-cipher.js"
 
 export interface AgentConfiguration {
   model: { id: number, name: string, providerId: number, providerName: string }
@@ -189,6 +190,19 @@ export class AgentSettingsRepository implements AgentSettingsStore {
     if (row.maxTokens !== null && (!Number.isInteger(row.maxTokens) || row.maxTokens < 1)) return invalid("Maximum tokens must be a positive integer")
     try { validateTokenLimits(row.tokenBudget, row.absoluteTokenLimit) }
     catch (error) { return invalid(error instanceof Error ? error.message : "Invalid token budget") }
+    let apiKey: string
+    try {
+      const cipher = credentialCipherFor(this.db)
+      let sealed = row.aiCredential.apiKey
+      // Compatibility with legacy imports; new API writes are always encrypted.
+      if (!isEncryptedCredential(sealed)) {
+        const encrypted = cipher.encrypt(sealed, row.aiCredential)
+        const changed = await tx.aiCredential.updateMany({ where: { id: row.aiCredential.id, apiKey: sealed }, data: { apiKey: encrypted } })
+        sealed = changed.count ? encrypted : (await tx.aiCredential.findUniqueOrThrow({ where: { id: row.aiCredential.id } })).apiKey
+      }
+      apiKey = cipher.decrypt(sealed, row.aiCredential)
+      if (!apiKey.trim()) return invalid("The credential has no API key")
+    } catch { return invalid("Cannot unlock the local credential. Restore the original local encryption key or replace the credential.") }
     const snapshot: AgentConfiguration = {
       model: { id: row.aiModel.id, name: row.aiModel.name, providerId: row.aiModel.aiProviderId, providerName: row.aiModel.aiProvider.name },
       credential: { id: row.aiCredential.id, name: row.aiCredential.name, providerId: row.aiCredential.aiProviderId, providerName: row.aiCredential.aiProvider.name },
@@ -198,7 +212,7 @@ export class AgentSettingsRepository implements AgentSettingsStore {
     return {
       agentType, snapshot,
       fingerprint: configurationFingerprint(row.aiModel, row.aiCredential, temperature, row.maxTokens, row.tokenBudget, row.absoluteTokenLimit),
-      transport: { model: { provider: snapshot.model.providerName, name: snapshot.model.name, temperature: snapshot.temperature, max_tokens: snapshot.maxTokens }, api_key: row.aiCredential.apiKey },
+      transport: { model: { provider: snapshot.model.providerName, name: snapshot.model.name, temperature: snapshot.temperature, max_tokens: snapshot.maxTokens }, api_key: apiKey },
     }
   }
 

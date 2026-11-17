@@ -1,5 +1,6 @@
-"""Plan plus iterative reuse-parametrization investigation; synthesis/finalize are not implemented yet."""
+"""Plan plus iterative reuse-parametrization investigation with host-side synthesis/finalize."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -13,11 +14,13 @@ from server.runtimes.invocation_reporting import phase_node
 from .investigation import ParametrizationInvestigation
 from .planning import build_parametrization_plan
 from .schemas import (
+    ParametrizationFinding,
     ParametrizationPlan,
     ParametrizationPlanSelection,
     ReuseParametrizationDocDrivenResult,
 )
 from .state import ParametrizationState
+from .synthesis import consolidate_candidates
 
 
 class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, InvestigationExecution):
@@ -44,6 +47,8 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
             "coverage_recovery_done": False,
             "task_limitations": [],
             "investigation_results": [],
+            "candidates": [],
+            "candidate_origins": {},
         }
 
     def _build_graph(self):
@@ -51,11 +56,15 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
         graph.add_node("plan_investigation", phase_node("plan_investigation", self.plan_investigation))
         graph.add_node("investigate", phase_node("investigate", self.investigate))
         graph.add_node("tools", phase_node("tools", self.execute_investigation_tools))
+        graph.add_node("synthesis", phase_node("synthesis", self.synthesis))
+        graph.add_node("finalize", phase_node("finalize", self.finalize))
         graph.add_edge(START, "plan_investigation")
         graph.add_edge("plan_investigation", "investigate")
         graph.add_conditional_edges("investigate", self.route_investigation,
-            {"tools": "tools", "investigate": "investigate", "end": END})
+            {"tools": "tools", "investigate": "investigate", "synthesis": "synthesis"})
         graph.add_edge("tools", "investigate")
+        graph.add_edge("synthesis", "finalize")
+        graph.add_edge("finalize", END)
         return graph.compile()
 
     def model_context(self, node, state):
@@ -99,6 +108,46 @@ class ReuseParametrizationDocDrivenExecution(ParametrizationInvestigation, Inves
             raw = response.get("raw") if isinstance(response, dict) else response
             print(f"[DEBUG_LLM_RAW {node}] {getattr(raw, 'content', raw)}", file=sys.stderr)
         return response
+
+    # --- synthesis / finalize (host-side, no LLM) --------------------------
+
+    def synthesis(self, state):
+        candidates, origins = consolidate_candidates(state["investigation_results"])
+        self.logger.info("parametrization_synthesis %s", json.dumps({
+            "original_candidates": sum(len(item.candidates) for item in state["investigation_results"]),
+            "consolidated_candidates": len(candidates)}, sort_keys=True))
+        result = state["result"].model_copy(update={
+            "candidates": candidates,
+            "candidate_origins": origins,
+            "termination_reason": state["result"].termination_reason})
+        return {"candidates": candidates, "candidate_origins": origins, "result": result}
+
+    def finalize(self, state):
+        ledger, _mismatch = self.verify_references(self.references())
+        references = {reference.id: reference for reference in ledger}
+        criteria = {criterion.id: criterion for criterion in self.request.criteria}
+        findings = []
+        for candidate in state["candidates"]:
+            criterion = criteria.get(candidate.criterion_id)
+            if criterion is None:
+                continue
+            findings.append(ParametrizationFinding(
+                **candidate.model_dump(exclude={"symbol_ids", "relationship_ids",
+                    "variation_mechanism", "selected_alternatives", "implementations", "consumers"}),
+                criterion=criterion,
+                evidence=[references[identifier] for identifier in candidate.evidence_ids if identifier in references],
+                validation_status="insufficient_evidence",
+                review_rationale="No critical review performed; consolidated provisional candidate."))
+        limitations = list(dict.fromkeys([*state["limitations"], *self.issues,
+            *(limitation for item in state["investigation_results"] for limitation in item.limitations)]))
+        missing = [f"Investigation {item.investigation_id}: {limitation}"
+            for item in state["investigation_results"] if item.status == "inconclusive" for limitation in item.limitations]
+        result = state["result"].model_copy(update={"findings": findings,
+            "missing_information": missing, "limitations": limitations,
+            "model_calls": self.calls, "tool_calls": self.tools.budget_usage.tool_calls,
+            "accounted_tokens": self.tokens, "estimated_tokens": self.estimates,
+            "evidence": ledger, "termination_reason": state["termination_reason"]})
+        return {"result": result, "evidence": ledger, "missing_information": missing, "limitations": limitations}
 
     # --- plan -------------------------------------------------------------
 

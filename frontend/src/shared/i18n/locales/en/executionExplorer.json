@@ -1,0 +1,54 @@
+{
+  "title": "Execution Explorer",
+  "description": "Monitor and inspect agent executions",
+  "filters": {
+    "type": {
+      "label": "Execution type",
+      "all": "All executions",
+      "audit": "Audits",
+      "agent": "Standalone agents"
+    },
+    "status": {
+      "label": "Execution status",
+      "all": "All"
+    },
+    "search": {
+      "label": "Search executions",
+      "placeholder": "Search executions…"
+    }
+  },
+  "list": {
+    "label": "Executions",
+    "empty": "No executions match the current filters.",
+    "agents": "{{count}} agents"
+  },
+  "inspector": {
+    "empty": "Select an execution to inspect it.",
+    "backToList": "Back to list",
+    "tree": "Agents",
+    "resizeTree": "Resize the agent list",
+    "createdAt": "Created",
+    "finishedAt": "Finished",
+    "placeholder": {
+      "events": "Events",
+      "traces": "Traces",
+      "results": "Results",
+      "comingSoon": "Coming in the next iteration"
+    }
+  },
+  "agent": {
+    "findingTestGeneration": "Finding test generation",
+    "testabilityProbe": "Testability probe",
+    "verificationSuite": "Verification Suite"
+  },
+  "node": {
+    "execution": "Execution",
+    "dates": "Dates",
+    "tokens": "Tokens",
+    "error": "Error",
+    "started": "Started",
+    "finished": "Finished",
+    "notRecorded": "Not recorded",
+    "toggle": "Toggle {{name}}"
+  }
+}

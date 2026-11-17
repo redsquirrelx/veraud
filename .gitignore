@@ -21,5 +21,8 @@ agent-server/results/benchmark/
 .vscode
 
 # Application local data
+.veraud-artifacts/
+logs/
 appdata/
 ~*.xlsx
+agent-server/artifacts/testability-probe/

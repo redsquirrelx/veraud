@@ -6,6 +6,26 @@ Implementation owners are listed in [`architecture.md`](architecture.md).
 
 ## Agent-server HTTP
 
+### Verification at an immutable commit
+
+`POST /api/audits/{run_id}/verification-suite` accepts `action: "execute"`,
+`target_commit` (a full 40-character Git hash), `allow_execution: true`, and an
+optional `attempt_id`. If omitted, the target is the recorded audit commit, never
+the working tree. Unknown commits fail explicitly; this operation does not fetch.
+
+The recorded repository's Git objects are read into a bounded temporary snapshot
+of regular tracked files. Working-tree changes, hooks, filters, symlinks and
+submodules are not used; unsupported trees fail rather than fall back. The same
+ZIP bytes are frozen for execution and no LLM is called. This is local execution,
+not a security sandbox.
+
+Results include `suite_id`, `suite_sha256`, `baseline_commit`, `target_commit`,
+`checkout_commit` and `attempt_id`. Completed attempt summaries are retained under
+`verification-executions/{attempt_id}.json`; the existing summary GET still returns
+the latest published result. The backend project route accepts camel-case
+`targetCommit` and returns HTTP 202 for background dispatch. Creating and downloading
+remain independent of the selected execution commit.
+
 | Operation | Contract |
 | --- | --- |
 | `GET /api/status` | `{ "status": "ok", "service": "agent-server" }`; does not probe providers or callbacks |
@@ -67,7 +87,8 @@ require backend support for the new optional fields before end-to-end rollout.
 
 The project audit endpoint and `quality-audit` pipeline accept optional
 `maintainability_selection`, a map from registered maintainability coordinator IDs to
-their enabled investigator IDs (for example, `{"modularity": ["responsibility"]}`).
+their enabled investigator IDs (for example, `{"modularity": ["responsibility"],
+"testability": ["test_isolation", "test_controllability"]}`).
 It requires the `maintainability` attribute and at least one selected coordinator.
 An empty investigator list is allowed for a selected coordinator; it cannot establish
 successful coverage without investigator evidence. Omission preserves the existing full
@@ -102,12 +123,13 @@ a review notice. Scopes whose technique selection cannot be reproduced are disab
 rather than silently substituted with today's defaults.
 
 The pipeline artifact remains `{"audit": {"attributes", "status", "run_id",
-"error_detail", "report", "docx_base64"[, "blackboard"]`}}`; the full Blackboard
+"error_detail", "artifacts": {"format": "veraud.audit.artifacts.v1", "report_bytes", "docx_bytes", "sections"}[, "blackboard"]}}`.
+Report JSON and DOCX bytes are published once in the shared artifact directory keyed by the
+audit `run_id`; they are never embedded in the pipeline's HTTP response. The full Blackboard
 snapshot is only delivered when the pipeline input sets `include_blackboard: true`.
 Internal pipelines and tests can request it; production callers use the on-demand
-endpoints (`GET /api/audits/{run_id}` for the snapshot, `GET /api/audits/{run_id}/report[.docx]` for the artifacts), so the backend's restart path keeps the
-same contract with the Fastify side. Fastify may reconcile an existing run using GET
-snapshot, report and DOCX; it must not replay the POST after an uncertain
+endpoints (`GET /api/audits/{run_id}/summary` for compact state, `GET /api/audits/{run_id}/artifacts` for remote reconciliation and `GET /api/audits/{run_id}/report[.docx]` for the artifacts), so the backend's restart path keeps the
+same contract with the Fastify side. Fastify prefers the compact summary/artifacts endpoints and must not replay the POST after an uncertain
 transport result. Do not move large report artifacts into each invocation receipt.
 
 ## Agent, graph and config extension checklist

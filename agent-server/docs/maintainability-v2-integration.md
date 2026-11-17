@@ -1,9 +1,13 @@
 # Maintainability V2 in the web audit
 
-`quality-audit` and `/api/audits` execute the V2 Manager, ModularityCoordinator and
-`architecture_boundary_doc_driven.ArchitectureBoundaryAgent`. Their public IDs remain
-`maintainability_manager`, `modularity`, `architecture_boundary`. No V1 participant
-is advertised in the production agent catalog or invoked by this hierarchy.
+`quality-audit` and `/api/audits` execute the V2 Manager, ModularityCoordinator,
+ReusabilityCoordinator and TestabilityCoordinator with their registered
+documentary investigators (`test_isolation_doc_driven.TestIsolationAgent` and
+`test_controllability_doc_driven.TestControllabilityAgent` under `testability`).
+Their public IDs remain `maintainability_manager`,
+`modularity`, `reusability`, `testability`, `responsibility`, `architecture_boundary`,
+`abstraction`, `reuse_parametrization_doc_driven`, `test_isolation` and `test_controllability`. No V1
+participant is advertised in the production agent catalog or invoked by this hierarchy.
 
 ## Deployment and saved configuration
 
@@ -19,9 +23,12 @@ are not rewritten. Old selections are rejected rather than mapped to a substitut
 Saved developer overrides are revalidated against V2 contracts; unsupported fields
 or limits need adjustment, not automatic widening or silent removal.
 
-The only supported explicit `maintainability_selection` is
-`{"modularity": ["architecture_boundary"]}`. Omitting it selects the available
-hierarchy. This limits capability, not architectural compliance coverage.
+The supported explicit `maintainability_selection` values key off the registered
+coordinators and their registered investigators; omitting it selects the available
+hierarchy. Join any subset of registered coordinators, e.g.
+`{"modularity": ["responsibility"], "testability": ["test_isolation", "test_controllability"]}` — unsupported
+IDs are rejected, not silently mapped. This limits capability, not architectural
+compliance coverage.
 
 ## Input
 

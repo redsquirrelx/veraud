@@ -26,6 +26,9 @@ import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
 import { QualityAuditRepository } from "./modules/quality-audit/quality-audit.repository.js"
 import { QualityAuditService } from "./modules/quality-audit/quality-audit.service.js"
+import { join } from "node:path"
+import { configureTraceRoot } from "./infrastructure/trace-writer.js"
+import { AuditArtifactStore } from "./modules/quality-audit/audit-artifacts.js"
 import { AuditSettingsService } from "./modules/quality-audit/audit-settings.service.js"
 import { registerAuditSettingsRoutes } from "./modules/quality-audit/audit-settings.controller.js"
 import { registerQualityAuditRoutes } from "./modules/quality-audit/quality-audit.controller.js"
@@ -46,6 +49,9 @@ import { TaskService } from "./modules/task/task.service.js"
 import { registerTaskRoutes } from "./modules/task/task.controller.js"
 import { ProjectGraphService } from "./modules/project-graph/project-graph.service.js"
 import { registerProjectGraphRoutes } from "./modules/project-graph/project-graph.controller.js"
+import { configureCredentialCipher, isEncryptedCredential, type CredentialCipher } from "./infrastructure/security/credential-cipher.js"
+import { loadLocalCredentialCipher } from "./infrastructure/security/local-credential-key.js"
+import { migrateCredentials } from "./infrastructure/security/credential-migration.js"
 
 export interface BuildAppOptions {
   databaseUrl: string
@@ -62,6 +68,8 @@ export interface BuildAppOptions {
   makeModelAccessVerifier?: () => ModelAccessVerifier
   makeAgentCatalogSource?: () => AgentCatalogSource,
   corsOrigins?: readonly string[]
+  /** Trusted injection for tests/non-Windows hosts; never exposed over HTTP. */
+  credentialCipher?: CredentialCipher
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -73,7 +81,20 @@ export async function buildApp(options: BuildAppOptions) {
     adapter: new PrismaBetterSqlite3({ url: options.databaseUrl }),
   })
 
+  try {
+    const secretDirectory = join(options.workspaceDir, ".secrets")
+    const stored = await db.aiCredential.findMany({ select: { apiKey: true } })
+    const cipher = options.credentialCipher ?? loadLocalCredentialCipher(secretDirectory, stored.some((row) => isEncryptedCredential(row.apiKey)))
+    configureCredentialCipher(db, cipher)
+    const migrated = await migrateCredentials(db, cipher)
+    if (migrated) app.log.info({ migrated }, "LLM credentials encrypted locally; IDs and assignments preserved")
+  } catch (error) {
+    await db.$disconnect()
+    throw error // Fail closed, never silently generate a replacement master key.
+  }
+
   mkdirSync(options.workspaceDir, { recursive: true })
+  configureTraceRoot(process.env.VERAUD_TRACE_DIR ?? join(options.workspaceDir, "logs"))
 
   const gateway = new RealtimeGateway()
   const github = new GithubClient()
@@ -133,7 +154,7 @@ export async function buildApp(options: BuildAppOptions) {
   registerProjectRoutes(app, projectService)
   const auditSettings = new AuditSettingsService(db, options.agentServerUrl)
   registerAuditSettingsRoutes(app, auditSettings)
-  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings, agentInvoker))
+  registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings, agentInvoker, new AuditArtifactStore(options.workspaceDir), agentSettingsService))
   registerAiProviderRoutes(app, aiProviderService)
   registerAgentSettingsRoutes(app, agentSettingsService)
   registerTaskRoutes(app, taskService)

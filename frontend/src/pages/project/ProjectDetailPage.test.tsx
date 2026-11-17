@@ -142,6 +142,40 @@ function renderDetail(entry: string, settings?: Partial<SettingsContextValue>) {
 }
 
 describe("ProjectDetailPage", () => {
+  it.each([false, true])("starts an audit on a detached commit with its reference branch (initial detached: %s)", async (initialDetached) => {
+    const historical = "b".repeat(40)
+    const requests: Array<Record<string, unknown>> = []
+    stubFetch((url, init) => {
+      if (url.includes("/git/branches")) return new Response(JSON.stringify({ ...gitBranches,
+        currentBranch: initialDetached ? null : "main", detachedHash: initialDetached ? historical : null }), { status: 200 })
+      if (url.includes("/git/log")) return new Response(JSON.stringify({ ...gitCommits,
+        commits: [...gitCommits.commits, { commitHash: historical, subject: "historical audit target" }] }), { status: 200 })
+      if (url.endsWith("/api/agent-settings")) return new Response(JSON.stringify([
+        { agentType: "security", qualityAttributes: ["security"], workflowIds: ["quality-audit"],
+          configured: true, configuration: null, availability: "available", requiresModel: true },
+      ]), { status: 200 })
+      if (url.endsWith("/audits")) {
+        if (init?.method === "POST") requests.push(JSON.parse(String(init.body)))
+        return new Response("[]", { status: 200 })
+      }
+      if (url.includes("/api/tasks/active") || url.includes("/api/audits/configuration/")) return new Response("[]", { status: 200 })
+      return gitResponse(url, init) ?? new Response(JSON.stringify(rows), { status: 200 })
+    })
+    renderDetail("/projects/2/analysis")
+    const start = await screen.findByRole("button", { name: "Start audit" })
+    if (!initialDetached) {
+      await waitFor(() => expect(screen.getByLabelText("Search items")).toHaveValue("aaaaaaa"))
+      await userEvent.clear(screen.getByLabelText("Search items"))
+      await userEvent.click(screen.getByRole("option", { name: /bbbbbbb/ }))
+    }
+    await screen.findByText(`(HEAD detached at ${historical}) - select a branch to re-attach`)
+    await waitFor(() => expect(start).toBeEnabled())
+    expect(start).not.toHaveAttribute("title", "Apply a branch and commit before starting an audit.")
+    await userEvent.click(start)
+    await waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ branch: "main", commitHash: historical, attributes: ["security"] })
+  })
+
   it("shows project insight links only when their data exists for the selected commit", async () => {
     stubProjects({ architectureContextAvailable: false })
     renderDetail("/projects/2/overview")

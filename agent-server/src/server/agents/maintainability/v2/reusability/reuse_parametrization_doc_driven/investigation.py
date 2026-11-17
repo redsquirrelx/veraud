@@ -57,7 +57,7 @@ class ParametrizationInvestigation:
     def route_investigation(self, state):
         if state["pending_queries"]:
             return "tools"
-        return "investigate" if state["current_investigation"] < len(state["plan"].candidates) else "end"
+        return "investigate" if state["current_investigation"] < len(state["plan"].candidates) else "synthesis"
 
     def _current(self, state):
         return state["plan"].candidates[state["current_investigation"]]
@@ -513,7 +513,8 @@ class ParametrizationInvestigation:
         }
         updated["planning"] = (
             "deterministic menu, model selection; bounded reusability investigation; "
-            "no synthesis, finalization or findings are produced"
+            "findings are host-lifted provisional candidates, never documentary or code evidence; "
+            "no LLM synthesis is performed"
         )
         return updated
 
@@ -606,7 +607,8 @@ class ParametrizationInvestigation:
                 "planning_diagnostics": self._investigation_diagnostics(
                     state["result"].planning_diagnostics, reason),
                 "status": "investigation_completed",
-            })}
+            }),
+                "termination_reason": reason}
         state = dict(state)
         if not state["initial_evidence_loaded"]:
             candidate = self._current(state)

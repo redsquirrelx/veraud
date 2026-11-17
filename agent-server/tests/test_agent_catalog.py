@@ -15,6 +15,9 @@ from server.agents.maintainability.v2.modularity.coordinator.registry import (
 from server.agents.maintainability.v2.reusability.coordinator.registry import (
     registered_investigators as reusability_investigators,
 )
+from server.agents.maintainability.v2.testability.coordinator.registry import (
+    registered_investigators as _testability_investigators,
+)
 from server.api.executions import router
 from server.api.schemas import ExecutionConfig, ModelConfig
 from server.app.agent_registry import AgentRegistry
@@ -26,7 +29,8 @@ from server.examples.dummy.agent import DummyAgent
 def test_agent_source_tree_contains_only_quality_implementations():
     agents = Path(__file__).resolve().parents[1] / "src" / "server" / "agents"
     packages = {path.name for path in agents.iterdir() if path.is_dir() and path.name != "__pycache__"}
-    assert packages == {"maintainability", "functional_adequacy", "security", "architecture_context", "finding_resolution"}
+    assert packages == {"maintainability", "functional_adequacy", "security", "architecture_context", "finding_resolution",
+                        "finding_test_generation", "testability_probe"}
 
 
 @pytest.fixture
@@ -54,16 +58,18 @@ def test_catalog_covers_existing_configuration_and_real_hierarchy_without_changi
     assert list(agents) == sorted(agents)
     assert {item["configuration_id"] for item in agents.values() if item["configuration_id"]} <= set(list_agent_configs())
     assert agents["maintainability_manager"]["child_ids"] == list(registered_coordinators())
-    assert set(agents) >= {"modularity", "reusability", "architecture_boundary", "responsibility", "abstraction"}
+    assert set(agents) >= {"modularity", "reusability", "testability", "architecture_boundary",
+        "responsibility", "abstraction", "test_isolation", "test_controllability"}
     assert not {"dependency_impact", "reuse_opportunity", "component_adaptability"} & agents.keys()
     assert "reuse_opportunity_doc_driven" not in agents
     assert "reuse_opportunity_doc_driven" not in reusability_investigators()
     assert "reuse_opportunity_doc_driven" not in MAINTAINABILITY_AGENT_TYPES
     assert {"abstraction", "reuse_parametrization_doc_driven"} <= set(reusability_investigators())
+    assert set(_testability_investigators()) == {"test_isolation", "test_controllability"}
     quality = next(item for item in catalog["workflows"] if item["workflow_id"] == "quality-audit")
     assert "reuse_opportunity_doc_driven" not in quality["model_configuration_groups"]["maintainability"]
     assert client.get("/api/agents/catalog/reuse_opportunity_doc_driven").status_code == 404
-    for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()))):
+    for coordinator, investigators in ((("modularity", modularity_investigators()), ("reusability", reusability_investigators()), ("testability", _testability_investigators()))):
         assert agents[coordinator]["child_ids"] == list(investigators)
         for identifier in investigators:
             assert agents[identifier]["parent_ids"] == [coordinator]
@@ -97,6 +103,15 @@ def test_backend_can_resolve_all_attribute_selections_into_valid_model_maps_and_
     project = workflows["project-architecture"]
     assert project["stages"] == list(project["model_configuration_groups"])
     assert project["run_url"] == "/api/pipelines/project-architecture/run"
+
+
+def test_verification_suite_has_model_discovery_without_registering_generators(client):
+    suite = client.get("/api/agents/catalog/verification_suite").json()
+    assert suite["requires_model"] and suite["model_configuration_id"] == "verification_suite"
+    assert suite["execution_modes"] == ["internal"]
+    assert suite["workflow_ids"] == ["verification-suite"]
+    assert suite["quality_attributes"] == []  # Not an audit prerequisite.
+    assert not {"verification_suite", "finding_test_generation", "testability_probe"} & set(client.get("/api/agents").json())
 
 
 def test_quality_contexts_are_explicit_for_hierarchies_shared_reports_and_non_audit_workflows(client):

@@ -82,6 +82,52 @@ def test_strong_documentary_prohibition_beats_generic_exploration():
     assert [task.id for task in selected] == ["strong-doc"]
 
 
+def test_positive_dependency_obligation_does_not_crowd_out_restricted_interaction():
+    task = make_task("inward", scope=["use.py", "port.py"], claim_ids=["positive"], relations=[
+        StructuralRelationship(id="edge", source_id="use", target_id="port",
+                               source_path="use.py", target_path="port.py", kind="import")])
+    positive = record(constraint="required", subject_paths=["use.py"])
+    positive.claim.statement = "Use cases must depend on application ports."
+    positive.claim.related_subjects = ["Ports"]
+    positive.scope_paths = ["use.py", "port.py"]
+    positive.owner_paths = {"Ports": ["port.py"]}
+    assert priority_after(task, {"positive": positive}) == "medium"
+    restricted = record(constraint="prohibited", subject_paths=["use.py"])
+    restricted.claim.related_subjects = ["Ports"]
+    restricted.scope_paths = ["use.py", "port.py"]
+    restricted.owner_paths = {"Ports": ["port.py"]}
+    assert priority_after(task, {"positive": restricted}) == "high"
+
+
+def test_single_acyclicity_edge_is_not_ranked_as_a_closed_path():
+    edge = StructuralRelationship(id="forward", source_id="a", target_id="b",
+        source_path="a.py", target_path="b.py", kind="import")
+    task = make_task("graph", scope=["a.py", "b.py"], claim_ids=["graph-rule"], relations=[edge])
+    rule = record(constraint="required", subject_paths=["a.py", "b.py"])
+    rule.boundary_family = "acyclicity"
+    rule.scope_paths = ["a.py", "b.py"]
+    rule.owner_paths = {"a": ["a.py"], "b": ["b.py"]}
+    assert priority_after(task, {"graph-rule": rule}) == "medium"
+    reverse = edge.model_copy(update={"id": "reverse", "source_id": "b", "target_id": "a",
+        "source_path": "b.py", "target_path": "a.py"})
+    closed = task.model_copy(update={"structural_signal": task.structural_signal.model_copy(update={
+        "relationships": [edge, reverse]})})
+    assert priority_after(closed, {"graph-rule": rule}) == "high"
+
+
+def test_equal_quality_menu_prefers_independent_origins_before_repeated_caller():
+    def probe(identifier, source, target):
+        return make_task(identifier, kind="component_boundary", scope=[source, target], relations=[
+            StructuralRelationship(id=identifier, source_id=source, target_id=target,
+                source_path=source, target_path=target, kind="import")])
+    first = probe("a", "caller.py", "api.py")
+    repeated = probe("b", "caller.py", "store.py")
+    independent = probe("z", "other.py", "adapter.py")
+    tasks = [first, repeated, independent]
+    menu = balance_candidates(tasks, {task.id: ["project"] for task in tasks}, 2)
+    assert [task.id for task in menu] == ["a", "z"]
+
+
 def test_corroborated_structure_remains_above_ambigous_documentation():
     weak = make_task("weak-doc", scope=["app/api/route.ts", "lib/prisma.ts"], claim_ids=["weak"])
     weak_claims = {"weak": record(constraint="allowed", basis="ambiguous",

@@ -1,10 +1,20 @@
 .ui-filter-tabs {
   display: inline-flex;
+  flex-wrap: nowrap;
   gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-padding-inline: 4px;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-control);
   padding: 2px;
+}
+
+.ui-filter-tabs::-webkit-scrollbar {
+  height: 6px;
 }
 
 .ui-filter-tab {
@@ -36,6 +46,12 @@
 
 .ui-filter-tab-active:hover {
   color: var(--color-on-brand);
+}
+
+.ui-filter-tabs-compact .ui-filter-tab {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--font-size-2xs);
 }
 
 .ui-filter-tab:disabled {

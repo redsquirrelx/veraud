@@ -104,6 +104,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
           {t(statusKey)}
         </Badge>
       </div>
+      {agent.agentType === "verification_suite" && <p className="settings-hint">{t("audit.verificationSuiteHint")}</p>}
       <ItemSelector
         label={t("agents.form.model")}
         items={models.map((entry) => ({ id: String(entry.id), label: entry.name, detail: entry.providerName }))}
@@ -132,7 +133,7 @@ export function AgentSettingsCard({ agent, providers, providersLoading, onSaved,
       <AgentAccessVerification agent={agent} disabled={dirty || saving || providersLoading} onUpdated={onVerified} />
       {qualityAttribute && <p className="settings-hint">{t("audit.categoryAssignment")}</p>}
       {categoryMixed && <p className="settings-hint" role="status">{t("audit.categoryMixed")}</p>}
-      {!modelAccessOnly && <p className="settings-hint">{t("agents.card.tokenSummary", { budget: formatNumber(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET), limit: formatNumber(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</p>}
+      {!modelAccessOnly && agent.agentType !== "verification_suite" && <p className="settings-hint">{t("agents.card.tokenSummary", { budget: formatNumber(agent.configuration?.tokenBudget ?? DEFAULT_TOKEN_BUDGET), limit: formatNumber(agent.configuration?.absoluteTokenLimit ?? DEFAULT_ABSOLUTE_TOKEN_LIMIT) })}</p>}
       <div className="settings-agent-footer">
         {(!modelAccessOnly || qualityAttribute) && <Button variant="secondary" ariaLabel={t("agents.card.configureAgent", { agentType: label ?? agent.agentType })} onClick={onConfigure}>{t("agents.card.configure")}</Button>}
         <Button disabled={!canSave} loading={saving} loadingText={t("agents.card.saving")} onClick={() => void save()}>{t("agents.card.saveChanges")}</Button>
