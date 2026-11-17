@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs"
 import type { FastifyInstance } from "fastify"
 import type { AuditOperatingOptions } from "../../infrastructure/agent-server-client/agent-server.client.js"
 import { errorResponses, objectResponse, branchInput } from "../../infrastructure/openapi/routeSchemas.js"
@@ -225,8 +226,11 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     response: { 200: { type: "object", additionalProperties: true }, ...errorResponses([400, 404, 422]) },
   } }, async (request, reply) => {
     const { id, auditId } = request.params as { id: string, auditId: string }
-    try { return await service.report(Number(id), Number(auditId)) }
-    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+    try {
+      const reportFile = await service.reportFile(Number(id), Number(auditId))
+      if (reportFile !== null) return reply.type("application/json").send(createReadStream(reportFile))
+      return await service.report(Number(id), Number(auditId))
+    } catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 
   app.get("/api/projects/:id/audits/:auditId/report.docx", { schema: {
@@ -236,7 +240,8 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
   } }, async (request, reply) => {
     const { id, auditId } = request.params as { id: string, auditId: string }
     try {
-      const content = await service.document(Number(id), Number(auditId))
+      const documentFile = await service.documentFile(Number(id), Number(auditId))
+      const content = documentFile === null ? await service.document(Number(id), Number(auditId)) : createReadStream(documentFile)
       return reply.type("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         .header("Content-Disposition", `attachment; filename="informe-auditoria-${auditId}.docx"`)
         .send(content)
