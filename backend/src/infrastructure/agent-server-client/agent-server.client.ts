@@ -12,6 +12,20 @@ import { AgentCatalogError, parseAgentCatalog, type AgentCatalog, type AgentCata
  *  to this side: each agent defines its shape and the backend stores it as JSON. */
 export type AgentInput = Record<string, unknown>
 
+export interface VerificationSuiteOptions {
+  llm?: "none" | "provider"
+  config?: AgentRunConfig | undefined
+  allowExecution?: boolean
+  timeoutMs?: number
+  action?: "create" | "execute"
+  greenControl?: string | undefined
+  attemptId?: string
+  targetCommit?: string | undefined
+  group?: string | undefined
+  /** Backend row that tracks this build over the agent-execution callback channel. */
+  executionId?: number | undefined
+}
+
 export interface AgentInvoker {
   /** Runs an agent to completion and returns its serialized output.
    *
@@ -20,6 +34,13 @@ export interface AgentInvoker {
    *  itself. Rejects only when the agent-server could not be reached or the run
    *  failed to start; a run that fails mid-flight is reported by the agent. */
   run(agentType: string, input: AgentInput, executionId: number, config: AgentRunConfig, trace?: TraceEnvelope): Promise<AgentInput>
+  /** Run the finding-test-generation pipeline for an audit run and return
+   *  the build summary (table data and ZIP location). */
+  requestVerificationSuite?(runId: string, options?: VerificationSuiteOptions): Promise<AgentInput>
+  /** Read the state of a verification-suite build; null means not built yet (404). */
+  getVerificationSuite?(runId: string): Promise<AgentInput | null>
+  /** Stream the raw bytes of the generated verification-suite ZIP. */
+  downloadVerificationSuite?(runId: string): Promise<Response>
   /** Runs any registered pipeline by name with per-stage ids and configs.
    *
    *  Stage keys must match the agent-server's registered stage names; the
@@ -88,6 +109,9 @@ export const DEFAULT_INVOKE_TIMEOUT_MS = 300_000
  *  ceiling is the pipeline timeout plus headroom for the callbacks to land. */
 export const PIPELINE_INVOKE_TIMEOUT_MS = 660_000
 export const QUALITY_AUDIT_INVOKE_TIMEOUT_MS = 1_920_000
+/** Verification-suite builds can run well beyond the plain default (paced LLM calls);
+ *  kept above the agent-server's own 600s cap for this pipeline. */
+export const VERIFICATION_SUITE_INVOKE_TIMEOUT_MS = 1_800_000
 
 export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, AgentCatalogSource {
   private log = logger.withTag("agent-server")
@@ -307,4 +331,47 @@ export class AgentServerClient implements AgentInvoker, ModelAccessVerifier, Age
     return state
   }
 
+  async requestVerificationSuite(runId: string, options?: VerificationSuiteOptions): Promise<AgentInput> {
+    const url = `${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}/verification-suite`
+    let response: Response
+    try {
+      // Like audit execution, suite creation may take minutes before sending headers.
+      // Native fetch has a separate headers timeout even with a longer AbortSignal.
+      response = await executionRequest(url, {
+        llm: options?.llm ?? "none", allow_execution: options?.allowExecution ?? false,
+        config: options?.config,
+        action: options?.action ?? "create", green_control: options?.greenControl ?? null,
+        attempt_id: options?.attemptId,
+        target_commit: options?.targetCommit,
+         group: options?.group ?? null,
+         execution_id: options?.executionId ?? null,
+      }, options?.timeoutMs ?? VERIFICATION_SUITE_INVOKE_TIMEOUT_MS)
+    } catch (error) { throw transportError(error) }
+    if (response.status === 404) throw new AuditRunUnavailableError("The agent-server no longer retains this audit run")
+    if (!response.ok) throw new AgentInvocationError(options?.action === "execute"
+      ? `Verification at the requested commit could not complete (HTTP ${response.status}); no alternative checkout was used`
+      : `Verification suite request returned HTTP ${response.status}`, response.status)
+    const result = await response.json() as AgentInput
+    if (result.run_id !== runId) throw new AgentInvocationError("Agent-server returned a different run identity")
+    return result
+  }
+
+  async getVerificationSuite(runId: string): Promise<AgentInput | null> {
+    const url = `${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}/verification-suite`
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+    if (response.status === 404) return null
+    if (!response.ok) throw new AgentInvocationError(`Verification suite status returned HTTP ${response.status}`, response.status)
+    const result = await response.json() as AgentInput
+    if (result.run_id !== runId) throw new AgentInvocationError("Agent-server returned a different run identity")
+    return result
+  }
+
+  async downloadVerificationSuite(runId: string): Promise<Response> {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/audits/${encodeURIComponent(runId)}/verification-suite.zip`, {
+      signal: AbortSignal.timeout(this.timeoutMs),
+    })
+    if (response.status === 404) throw new AuditRunUnavailableError("Verification suite artifact not found")
+    if (!response.ok) throw new AgentInvocationError(`Verification suite download returned HTTP ${response.status}`, response.status)
+    return response
+  }
 }

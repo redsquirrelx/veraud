@@ -31,7 +31,7 @@ function harness() {
   const store: AgentExecutionStore = {
     findMonitorFingerprint: async () => fingerprint,
     findById: async () => { findByIdCalls += 1; return row },
-    recentIds: unused, create: unused, createExecutionsForProject: unused, updateUsage: unused, patchResult: unused,
+    recentIds: unused, create: unused, createExecutionsForProject: unused, updateUsage: unused, patchResult: unused, createEvaluation: unused,
     requestAuditCancellation: unused, claimAuditDispatch: unused, pendingAuditCancellations: unused,
     markRunning: unused, recordInvocation: unused,
     complete: async (_id, completion) => {
@@ -72,7 +72,7 @@ test("an unknown execution is reported as not found", async () => {
   logger.configure(app.log)
   const unused = async (): Promise<never> => { throw new Error("Unexpected store operation") }
   const store: AgentExecutionStore = {
-    findMonitorFingerprint: async () => null, findById: unused, recentIds: unused, create: unused,
+    findMonitorFingerprint: async () => null, findById: unused, recentIds: unused, create: unused, createEvaluation: unused,
     createExecutionsForProject: unused, updateUsage: unused, patchResult: unused,
     requestAuditCancellation: unused, claimAuditDispatch: unused, pendingAuditCancellations: unused,
     markRunning: unused, recordInvocation: unused, complete: unused,

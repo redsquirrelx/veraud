@@ -99,6 +99,9 @@ export interface AgentExecutionStore {
   patchResult(id: number, result: string): Promise<StoredAgentExecution>
   /** One row per configuration, keyed by agent type, under a fresh evaluation.
    *  Works for any present or future pipeline; empty lists are rejected. */
+  /** Creates a grouping evaluation for a revision without touching the
+   *  analysis-oriented reuse semantics (`selectedVersion`, `analysisStatus`). */
+  createEvaluation(versionId: number, type: string): Promise<number>
   createExecutionsForProject(projectId: number, branch: string | null, commitHash: string, configurations: PreparedAgentConfiguration[], evaluationType?: string): Promise<{ versionId: number, evaluationId: number, executions: Record<string, StoredAgentExecution>, reused?: boolean }>
 }
 
@@ -242,6 +245,14 @@ export class AgentExecutionRepository implements AgentExecutionStore {
 
       throw error
     }
+  }
+
+  /** Creates a grouping evaluation for a revision without touching the
+   *  analysis-oriented reuse semantics (`selectedVersion`, `analysisStatus`).
+   *  Used by verification-suite generation and its future deterministic runs. */
+  async createEvaluation(versionId: number, type: string): Promise<number> {
+    const evaluation = await this.db.evaluation.create({ data: { projectVersionId: versionId, type } })
+    return evaluation.id
   }
 
   private async assertCurrent(tx: Prisma.TransactionClient, prepared: PreparedAgentConfiguration): Promise<void> {
