@@ -81,6 +81,9 @@ def _definitions(service):
     from ..agents.maintainability.v2.reusability.coordinator.registry import (
         registered_investigators as reusability_investigators,
     )
+    from ..agents.maintainability.v2.testability.coordinator.registry import (
+        registered_investigators as testability_investigators,
+    )
     from .audit_models import MAINTAINABILITY_AGENT_TYPES
     from .project_architecture_definition import ProjectArchitectureInput
     from .quality_audit_definition import QualityAuditInput
@@ -124,6 +127,7 @@ def _definitions(service):
     investigators_by_coordinator = {
         "modularity": modularity_investigators,
         "reusability": reusability_investigators,
+        "testability": testability_investigators,
     }
     for identifier, spec in coordinators.items():
         investigators = investigators_by_coordinator.get(identifier, modularity_investigators)()

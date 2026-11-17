@@ -127,7 +127,7 @@ def coverage_projection(records, effective_assessments):
         report = execution["report"]
         plan = report.get("plan")
         if not isinstance(plan, dict):
-            if execution["agent_id"] in AGENT_CATEGORIES and execution["agent_id"] not in {"modularity", "reusability", "maintainability_manager"}:
+            if execution["agent_id"] in AGENT_CATEGORIES and execution["agent_id"] not in {"modularity", "reusability", "testability", "maintainability_manager"}:
                 rows.append(CoverageCommitment(invocation_id=execution["invocation_id"], agent_id=execution["agent_id"],
                     question=report.get("objective", "No se publicó un plan de investigación."),
                     status="skipped" if execution["status"] == "skipped" else "not_evaluated",

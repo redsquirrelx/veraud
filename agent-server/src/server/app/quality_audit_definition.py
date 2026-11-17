@@ -64,11 +64,15 @@ def parse_input(raw):
             from ..agents.maintainability.v2.reusability.coordinator.registry import (
                 registered_investigators as reusability_investigators,
             )
+            from ..agents.maintainability.v2.testability.coordinator.registry import (
+                registered_investigators as testability_investigators,
+            )
 
             coordinators = registered_coordinators()
             investigators_by_coordinator = {
                 "modularity": modularity_investigators,
                 "reusability": reusability_investigators,
+                "testability": testability_investigators,
             }
             for coordinator_id, investigator_ids in parsed.maintainability_selection.items():
                 if coordinator_id not in coordinators:
