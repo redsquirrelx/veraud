@@ -67,7 +67,8 @@ require backend support for the new optional fields before end-to-end rollout.
 
 The project audit endpoint and `quality-audit` pipeline accept optional
 `maintainability_selection`, a map from registered maintainability coordinator IDs to
-their enabled investigator IDs (for example, `{"modularity": ["responsibility"]}`).
+their enabled investigator IDs (for example, `{"modularity": ["responsibility"],
+"testability": ["test_isolation", "test_controllability"]}`).
 It requires the `maintainability` attribute and at least one selected coordinator.
 An empty investigator list is allowed for a selected coordinator; it cannot establish
 successful coverage without investigator evidence. Omission preserves the existing full

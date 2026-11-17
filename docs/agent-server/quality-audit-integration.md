@@ -12,12 +12,14 @@ saved `maintainability_manager` assignment is the common source for this UI.
 No API keys are read by the browser.
 
 On dispatch, the backend expands that saved selection into explicit
-`stage_configs` entries in `POST /api/pipelines/quality-audit/run` for:
+`stage_configs` entries in `POST /api/pipelines/quality-audit/run` for the
+registered V2 hierarchy (as advertised by `GET /api/agents/catalog`):
 
 - `maintainability_manager`
-- `modularity`, `reusability`
-- `architecture_boundary`, `responsibility`, `dependency_impact`
-- `abstraction`, `reuse_opportunity`, `component_adaptability`
+- `modularity`, `reusability`, `testability`
+- `responsibility`, `architecture_boundary`,
+- `abstraction`, `reuse_parametrization_doc_driven`,
+- `test_isolation`, `test_controllability`
 
 Each entry carries `model` (`provider`, `name`, `temperature`, `max_tokens`) and
 `api_key`. The direct `POST /api/audits` endpoint accepts the same complete map

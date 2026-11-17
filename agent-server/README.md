@@ -48,7 +48,7 @@ For example, a backend preparing `quality-audit` can:
 1. Find the workflow by `workflow_id`.
 2. Select `maintainability`, `security`, or both from `supported_attributes`.
 3. Use `model_configuration_groups` to obtain the exact `stage_configs` keys for
-   the selected attributes. All nine maintainability participants require entries
+   the selected attributes. All ten maintainability participants require entries
    when explicit configurations are supplied; security requires one `security` entry.
 4. Use the matching `attribute_selections` entry to obtain the effective callback
    `stages` and complete `model_configuration_ids`. Security-only reports through

@@ -1,7 +1,9 @@
 # Maintainability agents
 
-V1 remains the integrated audit hierarchy. V2 contains only an independent copy
-of architecture boundary; it is not registered in catalogs, runners or audits.
+V1 remains the integrated audit hierarchy. V2 integrates `quality-audit` /
+`/api/audits` through `v2/manager` and the coordinators `v2/modularity/`,
+`v2/reusability/` and `v2/testability/` (each with documentary investigators).
+V1 participants are not advertised in the production catalog or invoked by V2.
 
 ```text
 maintainability/
@@ -18,8 +20,19 @@ maintainability/
 │       ├── reuse_opportunity/
 │       └── abstraction/
 └── v2/
-    └── modularity/
-        └── architecture_boundary/
+    ├── manager/
+    ├── modularity/
+    │   ├── coordinator/
+    │   ├── responsibility_doc_driven/
+    │   └── architecture_boundary_doc_driven/
+    ├── reusability/
+    │   ├── coordinator/
+    │   ├── abstraction_doc_driven/
+    │   └── reuse_parametrization_doc_driven/
+    └── testability/
+        ├── coordinator/
+        ├── test_isolation_doc_driven/
+        └── test_controllability_doc_driven/
 ```
 
 ## Reading the code
@@ -54,7 +67,7 @@ Common execution/provider/delegation controls live in [`agent-server/config/agen
 Each agent's configuration inherits only its applicable common family; the shared
 catalog publishes validated defaults, effective JSON Schema and panel field groups.
 Shared orchestration lives in [`../../runtimes/coordination/`](../../runtimes/coordination/README.md);
-modularity, reusability and manager bind their own graphs over that neutral runtime.
+modularity, reusability, testability and manager bind their own graphs over that neutral runtime.
 Import from the concrete agent package, for example:
 
 ```python
