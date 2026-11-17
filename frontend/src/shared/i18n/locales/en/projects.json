@@ -580,6 +580,14 @@
       "title": "Audits",
       "panelLabel": "Audit statuses",
       "empty": "No audits to show"
+    },
+    "issues": {
+      "view": "View reason",
+      "title": "Audit result reason",
+      "empty": "The report records no incidents for this run.",
+      "loadFailed": "The report detail could not be loaded.",
+      "retry": "Retry",
+      "diagnostics": "Technical diagnostics ({{count}})"
     }
   },
   "status": {

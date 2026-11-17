@@ -10,6 +10,7 @@ import { publicErrorText, publicErrorFields } from "../../infrastructure/securit
 import { auditReportSections, type AuditReportSection } from "./audit-report-sections.js"
 import { findingResolutionFindings } from "./finding-resolution.js"
 import { AuditArtifactStore, parseArtifactManifest, type AuditArtifactManifest } from "./audit-artifacts.js"
+import { projectAuditIssues, readAuditIssues } from "./audit-issues.js"
 import type { AgentSettingsService } from "../agent-settings/agent-settings.service.js"
 
 export class AuditNotFoundError extends Error {}
@@ -216,6 +217,25 @@ export class QualityAuditService {
     return summary(row, { ...(projection.runId !== null ? { run_id: projection.runId } : {}),
       ...(projection.auditStatus !== null ? { status: projection.auditStatus } : {}),
       ...(projection.attributes ? { attributes: JSON.parse(projection.attributes) as string[] } : {}) }, projection.reportType === "object")
+  }
+
+  async executionIssues(projectId: number, id: number) {
+    // Resolve the project-owned artifact before any filesystem access. Do not
+    // call reportSection: its annexes include the entire evidence inventory.
+    const row = await this.repository.find(projectId, id)
+    if (!row) throw new AuditNotFoundError("Audit not found for this project")
+    const manifest = artifactManifest(row)
+    let issues: unknown
+    if (manifest) {
+      await this.artifactStore.assertAvailable(manifest)
+      issues = await readAuditIssues(this.artifactStore.sectionPath(manifest, "annexes_and_traceability"))
+    } else {
+      const legacy = await this.repository.findReportSection(projectId, id, "annexes_and_traceability")
+      if (legacy === null) throw new AuditNotFoundError("Audit not found for this project")
+      if (legacy.reportType !== "object") throw new AuditReportUnavailableError("The audit report is not available yet")
+      issues = (JSON.parse(legacy.data ?? "null") as { execution_issues?: unknown } | null)?.execution_issues
+    }
+    return { execution_issues: publicErrorFields(projectAuditIssues(issues)) }
   }
 
   async reportSection(projectId: number, id: number, section: string) {

@@ -177,6 +177,18 @@ export function registerQualityAuditRoutes(app: FastifyInstance, service: Qualit
     catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
   })
 
+  app.get("/api/projects/:id/audits/:auditId/execution-issues", { schema: {
+    tags: ["Projects"], summary: "Read compact audit execution incidents without loading evidence",
+    description: "Returns only recorded execution incidents from the project-owned audit, without transferring the evidence inventory or full report annexes.",
+    params: { ...params, required: ["id", "auditId"] },
+    response: { 200: objectResponse({ execution_issues: { type: "array", items: { type: "object", additionalProperties: true } } }),
+      ...errorResponses([400, 404, 422]) },
+  } }, async (request, reply) => {
+    const { id, auditId } = request.params as { id: string, auditId: string }
+    try { return await service.executionIssues(Number(id), Number(auditId)) }
+    catch (error) { return reply.code(failure(error)).send({ message: (error as Error).message }) }
+  })
+
   app.get("/api/projects/:id/audits/:auditId/evidence", { schema: {
     tags: ["Projects"], summary: "Read currently published audit evidence without running agents or building reports",
     description: "Returns evidence already published for the audit; it never runs agents or builds reports.",

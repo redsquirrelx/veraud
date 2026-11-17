@@ -580,6 +580,14 @@
       "title": "Auditorías",
       "panelLabel": "Estados de auditoría",
       "empty": "No hay auditorías que mostrar"
+    },
+    "issues": {
+      "view": "Ver motivo",
+      "title": "Motivo del resultado de la auditoría",
+      "empty": "El reporte no registra incidencias para esta ejecución.",
+      "loadFailed": "No se pudo cargar el detalle del reporte.",
+      "retry": "Reintentar",
+      "diagnostics": "Diagnóstico técnico ({{count}})"
     }
   },
   "status": {
