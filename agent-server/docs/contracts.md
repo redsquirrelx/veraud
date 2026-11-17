@@ -6,6 +6,26 @@ Implementation owners are listed in [`architecture.md`](architecture.md).
 
 ## Agent-server HTTP
 
+### Verification at an immutable commit
+
+`POST /api/audits/{run_id}/verification-suite` accepts `action: "execute"`,
+`target_commit` (a full 40-character Git hash), `allow_execution: true`, and an
+optional `attempt_id`. If omitted, the target is the recorded audit commit, never
+the working tree. Unknown commits fail explicitly; this operation does not fetch.
+
+The recorded repository's Git objects are read into a bounded temporary snapshot
+of regular tracked files. Working-tree changes, hooks, filters, symlinks and
+submodules are not used; unsupported trees fail rather than fall back. The same
+ZIP bytes are frozen for execution and no LLM is called. This is local execution,
+not a security sandbox.
+
+Results include `suite_id`, `suite_sha256`, `baseline_commit`, `target_commit`,
+`checkout_commit` and `attempt_id`. Completed attempt summaries are retained under
+`verification-executions/{attempt_id}.json`; the existing summary GET still returns
+the latest published result. The backend project route accepts camel-case
+`targetCommit` and returns HTTP 202 for background dispatch. Creating and downloading
+remain independent of the selected execution commit.
+
 | Operation | Contract |
 | --- | --- |
 | `GET /api/status` | `{ "status": "ok", "service": "agent-server" }`; does not probe providers or callbacks |
