@@ -303,6 +303,41 @@ export class AgentExecutionService {
   }
 
   /**
+   * Registers a verification-suite generation under the audit's project
+   * version. The build itself is dispatched separately by the caller (the
+   * suite is created over HTTP, not by the standard agent dispatch path).
+   */
+  async openVerificationSuiteGeneration(versionId: number): Promise<StoredAgentExecution> {
+    const [configuration] = await this.settings.prepareExecution(["verification_suite"])
+    const evaluationId = await this.executions.createEvaluation(versionId, "VerificationSuite")
+    const execution = await this.executions.create({ agentType: "verification_suite", evaluationId, configuration: configuration! })
+    const trace = this.traceEnvelope(execution)
+    if (trace) writeTraceEvent(trace, { event: "agent.execution.opened", status: "running", message: `Opened verification-suite generation ${execution.id}`, details: { agentType: execution.agentType, evaluationId } })
+    this.events.broadcast({ type: "agent-execution.opened", execution: toEvent(execution) })
+    return execution
+  }
+
+  /**
+   * Closes a verification-suite generation row as failed when the dispatch
+   * itself could not reach the agent-server or the worker aborted. Best
+   * effort; the row is the only trace of the attempt.
+   */
+  async closeVerificationSuiteGenerationAsFailed(executionId: number): Promise<void> {
+    try {
+      await this.close(executionId, {
+        status: "Failed",
+        result: null,
+        error: "Verification suite could not be delivered to the agent server.",
+        interruptionReason: "dispatch_failed",
+        inputTokens: null,
+        outputTokens: null,
+      })
+    } catch {
+      // A row already completed or vanished; nothing else to close.
+    }
+  }
+
+  /**
    * Registers a direct invocation with an explicit agent input.
    *
    * Unlike open(), no evaluation or project version is involved: the row is
