@@ -4,6 +4,7 @@ import httpx
 
 from server.config.logs import get_logger
 from server.contracts.public_errors import public_error_fields
+from server.infrastructure.tracing_sink import current_trace_context, trace_event
 
 from .schemas import (
     CallbackConfig,
@@ -84,6 +85,14 @@ class CallbackClient:
         if self._config.shared_secret:
             headers["X-Agent-Secret"] = self._config.shared_secret
 
+        context = current_trace_context()
+        if context:
+            headers["X-Veraud-Trace-Id"] = str(context["traceId"])
+            headers["X-Veraud-Agent-Type"] = str(context.get("agentType", "architecture_context"))
+            if context.get("executionId") is not None:
+                headers["X-Veraud-Execution-Id"] = str(context["executionId"])
+        trace_event("callback.request", message=f"POST {path}", details={"path": path})
+
         if self._client is not None:
             client = self._client
         elif self._pooled is not None:
@@ -95,14 +104,21 @@ class CallbackClient:
         try:
             response = await client.post(url, json=payload, headers=headers)
 
-        except Exception:  # noqa: BLE001 - any transport failure
+        except Exception as error:  # noqa: BLE001 - any transport failure
             # The run itself already finished; failing loudly here would throw
             # away a completed analysis because the report did not land.
             logger.warning("Execution callback did not reach the backend")
+            trace_event("callback.failed", status="error", error_code="transport_error",
+                        message="Execution callback did not reach the backend",
+                        details={"path": path, "errorType": type(error).__name__})
             return CallbackResult(acknowledged=False, error="Execution callback transport failed.")
 
         acknowledged = response.is_success
         body = None if acknowledged else "Execution callback rejected."
+        trace_event("callback.response", status="ok" if acknowledged else "error",
+                    error_code=None if acknowledged else f"http_{response.status_code}",
+                    message=f"Backend acknowledged {path}" if acknowledged else f"Backend rejected {path}",
+                    details={"path": path, "httpStatus": response.status_code})
 
         if acknowledged:
             logger.info("Execution callback acknowledged (%s)", response.status_code)

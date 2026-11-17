@@ -6,6 +6,7 @@ import re
 from importlib.resources import files
 from typing import get_args
 
+from server.infrastructure.tracing_sink import trace_event
 from server.runtimes.investigation.structured import parse_structured
 from server.runtimes.repository.telemetry import measured_prompt
 
@@ -270,7 +271,11 @@ async def extract_knowledge(
         try:
             response = await model.call(prompt, schema=KnowledgeExtraction)
             result = parse_structured(response, KnowledgeExtraction, native=False)
-        except Exception:  # log and leave failed sections unprocessed
+        except Exception as error:  # log and leave failed sections unprocessed
+            trace_event("architecture_context.provider_failed", status="error",
+                        error_code=f"http_{getattr(error, 'code', type(error).__name__)}" if getattr(error, 'code', None) is not None else type(error).__name__,
+                        message=f"Knowledge extraction failed for {len(batch)} section(s)",
+                        details={"sections": len(batch), "sectionIds": [section.section_id for section in batch]})
             logger.exception("knowledge extraction failed for sections=%s", [s.section_id for s in batch])
             stop_reason = "extraction_failed"
             section_status.update({section.section_id: "failed" for section in batch})
@@ -340,7 +345,11 @@ async def extract_knowledge(
             coverage = parse_structured(response, KnowledgeCoverage, native=False)
             assessments = {item.category: item for item in coverage.categories}
             coverage_status = "completed"
-        except Exception:  # fail closed without inventing coverage
+        except Exception as error:  # fail closed without inventing coverage
+            trace_event("architecture_context.coverage_failed", status="error",
+                        error_code=str(getattr(error, "code", type(error).__name__)),
+                        message="Knowledge coverage assessment failed",
+                        details={"errorType": type(error).__name__})
             logger.exception("knowledge coverage assessment failed")
             stop_reason = stop_reason or "coverage_assessment_failed"
             coverage_status = "failed"

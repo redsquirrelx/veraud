@@ -5,6 +5,12 @@ from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from server.infrastructure.tracing_sink import (
+    reset_trace_context,
+    set_trace_context,
+    trace_event,
+)
+
 from .api.audits import router as audits_router
 from .api.executions import router as executions_router
 from .api.graphs import router as graphs_router
@@ -116,6 +122,38 @@ app.include_router(audits_router)
 app.include_router(graphs_router)
 app.include_router(web_router)
 app.mount("/static", static_files, name="web_static")
+
+
+@app.middleware("http")
+async def execution_trace(request, call_next):
+    trace_id = request.headers.get("x-veraud-trace-id")
+    if not trace_id:
+        return await call_next(request)
+    try:
+        execution_id = int(request.headers.get("x-veraud-execution-id") or "0")
+    except ValueError:
+        execution_id = None
+    agent_type = request.headers.get("x-veraud-agent-type") or "architecture_context"
+    token = set_trace_context(trace_id, execution_id, agent_type)
+    from time import monotonic
+    started = monotonic()
+    trace_event("http.request.started", span_id=trace_id, message=f"{request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+        trace_event("http.request.completed", span_id=trace_id, status="ok" if response.status_code < 400 else "error",
+                    error_code=f"http_{response.status_code}" if response.status_code >= 400 else None,
+                    duration_ms=round((monotonic() - started) * 1000, 3), message=f"{request.method} {request.url.path}",
+                    details={"httpStatus": response.status_code})
+        response.headers["x-veraud-trace-id"] = trace_id
+        return response
+    except Exception as error:
+        trace_event("http.request.unhandled_error", span_id=trace_id, status="error",
+                    error_code=type(error).__name__, duration_ms=round((monotonic() - started) * 1000, 3),
+                    message="Unhandled agent-server request failure",
+                    details={"errorType": type(error).__name__, "message": str(error)})
+        raise
+    finally:
+        reset_trace_context(token)
 
 
 @app.exception_handler(RequestValidationError)
