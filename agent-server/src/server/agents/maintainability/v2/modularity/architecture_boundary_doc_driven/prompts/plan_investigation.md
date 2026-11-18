@@ -89,3 +89,8 @@ a compatible directed relationship. Select one portion of an equivalent
 obligation before selecting another equivalent portion. Do not treat
 permissions, exceptions or descriptions as prohibitions, and do not treat the
 existence of a directed relationship as proof of a violation.
+Within the same base rank, always prefer grounded documented obligations over
+speculative cross-project probes that lack any documentary mapping. Grounded
+claims are much more likely to surface actual violations than speculative
+seeds, and the investigator's aim is finding evidence, not exploring the
+metropolis blindly.
