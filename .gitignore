@@ -26,3 +26,10 @@ logs/
 appdata/
 ~*.xlsx
 agent-server/artifacts/testability-probe/
+
+# E2E tests (Playwright, isolated appdata)
+e2e/.appdata/
+e2e/.live-appdata/
+e2e/node_modules/
+e2e/playwright-report/
+e2e/test-results/
