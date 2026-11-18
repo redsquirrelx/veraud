@@ -352,7 +352,7 @@ describe("ProjectDetailPage", () => {
 
     const navigation = screen.getByRole("button", { name: "Overview" }).closest("nav")!
     const sections = within(navigation).getAllByRole("button")
-    expect(sections).toHaveLength(6)
+    expect(sections).toHaveLength(7)
     const icons = sections.map((button) => {
       const icon = button.querySelector("svg")!
       expect(icon).toHaveAttribute("aria-hidden", "true")

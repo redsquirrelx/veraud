@@ -17,6 +17,15 @@ from .config import FindingTestConfig
 from .schemas import FindingTestGenerationRequest
 
 
+def _enable_tracing() -> None:
+    """Opt-in LangSmith tracing for local runs; never block the CLI on bad config."""
+    try:
+        from server.config import tracing as tracing_config
+        tracing_config.setup()
+    except Exception as error:  # noqa: BLE001 - CLI is still usable without tracing
+        print(f"warning: tracing disabled ({error})", file=sys.stderr)
+
+
 async def _generate(args: argparse.Namespace) -> int:
     if args.green_control and not args.allow_local_unsafe_execution:
         print("[finding-test-generation] --green-control requires --allow-local-unsafe-execution", file=sys.stderr)
@@ -78,6 +87,7 @@ async def _generate(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _enable_tracing()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subcommands = parser.add_subparsers(dest="command", required=True)
     generate = subcommands.add_parser("generate", help="Generate the verification suite ZIP from an audit export.")

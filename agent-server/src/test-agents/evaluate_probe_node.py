@@ -17,6 +17,14 @@ from server.agents.testability_probe.agent import TestabilityProbeAgent
 from server.agents.testability_probe.config import TestabilityProbeConfig
 from server.agents.testability_probe.llm_client import ProviderProbeLLMClient
 from server.agents.testability_probe.schemas import ProbeRequest
+from server.config import tracing as _tracing
+
+
+def _enable_tracing() -> None:
+    try:
+        _tracing.setup()
+    except Exception as error:  # noqa: BLE001 - evaluation runs are still usable without tracing
+        print(f"warning: tracing disabled ({error})", flush=True)
 
 
 async def main(selection, finding_ids=None):
@@ -71,6 +79,7 @@ async def main(selection, finding_ids=None):
 
 
 if __name__ == "__main__":
+    _enable_tracing()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selection", choices=["polleria", "regression"])
     parser.add_argument("--finding", action="append", help="Generate only these finding IDs, preserving the selected input")

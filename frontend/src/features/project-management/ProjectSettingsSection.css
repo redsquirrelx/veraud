@@ -1,0 +1,22 @@
+.project-settings { display: grid; gap: var(--space-4); }
+.project-settings h2 { margin: 0; }
+
+.project-danger-zone {
+  display: grid;
+  gap: var(--space-3);
+  border: var(--border-width) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  padding: var(--space-4);
+}
+
+.project-danger-zone h3 { margin: 0; }
+.project-danger-zone p { margin: 0; max-width: 70ch; }
+.project-danger-list { margin: 0; padding-inline-start: var(--space-4); display: grid; gap: var(--space-1); max-width: 70ch; }
+
+.project-delete-modal { display: grid; gap: var(--space-3); }
+.project-delete-modal p { margin: 0; }
+.project-delete-error { color: var(--status-danger-text); background: var(--status-danger-bg); border-radius: var(--radius-control); padding: var(--space-2); margin: 0; }
+.project-delete-cancelling { color: var(--color-text); background: var(--color-canvas); border-radius: var(--radius-control); padding: var(--space-2); margin: 0; }
+.project-delete-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

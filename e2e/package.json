@@ -1,0 +1,22 @@
+{
+  "name": "@veraud/e2e",
+  "private": true,
+  "type": "module",
+  "description": "Black-box end-to-end tests for Veraud: real browser, real backend and agent-server on isolated ports and an isolated .appdata working copy.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "seed": "node helpers/seed.mjs",
+    "verify": "playwright --version",
+    "live:bootstrap": "node helpers/prepare-live.mjs",
+    "test:live": "playwright test --config playwright.config.live.ts",
+    "test:live:restore": "node helpers/run-live-restore.mjs",
+    "live:snapshot": "node helpers/snapshot-live.mjs",
+    "live:restore": "node helpers/restore-live.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

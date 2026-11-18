@@ -1,4 +1,4 @@
-"""Grounded investigation followed by deterministic synthesis and finalization."""
+﻿"""Grounded investigation followed by deterministic synthesis and finalization."""
 
 import json
 import math
@@ -206,7 +206,9 @@ class BoundaryExecution(InvestigationExecution):
         try:
             self._opportunities, inventory, structural_limits = prepare_planning(
                 self.tools.accessible_snapshot, self.request,
-                limit=self.tools.limits.max_metadata_items, check=self._check_planning,
+                limit=min(32, max(2 * self.config.max_planned_investigations,
+                                  self.tools.limits.max_metadata_items)),
+                check=self._check_planning,
                 config=self.config, character_limit=self.tools.context.input.budget.max_retrieved_characters,
             )
             limitations.extend(structural_limits)
@@ -1009,3 +1011,4 @@ class BoundaryExecution(InvestigationExecution):
         }))
         return {"result": result, "evidence": ledger, "missing_information": missing, "limitations": limitations,
             "consumption": usage, "next_phase": None}
+

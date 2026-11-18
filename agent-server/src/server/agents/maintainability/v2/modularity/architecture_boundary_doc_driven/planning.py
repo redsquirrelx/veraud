@@ -171,7 +171,8 @@ def candidate_rank(task):
     # relation is more useful for inspection than several generic endpoints.
     return ({"high": 0, "medium": 1, "low": 2}[task.priority],
             {"corroborated": 0, "indexed": 1, "inferred": 2}[signal.basis],
-            0 if signal.kind in {"documented_boundary", "component_boundary"} else 1,
+            {"documented_boundary": 0, "direction": 0, "component_boundary": 1,
+             "cycle": 1, "encapsulation": 2, "integration": 2}.get(signal.kind, 3),
             -runtime_relationships, -len(relationships), len(task.scope), task.id)
 
 

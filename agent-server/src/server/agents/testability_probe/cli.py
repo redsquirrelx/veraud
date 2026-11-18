@@ -17,6 +17,15 @@ from .llm_client import ProviderProbeLLMClient
 from .schemas import ProbeRequest
 
 
+def _enable_tracing() -> None:
+    """Opt-in LangSmith tracing for local runs; never block the CLI on bad config."""
+    try:
+        from server.config import tracing as tracing_config
+        tracing_config.setup()
+    except Exception as error:  # noqa: BLE001 - CLI is still usable without tracing
+        print(f"warning: tracing disabled ({error})", file=sys.stderr)
+
+
 def _print_json(payload: dict) -> None:
     sys.stdout.buffer.write(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n")
 
@@ -93,6 +102,7 @@ def _validate(args) -> int:
 
 
 def main() -> int:
+    _enable_tracing()
     parser = argparse.ArgumentParser(prog="testability-probe", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -40,6 +40,13 @@ export function ProjectAnalysisIcon() {
   </SectionIcon>
 }
 
+export function ProjectSettingsIcon() {
+  return <SectionIcon>
+    <circle cx="8" cy="8" r="2.2" />
+    <path d="M8 1.5v2.2M8 12.3v2.2M14.5 8h-2.2M3.7 8H1.5M12.6 3.4l-1.6 1.6M5 11l-1.6 1.6M12.6 12.6 11 11M5 5 3.4 3.4" />
+  </SectionIcon>
+}
+
 export function ProjectAuditsIcon() {
   return <SectionIcon>
     <path d="M5 3H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H11" />

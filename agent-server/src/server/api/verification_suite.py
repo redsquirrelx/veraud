@@ -21,6 +21,7 @@ from server.agents.finding_test_generation.config import FindingTestConfig
 from server.agents.finding_test_generation.schemas import FindingTestGenerationRequest
 from server.app.audit_artifacts import _safe_run_id, artifact_root
 from server.app.verification_model_configuration import VerificationModelConfiguration
+from server.config.tracing import traced_agent_run
 
 router = APIRouter(tags=["Audits"])
 
@@ -356,10 +357,20 @@ async def build_verification_suite(run_id: str, body: VerificationSuiteRequest) 
         tasks: list[tuple[str, object]] = []
         if ftg_findings:
             tasks.append(("finding_test_generation",
-                          _run_finding_test_generation(safe_runner_id, adapted, ftg_findings, repo_path, output_dir, body, trackers=trackers)))
+                          traced_agent_run(_run_finding_test_generation(safe_runner_id, adapted, ftg_findings, repo_path, output_dir, body, trackers=trackers),
+                                           name="verification_suite/finding_test_generation",
+                                           run_id=safe_runner_id,
+                                           audit_id=str(adapted.get("auditId") or ""),
+                                           attempt_id=body.attempt_id,
+                                           action="create", finding_count=len(ftg_findings))))
         if probe_findings:
             tasks.append(("testability_probe",
-                          _run_probe(safe_runner_id, adapted, probe_findings, repo_path, output_dir, body, trackers=trackers)))
+                          traced_agent_run(_run_probe(safe_runner_id, adapted, probe_findings, repo_path, output_dir, body, trackers=trackers),
+                                           name="verification_suite/testability_probe",
+                                           run_id=safe_runner_id,
+                                           audit_id=str(adapted.get("auditId") or ""),
+                                           attempt_id=body.attempt_id,
+                                           action="create", finding_count=len(probe_findings))))
         gathered = await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
         for (generator, _), outcome in zip(tasks, gathered):
             if isinstance(outcome, BaseException):

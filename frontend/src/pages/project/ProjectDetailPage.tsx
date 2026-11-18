@@ -22,7 +22,8 @@ import {
 } from "../../features/project-management/pipelineResult.ts"
 import { CodeViewer, DirectoryTree, Badge, Button, Card, FolderIcon, Spinner, ExternalIcon, SplitView, Modal } from "../../shared/ui-kit/index.ts"
 import { ProjectSidebar } from "./ProjectSidebar.tsx"
-import { ProjectOverviewIcon, ProjectArchitectureContextIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon } from "./projectSectionIcons.tsx"
+import { ProjectOverviewIcon, ProjectArchitectureContextIcon, ProjectGraphIcon, ProjectAnalysisIcon, ProjectAuditsIcon, ProjectSettingsIcon } from "./projectSectionIcons.tsx"
+import { ProjectSettingsSection } from "../../features/project-management/ProjectSettingsSection.tsx"
 import { ProjectHeader } from "./ProjectHeader.tsx"
 import { ProjectAuditSummary } from "./ProjectAuditSummary.tsx"
 import { ProjectInsights } from "./ProjectInsights.tsx"
@@ -57,6 +58,7 @@ const sectionItems: Array<{ id: string, labelKey: ParseKeys<"projects">, icon: R
   { id: "analysis", labelKey: "detail.sections.analysis", icon: <ProjectAnalysisIcon /> },
   { id: "audits", labelKey: "detail.sections.audits", icon: <ProjectAuditsIcon /> },
   { id: "files", labelKey: "detail.sections.files", icon: <FolderIcon /> },
+  { id: "project-settings", labelKey: "detail.sections.projectSettings", icon: <ProjectSettingsIcon /> },
 ]
 
 const VALID_SECTIONS = new Set(sectionItems.map((item) => item.id))
@@ -562,6 +564,7 @@ export function ProjectDetailPage() {
                 />
               </Card>
             )}
+            {activeSection === "project-settings" && <ProjectSettingsSection project={project} />}
             {auditId !== undefined && (invocationId !== undefined
               ? <AuditAgentEvidence projectId={project.id} auditId={Number(auditId)} invocationId={invocationId} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />
               : <QualityAuditResults key={`${project.id}-${auditId}`} projectId={project.id} auditId={Number(auditId)} projectName={`${project.repositoryOwner}/${project.repositoryName}`} repositoryName={project.repositoryName} />)}

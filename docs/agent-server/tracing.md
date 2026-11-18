@@ -104,6 +104,9 @@ child of the surrounding span.
 | `app/execution_service.py` | `setup()` at construction; `traced_agent_run` around the timed run |
 | `runtimes/repository/model_runtime.py` | `traced_generate` instead of `model.generate` |
 | `agents/dummy/agent.py` | same |
+| `api/verification_suite.py` | `traced_agent_run` around each suite generator: `verification_suite/finding_test_generation`, `verification_suite/testability_probe` |
+| `agents/testability_probe/cli.py` | `setup()` opt-in for local runs (prints a warning and continues if misconfigured) |
+| `agents/finding_test_generation/cli.py` | `setup()` opt-in for local runs (same behavior) |
 
 `traced_agent_run` wraps the coroutine rather than the graph on purpose: that is
 what makes the agent span the root that the graph hangs off. The coroutine is

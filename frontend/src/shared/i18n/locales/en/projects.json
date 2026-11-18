@@ -405,7 +405,34 @@
       "architectureContext": "Architecture Context",
       "analysis": "Analysis",
       "audits": "Audits",
-      "files": "Files"
+      "files": "Files",
+      "projectSettings": "Project Settings"
+    },
+    "projectSettings": {
+      "title": "Project Settings",
+      "regionLabel": "Project settings",
+      "dangerZoneTitle": "Danger zone",
+      "dangerZoneDescription": "This action is irreversible. The project and everything it owns will be permanently deleted.",
+      "whatDeleted": {
+        "clone": "The local clone of {{target}} will be deleted from the workspace.",
+        "history": "All analyzed versions, evaluations, executions and audit history will be deleted.",
+        "artifacts": "All report and verification-suite artifacts of this project will be deleted from disk.",
+        "databaseNote": "The history cannot be recovered. The database file itself is not shrunk."
+      },
+      "deleteButton": "Delete project",
+      "deleteModalTitle": "Delete project",
+      "deleteModalDescription": "This will permanently delete {{target}} and all of its versions, audits, executions, artifacts and the local checkout. This cannot be undone.",
+      "typeToConfirm": "Type {{target}} to confirm",
+      "cancel": "Cancel",
+      "confirmButton": "Delete permanently",
+      "deleting": "Deleting",
+      "cancellingDescription": "Open executions were asked to cancel ({{count}} still running). Nothing has been deleted yet — retry once they finish.",
+      "cancellingToast": "Cancellation requested for {{count}} execution(s); nothing deleted yet",
+      "deleted": "Project deleted",
+      "deletedWithWarnings": "Project deleted, but {{count}} item(s) could not be removed from disk — check the response in the server logs",
+      "alreadyDeleted": "This project no longer exists",
+      "deleteFailed": "Could not delete the project",
+      "deleteFailedWithDetail": "Could not delete the project: {{detail}}"
     },
     "overview": {
       "title": "Overview",
