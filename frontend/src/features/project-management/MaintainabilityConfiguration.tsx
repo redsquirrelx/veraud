@@ -27,6 +27,10 @@ export function MaintainabilityConfiguration(props: {
   const localCatalog = useAuditAgentCatalog(props.catalog === undefined)
   const { agents, loading, failed, retry } = props.catalog ?? localCatalog
   const available = availableSubcharacteristics(agents)
+  // Analyzability and Modifiability are not implemented in the agent-server
+  // yet (no coordinators or investigators); hide those rows in the UI until
+  // they exist. They remain "not evaluated" in the report.
+  const visibleSubcharacteristics = subcharacteristics.filter((id) => id !== "analyzability" && id !== "modifiability")
 
   // An explicitly supplied undefined value resets a controlled form to server defaults.
   const selection = value ?? ("value" in props ? undefined : localSelection) ?? Object.fromEntries(available.map((id) =>
@@ -44,7 +48,7 @@ export function MaintainabilityConfiguration(props: {
       <p>{t("qualityAudits.configuration.maintainability.loadFailed")}</p>
       <Button variant="secondary" onClick={retry}>{t("qualityAudits.configuration.maintainability.retry")}</Button>
     </div>}
-    {subcharacteristics.map((id) => {
+    {visibleSubcharacteristics.map((id) => {
       const enabled = !loading && !failed && available.includes(id)
       const investigators = investigatorsFor(agents, id)
       return <div key={id} className="quality-audit-subcharacteristic">

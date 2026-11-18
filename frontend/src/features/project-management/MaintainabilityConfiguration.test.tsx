@@ -29,7 +29,7 @@ describe("maintainability configuration", () => {
     const user = userEvent.setup()
     render(<MaintainabilityConfiguration />)
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Modularity" })).toBeEnabled())
-    expect(screen.getAllByText("View investigators")).toHaveLength(5)
+    expect(screen.getAllByText("View investigators")).toHaveLength(3)
     expect(screen.queryByRole("status")).not.toBeInTheDocument()
     await user.click(screen.getAllByText("View investigators")[0]!)
     const boundary = screen.getByRole("checkbox", { name: "ArchitectureBoundaryAgent" })
@@ -57,7 +57,7 @@ describe("maintainability configuration", () => {
     await user.click(screen.getAllByText("View investigators")[1]!)
     expect(screen.getByRole("checkbox", { name: "AbstractionAgent" })).toBeChecked()
     await changeLanguage("es")
-    expect(screen.getAllByText("Ver investigadores")).toHaveLength(5)
+    expect(screen.getAllByText("Ver investigadores")).toHaveLength(3)
     expect(screen.queryByText("Evaluación parcial")).not.toBeInTheDocument()
     expect(listAgentSettings).toHaveBeenCalledOnce()
   })
@@ -83,21 +83,20 @@ describe("maintainability configuration", () => {
     expect(onChange).toHaveBeenLastCalledWith({})
   })
 
-  it("selects only registered, available subcharacteristics by default regardless of model configuration", async () => {
+  it("selects only registered, available subcharacteristics by default and hides unimplemented ones", async () => {
     vi.mocked(listAgentSettings).mockResolvedValue([
       agent("modularity"), agent("reusability"), agent("testability", "not_implemented"),
       { ...agent("test_isolation"), role: "investigator", name: "TestIsolationAgent", parentAgentTypes: ["testability"] },
-      { ...agent("modifiability"), qualityAttributes: ["security"] },
     ])
     render(<MaintainabilityConfiguration />)
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Modularity" })).toBeEnabled())
-    expect(screen.getAllByRole("checkbox")).toHaveLength(6)
+    expect(screen.getAllByRole("checkbox")).toHaveLength(4)
+    expect(screen.queryByRole("checkbox", { name: "Analyzability" })).toBeNull()
+    expect(screen.queryByRole("checkbox", { name: "Modifiability" })).toBeNull()
     for (const name of ["Modularity", "Reusability"]) expect(screen.getByRole("checkbox", { name })).toBeChecked()
-    for (const name of ["Analyzability", "Modifiability", "Testability"]) {
-      expect(screen.getByRole("checkbox", { name })).toBeDisabled()
-      expect(screen.getByRole("checkbox", { name })).not.toBeChecked()
-    }
+    expect(screen.getByRole("checkbox", { name: "Testability" })).toBeDisabled()
+    expect(screen.getByRole("checkbox", { name: "Testability" })).not.toBeChecked()
     await userEvent.click(screen.getByRole("checkbox", { name: "Modularity" }))
     expect(screen.getByRole("checkbox", { name: "Modularity" })).not.toBeChecked()
     await changeLanguage("es")
