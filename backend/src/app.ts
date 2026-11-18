@@ -24,6 +24,8 @@ import {
 import { ProjectRepository } from "./modules/project/project.repository.js"
 import { ProjectService } from "./modules/project/project.service.js"
 import { registerProjectRoutes } from "./modules/project/project.controller.js"
+import { registerProjectDeletionRoutes } from "./modules/project/project-deletion.controller.js"
+import { ProjectDeletionService } from "./modules/project/project-deletion.service.js"
 import { QualityAuditRepository } from "./modules/quality-audit/quality-audit.repository.js"
 import { QualityAuditService } from "./modules/quality-audit/quality-audit.service.js"
 import { join } from "node:path"
@@ -70,6 +72,9 @@ export interface BuildAppOptions {
   corsOrigins?: readonly string[]
   /** Trusted injection for tests/non-Windows hosts; never exposed over HTTP. */
   credentialCipher?: CredentialCipher
+  /** Test overrides for the project-deletion module; production keeps the defaults. */
+  projectDeletionTimeoutMs?: number
+  projectDeletionPollMs?: number
 }
 
 export async function buildApp(options: BuildAppOptions) {
@@ -152,6 +157,7 @@ export async function buildApp(options: BuildAppOptions) {
 
   gateway.register(app)
   registerProjectRoutes(app, projectService)
+  registerProjectDeletionRoutes(app, new ProjectDeletionService(db, agentExecutionService, options.workspaceDir, process.env.VERAUD_ARTIFACT_DIR, { timeoutMs: options.projectDeletionTimeoutMs, pollMs: options.projectDeletionPollMs }))
   const auditSettings = new AuditSettingsService(db, options.agentServerUrl)
   registerAuditSettingsRoutes(app, auditSettings)
   registerQualityAuditRoutes(app, new QualityAuditService(new QualityAuditRepository(db), projectService, agentExecutionService, auditSettings, agentInvoker, new AuditArtifactStore(options.workspaceDir), agentSettingsService))
