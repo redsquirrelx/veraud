@@ -405,7 +405,34 @@
       "architectureContext": "Contexto de arquitectura",
       "analysis": "Análisis",
       "audits": "Auditorías",
-      "files": "Archivos"
+      "files": "Archivos",
+      "projectSettings": "Configuración del proyecto"
+    },
+    "projectSettings": {
+      "title": "Configuración del proyecto",
+      "regionLabel": "Configuración del proyecto",
+      "dangerZoneTitle": "Zona de peligro",
+      "dangerZoneDescription": "Esta acción es irreversible. El proyecto y todo lo que le pertenece se eliminará de forma permanente.",
+      "whatDeleted": {
+        "clone": "El clon local de {{target}} se eliminará del workspace.",
+        "history": "Se eliminarán todas las versiones analizadas, evaluaciones, ejecuciones e historial de auditorías.",
+        "artifacts": "Se eliminarán del disco todos los informes y artefactos de verification-suite de este proyecto.",
+        "databaseNote": "El historial no se puede recuperar. El archivo de la base de datos no se encoge."
+      },
+      "deleteButton": "Eliminar proyecto",
+      "deleteModalTitle": "Eliminar proyecto",
+      "deleteModalDescription": "Se eliminará de forma permanente {{target}} y todas sus versiones, auditorías, ejecuciones, artefactos y el checkout local. Esta acción no se puede deshacer.",
+      "typeToConfirm": "Escribe {{target}} para confirmar",
+      "cancel": "Cancelar",
+      "confirmButton": "Eliminar definitivamente",
+      "deleting": "Eliminando",
+      "cancellingDescription": "Se solicitó la cancelación de las ejecuciones abiertas ({{count}} aún en curso). Aún no se ha borrado nada: reintenta cuando terminen.",
+      "cancellingToast": "Cancelación solicitada para {{count}} ejecución(es); aún no se ha borrado nada",
+      "deleted": "Proyecto eliminado",
+      "deletedWithWarnings": "Proyecto eliminado, pero {{count}} elemento(s) no se pudieron eliminar del disco; revisa el detalle en los logs del servidor",
+      "alreadyDeleted": "Este proyecto ya no existe",
+      "deleteFailed": "No se pudo eliminar el proyecto",
+      "deleteFailedWithDetail": "No se pudo eliminar el proyecto: {{detail}}"
     },
     "overview": {
       "title": "Resumen",

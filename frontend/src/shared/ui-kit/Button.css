@@ -42,6 +42,19 @@ a.ui-button { box-sizing: border-box; text-decoration: none; vertical-align: mid
   border: var(--border-width) solid var(--color-border-control);
 }
 
+.ui-button-danger {
+  background: var(--status-danger-solid);
+  color: var(--color-on-brand);
+  border: none;
+  box-shadow: var(--shadow-button);
+}
+
+.ui-button-danger:hover:not(:disabled) {
+  background: var(--color-error-border);
+}
+
+.ui-button-danger:active:not(:disabled) { background: var(--status-danger-text); }
+
 .ui-button-secondary:hover:not(:disabled) {
   background: var(--color-canvas);
   border-color: var(--color-border-hover);

@@ -19,6 +19,28 @@ export interface RegisteredProject {
   status: string
 }
 
+export interface ProjectDeletionCounts {
+  versions: number
+  evaluations: number
+  executions: number
+  events: number
+  architectureArtifacts: number
+  tasks: number
+  graphExtractions: number
+}
+
+export interface ProjectDeletionDisk {
+  artifactsRemoved: string[]
+  artifactsSkipped: number
+  artifactFailures: string[]
+  cloneRemoved: boolean
+  cloneFailure: string | null
+}
+
+export type ProjectDeletionOutcome =
+  | { status: "deleted"; counts: ProjectDeletionCounts; disk: ProjectDeletionDisk }
+  | { status: "cancelling"; pendingExecutionIds: number[] }
+
 const baseUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:7501"
 
 export function backendHttpUrl(): string {
@@ -90,6 +112,22 @@ export async function registerProject(repositoryUrl: string, shallowClone = fals
     body: JSON.stringify({ repositoryUrl, shallowClone }),
     signal: AbortSignal.timeout(600000),
   })
+}
+
+/** Deletes the project permanently. The backend asks open executions to cancel
+ *  first and waits; if they do not terminate it answers 202 (the request is a
+ *  no-op then) and the caller should retry. A 422 means git operations are in
+ *  flight, 404 means the project is gone. */
+export async function deleteProject(id: number): Promise<ProjectDeletionOutcome> {
+  const body = await requestJson<{ status: string; counts?: ProjectDeletionCounts; disk?: ProjectDeletionDisk; pendingExecutionIds?: number[] }>(
+    `/api/projects/${id}`,
+    "Could not delete the project",
+    { method: "DELETE", signal: AbortSignal.timeout(120000) },
+  )
+  if (body.status === "cancelling") {
+    return { status: "cancelling", pendingExecutionIds: body.pendingExecutionIds ?? [] }
+  }
+  return { status: "deleted", counts: body.counts ?? { versions: 0, evaluations: 0, executions: 0, events: 0, architectureArtifacts: 0, tasks: 0, graphExtractions: 0 }, disk: body.disk ?? { artifactsRemoved: [], artifactsSkipped: 0, artifactFailures: [], cloneRemoved: false, cloneFailure: null } }
 }
 
 export interface GitBranchList {

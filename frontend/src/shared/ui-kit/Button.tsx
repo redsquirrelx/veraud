@@ -7,7 +7,7 @@ interface ButtonProps {
   disabled?: boolean
   loading?: boolean
   loadingText?: string
-  variant?: "primary" | "secondary"
+  variant?: "primary" | "secondary" | "danger"
   square?: boolean
   title?: string
   ariaLabel?: string
@@ -21,7 +21,7 @@ export function Button({ children, disabled = false, loading = false, loadingTex
 
   return (
     <button type={type} className={`ui-button ui-button-${variant}${shape}`} disabled={isDisabled} title={title} aria-label={ariaLabel} onClick={onClick}>
-      {loading && loadingText === undefined && <Spinner size={12} tone={variant === "primary" ? "light" : "dark"} />}
+      {loading && loadingText === undefined && <Spinner size={12} tone={variant === "primary" || variant === "danger" ? "light" : "dark"} />}
       <span>{loading && loadingText !== undefined ? loadingText : children}</span>
     </button>
   )
