@@ -1,0 +1,25 @@
+{
+  "description": "Benchmark etiquetado del módulo de seguridad (estilo SARD/OWASP Benchmark, construido por el equipo). 'vulnerable' indica la verdad de base; 'in_scanner_scope' indica si alguna regla actual del escáner cubre ese tipo de debilidad.",
+  "cases": [
+    {"id": "V01", "file": "users.py", "language": "Python", "vulnerable": true, "category": "Inyección SQL", "cwe": "CWE-89", "owasp": "A03:2021 Injection", "in_scanner_scope": true, "description": "Consulta SQL concatenada con entrada del usuario"},
+    {"id": "V02", "file": "orders.js", "language": "JavaScript", "vulnerable": true, "category": "Inyección SQL", "cwe": "CWE-89", "owasp": "A03:2021 Injection", "in_scanner_scope": true, "description": "db.query con concatenación de req.params"},
+    {"id": "V03", "file": "UserDao.java", "language": "Java", "vulnerable": true, "category": "Inyección SQL", "cwe": "CWE-89", "owasp": "A03:2021 Injection", "in_scanner_scope": true, "description": "Statement.executeQuery con concatenación"},
+    {"id": "V04", "file": "report.py", "language": "Python", "vulnerable": true, "category": "Inyección SQL", "cwe": "CWE-89", "owasp": "A03:2021 Injection", "in_scanner_scope": false, "description": "Consulta SQL construida con f-string"},
+    {"id": "V05", "file": "session.py", "language": "Python", "vulnerable": true, "category": "Deserialización insegura", "cwe": "CWE-502", "owasp": "A08:2021 Integrity Failures", "in_scanner_scope": true, "description": "pickle.loads sobre datos externos"},
+    {"id": "V06", "file": "SessionLoader.java", "language": "Java", "vulnerable": true, "category": "Deserialización insegura", "cwe": "CWE-502", "owasp": "A08:2021 Integrity Failures", "in_scanner_scope": true, "description": "ObjectInputStream.readObject sin filtro"},
+    {"id": "V07", "file": "config_loader.py", "language": "Python", "vulnerable": true, "category": "Deserialización insegura", "cwe": "CWE-502", "owasp": "A08:2021 Integrity Failures", "in_scanner_scope": false, "description": "yaml.load con Loader inseguro"},
+    {"id": "V08", "file": "settings.py", "language": "Python", "vulnerable": true, "category": "Credenciales en el código", "cwe": "CWE-798", "owasp": "A07:2021 Auth Failures", "in_scanner_scope": true, "description": "Contraseña de base de datos en texto plano"},
+    {"id": "V09", "file": "aws_client.py", "language": "Python", "vulnerable": true, "category": "Credenciales en el código", "cwe": "CWE-798", "owasp": "A07:2021 Auth Failures", "in_scanner_scope": true, "description": "Access key de AWS en el código (clave de ejemplo oficial)"},
+    {"id": "V10", "file": "backup.py", "language": "Python", "vulnerable": true, "category": "Inyección de comandos", "cwe": "CWE-78", "owasp": "A03:2021 Injection", "in_scanner_scope": false, "description": "os.system con concatenación de una ruta externa"},
+    {"id": "V11", "file": "requirements.txt", "language": "Python (manifiesto)", "vulnerable": true, "category": "Componente vulnerable", "cwe": "CWE-1395", "owasp": "A06:2021 Vulnerable Components", "in_scanner_scope": true, "description": "requests 2.25.1 (< 2.31, CVE-2023-32681)"},
+    {"id": "V12", "file": "package.json", "language": "Node (manifiesto)", "vulnerable": true, "category": "Componente vulnerable", "cwe": "CWE-1395", "owasp": "A06:2021 Vulnerable Components", "in_scanner_scope": true, "description": "express 4.17.1 (< 4.17.3, CVE-2022-24999)"},
+    {"id": "S01", "file": "users_safe.py", "language": "Python", "vulnerable": false, "category": "Seguro", "description": "Consulta SQL parametrizada"},
+    {"id": "S02", "file": "greeting.js", "language": "JavaScript", "vulnerable": false, "category": "Seguro", "description": "Template literal sin SQL"},
+    {"id": "S03", "file": "cart.js", "language": "JavaScript", "vulnerable": false, "category": "Seguro", "description": "Suma aritmética"},
+    {"id": "S04", "file": "parser.py", "language": "Python", "vulnerable": false, "category": "Seguro", "description": "json.loads"},
+    {"id": "S05", "file": "config.py", "language": "Python", "vulnerable": false, "category": "Seguro", "description": "Contraseña leída del entorno"},
+    {"id": "S06", "file": "ProductDao.java", "language": "Java", "vulnerable": false, "category": "Seguro", "description": "PreparedStatement parametrizado"},
+    {"id": "S07", "file": "requirements.txt", "language": "Python (manifiesto)", "vulnerable": false, "category": "Seguro", "description": "Dependencias sin CVE conocidos en el catálogo"},
+    {"id": "S08", "file": "cache.py", "language": "Python", "vulnerable": false, "category": "Seguro", "description": "Mensaje de log con la palabra 'Deleted from'"}
+  ]
+}
