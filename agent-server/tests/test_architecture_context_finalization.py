@@ -1,4 +1,4 @@
-"""Deterministic final integrity checks against the trusted documentary snapshot."""
+﻿"""Deterministic final integrity checks against the trusted documentary snapshot."""
 
 from copy import deepcopy
 from typing import get_args
@@ -157,11 +157,32 @@ def test_discovery_failure_has_a_failed_final_result_without_invented_sources():
     assert result["result"].execution_status == "failed"
 
 
-def test_result_contract_rejects_complete_with_unconfirmed_coverage():
+def test_result_contract_rejects_complete_with_failed_assessment():
     output = validate_and_finalize(complete_state())["result"].model_dump()
-    output["covered_categories"] = ["components"]
-    with pytest.raises(ValidationError, match="seven confirmed categories"):
+    output["coverage_assessment_status"] = "failed"
+    with pytest.raises(ValidationError, match="completed coverage assessment"):
         ArchitectureContextResult.model_validate(output)
+
+
+def test_category_rationale_survives_canonical_export_and_legacy_artifacts():
+    state = complete_state()
+    rationale = "Operations are described, but response schemas and error guarantees are undocumented."
+    state["coverage_assessments"] = [{
+        "category": "interfaces_and_contracts", "sufficient": False, "rationale": rationale,
+    }]
+    state["covered_categories"].remove("interfaces_and_contracts")
+    state["pending_categories"] = ["interfaces_and_contracts"]
+    output = validate_and_finalize(state)["result"]
+    restored = ArchitectureContextResult.model_validate_json(output.model_dump_json())
+    assert restored.coverage_assessments[0].rationale == rationale
+    assert restored.coverage_assessments[0].sufficient is False
+    assert restored.execution_status == "complete"
+    assert restored.finalization_reason == "exploration_complete"
+    assert restored.pending_categories == ["interfaces_and_contracts"]
+    assert restored.comments == [f"interfaces_and_contracts: {rationale}"]
+    historical = output.model_dump()
+    historical.pop("coverage_assessments")
+    assert ArchitectureContextResult.model_validate(historical).coverage_assessments == []
 
 
 def test_duplicate_section_ids_are_not_silently_resolved():

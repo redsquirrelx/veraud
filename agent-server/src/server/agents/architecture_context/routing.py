@@ -9,7 +9,8 @@ from .state import ArchitectureContextState
 
 
 def route_after_extraction(
-    state: ArchitectureContextState, *, trace: Callable[..., None] | None = None
+    state: ArchitectureContextState, *, trace: Callable[..., None] | None = None,
+    max_iterations: int | None = None,
 ) -> str:
     reason = state.get("context_stop_reason")
     latest_count = len(state["retrieval_plan"].tasks) if state.get("retrieval_plan") else 0
@@ -24,6 +25,11 @@ def route_after_extraction(
     elif state.get("coverage_assessment_status") != "completed":
         destination = END
         reason = "coverage_not_evaluated"
+    elif (max_iterations is not None
+          and state.get("retrieval_round", 0) >= max_iterations
+          and state.get("pending_categories")):
+        destination = END
+        reason = "iteration_limit"
     elif state.get("pending_categories"):
         destination = "plan_retrieval"
         reason = "pending_categories"

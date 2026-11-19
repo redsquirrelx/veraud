@@ -1,4 +1,4 @@
-"""The discovery runner prepares an index and executes the actual LangGraph node."""
+﻿"""The discovery runner prepares an index and executes the actual LangGraph node."""
 
 import json
 import subprocess
@@ -24,10 +24,12 @@ def planning_provider(monkeypatch):
         prompt = messages[0].content
         payload = {"tasks": []}
         if "Accumulated knowledge" in prompt:
-            payload = {"categories": [
-                {"category": category, "sufficient": False, "rationale": "No retrieved evidence"}
-                for category in get_args(RetrievalCategory)
-            ]}
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            payload = {
+                "category": context["category"],
+                "sufficient": False,
+                "rationale": "No retrieved evidence",
+            }
         elif "Retrieved sections:" in prompt:
             source = json.loads(prompt.split("Retrieved sections:\n", 1)[1])
             payload = {"sections": [
@@ -294,10 +296,12 @@ def test_runner_executes_planner_and_exports_plan(
                 for item in source
             ]})
         else:
-            content = json.dumps({"categories": [
-                {"category": category, "sufficient": False, "rationale": "No claims"}
-                for category in get_args(RetrievalCategory)
-            ]})
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            content = json.dumps({
+                "category": context["category"],
+                "sufficient": False,
+                "rationale": "No claims",
+            })
         return SimpleNamespace(
             content=content,
             usage_metadata={"input_tokens": 100, "output_tokens": 20},
@@ -399,7 +403,7 @@ def test_runner_executes_planner_and_exports_plan(
     }
 
 
-def test_runner_stops_on_empty_followup_plan_without_reextracting(
+def test_runner_stops_after_one_round_without_followup_planning(
     repository, tmp_path, planning_provider, capsys
 ):
     (repository / "README.md").write_text(
@@ -432,11 +436,12 @@ def test_runner_stops_on_empty_followup_plan_without_reextracting(
                 }], "issues": [],
             }]}
         else:
-            payload = {"categories": [
-                {"category": category, "sufficient": category == "components",
-                 "rationale": "Documented component responsibility"}
-                for category in get_args(RetrievalCategory)
-            ]}
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            payload = {
+                "category": context["category"],
+                "sufficient": context["category"] == "components",
+                "rationale": "Documented component responsibility",
+            }
         return SimpleNamespace(
             content=json.dumps(payload),
             usage_metadata={"input_tokens": 100, "output_tokens": 30},
@@ -449,20 +454,25 @@ def test_runner_stops_on_empty_followup_plan_without_reextracting(
     ]) == 0
     output = json.loads(capsys.readouterr().out)
     state = output["state"]
-    assert output["model_usage"]["total"]["model_calls"] == 4
-    assert state["retrieval_round"] == 2
+    assert output["model_usage"]["total"]["model_calls"] == 9
+    assert state["retrieval_round"] == 1
     assert state["knowledge"][0]["evidence"][0]["quote"] == "Gateway routes requests."
     assert state["extraction_section_status"]
     assert state["coverage_assessment_status"] == "completed"
     assert state["covered_categories"] == ["components"]
-    assert state["execution_status"] == "partial"
+    assert state["execution_status"] == "complete"
+    assert state["finalization_reason"] == "exploration_complete"
     assert state["validation_errors"] == []
 
 
 @pytest.mark.parametrize("diagnostics", [False, True])
 def test_runner_continues_for_pending_interfaces_and_accumulates_two_rounds(
-    repository, tmp_path, planning_provider, capsys, diagnostics
+    repository, tmp_path, planning_provider, capsys, diagnostics, monkeypatch
 ):
+    # Two rounds now require 18 calls (planning + extraction + seven categories).
+    original_limits = runner.InvestigationConfig
+    monkeypatch.setattr(runner, "InvestigationConfig",
+                        lambda **kwargs: original_limits(max_model_calls=24, max_iterations=2, **kwargs))
     (repository / "overview.md").write_text("Architecture facts.", encoding="utf-8")
     (repository / "contracts.md").write_text("Documented operation contract.", encoding="utf-8")
     commit(repository)
@@ -507,11 +517,11 @@ def test_runner_continues_for_pending_interfaces_and_accumulates_two_rounds(
             stages.append("coverage")
             context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
             present = {claim["category"] for claim in context["claims"]}
-            payload = {"categories": [
-                {"category": category, "sufficient": category in present,
-                 "rationale": "Deterministic coverage fixture"}
-                for category in categories
-            ]}
+            payload = {
+                "category": context["category"],
+                "sufficient": context["category"] in present,
+                "rationale": "Deterministic coverage fixture",
+            }
         return SimpleNamespace(
             content=json.dumps(payload), usage_metadata={"input_tokens": 100, "output_tokens": 30}
         )
@@ -523,7 +533,7 @@ def test_runner_continues_for_pending_interfaces_and_accumulates_two_rounds(
     ]) == 0
     output = json.loads(capsys.readouterr().out)
     state = output["state"] if diagnostics else output
-    assert stages == ["planning", "extraction", "coverage"] * 2
+    assert stages == (["planning", "extraction"] + ["coverage"] * 7) * 2
     if diagnostics:
         assert state["retrieval_round"] == 2
         assert len(state["processed_section_ids"]) == 2
@@ -565,6 +575,10 @@ def test_later_planner_failure_finalizes_and_exports_previous_valid_knowledge(
 ):
     from server.agents.architecture_context.schemas import ReadTask, RetrievalPlan
 
+    original_limits = runner.InvestigationConfig
+    monkeypatch.setattr(runner, "InvestigationConfig",
+                        lambda **kwargs: original_limits(max_iterations=2, **kwargs))
+
     (repository / "README.md").write_text("Gateway routes requests.", encoding="utf-8")
     commit(repository)
 
@@ -591,10 +605,12 @@ def test_later_planner_failure_finalizes_and_exports_previous_valid_knowledge(
                 }],
             }]}
         else:
-            payload = {"categories": [
-                {"category": category, "sufficient": False, "rationale": "More sources needed"}
-                for category in get_args(RetrievalCategory)
-            ]}
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            payload = {
+                "category": context["category"],
+                "sufficient": False,
+                "rationale": "More sources needed",
+            }
         return SimpleNamespace(content=json.dumps(payload), usage_metadata={"input_tokens": 100, "output_tokens": 20})
 
     planning_provider[1].ainvoke.side_effect = respond
@@ -816,10 +832,12 @@ def test_runner_respects_global_finite_budget_and_preserves_failed_attempt_accou
                 for item in source
             ]}), usage_metadata={"input_tokens": 100, "output_tokens": 20})
         if "Accumulated knowledge" in prompt:
-            return SimpleNamespace(content=json.dumps({"categories": [
-                {"category": category, "sufficient": False, "rationale": "No claims"}
-                for category in get_args(RetrievalCategory)
-            ]}), usage_metadata={"input_tokens": 100, "output_tokens": 20})
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": context["category"],
+                "sufficient": False,
+                "rationale": "No claims",
+            }), usage_metadata={"input_tokens": 100, "output_tokens": 20})
         assert "Retrieval context:\n" in prompt
         planning_attempts += 1
         if planning_attempts < 3:

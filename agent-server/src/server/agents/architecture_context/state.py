@@ -11,6 +11,7 @@ from server.services.document_indexing import (
 
 from .schemas import (
     ArchitectureContextResult,
+    CategoryAssessment,
     FinalizationDiagnostic,
     KnowledgeClaim,
     KnowledgeIssue,
@@ -40,6 +41,7 @@ class ArchitectureContextState(TypedDict, total=False):
     processed_section_ids: list[str]
     extraction_section_status: dict[str, Literal["completed", "partial", "failed"]]
     coverage_assessment_status: Literal["completed", "failed", "not_run"]
+    coverage_assessments: list[CategoryAssessment]
     evaluated_categories: list[RetrievalCategory]
     retrieval_suggestions: RetrievalPlan
     retrieval_round: int

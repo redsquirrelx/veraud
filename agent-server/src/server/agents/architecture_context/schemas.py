@@ -180,6 +180,10 @@ class ArchitectureContextResult(RepositoryContract):
     pending_categories: list[RetrievalCategory]
     evaluated_categories: list[RetrievalCategory]
     coverage_assessment_status: Literal["completed", "failed", "not_run"]
+    # Optional for historical artifacts; preserve the model's explanation verbatim.
+    coverage_assessments: list[CategoryAssessment] = Field(default_factory=list)
+    comments: list[str] = Field(default_factory=list,
+        description="Non-blocking documentary limitations; not execution failures.")
     consulted_documents: list[DocumentRecord]
     # Resolve evidence section IDs to document provenance without exporting source text.
     section_paths: dict[str, str]
@@ -189,13 +193,11 @@ class ArchitectureContextResult(RepositoryContract):
     execution_error: str | None = None
 
     @model_validator(mode="after")
-    def complete_requires_confirmed_coverage(self) -> Self:
+    def complete_requires_successful_assessment(self) -> Self:
         if self.execution_status == "complete" and (
-            set(self.covered_categories) != set(get_args(RetrievalCategory))
-            or self.pending_categories
-            or self.coverage_assessment_status != "completed"
+            self.coverage_assessment_status != "completed"
             or self.validation_errors
             or self.execution_error
         ):
-            raise ValueError("Complete execution requires seven confirmed categories without errors")
+            raise ValueError("Complete execution requires completed coverage assessment without execution errors")
         return self
