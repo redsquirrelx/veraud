@@ -1,4 +1,4 @@
-"""Deterministic evidence checks and extraction state transitions."""
+﻿"""Deterministic evidence checks and extraction state transitions."""
 
 import asyncio
 import json
@@ -101,10 +101,10 @@ def test_extraction_exception_is_logged_and_empty_knowledge_skips_coverage(caplo
         async def call(self, prompt, *, schema):
             if schema is KnowledgeExtraction:
                 raise ValueError("provider unavailable")
-            return SimpleNamespace(content=json.dumps({"categories": [
-                {"category": category, "sufficient": True, "rationale": "Claimed"}
-                for category in get_args(RetrievalCategory)
-            ]}))
+            payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": payload["category"], "sufficient": True, "rationale": "Claimed",
+            }))
 
     result = asyncio.run(extract_knowledge(
         {"retrieved_sections": [section()]}, model=Model()
@@ -123,8 +123,6 @@ def test_invalid_citation_does_not_discard_valid_claim_or_prior_knowledge(caplog
         "claims": [claim("The gateway routes", "Gateway"), claim("fabricated", "Invented")],
         "issues": [],
     }]})
-    categories = get_args(RetrievalCategory)
-
     class Model:
         limits = SimpleNamespace(max_context_characters=100_000)
 
@@ -135,10 +133,11 @@ def test_invalid_citation_does_not_discard_valid_claim_or_prior_knowledge(caplog
             self.schemas.append(schema)
             if schema is KnowledgeExtraction:
                 return SimpleNamespace(content=original.model_dump_json())
-            return SimpleNamespace(content=json.dumps({"categories": [
-                {"category": category, "sufficient": True, "rationale": "Claims appear sufficient"}
-                for category in categories
-            ]}))
+            payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": payload["category"], "sufficient": True,
+                "rationale": "Claims appear sufficient",
+            }))
 
     prior_data = claim("Prior evidence", "Prior component")
     prior_data["section_ids"] = ["old"]
@@ -155,10 +154,10 @@ def test_invalid_citation_does_not_discard_valid_claim_or_prior_knowledge(caplog
     assert len(result["knowledge"]) == 2
     assert result["knowledge"][0] == prior
     assert result["knowledge"][1].subject == "Gateway"
-    assert result["processed_section_ids"] == []
-    assert result["context_stop_reason"] == "extraction_failed"
-    assert result["extraction_section_status"]["s1"] == "partial"
-    assert result["covered_categories"] == []
+    assert result["processed_section_ids"] == ["s1"]
+    assert "context_stop_reason" not in result
+    assert result["extraction_section_status"]["s1"] == "completed"
+    assert result["covered_categories"] == ["components"]
     assert "section_id=s1" in caplog.text
     assert "lines=99-99" in caplog.text
     assert result["evaluated_categories"] == ["components"]
@@ -182,10 +181,10 @@ def test_original_line_ranges_reconstruct_markdown_table_and_mermaid_verbatim():
         async def call(self, prompt, *, schema):
             if schema is KnowledgeExtraction:
                 return SimpleNamespace(content=result.model_dump_json())
-            return SimpleNamespace(content=json.dumps({"categories": [
-                {"category": category, "sufficient": False, "rationale": "Not enough"}
-                for category in get_args(RetrievalCategory)
-            ]}))
+            payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": payload["category"], "sufficient": False, "rationale": "Not enough",
+            }))
 
     extracted = asyncio.run(extract_knowledge({"retrieved_sections": [source]}, model=Model()))
     assert [e.quote for c in extracted["knowledge"] for e in c.evidence] == [
@@ -272,6 +271,7 @@ def test_coverage_receives_full_catalog_and_pending_sources_not_just_generic_cla
                     for source in sections
                 ]}
             else:
+                assert "orient a later architecture investigator" in prompt
                 context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
                 sources = context["documentary_sources"]
                 assert sources["catalog_available"] is True
@@ -285,21 +285,19 @@ def test_coverage_receives_full_catalog_and_pending_sources_not_just_generic_cla
                     }],
                 }
                 assert all(doc["retrieved_sections"] == [] for doc in sources["documents"][4:])
-                assert "contents solely from filenames" in prompt
-                assert "general claims or mentions of CLI/HTTP are insufficient" in prompt
-                assert len(context["claims"]) == 3
-                payload = {"categories": [
-                    {"category": category, "sufficient": False,
-                     "rationale": "General interface descriptions lack operations and schemas; potential sources remain."}
-                    for category in get_args(RetrievalCategory)
-                ]}
+                assert len(context["claims"]) == (3 if context["category"] == "interfaces_and_contracts" else 0)
+                payload = {
+                    "category": context["category"],
+                    "sufficient": False,
+                    "rationale": "General interface descriptions lack operations and schemas; potential sources remain.",
+                }
             return SimpleNamespace(content=json.dumps(payload))
 
     model = Model()
     result = asyncio.run(extract_knowledge(
         {"documents": documents, "retrieved_sections": sections}, model=model
     ))
-    assert model.calls == ["initial_extraction", "coverage_assessment"]
+    assert model.calls == ["initial_extraction"] + ["coverage_assessment"] * len(get_args(RetrievalCategory))
     assert len(result["knowledge"]) == 3
     assert len(result["processed_section_ids"]) == 4
     assert result["coverage_assessment_status"] == "completed"
@@ -330,10 +328,8 @@ def test_extraction_prompt_distinguishes_normative_rules_from_goals_and_behavior
                 item.update(statement=text, constraint=constraint)
                 payload = {"sections": [{"section_id": "s1", "claims": [item], "issues": []}]}
             else:
-                payload = {"categories": [
-                    {"category": category, "sufficient": False, "rationale": "Only one fact"}
-                    for category in get_args(RetrievalCategory)
-                ]}
+                payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+                payload = {"category": payload["category"], "sufficient": False, "rationale": "Only one fact"}
             return SimpleNamespace(content=json.dumps(payload))
 
     result = asyncio.run(extract_knowledge({"retrieved_sections": [section(content=text)]}, model=Model()))
@@ -359,10 +355,8 @@ def test_normative_prompt_separates_permissions_and_prohibitions_without_rewriti
                     claims.append(item)
                 payload = {"sections": [{"section_id": "s1", "claims": claims, "issues": []}]}
             else:
-                payload = {"categories": [
-                    {"category": category, "sufficient": False, "rationale": "Only one rule"}
-                    for category in get_args(RetrievalCategory)
-                ]}
+                payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+                payload = {"category": payload["category"], "sufficient": False, "rationale": "Only one rule"}
             return SimpleNamespace(content=json.dumps(payload))
 
     result = asyncio.run(extract_knowledge({"retrieved_sections": [section(content=text)]}, model=Model()))
@@ -417,20 +411,20 @@ def test_compact_coverage_across_rounds_preserves_all_claims_and_large_evidence(
             else:
                 context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
                 self.coverage_counts.append(len(context["claims"]))
-                assert len(context["claims"]) == 120 + self.extractions
-                assert all(set(item) == {
-                    "category", "subject", "statement", "certainty", "constraint", "references"
-                } for item in context["claims"])
-                assert context["claims"][0]["references"] == [["s1", 1, 1]]
-                assert "Long source excerpt" not in prompt
-                assert "Full extraction reasoning" not in prompt
+                assert all(c["category"] == context["category"] for c in context["claims"])
+                expected_components = 121 if self.extractions == 1 else 122
+                assert len(context["claims"]) == (expected_components if context["category"] == "components" else 0)
+                if context["claims"]:
+                    assert all(set(item) == {
+                        "category", "subject", "statement", "certainty", "constraint", "references"
+                    } for item in context["claims"])
+                    assert context["claims"][0]["references"] == [["s1", 1, 1]]
+                    assert "Long source excerpt" not in prompt
+                    assert "Full extraction reasoning" not in prompt
                 assert context["issues"] == [issue.model_dump(mode="json")]
                 assert context["section_processing"]["s1"] == "completed"
                 assert context["documentary_sources"]["unretrieved_document_paths"] == ["pending.md"]
-                payload = {"categories": [
-                    {"category": category, "sufficient": False, "rationale": "Needs more documentation"}
-                    for category in get_args(RetrievalCategory)
-                ]}
+                payload = {"category": context["category"], "sufficient": False, "rationale": "Needs more documentation"}
             return SimpleNamespace(content=json.dumps(payload))
 
     assert len(json.dumps([item.model_dump() for item in prior])) > 100_000
@@ -445,7 +439,8 @@ def test_compact_coverage_across_rounds_preserves_all_claims_and_large_evidence(
         assert result["knowledge"][:120] == original
         assert result["knowledge_issues"] == [issue]
         state = {**state, **result}
-    assert model.coverage_counts == [121, 122]
+    expected_components = [121 if category == "components" else 0 for category in get_args(RetrievalCategory)]
+    assert model.coverage_counts == expected_components + [count + 1 if count else 0 for count in expected_components]
     assert len(state["knowledge"]) == 122
     assert prior == original
 
@@ -459,7 +454,10 @@ def test_compact_coverage_overflow_is_explicit_and_does_not_truncate(caplog):
         limits = SimpleNamespace(max_context_characters=100_000)
 
         async def call(self, prompt, *, schema):
-            raise AssertionError("Oversized coverage must not be sent")
+            payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": payload["category"], "sufficient": False, "rationale": "No evidence sufficient",
+            }))
 
     result = asyncio.run(extract_knowledge({"knowledge": [original]}, model=Model()))
     assert result["knowledge"] == [original]
@@ -471,7 +469,7 @@ def test_compact_coverage_overflow_is_explicit_and_does_not_truncate(caplog):
     assert "no claims omitted" in caplog.text
 
 
-def test_cross_section_evidence_ids_are_rejected_and_section_is_partial(caplog):
+def test_cross_section_evidence_ids_are_rejected_and_section_is_failed(caplog):
     data = KnowledgeExtraction.model_validate({"sections": [{
         "section_id": "s1", "claims": [{
             **claim("", "Gateway"), "section_ids": ["s1", "s2"],
@@ -494,7 +492,7 @@ def test_cross_section_evidence_ids_are_rejected_and_section_is_partial(caplog):
         {"retrieved_sections": [section()]}, model=Model()
     ))
     assert result["knowledge"] == []
-    assert result["extraction_section_status"]["s1"] == "partial"
+    assert result["extraction_section_status"]["s1"] == "failed"
     assert "outside its batch" in caplog.text
 
 
@@ -535,10 +533,10 @@ def test_quote_accepts_original_lines_not_model_reformatted_text(caplog):
         async def call(self, prompt, *, schema):
             if schema is KnowledgeExtraction:
                 return SimpleNamespace(content=extracted.model_dump_json())
-            return SimpleNamespace(content=json.dumps({"categories": [
-                {"category": category, "sufficient": True, "rationale": "Documented"}
-                for category in get_args(RetrievalCategory)
-            ]}))
+            payload = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            return SimpleNamespace(content=json.dumps({
+                "category": payload["category"], "sufficient": True, "rationale": "Documented",
+            }))
 
     result = asyncio.run(extract_knowledge({"retrieved_sections": [section()]}, model=Model()))
     assert len(result["knowledge"]) == 1
@@ -587,3 +585,67 @@ def test_coverage_exception_is_logged_and_call_has_coverage_stage(caplog):
     assert result["context_stop_reason"] == "coverage_assessment_failed"
     assert model.stages == ["initial_extraction", "coverage_assessment"]
     assert "RuntimeError" in caplog.text and "coverage provider unavailable" in caplog.text
+
+
+def test_category_coverage_splits_large_corpus_without_dropping_claims():
+    prior = []
+    for category in get_args(RetrievalCategory):
+        data = claim("", category)
+        data.update(category=category, statement="Documented architectural fact. " * 800)
+        prior.append(KnowledgeClaim.model_validate(data))
+    assert len(json.dumps([item.model_dump() for item in prior])) > 100_000
+    seen = []
+
+    class Model:
+        limits = SimpleNamespace(max_context_characters=100_000)
+
+        async def call(self, prompt, *, schema):
+            assert len(prompt) <= self.limits.max_context_characters
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            category = context["category"]
+            seen.append(category)
+            expected = [c for c in prior if c.category == category]
+            assert [c["statement"] for c in context["claims"]] == [c.statement for c in expected]
+            return SimpleNamespace(content=json.dumps({
+                "category": category, "sufficient": True, "rationale": "Specific documentary evidence",
+            }))
+
+    result = asyncio.run(extract_knowledge({"knowledge": prior}, model=Model()))
+    assert seen == list(get_args(RetrievalCategory))
+    assert result["knowledge"] == prior
+    assert result["coverage_assessment_status"] == "completed"
+    assert result["pending_categories"] == []
+    assert len(result["coverage_assessments"]) == 7
+    assert all(item.rationale == "Specific documentary evidence" for item in result["coverage_assessments"])
+
+
+def test_category_coverage_rejects_response_for_different_category():
+    prior = KnowledgeClaim.model_validate(claim("", "Gateway"))
+
+    class Model:
+        limits = SimpleNamespace(max_context_characters=100_000)
+
+        async def call(self, prompt, *, schema):
+            return SimpleNamespace(content=json.dumps({
+                "category": "components", "sufficient": True, "rationale": "Wrong requested category",
+            }))
+
+    result = asyncio.run(extract_knowledge({"knowledge": [prior]}, model=Model()))
+    assert result["coverage_assessment_status"] == "failed"
+    assert result["covered_categories"] == []
+    assert result["knowledge"] == [prior]
+
+
+def test_architecture_context_stops_after_one_round_with_budgets_disabled(monkeypatch):
+    from config.agents import InvestigationConfig
+    from config.agents.budgets import BudgetPolicy
+    from server.agent_services.budgeting import policy
+    from server.agents.architecture_context.config import ArchitectureContextConfig
+
+    monkeypatch.setattr(policy, "token_budget_policy", lambda: BudgetPolicy(budgets_enabled=False))
+    assert InvestigationConfig().max_iterations == 3
+    assert ArchitectureContextConfig().max_iterations == 1
+    state = {"retrieval_round": 1, "pending_categories": ["interfaces_and_contracts"],
+             "coverage_assessment_status": "completed"}
+    assert route_after_extraction(state, max_iterations=1) == END
+    assert route_after_extraction(state, max_iterations=2) == "plan_retrieval"

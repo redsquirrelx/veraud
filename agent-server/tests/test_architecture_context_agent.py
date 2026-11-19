@@ -49,9 +49,10 @@ def host(monkeypatch, tmp_path):
                 "evidence": [{"section_id": section["section_id"], "start_line": 2, "end_line": 2}],
             }]}]}
         else:
-            payload = {"categories": [{"category": category, "sufficient": category == "components",
-                                       "rationale": "Documentary fixture"}
-                                      for category in get_args(RetrievalCategory)]}
+            context = json.loads(prompt.split("Accumulated knowledge:\n", 1)[1])
+            payload = {"category": context["category"],
+                       "sufficient": context["category"] == "components",
+                       "rationale": "Documentary fixture"}
         return SimpleNamespace(content=json.dumps(payload), usage_metadata={"input_tokens": 100, "output_tokens": 20})
 
     chat = SimpleNamespace(ainvoke=AsyncMock(side_effect=respond))
@@ -71,7 +72,7 @@ def host(monkeypatch, tmp_path):
         yield client, chat, callbacks
 
 
-def test_direct_endpoint_runs_selected_commit_and_reports_partial_output_and_usage(repository, host):
+def test_direct_endpoint_completes_exploration_and_retains_documentary_gaps(repository, host):
     root, commit = repository
     client, chat, callbacks = host
     assert "architecture_context" in client.get("/api/agents").json()
@@ -85,17 +86,19 @@ def test_direct_endpoint_runs_selected_commit_and_reports_partial_output_and_usa
     assert response.status_code == 200, response.text
     output = response.json()["result"]
     assert output["document_index"]["commit"] == commit
-    assert output["execution_status"] == "partial", output["execution_error"]
+    assert output["execution_status"] == "complete", output["execution_error"]
+    assert output["finalization_reason"] == "exploration_complete"
+    assert any("interfaces_and_contracts:" in comment for comment in output["comments"])
     assert output["knowledge"][0]["evidence"][0]["quote"] == "Gateway routes requests.\n"
     assert output["pending_categories"]
     assert output["validation_errors"] == []
     assert "Uncommitted" not in json.dumps(output)
-    assert chat.ainvoke.await_count == 4
+    assert chat.ainvoke.await_count == 9
     outcome = callbacks.complete.call_args.args[1]
     assert json.loads(outcome.result) == output
-    assert outcome.input_tokens == 400
-    assert outcome.output_tokens == 80
-    assert callbacks.progress.await_count == 4
+    assert outcome.input_tokens == 900
+    assert outcome.output_tokens == 180
+    assert callbacks.progress.await_count == 9
 
 
 def test_direct_input_rejects_narrative_overrides_and_invalid_commit(repository, host):
@@ -121,9 +124,8 @@ def test_complete_documentary_coverage_remains_native(repository, host):
             payload["sections"][0]["claims"] = [
                 {**claim, "category": category} for category in get_args(RetrievalCategory)
             ]
-        elif "categories" in payload:
-            for assessment in payload["categories"]:
-                assessment["sufficient"] = True
+        elif "category" in payload:
+            payload["sufficient"] = True
         response.content = json.dumps(payload)
         return response
 
@@ -137,7 +139,7 @@ def test_complete_documentary_coverage_remains_native(repository, host):
     assert output["execution_status"] == "complete"
     assert len(output["knowledge"]) == 7
     assert output["pending_categories"] == []
-    assert chat.ainvoke.await_count == 3
+    assert chat.ainvoke.await_count == 9
 
 
 def test_empty_documentation_is_partial_without_model_calls(repository, host):

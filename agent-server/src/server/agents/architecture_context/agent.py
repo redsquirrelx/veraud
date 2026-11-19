@@ -2,7 +2,6 @@
 
 import asyncio
 
-from config.agents import InvestigationConfig
 from server.agent_services.budgeting.shared_tokens import SharedTokenBudget
 from server.agent_services.budgeting.timing import ActiveDeadline
 from server.infrastructure.llm.chat import build_chat_model
@@ -12,6 +11,7 @@ from server.runtimes.repository.schemas import ExecutionBudget
 from server.services.document_indexing import DocumentIndexingService
 from server.services.document_indexing.storage import default_database
 
+from .config import ArchitectureContextConfig
 from .schemas import ArchitectureContextInput, ArchitectureContextResult
 from .workflow import build_workflow
 
@@ -22,7 +22,7 @@ class ArchitectureContextAgent(BaseAgent[ArchitectureContextInput, ArchitectureC
     output_schema = ArchitectureContextResult
 
     async def run(self, input_data: ArchitectureContextInput) -> ArchitectureContextResult:
-        limits = InvestigationConfig(
+        limits = ArchitectureContextConfig(
             timeout_seconds=self.settings.timeout_seconds,
             max_output_tokens=self.model.settings.max_tokens,
         )

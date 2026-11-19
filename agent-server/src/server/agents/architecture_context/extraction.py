@@ -1,4 +1,4 @@
-"""Evidence-validated incremental extraction of architectural context."""
+﻿"""Evidence-validated incremental extraction of architectural context."""
 
 import json
 import logging
@@ -10,8 +10,9 @@ from server.infrastructure.tracing_sink import trace_event
 from server.runtimes.investigation.structured import parse_structured
 from server.runtimes.repository.telemetry import measured_prompt
 
+from .observability import architecture_context_event, reason_slug
 from .schemas import (
-    KnowledgeCoverage,
+    CategoryAssessment,
     KnowledgeExtraction,
     RetrievalCategory,
 )
@@ -198,7 +199,7 @@ def _coverage_claim(claim):
 async def extract_knowledge(
     state: ArchitectureContextState, *, model
 ) -> ArchitectureContextState:
-    """Extract supported claims, then assess all accumulated category coverage once."""
+    """Extract supported claims, then assess accumulated knowledge per category."""
     pending_sections = []
     processed = set(state.get("processed_section_ids", []))
     seen = set()
@@ -217,6 +218,7 @@ async def extract_knowledge(
             "pending_categories": list(state.get("pending_categories", categories)),
             "extraction_section_status": dict(state.get("extraction_section_status", {})),
             "coverage_assessment_status": state.get("coverage_assessment_status", "not_run"),
+            "coverage_assessments": list(state.get("coverage_assessments", [])),
             "evaluated_categories": list(state.get("evaluated_categories", [])),
         }
 
@@ -229,7 +231,6 @@ async def extract_knowledge(
     stop_reason = None
     package = files(__package__).joinpath("prompts")
     extraction_instructions = package.joinpath("extract_knowledge.md").read_text(encoding="utf-8")
-    coverage_instructions = package.joinpath("assess_coverage.md").read_text(encoding="utf-8")
     limit = model.limits.max_context_characters
 
     batches = []
@@ -276,6 +277,13 @@ async def extract_knowledge(
                         error_code=f"http_{getattr(error, 'code', type(error).__name__)}" if getattr(error, 'code', None) is not None else type(error).__name__,
                         message=f"Knowledge extraction failed for {len(batch)} section(s)",
                         details={"sections": len(batch), "sectionIds": [section.section_id for section in batch]})
+            architecture_context_event(
+                "architecture_context.section_extraction_failed",
+                status="error",
+                error_code="provider_failed",
+                message="Batch failed at provider/parse stage",
+                details={"sections": len(batch)},
+            )
             logger.exception("knowledge extraction failed for sections=%s", [s.section_id for s in batch])
             stop_reason = "extraction_failed"
             section_status.update({section.section_id: "failed" for section in batch})
@@ -283,6 +291,13 @@ async def extract_knowledge(
         try:
             outputs, invalid_ids = _validate_batch(result, batch)
         except (TypeError, ValueError):
+            architecture_context_event(
+                "architecture_context.section_extraction_failed",
+                status="error",
+                error_code="invalid_batch",
+                message="Batch response failed strict validation",
+                details={"sections": len(batch)},
+            )
             logger.exception("knowledge extraction response invalid")
             stop_reason = "extraction_failed"
             continue
@@ -290,11 +305,25 @@ async def extract_knowledge(
         for section in batch:
             output = outputs.get(section.section_id)
             if output is None:
+                architecture_context_event(
+                    "architecture_context.section_extraction_failed",
+                    status="error",
+                    error_code="section_omitted",
+                    message="The model omitted a section from the batch",
+                    details={"section_id": section.section_id},
+                )
                 logger.error("knowledge extraction omitted section %s", section.section_id)
                 stop_reason = "extraction_failed"
                 section_status[section.section_id] = "failed"
                 continue
             if section.section_id in invalid_ids:
+                architecture_context_event(
+                    "architecture_context.section_extraction_failed",
+                    status="error",
+                    error_code="invalid_claims",
+                    message="Batch claims failed validation for a section",
+                    details={"section_id": section.section_id},
+                )
                 stop_reason = "extraction_failed"
                 section_status[section.section_id] = "failed"
                 continue
@@ -304,21 +333,33 @@ async def extract_knowledge(
             claims = _unique(claims, valid_claims)
             issues = _unique(issues, valid_issues)
             if errors:
-                stop_reason = "extraction_failed"
-                section_status[section.section_id] = "partial"
+                for error in errors[:3]:
+                    architecture_context_event(
+                        "architecture_context.claim_rejected",
+                        status="rejected",
+                        error_code=reason_slug(error),
+                        message="Extraction-time claim rejected",
+                        details={"section_id": section.section_id},
+                    )
+                if valid_claims or valid_issues:
+                    # Rejected items are dropped; a section surviving with usable evidence is complete.
+                    processed_ids.append(section.section_id)
+                    section_status[section.section_id] = "completed"
+                else:
+                    section_status[section.section_id] = "failed"
             else:
                 processed_ids.append(section.section_id)
                 section_status[section.section_id] = "completed"
 
     categories = list(get_args(RetrievalCategory))
-    assessments = None
-    knowledge_payload = {
-        "claims": [_coverage_claim(claim) for claim in claims],
-        "issues": [issue.model_dump(mode="json") for issue in issues],
-        "section_processing": section_status,
-        "documentary_sources": _documentary_sources(state, section_status),
-    }
     if not claims:
+        architecture_context_event(
+            "architecture_context.coverage_not_run",
+            status="error",
+            error_code="empty_knowledge",
+            message="No claims were produced; coverage assessment was not run",
+            details={"issues": len(issues)},
+        )
         categories = list(get_args(RetrievalCategory))
         return {
             "knowledge": claims,
@@ -328,56 +369,99 @@ async def extract_knowledge(
             "covered_categories": [],
             "pending_categories": categories,
             "coverage_assessment_status": "not_run",
+            "coverage_assessments": [],
             "evaluated_categories": [],
             **({"context_stop_reason": stop_reason} if stop_reason else {}),
         }
 
-    coverage_prompt = _prompt(
-        coverage_instructions,
-        KnowledgeCoverage,
-        "Accumulated knowledge",
-        knowledge_payload,
-        "coverage_assessment",
-    )
-    if len(coverage_prompt) <= limit:
-        try:
-            response = await model.call(coverage_prompt, schema=KnowledgeCoverage)
-            coverage = parse_structured(response, KnowledgeCoverage, native=False)
-            assessments = {item.category: item for item in coverage.categories}
-            coverage_status = "completed"
-        except Exception as error:  # fail closed without inventing coverage
-            trace_event("architecture_context.coverage_failed", status="error",
-                        error_code=str(getattr(error, "code", type(error).__name__)),
-                        message="Knowledge coverage assessment failed",
-                        details={"errorType": type(error).__name__})
-            logger.exception("knowledge coverage assessment failed")
-            stop_reason = stop_reason or "coverage_assessment_failed"
-            coverage_status = "failed"
-    else:
-        logger.warning(
-            "compact coverage context exceeds limit: prompt_characters=%s max_context_characters=%s "
-            "claims=%s issues=%s; coverage not run, no claims omitted",
-            len(coverage_prompt), limit, len(claims), len(issues),
+    category_instructions = files(__package__).joinpath(
+        "prompts", "assess_coverage_category.md"
+    ).read_text(encoding="utf-8")
+    issues_payload = [issue.model_dump(mode="json") for issue in issues]
+    section_payload = dict(section_status)
+    documentary_sources = _documentary_sources(state, section_status)
+    assessments = {}
+    coverage_exhausted_prompt = None
+    try:
+        for category in categories:
+            payload = {
+                "category": category,
+                "claims": [
+                    _coverage_claim(claim)
+                    for claim in claims
+                    if claim.category == category
+                ],
+                "issues": issues_payload,
+                "section_processing": section_payload,
+                "documentary_sources": documentary_sources,
+            }
+            category_prompt = _prompt(
+                category_instructions, CategoryAssessment, "Accumulated knowledge", payload, "coverage_assessment",
+            )
+            architecture_context_event(
+                "architecture_context.category_coverage_started",
+                details={"category": category, "claims": len(payload["claims"]),
+                         "prompt_characters": len(category_prompt), "limit": limit},
+            )
+            if len(category_prompt) > limit:
+                coverage_exhausted_prompt = len(category_prompt)
+                raise ValueError("coverage_context_exhausted")
+            response = await model.call(category_prompt, schema=CategoryAssessment)
+            assessment = parse_structured(response, CategoryAssessment, native=False)
+            if assessment.category != category:
+                raise ValueError("category_assessment_mismatch")
+            assessments[category] = assessment
+            architecture_context_event(
+                "architecture_context.category_coverage_completed", status="ok",
+                details={"category": category, "sufficient": assessment.sufficient,
+                         "claims": len(payload["claims"]), "prompt_characters": len(category_prompt)},
+            )
+        coverage_status = "completed"
+        architecture_context_event(
+            "architecture_context.coverage_completed",
+            status="ok",
+            details={"claims": len(claims), "issues": len(issues)},
         )
-        stop_reason = stop_reason or "coverage_context_exhausted"
-        coverage_status = "not_run"
+    except Exception as error:  # fail closed without inventing coverage
+        is_exhausted = str(error) == "coverage_context_exhausted"
+        if is_exhausted and coverage_exhausted_prompt is not None:
+            logger.warning(
+                "compact coverage context exceeds limit: prompt_characters=%s max_context_characters=%s "
+                "claims=%s issues=%s; coverage not run, no claims omitted",
+                coverage_exhausted_prompt, limit, len(claims), len(issues),
+            )
+        architecture_context_event(
+            "architecture_context.coverage_not_run" if is_exhausted else "architecture_context.coverage_failed",
+            status="error",
+            error_code="coverage_context_exhausted" if is_exhausted else str(getattr(error, "code", type(error).__name__)),
+            message="Knowledge coverage assessment failed" if not is_exhausted else "Coverage prompt exceeded the context budget",
+            details={
+                "errorType": type(error).__name__,
+                "category": category,
+                "prompt_characters": len(category_prompt),
+                "limit": limit,
+                "claims": len(payload["claims"]),
+                "issues": len(issues),
+            },
+        )
+        logger.exception("knowledge coverage assessment failed")
+        stop_reason = stop_reason or ("coverage_context_exhausted" if is_exhausted else "coverage_assessment_failed")
+        coverage_status = "not_run" if is_exhausted else "failed"
 
-    has_pending_sections = any(
-        section_status.get(section.section_id) != "completed"
-        for section in state.get("retrieved_sections", [])
-    ) or any(status != "completed" for status in section_status.values())
     evaluated = [
         category for category in categories
-        if assessments is not None and assessments[category].sufficient
+        if assessments and assessments.get(category)
+        and assessments[category].sufficient
         and any(claim.category == category for claim in claims)
     ]
-    covered = [] if has_pending_sections else evaluated
+    covered = evaluated
     return {
         "knowledge": claims,
         "knowledge_issues": issues,
         "processed_section_ids": list(dict.fromkeys(processed_ids)),
         "extraction_section_status": section_status,
         "coverage_assessment_status": coverage_status,
+        "coverage_assessments": list(assessments.values()),
         "evaluated_categories": evaluated,
         "covered_categories": covered,
         "pending_categories": [category for category in categories if category not in covered],

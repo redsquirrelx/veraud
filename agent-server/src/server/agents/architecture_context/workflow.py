@@ -68,6 +68,8 @@ def build_workflow(service, managed, retrieval_budget, *, node_runner=run_node,
         "retrieve_documents",
         lambda state: "validate_and_finalize" if state.get("context_stop_reason") else "extract_knowledge",
     )
-    graph.add_conditional_edges("extract_knowledge", partial(route_after_extraction, trace=trace),
+    graph.add_conditional_edges("extract_knowledge", partial(
+        route_after_extraction, trace=trace,
+        max_iterations=getattr(getattr(managed, "limits", None), "max_iterations", None)),
                                {END: "validate_and_finalize", "plan_retrieval": "plan_retrieval"})
     return graph.compile()

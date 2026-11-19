@@ -34,6 +34,43 @@ with the CLI. Provider clients remain host-owned; model calls reuse shared
 budgeting, pacing, tracing and cumulative usage callbacks. The global
 `budgets_enabled` switch applies to CLI and production without per-agent overrides.
 
+### Coverage evaluation by category
+
+Architecture Context defaults to `max_iterations=1`: one planning/retrieval/
+extraction/coverage round, shared by HTTP and CLI. The graph does not replan for
+pending categories after that round, even when the global budget switch is off.
+This limits exploration rounds, not the number of claims produced within a round.
+Unconfirmed categories remain pending in the output.
+
+After extraction, coverage is assessed sequentially with one `CategoryAssessment`
+call for each of the seven categories. Each request includes **all accepted claims
+of that category**, without sampling or truncation. Documentary issues, the source
+catalog and section-processing limitations remain available to the evaluator.
+The canonical output format is unchanged. A wrong-category response is rejected;
+provider/validation/context failures stop the coverage pass and remain explicit.
+
+This avoids sending the whole accumulated claim set in one oversized prompt.
+The per-request context limit still applies: a single oversized category is not
+silently truncated or marked sufficient. Each coverage pass now costs seven model
+calls instead of one; existing execution-wide call/token/time budgets still apply.
+`architecture_context.category_coverage_started/completed` traces record the
+category, claim count and prompt size without source content.
+
+The canonical result's `coverage_assessments` array preserves each returned
+`category`, `sufficient` and `rationale`. It includes negative assessments and
+successful categories assessed before a later failure; absent entries mean no
+assessment was retained, not confirmed sufficiency. Historical artifacts without
+this field remain readable (default: empty array). Free-form model explanations
+are retained in the result, not copied into content-free operational traces.
+
+A successfully finished exploration and coverage pass is `complete` even when
+some categories are insufficiently documented (`finalization_reason` is
+`exploration_complete`). Negative rationales are also saved as non-blocking
+`comments`; `pending_categories` and the original `coverage_assessments` remain
+unchanged. This does not claim that missing contracts exist. Technical failures,
+invalid evidence/provenance and unfinished assessments still degrade the result.
+Historical artifacts are not rewritten.
+
 ## Persistence and outcomes
 
 `ArchitectureContextArtifact` stores the canonical result string, schema version,

@@ -1,4 +1,4 @@
-"""Final documentary integrity checks; no model calls or evidence repairs."""
+﻿"""Final documentary integrity checks; no model calls or evidence repairs."""
 
 from typing import get_args
 
@@ -12,8 +12,10 @@ from server.services.document_indexing import (
 )
 
 from .extraction import _validate_section
+from .observability import architecture_context_event, reason_slug
 from .schemas import (
     ArchitectureContextResult,
+    CategoryAssessment,
     FinalizationDiagnostic,
     KnowledgeClaim,
     KnowledgeIssue,
@@ -37,6 +39,14 @@ def validate_and_finalize(state: ArchitectureContextState) -> ArchitectureContex
         diagnostics.append(FinalizationDiagnostic(
             target=target, position=position, reason=reason, section_ids=list(section_ids),
         ))
+        # reason may be a raw ValueError string; only the stable slug ever crosses the boundary.
+        architecture_context_event(
+            "architecture_context.finalization_item_rejected",
+            status="rejected",
+            error_code=reason_slug(reason),
+            message=f"Finalization rejected a {target}",
+            details={"target": target, "sections": len(section_ids)},
+        )
 
     if state.get("execution_error"):
         reject("execution", None, state["execution_error"])
@@ -174,8 +184,8 @@ def validate_and_finalize(state: ArchitectureContextState) -> ArchitectureContex
         and category not in rejected_categories
         and any(claim.category == category for claim in claims)
     ]
-    incomplete = any(status != "completed" for status in section_status.values()) or bool(
-        sections.keys() - set(processed_ids)
+    incomplete = bool(sections.keys() - set(processed_ids)) or any(
+        status == "failed" for status in section_status.values()
     )
     if incomplete or any(item.target in {"index", "document", "section", "execution"} for item in diagnostics):
         covered = []
@@ -186,14 +196,32 @@ def validate_and_finalize(state: ArchitectureContextState) -> ArchitectureContex
         for record in state.get("retrieval_history", [])
     )
     stop_reason = state.get("context_stop_reason") or ("retrieval_incomplete" if retrieval_failed else None)
-    if not pending and not diagnostics and not stop_reason and not discovery_failed:
-        status, reason = "complete", "coverage_complete"
+    if (not incomplete and not diagnostics and not stop_reason and not discovery_failed
+            and state.get("coverage_assessment_status") == "completed"):
+        # Documentary gaps describe the repository, not a failed exploration.
+        status = "complete"
+        reason = "exploration_complete" if pending else "coverage_complete"
     elif (discovery_failed or diagnostics or stop_reason) and not claims and not issues:
         status = "failed"
         reason = stop_reason or ("document_discovery_failed" if discovery_failed else "validation_failed")
     else:
         status = "partial"
         reason = stop_reason or ("validation_failed" if diagnostics else "incomplete_coverage")
+    architecture_context_event(
+        "architecture_context.finalization",
+        status={"complete": "ok", "partial": "warning", "failed": "error"}[status],
+        error_code=reason,
+        message=f"Architecture context finalized as {status}",
+        details={
+            "execution_status": status,
+            "reason": reason,
+            "covered": len(covered),
+            "pending": len(pending),
+            "claims": len(claims),
+            "issues": len(issues),
+            "validation_errors": len(diagnostics),
+        },
+    )
     consulted_paths = {section.path for section in sections.values()}
     consulted_documents = [document for path, document in documents.items() if path in consulted_paths]
     result = ArchitectureContextResult(
@@ -203,6 +231,14 @@ def validate_and_finalize(state: ArchitectureContextState) -> ArchitectureContex
         covered_categories=covered,
         pending_categories=pending,
         coverage_assessment_status=state.get("coverage_assessment_status", "not_run"),
+        coverage_assessments=list(state.get("coverage_assessments", [])),
+        comments=[
+            f"{assessment.category}: {assessment.rationale}"
+            for assessment in (
+                CategoryAssessment.model_validate(item.model_dump() if hasattr(item, "model_dump") else item)
+                for item in state.get("coverage_assessments", [])
+            ) if not assessment.sufficient
+        ],
         evaluated_categories=list(state.get("evaluated_categories", [])),
         consulted_documents=consulted_documents,
         section_paths={section_id: section.path for section_id, section in sections.items()},

@@ -17,7 +17,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
-from config.agents.execution import InvestigationConfig
 from config.agents.repository_execution import ExecutionBudget
 from server.agent_services.budgeting import policy
 from server.agent_services.budgeting.shared_tokens import SharedTokenBudget
@@ -28,6 +27,9 @@ from server.agents.architecture_context import (
     plan_retrieval,
     retrieve_documents,
     validate_and_finalize,
+)
+from server.agents.architecture_context.config import (
+    ArchitectureContextConfig as InvestigationConfig,
 )
 from server.agents.architecture_context.schemas import RetrievalPlan
 from server.config.dev_agents_config import load_dev_agents_config
@@ -720,7 +722,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ),
                     **{
                         key: [item.model_dump(mode="json") for item in state.get(key, [])]
-                        for key in ("knowledge", "knowledge_issues", "consulted_documents", "validation_errors")
+                        for key in ("knowledge", "knowledge_issues", "consulted_documents", "validation_errors", "coverage_assessments")
                     },
                 },
             }
