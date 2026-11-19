@@ -101,9 +101,11 @@ function transportError(error: unknown): AgentTransportError {
   return new AgentTransportError(code, !["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH"].includes(code))
 }
 
-/** The agent-server holds the request open for the whole run, which for a real
- *  agent is minutes. This is the ceiling on that, not a nudge. */
-export const DEFAULT_INVOKE_TIMEOUT_MS = 300_000
+/** Direct-agent dispatches (architecture_context, functional_adequacy,
+ *  finding_resolution) historically timed out under 300s while the pipeline
+ *  and audit dispatches succeed: give them the same ceiling as the other
+ *  pipelines rather than leaving them stranded on a shorter default. */
+export const DEFAULT_INVOKE_TIMEOUT_MS = 660_000
 
 /** The pipeline runs two agents back to back under one 600s deadline, so its
  *  ceiling is the pipeline timeout plus headroom for the callbacks to land. */
